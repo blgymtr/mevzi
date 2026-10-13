@@ -32,7 +32,9 @@ func _ready() -> void:
 			shot_scene = a.substr(8)
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
-	if shot_dir != "" and shot_scene == "test":
+	if shot_dir != "" and shot_scene.begins_with("gallery"):
+		_run_gallery()
+	elif shot_dir != "" and shot_scene == "test":
 		_run_test()
 	elif shot_dir != "":
 		_run_shots()
@@ -495,4 +497,55 @@ func _run_test() -> void:
 	await _wait(1.0)
 	await _shot("test_02_fob")
 	print("TEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+# model galerisi: iki ordunun araç ve askerleri yakın plan
+func _run_gallery() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var mid := shot_scene.substr(8) if shot_scene.length() > 8 else "desert_canal"
+	if not MapGen.MAPS.has(mid):
+		mid = "desert_canal"
+	G.spectate = true
+	build_world(mid, 4242)
+	for u in G.units.duplicate():
+		if u is Soldier or u is Vehicle:
+			u.queue_free()
+	await get_tree().process_frame
+	var c := Vector3(186, 0, 160)
+	G.props.clear_area(c, 22.0)
+	var types := ["tank", "apc", "technical", "truck"]
+	for t in 2:
+		for i in types.size():
+			var p := c + Vector3(-12 + i * 8.0, 0, -6 + t * 12.0)
+			var v := spawn_vehicle(t, types[i], p, PI * 0.25)
+			v.set_process(false)
+			v.hull.rotation.y = PI * 0.25
+		var h := spawn_vehicle(t, "heli", c + Vector3(20, 0, -6 + t * 12.0), PI * 0.25)
+		h.set_process(false)
+		h.hull.position.y = 3.0
+		h.hull.rotation.y = PI * 0.25
+		var roles := ["rifle", "mg", "at", "medic"]
+		for i in roles.size():
+			var s := spawn_soldier(t, roles[i], c + Vector3(-14 + i * 1.6, 0, 1 + t * 3.0), null)
+			s.rotation.y = PI * 0.25
+			s.set_process(false)
+			s.body.animate(0.5, ["stand", "aim", "crouch_aim", "stand"][i], 0.0)
+	G.running = false
+	G.cam.input_enabled = false
+	G.cam.jump_to(c + Vector3(2, 0, 0), true)
+	G.cam.size = 26.0
+	G.cam.target_size = 26.0
+	await _wait(1.5)
+	await _shot("gallery_" + mid + "_a")
+	G.cam.jump_to(c + Vector3(-12, 0, 2), true)
+	G.cam.size = 9.0
+	G.cam.target_size = 9.0
+	await _wait(1.0)
+	await _shot("gallery_" + mid + "_soldiers")
+	G.cam.jump_to(c + Vector3(-8, 0, 0), true)
+	G.cam.size = 14.0
+	G.cam.target_size = 14.0
+	await _wait(1.0)
+	await _shot("gallery_" + mid + "_tanks")
 	get_tree().quit()

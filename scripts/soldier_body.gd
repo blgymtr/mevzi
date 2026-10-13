@@ -28,9 +28,9 @@ var dead_pose := {}
 func build(team: int, rl: String, winter: bool) -> void:
 	role = rl
 	rng.randomize()
-	var key := "%d_%s_%s" % [team, rl, winter]
+	var key := "%d_%s_%s" % [team, rl, G.map_kind]
 	if not _mesh.has(key):
-		_mesh[key] = _make_meshes(team, rl, winter)
+		_mesh[key] = _art_meshes(team, rl) if Art.has("soldier_blue") else _make_meshes(team, rl, winter)
 	var M: Dictionary = _mesh[key]
 	pelvis = Node3D.new()
 	pelvis.position.y = HIP
@@ -56,6 +56,8 @@ func build(team: int, rl: String, winter: bool) -> void:
 	knee_l = _pivot(leg_l, Vector3(0, -0.44, 0))
 	_mi(knee_l, M["shin"])
 	weapon = _mi(spine, M["weapon"])
+	if M.has("extra") and M["extra"] != null:
+		_mi(spine, M["extra"])
 	phase = rng.randf() * TAU
 
 func _pivot(parent: Node3D, p: Vector3) -> Node3D:
@@ -70,6 +72,21 @@ func _mi(parent: Node3D, m: Mesh) -> MeshInstance3D:
 	mi.layers = 2
 	parent.add_child(mi)
 	return mi
+
+static func _art_meshes(team: int, rl: String) -> Dictionary:
+	var model := "soldier_blue" if team == 0 else "soldier_red"
+	var wpn := {"mg": "mg", "at": "rpg"}.get(rl, "rifle")
+	var M := {
+		"torso": Art.skinned(model, "torso", team), "head": null,
+		"upper": Art.skinned(model, "arm", team), "fore": Art.skinned(model, "fore", team),
+		"thigh": Art.skinned(model, "thigh", team), "shin": Art.skinned(model, "shin", team),
+		"weapon": Art.skinned(model, wpn, team), "extra": null,
+	}
+	if rl == "medic":
+		M["extra"] = Art.skinned(model, "x_medic", team)
+	elif rl == "at":
+		M["extra"] = Art.skinned(model, "x_at", team)
+	return M
 
 static func _make_meshes(team: int, rl: String, winter: bool) -> Dictionary:
 	var uni := Color(0.33, 0.37, 0.22) if team == 0 else Color(0.43, 0.39, 0.26)

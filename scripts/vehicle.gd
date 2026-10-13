@@ -59,6 +59,8 @@ var rocket_cd := 4.0
 var salvo := 0
 var salvo_t := 0.0
 var _hb := 0.0
+var rotor_blades: MeshInstance3D
+static var _disc_mat: ShaderMaterial
 
 func setup(t: int, vt: String) -> void:
 	team = t
@@ -75,12 +77,23 @@ func setup(t: int, vt: String) -> void:
 	sight = D["sight"]
 	cap_cost = D["cap"]
 	icon = D["icon"]
-	M = VehicleModels.get_model(vt, t, G.map_kind == "winter")
+	M = Art.vehicle(vt, t)
+	if M.is_empty():
+		M = VehicleModels.get_model(vt, t, G.map_kind == "winter")
 	hull = Node3D.new()
 	add_child(hull)
-	hull_mi = MeshInstance3D.new()
-	hull_mi.mesh = M["hull"]
-	hull.add_child(hull_mi)
+	if M.has("hulls"):
+		for hm in M["hulls"]:
+			var hmi := MeshInstance3D.new()
+			hmi.mesh = hm[0]
+			hmi.position = hm[1]
+			hull.add_child(hmi)
+			if hull_mi == null:
+				hull_mi = hmi
+	else:
+		hull_mi = MeshInstance3D.new()
+		hull_mi.mesh = M["hull"]
+		hull.add_child(hull_mi)
 	if M["turret"] != null:
 		turret = Node3D.new()
 		turret.position = M["turret_pos"]
@@ -96,7 +109,7 @@ func setup(t: int, vt: String) -> void:
 		barrel.add_child(bmi)
 	for w in M["wheels"]:
 		var wn := MeshInstance3D.new()
-		wn.mesh = VehicleModels.wheel(w[1], w[2])
+		wn.mesh = w[3] if w.size() > 3 else VehicleModels.wheel(w[1], w[2])
 		wn.position = w[0]
 		hull.add_child(wn)
 		wheels.append([wn, w[1]])
@@ -114,6 +127,19 @@ func setup(t: int, vt: String) -> void:
 		var rmi := MeshInstance3D.new()
 		rmi.mesh = M["rotor"]
 		rotor.add_child(rmi)
+		rotor_blades = rmi
+		var disc := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		var rr: float = M["rotor"].get_aabb().size.x * 0.5
+		cm.top_radius = rr
+		cm.bottom_radius = rr
+		cm.height = 0.02
+		cm.radial_segments = 32
+		disc.mesh = cm
+		disc.position.y = 0.3
+		disc.material_override = _rotor_disc_mat()
+		disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		rotor.add_child(disc)
 		trotor = Node3D.new()
 		trotor.position = M["trotor_pos"]
 		hull.add_child(trotor)
@@ -591,6 +617,8 @@ func _heli(dt: float) -> void:
 	_hb += dt
 	hull.position.y = ALT + sin(_hb * 1.3) * 0.25
 	rotor.rotation.y += dt * 28.0
+	if rotor_blades:
+		rotor_blades.visible = false
 	trotor.rotation.x += dt * 40.0
 	if randf() < dt * 3.0:
 		G.fx.vehicle_dust(position + Vector3(randf_range(-4, 4), 0.2, randf_range(-4, 4)))
@@ -644,6 +672,26 @@ func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> 
 				o.add_suppression(sup, position)
 	if shots % 2 == 0:
 		G.fx.tracer(mp, impact, 260.0, Color(1.0, 0.55, 0.22), 0.09)
+
+static func _rotor_disc_mat() -> ShaderMaterial:
+	if _disc_mat == null:
+		var sh := Shader.new()
+		sh.code = """shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled;
+global uniform float game_time;
+void fragment() {
+	vec2 p = UV * 2.0 - 1.0;
+	float r = length(p);
+	float a = atan(p.y, p.x);
+	float blades = 0.5 + 0.5 * sin(a * 5.0 - game_time * 60.0);
+	float ring = smoothstep(1.0, 0.92, r) * smoothstep(0.05, 0.15, r);
+	ALBEDO = vec3(0.12);
+	ALPHA = ring * (0.16 + 0.12 * blades) + smoothstep(0.97, 0.93, r) * smoothstep(0.9, 0.95, r) * 0.25;
+}
+"""
+		_disc_mat = ShaderMaterial.new()
+		_disc_mat.shader = sh
+	return _disc_mat
 
 func _heli_crash() -> void:
 	var tw := create_tween()
