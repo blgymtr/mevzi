@@ -138,7 +138,7 @@ func unit_at(sp: Vector2, only_own := false) -> Unit:
 			continue
 		if only_own and u.team != team:
 			continue
-		var s := G.cam.screen(u.position + Vector3(0, 0.7 if not (u is Building) else 1.5, 0))
+		var s := G.cam.screen(u.aim_point() if u is Vehicle else u.position + Vector3(0, 0.7 if not (u is Building) else 1.5, 0))
 		var r: float = maxf(14.0, u.radius * px_per_m * (1.2 if not (u is Building) else 0.9))
 		var d := s.distance_to(sp)
 		if d < r and d < bd:
@@ -159,6 +159,8 @@ func _finish_box(add: bool, ctrl: bool) -> void:
 			else:
 				if add and selected.has(u):
 					deselect(u)
+				elif u is Soldier and u.squad and not Input.is_key_pressed(KEY_ALT):
+					select_squad_of(u)
 				else:
 					select(u)
 			_last_click = now

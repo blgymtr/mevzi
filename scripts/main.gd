@@ -32,7 +32,9 @@ func _ready() -> void:
 			shot_scene = a.substr(8)
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
-	if shot_dir != "":
+	if shot_dir != "" and shot_scene == "test":
+		_run_test()
+	elif shot_dir != "":
 		_run_shots()
 	elif autoplay > 0.0:
 		_run_autoplay()
@@ -218,6 +220,7 @@ func place_building(t: int, bt: String, p: Vector3, rot: float) -> Building:
 	b.position = G.on_ground(p)
 	world.add_child(b)
 	b.setup(t, bt, rot)
+	G.props.clear_area(b.position, b.radius + 0.5)
 	b.occupy_grid()
 	return b
 
@@ -246,6 +249,7 @@ func to_menu() -> void:
 	G.hud.show_menu()
 
 func _spectate_ai() -> void:
+	print("SPECTATE_AI world=", world, " ais_before=", G.ais.size())
 	for t in 2:
 		var a := AICmd.new(t)
 		add_child(a)
@@ -253,8 +257,18 @@ func _spectate_ai() -> void:
 		a.wave_t = 40.0
 	G.supply = [1400.0, 1400.0]
 
+var _restarting := false
+
 func restart_spectate() -> void:
-	call_deferred("to_menu")
+	if _restarting:
+		return
+	_restarting = true
+	print("RESTART_SPECTATE")
+	call_deferred("_do_restart")
+
+func _do_restart() -> void:
+	_restarting = false
+	to_menu()
 
 func start_game(kind: String) -> void:
 	G.hud.hide_menu()
@@ -365,6 +379,8 @@ func _skirmish(c: Vector3) -> void:
 		v.cmd_move(c + off * 0.5)
 		var v2 := spawn_vehicle(t, "technical", G.grid.nearest_free(c + off * 1.5 + Vector3(8, 0, -8), Grid.M_LIGHT), Soldier._yaw_of(toward))
 		v2.cmd_move(c + off * 0.6 + Vector3(6, 0, -6))
+	var h := spawn_vehicle(0, "heli", c + Vector3(30, 0, 30), Soldier._yaw_of(Vector3(-1, 0, -1)))
+	h.cmd_move(c + Vector3(8, 0, 8))
 	G.explode(c + Vector3(3, 0, 5), 4.0, 100.0, "shell", -1, null)
 
 func _run_autoplay() -> void:
@@ -392,4 +408,91 @@ func _run_autoplay() -> void:
    A: %s
    B: %s" % [int(G.time), n, int(G.supply[0]), int(G.supply[1]), G.stats["kills"], Engine.get_frames_per_second(), bl[0], bl[1]])
 	print("AUTOPLAY DONE t=%d winner=%d real=%ds" % [int(G.time), G.winner, (Time.get_ticks_msec() - t0) / 1000])
+	get_tree().quit()
+
+# oyuncu akışı testi: üs kur, üret, ikmal, savunma hattı
+func _run_test() -> void:
+	Sfx.muted = true
+	var fails := 0
+	start_game("desert")
+	Engine.time_scale = 3.0
+	var hq: Building = null
+	for u in G.units:
+		if u is Building and u.team == 0 and u.btype == "hq":
+			hq = u
+	var toward: Vector3 = (G.hq_pos[1] - G.hq_pos[0]).normalized()
+	# ileri üs yeri ara
+	var fob: Building = null
+	for r in [55.0, 60.0, 65.0, 70.0, 50.0]:
+		for k in 12:
+			var p: Vector3 = G.hq_pos[0] + toward.rotated(Vector3.UP, (k - 6) * 0.15) * r
+			if PlayerCtl.can_place("fob", p, 0.0, 0) == "":
+				G.supply[0] -= 300
+				fob = place_building(0, "fob", p, 0.0)
+				break
+		if fob:
+			break
+	print("TEST fob placed: ", fob != null)
+	var soldiers: Array = []
+	for u in G.units:
+		if u is Soldier and u.team == 0:
+			soldiers.append(u)
+	G.player.clear_sel()
+	for s in soldiers.slice(0, 6):
+		G.player.select(s)
+	G.player._assign_builders(fob)
+	hq.enqueue("rifle_squad")
+	var bar: Building = null
+	await _wait(8.0)
+	for r in [16.0, 20.0, 24.0, 28.0]:
+		for k in 16:
+			var p2: Vector3 = G.hq_pos[0] + Vector3(cos(k * 0.4), 0, sin(k * 0.4)) * r
+			if PlayerCtl.can_place("barracks", p2, 0.0, 0) == "":
+				G.supply[0] -= 250
+				bar = place_building(0, "barracks", p2, 0.0)
+				break
+		if bar:
+			break
+	print("TEST barracks placed: ", bar != null)
+	G.player.clear_sel()
+	for s in soldiers.slice(6, 12):
+		G.player.select(s)
+	G.player._assign_builders(bar)
+	G.cam.jump_to(fob.position, true)
+	await _wait(15.0)
+	await _shot("test_01_building")
+	await _wait(40.0)
+	print("TEST fob done=%s progress=%.2f barracks done=%s" % [fob.done, fob.progress, bar.done if bar else false])
+	if not fob.done:
+		fails += 1
+	var n0 := 0
+	for u in G.units:
+		if u is Soldier and u.team == 0 and u.alive:
+			n0 += 1
+	print("TEST soldiers=%d (start %d) supply=%d cap=%d/%d" % [n0, soldiers.size(), int(G.supply[0]), G.cap_used[0], G.cap_max[0]])
+	if n0 <= soldiers.size():
+		fails += 1
+	var trucks := 0
+	for u in G.units:
+		if u is Vehicle and u.vtype == "truck" and u.team == 0:
+			trucks += 1
+	print("TEST trucks=%d roads=%d" % [trucks, G.logi.nodes[0].size()])
+	if trucks == 0:
+		fails += 1
+	var s0: float = G.supply[0]
+	# savunma hattı
+	var a: Vector3 = fob.position + toward * 9.0 + Vector3(-toward.z, 0, toward.x) * 5.0
+	var b: Vector3 = a - Vector3(-toward.z, 0, toward.x) * 10.0
+	var line := place_line(0, "sandbags", a, b)
+	G.player.clear_sel()
+	for s in soldiers.slice(0, 4):
+		G.player.select(s)
+	G.player._assign_builders(line)
+	await _wait(60.0)
+	print("TEST supply after 60s: %d -> %d" % [int(s0), int(G.supply[0])])
+	print("TEST sandbag line done=", not is_instance_valid(line))
+	G.cam.jump_to(fob.position, true)
+	await _wait(1.0)
+	await _shot("test_02_fob")
+	print("TEST RESULT fails=%d" % fails)
 	get_tree().quit()

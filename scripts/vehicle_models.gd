@@ -15,6 +15,8 @@ static func get_model(vtype: String, team: int, winter: bool) -> Dictionary:
 				_c[key] = _technical(team, winter)
 			"truck":
 				_c[key] = _truck(team, winter)
+			"heli":
+				_c[key] = _heli(team, winter)
 	return _c[key]
 
 static func _paint(team: int, winter: bool) -> Array:
@@ -215,3 +217,45 @@ static func wheel(r: float, w: float) -> ArrayMesh:
 	if not _c.has(key):
 		_c[key] = _wheel_mesh(r, w)
 	return _c[key]
+
+static func _heli(team: int, winter: bool) -> Dictionary:
+	var C := _paint(team, winter)
+	var main: Color = C[0].darkened(0.05) if team == 0 else Color(0.58, 0.6, 0.5)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 91 + team
+	var mb := MB.new()
+	var glass := Color(0.12, 0.16, 0.2)
+	var bas := Basis(Vector3.UP, PI * 0.5)
+	mb.prism(PackedVector2Array([Vector2(5.2, -0.7), Vector2(4.2, -1.3), Vector2(-1.8, -1.3), Vector2(-2.6, -0.6), Vector2(-2.4, 0.5), Vector2(1.5, 0.8), Vector2(3.4, 0.3), Vector2(5.0, -0.2)]), 1.9, main, Vector3.ZERO, bas)
+	mb.hull(Vector3(0, -0.15, -3.6), Vector2(1.0, 1.1), Vector2(0.7, 0.6), 0.75, glass)
+	mb.hull(Vector3(0, 0.25, -2.2), Vector2(1.2, 1.2), Vector2(0.85, 0.7), 0.7, glass)
+	mb.box(Vector3(0, 1.0, 0.2), Vector3(1.5, 0.55, 3.0), main.darkened(0.08))
+	for sx in [-0.45, 0.45]:
+		mb.cyl(Vector3(sx, 1.0, -1.2), 0.22, 0.22, 0.4, 8, Color(0.15, 0.15, 0.15), Basis(Vector3.RIGHT, PI * 0.5))
+	mb.box(Vector3(0, 0.2, 5.0), Vector3(0.4, 0.45, 5.6), main)
+	mb.box(Vector3(0, -0.1, 2.6), Vector3(0.9, 0.7, 1.6), main)
+	mb.box(Vector3(0, 1.0, 7.6), Vector3(0.15, 1.6, 1.0), main.darkened(0.05))
+	mb.box(Vector3(0, 0.25, 7.0), Vector3(2.0, 0.08, 0.6), main.darkened(0.05))
+	for sx in [-1.0, 1.0]:
+		mb.box(Vector3(sx * 1.7, -0.3, -0.6), Vector3(1.6, 0.1, 0.9), main.darkened(0.1), Basis(Vector3.FORWARD, sx * 0.15))
+		mb.cyl(Vector3(sx * 1.6, -0.55, -1.4), 0.22, 0.22, 1.4, 8, Color(0.2, 0.22, 0.18), Basis(Vector3.RIGHT, PI * 0.5))
+		mb.cyl(Vector3(sx * 2.3, -0.55, -1.3), 0.2, 0.2, 1.2, 8, Color(0.2, 0.22, 0.18), Basis(Vector3.RIGHT, PI * 0.5))
+		mb.box(Vector3(sx * 0.98, -0.2, 1.2), Vector3(0.04, 0.3, 0.8), C[3])
+	mb.cyl(Vector3(0, -1.3, -4.6), 0.18, 0.18, 0.3, 8, Color(0.15, 0.15, 0.15))
+	mb.box(Vector3(0, -1.25, -5.0), Vector3(0.06, 0.06, 0.8), Color(0.1, 0.1, 0.1))
+	for sx in [-0.9, 0.9]:
+		mb.cyl(Vector3(sx, -1.7, 0.3), 0.22, 0.22, 0.15, 8, Color(0.08, 0.08, 0.08), Basis(Vector3.FORWARD, PI * 0.5))
+	_camo(mb, rng, C, Vector3(0.6, 0, 2.5), 0.85, 6)
+	var hull := mb.commit(Mats.metal())
+	var rb := MB.new()
+	rb.cyl(Vector3(0, 0, 0), 0.18, 0.15, 0.35, 8, Color(0.15, 0.15, 0.15))
+	for i in 5:
+		var a := TAU * i / 5.0
+		rb.box(Vector3(cos(a) * 4.2, 0.32, sin(a) * 4.2), Vector3(8.2, 0.04, 0.34), Color(0.05, 0.05, 0.05), Basis(Vector3.UP, -a))
+	var rotor := rb.commit(Mats.vc())
+	var tb := MB.new()
+	for i in 3:
+		var a := TAU * i / 3.0
+		tb.box(Vector3(0, cos(a) * 0.65, sin(a) * 0.65), Vector3(0.04, 1.3, 0.18), Color(0.12, 0.12, 0.12), Basis(Vector3.RIGHT, a))
+	var trotor := tb.commit(Mats.vc())
+	return {"hull": hull, "turret": null, "barrel": null, "turret_pos": Vector3.ZERO, "barrel_pos": Vector3.ZERO, "muzzle": Vector3(0, -1.3, -4.6), "wheels": [], "rotor": rotor, "rotor_pos": Vector3(0, 1.3, 0.0), "trotor": trotor, "trotor_pos": Vector3(0.12, 1.1, 7.6)}

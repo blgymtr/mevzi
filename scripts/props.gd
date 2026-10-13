@@ -271,3 +271,13 @@ func _fell(it: Dictionary, dir: Vector3) -> void:
 		mi.transform.basis = Basis(axis, t * 1.45) * start, 0.0, 1.0, 1.1).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
 	G.grid.set_static_circle(it["pos"], 0.4, 0.0, Grid.K_NONE, true)
 	Sfx.play3d("crumble", it["pos"], -4.0)
+
+func clear_area(c: Vector3, r: float) -> void:
+	for it in items:
+		if not it["alive"]:
+			continue
+		var p: Vector3 = it["pos"]
+		if Vector2(p.x - c.x, p.z - c.z).length() < r:
+			it["alive"] = false
+			(it["node"] as Node3D).visible = false
+			G.grid.set_static_circle(p, 0.5, 0.0, Grid.K_NONE, true)

@@ -5,6 +5,7 @@ const DEF := {
 	"tank": {"title": "Tank", "hp": 900.0, "armor": 2, "speed": 6.2, "accel": 2.5, "turn": 0.75, "radius": 2.7, "len": 6.2, "nav": Grid.M_HEAVY, "sight": 50.0, "cap": 4, "tturn": 0.85, "icon": "tank"},
 	"apc": {"title": "ZPT", "hp": 450.0, "armor": 1, "speed": 9.5, "accel": 3.5, "turn": 1.0, "radius": 2.5, "len": 7.2, "nav": Grid.M_HEAVY, "sight": 48.0, "cap": 3, "tturn": 1.8, "icon": "apc"},
 	"technical": {"title": "Teknik Araç", "hp": 170.0, "armor": 0, "speed": 13.0, "accel": 5.0, "turn": 1.4, "radius": 1.9, "len": 5.0, "nav": Grid.M_LIGHT, "sight": 46.0, "cap": 2, "tturn": 3.0, "icon": "tech"},
+	"heli": {"title": "Saldırı Helikopteri", "hp": 650.0, "armor": 1, "speed": 17.0, "accel": 6.0, "turn": 1.4, "radius": 3.6, "len": 11.0, "nav": Grid.M_LIGHT, "sight": 62.0, "cap": 5, "tturn": 0.0, "icon": "heli"},
 	"truck": {"title": "İkmal Kamyonu", "hp": 160.0, "armor": 0, "speed": 10.0, "accel": 3.0, "turn": 1.0, "radius": 2.3, "len": 7.0, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 0, "tturn": 0.0, "icon": "truck"},
 }
 
@@ -50,6 +51,14 @@ var job: Dictionary = {}      # kamyon görevi (Logistics)
 var rock := 0.0
 var rock_v := 0.0
 var burn_t := 0.0
+const ALT := 9.0
+var rotor: Node3D
+var trotor: Node3D
+var hvel := Vector3.ZERO
+var rocket_cd := 4.0
+var salvo := 0
+var salvo_t := 0.0
+var _hb := 0.0
 
 func setup(t: int, vt: String) -> void:
 	team = t
@@ -97,6 +106,20 @@ func setup(t: int, vt: String) -> void:
 		turret.add_child(gunner)
 		gunner.build(t, "rifle", G.map_kind == "winter")
 		gunner.weapon.visible = false
+	if vt == "heli":
+		hull.position.y = ALT
+		rotor = Node3D.new()
+		rotor.position = M["rotor_pos"]
+		hull.add_child(rotor)
+		var rmi := MeshInstance3D.new()
+		rmi.mesh = M["rotor"]
+		rotor.add_child(rmi)
+		trotor = Node3D.new()
+		trotor.position = M["trotor_pos"]
+		hull.add_child(trotor)
+		var tmi2 := MeshInstance3D.new()
+		tmi2.mesh = M["trotor"]
+		trotor.add_child(tmi2)
 	set_layer(self, 2)
 	heading = rotation.y
 	rotation.y = 0.0
@@ -104,12 +127,14 @@ func setup(t: int, vt: String) -> void:
 	dest = position
 	_last_pos = position
 	think_t = randf() * 0.5
-	engine = Sfx.loop3d("engine_tank" if vt in ["tank", "apc"] else "engine_truck", self, -10.0)
+	engine = Sfx.loop3d("heli" if vt == "heli" else ("engine_tank" if vt in ["tank", "apc"] else "engine_truck"), self, -8.0 if vt == "heli" else -10.0)
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0, -cos(heading))
 
 func aim_point() -> Vector3:
+	if vtype == "heli":
+		return position + Vector3(0, hull.position.y + 0.6, 0)
 	return position + Vector3(0, 1.3 if vtype != "technical" else 1.0, 0)
 
 func turret_world_pos() -> Vector3:
@@ -128,7 +153,10 @@ func cmd_move(p: Vector3, force := false) -> void:
 	force_move = force
 	forced_target = null
 	dest = G.on_ground(p)
-	path = G.grid.find_path(position, dest, nav_mode)
+	if vtype == "heli":
+		path = PackedVector3Array([dest])
+	else:
+		path = G.grid.find_path(position, dest, nav_mode)
 	path_i = 0
 
 func cmd_attack(u: Unit) -> void:
@@ -161,6 +189,8 @@ func _range() -> float:
 			return 50.0
 		"technical":
 			return 46.0
+		"heli":
+			return 52.0
 	return 0.0
 
 # ------------------------------------------------------------ döngü
@@ -177,6 +207,9 @@ func _process(dt: float) -> void:
 	if think_t <= 0.0:
 		think_t = 0.45 + randf() * 0.15
 		_scan()
+	if vtype == "heli":
+		_heli(dt)
+		return
 	_drive(dt)
 	_aim_fire(dt)
 	_visuals(dt)
@@ -482,6 +515,21 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if not alive:
 		return
 	var m := 1.0
+	if vtype == "heli":
+		match k:
+			"bullet":
+				m = 0.12
+			"hmg":
+				m = 0.55
+			"crush", "grenade":
+				m = 0.0
+		hp -= amount * m
+		last_hit = G.time
+		if src != null and is_instance_valid(src):
+			attacker = src
+		if hp <= 0.0:
+			destroy(src)
+		return
 	match k:
 		"bullet", "crush":
 			m = [0.6, 0.04, 0.0][armor]
@@ -506,8 +554,132 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if hp <= 0.0:
 		destroy(src)
 
+func _heli(dt: float) -> void:
+	var goal := dest
+	var t := target
+	if forced_target != null and is_instance_valid(forced_target) and forced_target.alive:
+		var off := position - forced_target.position
+		off.y = 0
+		goal = forced_target.position + off.normalized() * 32.0
+	var d := goal - position
+	d.y = 0
+	var L := d.length()
+	var want := Vector3.ZERO
+	if L > 0.5:
+		want = d / L * speed_max * clampf(L / 18.0, 0.0, 1.0)
+	for o in G.near(position, 10.0):
+		if o != self and o is Vehicle and o.vtype == "heli" and o.alive:
+			var dv: Vector3 = position - o.position
+			dv.y = 0
+			if dv.length() > 0.1:
+				want += dv.normalized() * 4.0
+	hvel = hvel.move_toward(want, D["accel"] * dt)
+	position += hvel * dt
+	position.x = clampf(position.x, 2.0, G.MAP - 2.0)
+	position.z = clampf(position.z, 2.0, G.MAP - 2.0)
+	cur_speed = hvel.length()
+	var face := heading
+	if t != null and is_instance_valid(t) and t.alive:
+		face = Soldier._yaw_of(t.position - position)
+	elif hvel.length() > 1.0:
+		face = Soldier._yaw_of(hvel)
+	heading = rotate_toward(heading, face, D["turn"] * dt)
+	if L < 1.5 and order == "move":
+		order = ""
+	var local_v := hvel.rotated(Vector3.UP, -heading)
+	hull.rotation = Vector3(lerpf(hull.rotation.x, clampf(local_v.z * 0.025, -0.3, 0.3), dt * 3.0), heading, lerpf(hull.rotation.z, clampf(-local_v.x * 0.025, -0.3, 0.3), dt * 3.0))
+	_hb += dt
+	hull.position.y = ALT + sin(_hb * 1.3) * 0.25
+	rotor.rotation.y += dt * 28.0
+	trotor.rotation.x += dt * 40.0
+	if randf() < dt * 3.0:
+		G.fx.vehicle_dust(position + Vector3(randf_range(-4, 4), 0.2, randf_range(-4, 4)))
+	rocket_cd -= dt
+	if t == null or not is_instance_valid(t) or not t.alive:
+		return
+	var ang := absf(angle_difference(heading, Soldier._yaw_of(t.position - position)))
+	if ang > 0.35:
+		return
+	var dist := dist2(t)
+	if salvo > 0:
+		salvo_t -= dt
+		if salvo_t <= 0.0:
+			salvo -= 1
+			salvo_t = 0.16
+			var side := 1.6 if salvo % 2 == 0 else -1.6
+			var mp := hull.global_transform * Vector3(side, -0.4, -1.0)
+			G.bal.rocket(mp, t.aim_point(), team, self, t)
+			Sfx.play3d("rpg", mp, 0.0, 0.1, 0.05)
+	elif rocket_cd <= 0.0 and dist < 50.0 and (t is Vehicle or t is Building or randf() < 0.5):
+		salvo = 4
+		salvo_t = 0.0
+		rocket_cd = 9.0
+	if main_cd <= 0.0 and dist < 46.0:
+		if burst <= 0:
+			burst = randi_range(6, 12)
+		burst -= 1
+		main_cd = 0.1 if burst > 0 else randf_range(0.8, 1.5)
+		var gp := hull.global_transform * Vector3(0, -1.3, -4.6)
+		_hitscan_from(gp, t, 28.0, 0.38, 12.0)
+		Sfx.play3d("hmg", gp, 2.0, 0.08, 0.03)
+
+func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> void:
+	shots += 1
+	var tp := t.aim_point()
+	var dir := (tp - mp).normalized()
+	G.fx.muzzle(mp, dir, true)
+	var c := acc
+	if t is Soldier:
+		c *= [1.0, 0.8, 0.6][t.stance]
+	else:
+		c = 0.8
+	var impact := tp
+	if randf() < c:
+		t.take_damage(dmg, self, "hmg")
+	else:
+		impact = Vector3(tp.x + randf_range(-2, 2), 0.02, tp.z + randf_range(-2, 2))
+		G.fx.impact(impact, "dirt")
+		for o in G.near(impact, 3.0):
+			if o is Soldier and o.team != team and o.alive:
+				o.add_suppression(sup, position)
+	if shots % 2 == 0:
+		G.fx.tracer(mp, impact, 260.0, Color(1.0, 0.55, 0.22), 0.09)
+
+func _heli_crash() -> void:
+	var tw := create_tween()
+	var spin := randf_range(6.0, 10.0)
+	var start_y := hull.position.y
+	var h0 := heading
+	tw.tween_method(func(k: float):
+		hull.position.y = lerpf(start_y, 0.6, k * k)
+		hull.rotation.y = h0 + k * spin
+		hull.rotation.z = k * 0.6
+		position += hvel * 0.016 * (1.0 - k)
+		if randf() < 0.5:
+			G.fx.emit(Fx.P_SMOKE, hull.global_position, Vector3(0, 1, 0), 3.0, 1.0, 3.0, -0.2, 0.5, Color(0.1, 0.1, 0.1, 0.8)), 0.0, 1.0, 1.8)
+	tw.tween_callback(func():
+		G.explode(position + Vector3(0, 0.8, 0), 4.5, 90.0, "big", team, self)
+		G.fx.burn(position + Vector3(0, 0.8, 0), 30.0, 1.0)
+		if rotor:
+			rotor.visible = false
+		G.grid.set_static_rect(position, Vector2(3.0, 9.0), h0, 1.2, Grid.K_WRECK))
+
 func destroy(src) -> void:
 	if not alive:
+		return
+	if vtype == "heli":
+		alive = false
+		wreck = true
+		G.credit_kill(src, self)
+		if selected and G.player:
+			G.player.deselect(self)
+		if engine:
+			engine.stop()
+		G.fx.explosion(aim_point(), 1.2, "big")
+		Sfx.play3d("expl_med", aim_point(), 4.0)
+		for mi in _meshes(self):
+			mi.material_override = Mats.burnt()
+		_heli_crash()
 		return
 	alive = false
 	wreck = true

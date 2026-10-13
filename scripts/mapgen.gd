@@ -222,10 +222,10 @@ func pitched_roof(w: float, d: float, top: float, col: Color, wall_col: Color, s
 	var bas := Basis() if along_z else Basis(Vector3.UP, PI * 0.5)
 	var fn := FastNoiseLite.new()
 	fn.seed = rng.randi()
-	fn.frequency = 0.16
+	fn.frequency = 0.09
 	fn.fractal_octaves = 3
-	var nu := 12
-	var nv := maxi(8, int(hl * 2.0 / 0.32))
+	var nu := 22
+	var nv := maxi(12, int(hl * 2.0 / 0.18))
 	for side in [-1.0, 1.0]:
 		for iu in nu:
 			for iv in nv:

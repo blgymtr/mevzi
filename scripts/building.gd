@@ -2,10 +2,11 @@ class_name Building extends Unit
 # Yapılar: karargâh, ileri üs, kışla, fabrika, hastane, MG yuvası, kule ve hat yapıları.
 
 const BDEF := {
-	"hq": {"title": "Karargâh", "hp": 3200.0, "size": Vector2(13, 10), "cost": 0, "time": 1.0, "cap": 40, "sight": 46.0, "prod": ["rifle_squad", "medic_team"], "desc": "Ana üs. Kaybedilirse ve ileri üs kalmazsa savaş biter."},
+	"hq": {"title": "Karargâh", "hp": 3200.0, "size": Vector2(17, 13), "cost": 0, "time": 1.0, "cap": 40, "sight": 46.0, "prod": ["rifle_squad", "medic_team"], "desc": "Ana üs. Kaybedilirse ve ileri üs kalmazsa savaş biter."},
 	"fob": {"title": "İleri Üs", "hp": 1800.0, "size": Vector2(10, 10), "cost": 300, "time": 40.0, "cap": 12, "sight": 40.0, "prod": ["rifle_squad", "medic_team"], "desc": "Birlik sınırını artırır, mühimmat verir, yol ve ikmal kamyonu getirir. Ele geçirilebilir."},
 	"barracks": {"title": "Kışla", "hp": 1200.0, "size": Vector2(9, 6), "cost": 250, "time": 30.0, "cap": 0, "sight": 30.0, "prod": ["rifle_squad", "mg_team", "at_squad", "medic_team"], "desc": "Tüm piyade timlerini eğitir."},
 	"factory": {"title": "Araç Fabrikası", "hp": 1600.0, "size": Vector2(12, 9), "cost": 400, "time": 45.0, "cap": 0, "sight": 30.0, "prod": ["technical", "apc", "tank"], "desc": "Teknik araç, ZPT ve tank üretir."},
+	"helipad": {"title": "Helikopter Pisti", "hp": 900.0, "size": Vector2(11, 11), "cost": 450, "time": 40.0, "cap": 0, "sight": 32.0, "prod": ["heli"], "desc": "Saldırı helikopteri üretir."},
 	"hospital": {"title": "Sahra Hastanesi", "hp": 700.0, "size": Vector2(7, 6), "cost": 180, "time": 22.0, "cap": 0, "sight": 28.0, "prod": [], "desc": "Sedyeciler 45 m içindeki yaralıları toplar; yakındakiler iyileşir."},
 	"mgnest": {"title": "MG Yuvası", "hp": 600.0, "size": Vector2(4, 4), "cost": 120, "time": 18.0, "cap": 0, "sight": 46.0, "prod": [], "desc": "Kum torbalı sabit makineli tüfek."},
 	"tower": {"title": "Gözetleme Kulesi", "hp": 400.0, "size": Vector2(3, 3), "cost": 90, "time": 15.0, "cap": 0, "sight": 85.0, "prod": [], "desc": "Geniş görüş alanı."},
@@ -24,6 +25,7 @@ const PDEF := {
 	"technical": {"title": "Teknik Araç", "cost": 160, "time": 14.0, "cap": 2, "vehicle": "technical", "icon": "tech"},
 	"apc": {"title": "ZPT", "cost": 380, "time": 22.0, "cap": 3, "vehicle": "apc", "icon": "apc"},
 	"tank": {"title": "Tank", "cost": 650, "time": 30.0, "cap": 4, "vehicle": "tank", "icon": "tank"},
+	"heli": {"title": "Saldırı Helikopteri", "cost": 800, "time": 36.0, "cap": 5, "vehicle": "heli", "icon": "heli"},
 }
 
 var btype := "fob"
@@ -121,6 +123,8 @@ func _build_model() -> void:
 		model.queue_free()
 	model = Node3D.new()
 	model.rotation.y = rot
+	if btype == "hq":
+		model.scale = Vector3(1.35, 1.25, 1.35)
 	add_child(model)
 	var mb := MB.new()
 	var tc: Color = G.TEAM_COL[team] if team >= 0 else Color(0.8, 0.8, 0.8)
@@ -187,6 +191,18 @@ func _build_model() -> void:
 			mb.box(Vector3(0, 1.6, -4.25), Vector3(5.0, 3.2, 0.1), Color(0.12, 0.12, 0.12))
 			mb.box(Vector3(-5.6, 0.6, 0), Vector3(1.2, 1.2, 3.0), Color(0.4, 0.4, 0.38))
 			_flag(mb, Vector3(5.6, 0, -4.4), tc, 4.0)
+		"helipad":
+			mb.box(Vector3(0, 0.06, 0), Vector3(10.5, 0.12, 10.5), Color(0.42, 0.42, 0.4))
+			for i in 24:
+				var ang := TAU * i / 24.0
+				mb.box(Vector3(cos(ang) * 4.2, 0.13, sin(ang) * 4.2), Vector3(0.7, 0.02, 0.2), Color(0.95, 0.85, 0.3), Basis(Vector3.UP, -ang + PI * 0.5))
+			mb.box(Vector3(-1.0, 0.13, 0), Vector3(0.35, 0.02, 3.2), Color(0.95, 0.95, 0.92))
+			mb.box(Vector3(1.0, 0.13, 0), Vector3(0.35, 0.02, 3.2), Color(0.95, 0.95, 0.92))
+			mb.box(Vector3(0, 0.13, 0), Vector3(2.0, 0.02, 0.35), Color(0.95, 0.95, 0.92))
+			mb.box(Vector3(5.6, 0.6, 4.6), Vector3(1.2, 1.2, 1.2), Color(0.35, 0.36, 0.24))
+			mb.cyl(Vector3(5.6, 0, -4.8), 0.05, 0.05, 3.0, 4, Color(0.6, 0.6, 0.6))
+			mb.cyl(Vector3(5.6, 2.6, -4.8), 0.12, 0.3, 0.8, 6, Color(1.0, 0.5, 0.2), Basis(Vector3.FORWARD, PI * 0.5))
+			_flag(mb, Vector3(-5.6, 0, -4.8), tc, 3.5)
 		"hospital":
 			mb.prism(PackedVector2Array([Vector2(-3.2, 0), Vector2(3.2, 0), Vector2(3.2, 1.5), Vector2(0, 2.8), Vector2(-3.2, 1.5)]), 5.0, Color(0.88, 0.88, 0.85), Vector3.ZERO, Basis(), Color(0.8, 0.8, 0.78))
 			mb.box(Vector3(0, 2.2, -2.55), Vector3(1.2, 0.35, 0.03), Color(0.8, 0.1, 0.1))
@@ -250,7 +266,8 @@ func _apply_construct_look() -> void:
 	for c in model.get_children():
 		if c is MeshInstance3D:
 			c.material_override = null if done else Mats.construct()
-	model.scale = Vector3(1, 1, 1) if done else Vector3(1, lerpf(0.25, 1.0, progress), 1)
+	var bs := Vector3(1.35, 1.25, 1.35) if btype == "hq" else Vector3.ONE
+	model.scale = bs if done else Vector3(bs.x, bs.y * lerpf(0.25, 1.0, progress), bs.z)
 	if gunner:
 		gun_pivot.visible = done
 
@@ -261,6 +278,8 @@ func occupy_grid() -> void:
 			h = 4.0
 		"fob", "mgnest":
 			h = 1.0
+		"helipad":
+			h = 0.0
 		"tower":
 			h = 0.0
 		"trap":
@@ -481,7 +500,8 @@ func _spawn(id: String) -> void:
 	var door := position + Vector3(0, 0, size.y * 0.5 + 2.0).rotated(Vector3.UP, rot)
 	door = G.grid.nearest_free(door, Grid.M_INF)
 	if P.has("vehicle"):
-		var v: Vehicle = G.main.spawn_vehicle(team, P["vehicle"], G.grid.nearest_free(door + Vector3(0, 0, 2).rotated(Vector3.UP, rot), Grid.M_HEAVY), rot + PI)
+		var sp := position if P["vehicle"] == "heli" else G.grid.nearest_free(door + Vector3(0, 0, 2).rotated(Vector3.UP, rot), Grid.M_HEAVY)
+		var v: Vehicle = G.main.spawn_vehicle(team, P["vehicle"], sp, rot + PI)
 		v.cmd_move(rally)
 		if team == G.player_team and not G.spectate:
 			G.say("%s hazır" % P["title"], door, team)

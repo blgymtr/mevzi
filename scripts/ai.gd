@@ -84,6 +84,8 @@ func _economy() -> void:
 				G.supply[team] -= 300
 				G.main.place_building(team, "fob", s, 0.0)
 				break
+	if t > 420.0 and _buildings("helipad").is_empty() and G.supply[team] > 600:
+		_place_near("helipad", hq.position, 16.0, 32.0)
 	if t > 220.0 and _buildings("hospital").is_empty():
 		_place_near("hospital", hq.position, 12.0, 26.0)
 	if t > 300.0 and _buildings("barracks").size() < 2 and G.supply[team] > 500:

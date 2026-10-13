@@ -221,7 +221,7 @@ func _rebuild_bottom() -> void:
 		)
 		b.add_theme_font_size_override("font_size", 15)
 		tabs.add_child(b)
-	var list := ["fob", "barracks", "factory", "hospital"] if build_tab == "base" else ["sandbags", "concrete", "trench", "wire", "trap", "mgnest", "tower"]
+	var list := ["fob", "barracks", "factory", "helipad", "hospital"] if build_tab == "base" else ["sandbags", "concrete", "trench", "wire", "trap", "mgnest", "tower"]
 	for bt in list:
 		var B: Dictionary = Building.BDEF[bt]
 		var cost_t := ("%d/m" % B["cost"]) if B.get("line", false) else str(B["cost"])
@@ -334,7 +334,7 @@ func _process(dt: float) -> void:
 	var running := G.running and not G.spectate
 	top_panel.visible = running
 	bottom.visible = running
-	radar.visible = G.running
+	radar.visible = G.running and not G.spectate
 	if running:
 		lbl_supply.text = str(int(G.supply[t]))
 		lbl_cap.text = "%d / %d" % [G.cap_used[t], G.cap_max[t]]

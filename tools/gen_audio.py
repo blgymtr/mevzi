@@ -154,3 +154,12 @@ save('ui_done', blip([800, 1000, 1350], 0.07), 0.5)
 save('ui_alert', blip([1200, 900, 1200, 900], 0.07), 0.55)
 save('win', reverb(blip([523, 659, 784, 1046], 0.22), 1.5, 0.35), 0.6)
 save('lose', reverb(blip([392, 330, 262, 196], 0.28), 1.5, 0.35), 0.6)
+
+# helikopter (döngü): pal darbesi + türbin
+t = T(4.4)
+blade = 18.0
+thump = np.zeros(len(t))
+ph = (t * blade) % 1.0
+thump = np.exp(-ph * 18) * fft_filter(N(4.4), 40, 500) * 2.5
+whine = np.sin(2 * np.pi * 1450 * t) * 0.05 + np.sin(2 * np.pi * 2900 * t) * 0.02
+save('heli', loop_fade(thump + fft_filter(N(4.4), 60, 1200) * 0.4 + whine, 0.4), 0.7)
