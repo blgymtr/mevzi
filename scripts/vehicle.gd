@@ -6,6 +6,11 @@ const DEF := {
 	"apc": {"title": "ZPT", "hp": 450.0, "armor": 1, "speed": 9.5, "accel": 3.5, "turn": 1.0, "radius": 2.5, "len": 7.2, "nav": Grid.M_HEAVY, "sight": 48.0, "cap": 3, "tturn": 1.8, "icon": "apc"},
 	"technical": {"title": "Teknik Araç", "hp": 170.0, "armor": 0, "speed": 13.0, "accel": 5.0, "turn": 1.4, "radius": 1.9, "len": 5.0, "nav": Grid.M_LIGHT, "sight": 46.0, "cap": 2, "tturn": 3.0, "icon": "tech"},
 	"heli": {"title": "Saldırı Helikopteri", "hp": 650.0, "armor": 1, "speed": 17.0, "accel": 6.0, "turn": 1.4, "radius": 3.6, "len": 11.0, "nav": Grid.M_LIGHT, "sight": 62.0, "cap": 5, "tturn": 0.0, "icon": "heli"},
+	"ifv": {"title": "Piyade Savaş Aracı", "hp": 620.0, "armor": 1, "speed": 8.0, "accel": 3.0, "turn": 0.9, "radius": 2.6, "len": 6.8, "nav": Grid.M_HEAVY, "sight": 50.0, "cap": 3, "tturn": 1.5, "icon": "apc"},
+	"aa": {"title": "Uçaksavar", "hp": 480.0, "armor": 1, "speed": 7.5, "accel": 2.8, "turn": 0.9, "radius": 2.6, "len": 6.6, "nav": Grid.M_HEAVY, "sight": 70.0, "cap": 3, "tturn": 2.4, "icon": "aa"},
+	"arty": {"title": "Obüs", "hp": 420.0, "armor": 1, "speed": 6.0, "accel": 2.2, "turn": 0.7, "radius": 2.8, "len": 7.0, "nav": Grid.M_HEAVY, "sight": 34.0, "cap": 4, "tturn": 0.6, "icon": "arty"},
+	"transport": {"title": "Nakliye Helikopteri", "hp": 520.0, "armor": 1, "speed": 20.0, "accel": 6.0, "turn": 1.3, "radius": 4.0, "len": 12.0, "nav": Grid.M_LIGHT, "sight": 50.0, "cap": 3, "tturn": 0.0, "icon": "heli"},
+	"fpv": {"title": "FPV Drone", "hp": 22.0, "armor": 0, "speed": 21.0, "accel": 16.0, "turn": 4.0, "radius": 0.6, "len": 0.5, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 0, "tturn": 0.0, "icon": "fpv"},
 	"truck": {"title": "İkmal Kamyonu", "hp": 160.0, "armor": 0, "speed": 10.0, "accel": 3.0, "turn": 1.0, "radius": 2.3, "len": 7.0, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 0, "tturn": 0.0, "icon": "truck"},
 }
 
@@ -59,6 +64,61 @@ var rocket_cd := 4.0
 var salvo := 0
 var salvo_t := 0.0
 var _hb := 0.0
+var cargo: Array = []
+var operator = null
+var atgm_cd := 8.0
+var landing := false
+const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2}
+
+func is_air() -> bool:
+	return vtype in ["heli", "transport", "fpv"]
+
+func capacity() -> int:
+	return CAPACITY.get(vtype, 0)
+
+func can_load() -> bool:
+	return alive and cargo.size() < capacity() and (not is_air() or hull.position.y < 2.5)
+
+func riders_visible() -> bool:
+	return vtype in ["tank", "technical"]
+
+func seat_pos(s) -> Vector3:
+	var i := cargo.find(s)
+	if vtype == "tank":
+		var seats := [Vector3(-1.1, 1.55, 1.2), Vector3(1.1, 1.55, 1.2), Vector3(-1.1, 1.55, 2.4), Vector3(1.1, 1.55, 2.4)]
+		return hull.global_transform * seats[clampi(i, 0, 3)]
+	if vtype == "technical":
+		return hull.global_transform * Vector3(0.5 * (1 if i % 2 == 0 else -1), 1.0, 1.6)
+	return position + Vector3(0, -50, 0)
+
+func unload() -> void:
+	if cargo.is_empty():
+		return
+	if is_air() and hull.position.y > 1.2:
+		landing = true
+		say("İNİŞE GEÇİYORUZ")
+		return
+	var n := cargo.size()
+	var back := -forward()
+	var side := Vector3(-back.z, 0, back.x)
+	for k in n:
+		var s = cargo[0]
+		if is_instance_valid(s):
+			s.dismount(position + back * (D["len"] * 0.5 + 1.0) + side * ((k % 3) - 1) * 1.3 - back * (k / 3) * 1.2)
+		else:
+			cargo.remove_at(0)
+	landing = false
+	say("İNDİR!")
+
+func _cargo_lost() -> void:
+	for s in cargo.duplicate():
+		if is_instance_valid(s) and s.alive:
+			s.dismount(position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)))
+			if randf() < 0.5:
+				s.die(null)
+			else:
+				s.take_damage(60.0, null, "blast")
+	cargo.clear()
 var rotor_blades: MeshInstance3D
 static var _disc_mat: ShaderMaterial
 
@@ -119,7 +179,10 @@ func setup(t: int, vt: String) -> void:
 		turret.add_child(gunner)
 		gunner.build(t, "rifle", G.map_kind == "winter")
 		gunner.weapon.visible = false
-	if vt == "heli":
+	if vt == "fpv":
+		hull.position.y = 2.2
+		Sfx.loop3d("drone", self, -6.0)
+	if vt in ["heli", "transport"]:
 		hull.position.y = ALT
 		rotor = Node3D.new()
 		rotor.position = M["rotor_pos"]
@@ -153,13 +216,14 @@ func setup(t: int, vt: String) -> void:
 	dest = position
 	_last_pos = position
 	think_t = randf() * 0.5
-	engine = Sfx.loop3d("heli" if vt == "heli" else ("engine_tank" if vt in ["tank", "apc"] else "engine_truck"), self, -8.0 if vt == "heli" else -10.0)
+	if vt != "fpv":
+		engine = Sfx.loop3d("heli" if vt in ["heli", "transport"] else ("engine_tank" if vt in ["tank", "apc", "ifv", "aa", "arty"] else "engine_truck"), self, -8.0 if vt in ["heli", "transport"] else -10.0)
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0, -cos(heading))
 
 func aim_point() -> Vector3:
-	if vtype == "heli":
+	if is_air():
 		return position + Vector3(0, hull.position.y + 0.6, 0)
 	return position + Vector3(0, 1.3 if vtype != "technical" else 1.0, 0)
 
@@ -179,7 +243,8 @@ func cmd_move(p: Vector3, force := false) -> void:
 	force_move = force
 	forced_target = null
 	dest = G.on_ground(p)
-	if vtype == "heli":
+	landing = false
+	if is_air():
 		path = PackedVector3Array([dest])
 	else:
 		path = G.grid.find_path(position, dest, nav_mode)
@@ -217,6 +282,14 @@ func _range() -> float:
 			return 46.0
 		"heli":
 			return 52.0
+		"ifv":
+			return 50.0
+		"aa":
+			return 72.0
+		"arty":
+			return 150.0
+		"transport":
+			return 30.0
 	return 0.0
 
 # ------------------------------------------------------------ döngü
@@ -233,7 +306,11 @@ func _process(dt: float) -> void:
 	if think_t <= 0.0:
 		think_t = 0.45 + randf() * 0.15
 		_scan()
-	if vtype == "heli":
+	atgm_cd -= dt
+	if vtype == "fpv":
+		_fpv(dt)
+		return
+	if vtype in ["heli", "transport"]:
 		_heli(dt)
 		return
 	_drive(dt)
@@ -370,6 +447,20 @@ func _scan() -> void:
 			continue
 		var d := dist2(e)
 		var sc := d
+		var air: bool = e is Vehicle and e.is_air()
+		if vtype == "aa":
+			if air:
+				sc -= 200.0
+			elif d > 46.0 or e is Building:
+				continue
+		elif air and not (vtype in ["apc", "ifv", "technical", "heli"]) :
+			continue
+		elif air:
+			sc += 15.0
+		if vtype == "arty":
+			if d < 30.0 or air:
+				continue
+			sc -= G.enemies_near(e.position, 8.0, team).size() * 6.0 + (25.0 if e is Building else 0.0)
 		if vtype == "tank":
 			if e is Vehicle:
 				sc -= 30.0 + (20.0 if e.vtype in ["tank", "apc"] else 0.0)
@@ -398,7 +489,7 @@ func _scan() -> void:
 		if n > 4:
 			break
 		var e: Unit = cc[1]
-		if G.grid.los(eye, e.aim_point(), D["len"] * 0.5, 0.5):
+		if vtype == "arty" or (e is Vehicle and e.is_air()) or G.grid.los(eye, e.aim_point(), D["len"] * 0.5, 0.5):
 			best = e
 			break
 	target = best
@@ -432,7 +523,60 @@ func _aim_fire(dt: float) -> void:
 				_fire_auto(t)
 			"technical":
 				_fire_hmg(t)
+			"ifv":
+				_fire_auto(t)
+				if atgm_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air():
+					atgm_cd = 14.0
+					var mp := muzzle_world() + Vector3(0, 0.4, 0)
+					G.bal.rocket(mp, t.aim_point(), team, self, t)
+					Sfx.play3d("rpg", mp, 2.0)
+			"aa":
+				_fire_flak(t)
+			"arty":
+				_fire_arty(t)
 	_coax(dt)
+
+func _fire_flak(t: Unit) -> void:
+	if burst <= 0:
+		burst = randi_range(6, 12)
+	burst -= 1
+	main_cd = 0.07 if burst > 0 else randf_range(0.6, 1.1)
+	var mp := muzzle_world()
+	var tp := t.aim_point()
+	var air: bool = t is Vehicle and t.is_air()
+	G.fx.muzzle(mp, (tp - mp).normalized(), true)
+	Sfx.play3d("autocannon", mp, -3.0, 0.1, 0.03)
+	recoil = 0.25
+	var c := 0.32 if air else 0.25
+	if t is Vehicle and t.vtype == "fpv":
+		c = 0.45
+	var impact := tp + Vector3(randf_range(-2, 2), randf_range(-1, 2), randf_range(-2, 2))
+	if randf() < c:
+		t.take_damage(26.0, self, "auto")
+		impact = tp
+	if air:
+		if randf() < 0.3:
+			G.fx.explosion(impact, 0.35, "flak")
+	else:
+		impact.y = 0.02
+		G.fx.impact(impact, "dirt")
+		for o in G.near(impact, 3.0):
+			if o is Soldier and o.team != team and o.alive:
+				o.add_suppression(12.0, position)
+	G.fx.tracer(mp, impact, 300.0, Color(1.0, 0.7, 0.3), 0.1)
+
+func _fire_arty(t: Unit) -> void:
+	main_cd = 9.0
+	var mp := muzzle_world()
+	var d := dist2(t)
+	var err := d * 0.05 + 2.0
+	var tp := t.position + Vector3(randf_range(-err, err), 0, randf_range(-err, err))
+	G.bal.artillery(mp, tp, team, self)
+	G.fx.cannon_blast(mp, (tp - mp).normalized())
+	Sfx.play3d("tank_fire", mp, 6.0)
+	recoil = 1.0
+	rock_v += 3.0
+	G.cam.shake(0.2, position)
 
 func _fire_cannon(t: Unit) -> void:
 	main_cd = 6.5
@@ -541,7 +685,12 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if not alive:
 		return
 	var m := 1.0
-	if vtype == "heli":
+	if vtype == "fpv":
+		hp -= amount
+		if hp <= 0.0:
+			destroy(null)
+		return
+	if is_air():
 		match k:
 			"bullet":
 				m = 0.12
@@ -594,7 +743,7 @@ func _heli(dt: float) -> void:
 	if L > 0.5:
 		want = d / L * speed_max * clampf(L / 18.0, 0.0, 1.0)
 	for o in G.near(position, 10.0):
-		if o != self and o is Vehicle and o.vtype == "heli" and o.alive:
+		if o != self and o is Vehicle and o.vtype in ["heli", "transport"] and o.alive:
 			var dv: Vector3 = position - o.position
 			dv.y = 0
 			if dv.length() > 0.1:
@@ -612,10 +761,18 @@ func _heli(dt: float) -> void:
 	heading = rotate_toward(heading, face, D["turn"] * dt)
 	if L < 1.5 and order == "move":
 		order = ""
+	var tgt_alt := ALT
+	if landing:
+		tgt_alt = 0.6
+		if L < 1.5 and hull.position.y < 0.9:
+			unload()
 	var local_v := hvel.rotated(Vector3.UP, -heading)
 	hull.rotation = Vector3(lerpf(hull.rotation.x, clampf(local_v.z * 0.025, -0.3, 0.3), dt * 3.0), heading, lerpf(hull.rotation.z, clampf(-local_v.x * 0.025, -0.3, 0.3), dt * 3.0))
 	_hb += dt
-	hull.position.y = ALT + sin(_hb * 1.3) * 0.25
+	if landing or hull.position.y < ALT - 0.4:
+		hull.position.y = move_toward(hull.position.y, tgt_alt, dt * 3.0)
+	else:
+		hull.position.y = ALT + sin(_hb * 1.3) * 0.25
 	rotor.rotation.y += dt * 28.0
 	if rotor_blades:
 		rotor_blades.visible = false
@@ -623,6 +780,15 @@ func _heli(dt: float) -> void:
 	if randf() < dt * 3.0:
 		G.fx.vehicle_dust(position + Vector3(randf_range(-4, 4), 0.2, randf_range(-4, 4)))
 	rocket_cd -= dt
+	if vtype == "transport":
+		if t != null and is_instance_valid(t) and t.alive and main_cd <= 0.0 and dist2(t) < 30.0 and not landing:
+			if burst <= 0:
+				burst = randi_range(5, 9)
+			burst -= 1
+			main_cd = 0.12 if burst > 0 else randf_range(1.0, 2.0)
+			_hitscan_from(hull.global_transform * Vector3(1.0, 0.2, -0.8), t, 16.0, 0.3, 9.0)
+			Sfx.play3d("mg", position, -2.0, 0.08, 0.03)
+		return
 	if t == null or not is_instance_valid(t) or not t.alive:
 		return
 	var ang := absf(angle_difference(heading, Soldier._yaw_of(t.position - position)))
@@ -650,6 +816,43 @@ func _heli(dt: float) -> void:
 		var gp := hull.global_transform * Vector3(0, -1.3, -4.6)
 		_hitscan_from(gp, t, 28.0, 0.38, 12.0)
 		Sfx.play3d("hmg", gp, 2.0, 0.08, 0.03)
+
+func _fpv(dt: float) -> void:
+	var t: Unit = forced_target
+	if t == null or not is_instance_valid(t) or not t.alive:
+		# yeni hedef: yakındaki düşman
+		t = null
+		var bd := 60.0
+		for e in G.enemies_near(position, 60.0, team):
+			if e.alive and not (e is Building) and not (e is Vehicle and e.is_air()) and dist2(e) < bd:
+				bd = dist2(e)
+				t = e
+		forced_target = t
+		if t == null:
+			hp -= dt * 2.0
+			if hp <= 0.0:
+				destroy(null)
+			return
+	var tp := t.aim_point()
+	var to := tp - (position + Vector3(0, hull.position.y, 0))
+	var flat := Vector3(to.x, 0, to.z)
+	var dist := flat.length()
+	var want := flat.normalized() * speed_max
+	hvel = hvel.move_toward(want, D["accel"] * dt)
+	position += hvel * dt
+	heading = Soldier._yaw_of(hvel) if hvel.length() > 0.5 else heading
+	hull.rotation = Vector3(-0.35, heading, sin(G.time * 9.0) * 0.08)
+	# alçal ve dal
+	var alt := clampf(dist * 0.25, tp.y, 9.0)
+	hull.position.y = move_toward(hull.position.y, alt, dt * 6.0)
+	cur_speed = hvel.length()
+	if dist < 14.0 and randf() < dt * 4.0:
+		for s in G.enemies_near(position, 10.0, team):
+			if s is Soldier:
+				s.on_drone(position)
+				break
+	if dist < 1.2 and absf(to.y) < 1.8:
+		destroy(t)
 
 func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> void:
 	shots += 1
@@ -715,7 +918,17 @@ func _heli_crash() -> void:
 func destroy(src) -> void:
 	if not alive:
 		return
-	if vtype == "heli":
+	if vtype == "fpv":
+		alive = false
+		var p := position + Vector3(0, hull.position.y, 0)
+		G.explode(p, 2.6, 150.0, "rpg", team, operator if operator != null and is_instance_valid(operator) else self)
+		for v in G.near(p, 3.0):
+			if v is Vehicle and v != self and v.alive and v.team != team:
+				v.take_damage(240.0, self, "rpg")
+		queue_free()
+		return
+	_cargo_lost()
+	if vtype in ["heli", "transport"]:
 		alive = false
 		wreck = true
 		G.credit_kill(src, self)

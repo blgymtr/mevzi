@@ -6,6 +6,7 @@ import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { buildTextures } from './textures.js';
 import { VEHICLES } from './vehicles.js';
 import { SOLDIERS } from './soldiers.js';
+import { VEHICLES2 } from './vehicles2.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
 const only = process.argv[2] ?? 'all';
@@ -17,7 +18,7 @@ if (only === 'all' || only === 'textures') {
   console.log(`dokular: ${((Date.now() - t0) / 1000).toFixed(1)} sn`);
 }
 if (only === 'all' || only === 'models') {
-  const all = { ...VEHICLES, ...SOLDIERS };
+  const all = { ...VEHICLES, ...VEHICLES2, ...SOLDIERS };
   for (const [name, fn] of Object.entries(all)) {
     const m = fn();
     const path = join(root, 'models', `${name}.glb`);

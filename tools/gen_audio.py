@@ -163,3 +163,16 @@ ph = (t * blade) % 1.0
 thump = np.exp(-ph * 18) * fft_filter(N(4.4), 40, 500) * 2.5
 whine = np.sin(2 * np.pi * 1450 * t) * 0.05 + np.sin(2 * np.pi * 2900 * t) * 0.02
 save('heli', loop_fade(thump + fft_filter(N(4.4), 60, 1200) * 0.4 + whine, 0.4), 0.7)
+
+# keskin nişancı, havan, düşen mermi ıslığı, drone vızıltısı
+save('sniper', crack(1.1, 110, 7000, 0.55))
+_mb = boom(1.2, 70, 1800, 0.18, 0.0)
+_mt = np.arange(len(_mb)) / SR
+save('mortar', _mb * 0.6 + fft_filter(rng.uniform(-1, 1, len(_mb)), 300, 3000) * np.exp(-_mt / 0.05))
+t = T(1.6)
+f = 1800 - 900 * (t / 1.6)
+save('incoming', np.sin(2 * np.pi * np.cumsum(f) / SR) * np.minimum(1, t / 0.2) * 0.5 + fft_filter(N(1.6), 1000, 5000) * 0.08)
+t = T(2.2)
+buzz = np.sin(2 * np.pi * 210 * t) + 0.6 * np.sin(2 * np.pi * 420 * t + 1) + 0.3 * np.sign(np.sin(2 * np.pi * 105 * t))
+buzz *= 1 + 0.2 * np.sin(2 * np.pi * 7 * t)
+save('drone', loop_fade(fft_filter(buzz, 80, 3000) + fft_filter(N(2.2), 500, 4000) * 0.3, 0.3), 0.55)

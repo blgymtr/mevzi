@@ -4,9 +4,9 @@ class_name Building extends Unit
 const BDEF := {
 	"hq": {"title": "Karargâh", "hp": 3200.0, "size": Vector2(17, 13), "cost": 0, "time": 1.0, "cap": 40, "sight": 46.0, "prod": ["rifle_squad", "medic_team"], "desc": "Ana üs. Kaybedilirse ve ileri üs kalmazsa savaş biter."},
 	"fob": {"title": "İleri Üs", "hp": 1800.0, "size": Vector2(10, 10), "cost": 300, "time": 40.0, "cap": 12, "sight": 40.0, "prod": ["rifle_squad", "medic_team"], "desc": "Birlik sınırını artırır, mühimmat verir, yol ve ikmal kamyonu getirir. Ele geçirilebilir."},
-	"barracks": {"title": "Kışla", "hp": 1200.0, "size": Vector2(9, 6), "cost": 250, "time": 30.0, "cap": 0, "sight": 30.0, "prod": ["rifle_squad", "mg_team", "at_squad", "medic_team"], "desc": "Tüm piyade timlerini eğitir."},
-	"factory": {"title": "Araç Fabrikası", "hp": 1600.0, "size": Vector2(12, 9), "cost": 400, "time": 45.0, "cap": 0, "sight": 30.0, "prod": ["technical", "apc", "tank"], "desc": "Teknik araç, ZPT ve tank üretir."},
-	"helipad": {"title": "Helikopter Pisti", "hp": 900.0, "size": Vector2(11, 11), "cost": 450, "time": 40.0, "cap": 0, "sight": 32.0, "prod": ["heli"], "desc": "Saldırı helikopteri üretir."},
+	"barracks": {"title": "Kışla", "hp": 1200.0, "size": Vector2(9, 6), "cost": 250, "time": 30.0, "cap": 0, "sight": 30.0, "prod": ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"], "desc": "Tüm piyade timlerini eğitir."},
+	"factory": {"title": "Araç Fabrikası", "hp": 1600.0, "size": Vector2(12, 9), "cost": 400, "time": 45.0, "cap": 0, "sight": 30.0, "prod": ["technical", "apc", "ifv", "aa", "tank", "arty"], "desc": "Teknik araç, ZPT ve tank üretir."},
+	"helipad": {"title": "Helikopter Pisti", "hp": 900.0, "size": Vector2(11, 11), "cost": 450, "time": 40.0, "cap": 0, "sight": 32.0, "prod": ["heli", "transport"], "desc": "Saldırı helikopteri üretir."},
 	"hospital": {"title": "Sahra Hastanesi", "hp": 700.0, "size": Vector2(7, 6), "cost": 180, "time": 22.0, "cap": 0, "sight": 28.0, "prod": [], "desc": "Sedyeciler 45 m içindeki yaralıları toplar; yakındakiler iyileşir."},
 	"mgnest": {"title": "MG Yuvası", "hp": 600.0, "size": Vector2(4, 4), "cost": 120, "time": 18.0, "cap": 0, "sight": 46.0, "prod": [], "desc": "Kum torbalı sabit makineli tüfek."},
 	"tower": {"title": "Gözetleme Kulesi", "hp": 400.0, "size": Vector2(3, 3), "cost": 90, "time": 15.0, "cap": 0, "sight": 85.0, "prod": [], "desc": "Geniş görüş alanı."},
@@ -22,6 +22,14 @@ const PDEF := {
 	"mg_team": {"title": "Makineli Tim", "cost": 150, "time": 12.0, "cap": 3, "units": ["mg", "mg", "rifle"], "icon": "mg"},
 	"at_squad": {"title": "Tanksavar Timi", "cost": 220, "time": 16.0, "cap": 4, "units": ["at", "at", "at", "rifle"], "icon": "at"},
 	"medic_team": {"title": "Sıhhiye Timi", "cost": 90, "time": 9.0, "cap": 2, "units": ["medic", "medic"], "icon": "medic"},
+	"sniper_team": {"title": "Keskin Nişancı", "cost": 200, "time": 14.0, "cap": 2, "units": ["sniper", "sniper"], "icon": "inf"},
+	"engineer_squad": {"title": "İstihkâm Timi", "cost": 160, "time": 12.0, "cap": 4, "units": ["engineer", "engineer", "engineer", "engineer"], "icon": "inf"},
+	"mortar_team": {"title": "Havan Timi", "cost": 210, "time": 15.0, "cap": 3, "units": ["mortar", "mortar", "rifle"], "icon": "inf"},
+	"drone_team": {"title": "Drone Ekibi", "cost": 190, "time": 14.0, "cap": 2, "units": ["drone", "drone"], "icon": "inf"},
+	"ifv": {"title": "Piyade Savaş Aracı", "cost": 480, "time": 24.0, "cap": 3, "vehicle": "ifv", "icon": "apc"},
+	"aa": {"title": "Uçaksavar", "cost": 420, "time": 22.0, "cap": 3, "vehicle": "aa", "icon": "aa"},
+	"arty": {"title": "Obüs", "cost": 600, "time": 30.0, "cap": 4, "vehicle": "arty", "icon": "arty"},
+	"transport": {"title": "Nakliye Helikopteri", "cost": 520, "time": 28.0, "cap": 3, "vehicle": "transport", "icon": "heli"},
 	"technical": {"title": "Teknik Araç", "cost": 160, "time": 14.0, "cap": 2, "vehicle": "technical", "icon": "tech"},
 	"apc": {"title": "ZPT", "cost": 380, "time": 22.0, "cap": 3, "vehicle": "apc", "icon": "apc"},
 	"tank": {"title": "Tank", "cost": 650, "time": 30.0, "cap": 4, "vehicle": "tank", "icon": "tank"},
@@ -502,7 +510,7 @@ func _spawn(id: String) -> void:
 	var door := position + Vector3(0, 0, size.y * 0.5 + 2.0).rotated(Vector3.UP, rot)
 	door = G.grid.nearest_free(door, Grid.M_INF)
 	if P.has("vehicle"):
-		var sp := position if P["vehicle"] == "heli" else G.grid.nearest_free(door + Vector3(0, 0, 2).rotated(Vector3.UP, rot), Grid.M_HEAVY)
+		var sp := position if P["vehicle"] in ["heli", "transport"] else G.grid.nearest_free(door + Vector3(0, 0, 2).rotated(Vector3.UP, rot), Grid.M_HEAVY)
 		var v: Vehicle = G.main.spawn_vehicle(team, P["vehicle"], sp, rot + PI)
 		v.cmd_move(rally)
 		if team == G.player_team and not G.spectate:

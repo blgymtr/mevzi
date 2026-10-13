@@ -5,6 +5,10 @@ const WPN := {
 	"rifle": {"range": 34.0, "dmg": 24.0, "rof": 0.13, "b0": 2, "b1": 4, "p0": 0.45, "p1": 1.2, "mag": 30, "ammo": 270, "acc": 0.5, "sup": 6.0, "snd": "rifle", "tr": 3, "reload": 2.2},
 	"mg": {"range": 44.0, "dmg": 20.0, "rof": 0.085, "b0": 6, "b1": 14, "p0": 0.6, "p1": 1.4, "mag": 100, "ammo": 600, "acc": 0.36, "sup": 11.0, "snd": "mg", "tr": 2, "reload": 4.5},
 	"at": {"range": 28.0, "dmg": 18.0, "rof": 0.28, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.6, "mag": 20, "ammo": 120, "acc": 0.4, "sup": 5.0, "snd": "pistol", "tr": 4, "reload": 2.0},
+	"sniper": {"range": 72.0, "dmg": 110.0, "rof": 0.1, "b0": 1, "b1": 1, "p0": 3.2, "p1": 4.6, "mag": 5, "ammo": 60, "acc": 0.85, "sup": 16.0, "snd": "sniper", "tr": 1, "reload": 3.0},
+	"engineer": {"range": 24.0, "dmg": 15.0, "rof": 0.08, "b0": 3, "b1": 6, "p0": 0.5, "p1": 1.1, "mag": 30, "ammo": 240, "acc": 0.42, "sup": 5.0, "snd": "rifle", "tr": 3, "reload": 2.0},
+	"mortar": {"range": 24.0, "dmg": 18.0, "rof": 0.2, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.5, "mag": 15, "ammo": 60, "acc": 0.35, "sup": 4.0, "snd": "pistol", "tr": 4, "reload": 2.0},
+	"drone": {"range": 24.0, "dmg": 18.0, "rof": 0.2, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.5, "mag": 15, "ammo": 60, "acc": 0.35, "sup": 4.0, "snd": "pistol", "tr": 4, "reload": 2.0},
 	"medic": {"range": 28.0, "dmg": 20.0, "rof": 0.2, "b0": 1, "b1": 3, "p0": 0.7, "p1": 1.4, "mag": 30, "ammo": 150, "acc": 0.4, "sup": 5.0, "snd": "rifle", "tr": 4, "reload": 2.2},
 }
 const STAND := 0
@@ -95,9 +99,16 @@ func display_name() -> String:
 	return "%s %s" % [RANK_S[rank], sname.get_slice(" ", 1)]
 
 func role_title() -> String:
-	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE"}.get(role, "ER")
+	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE", "sniper": "KESKİN NİŞANCI", "engineer": "İSTİHKÂMCI", "mortar": "HAVANCI", "drone": "DRONE OPERATÖRÜ"}.get(role, "ER")
 
 var accuracy_bonus := 0.0
+var mortar_rounds := 0
+var mortar_cd := 0.0
+var drone_cd := 6.0
+var my_drone = null
+var repair_target: Unit = null
+var vehicle_in: Vehicle = null
+var board_target: Vehicle = null
 
 func setup(t: int, rl: String) -> void:
 	team = t
@@ -109,12 +120,16 @@ func setup(t: int, rl: String) -> void:
 	max_hp = 100.0
 	hp = 100.0
 	icon = "inf"
-	title = {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "medic": "Sıhhiye"}[rl]
+	title = {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "medic": "Sıhhiye", "sniper": "Keskin Nişancı", "engineer": "İstihkâmcı", "mortar": "Havancı", "drone": "Drone Operatörü"}[rl]
+	if rl == "sniper":
+		sight = 78.0
+	elif rl == "mortar":
+		mortar_rounds = 24
 	var W: Dictionary = WPN[rl]
 	ammo = W["ammo"]
 	mag = W["mag"]
 	rockets = 4 if rl == "at" else 0
-	grenades = 2 if rl != "medic" else 0
+	grenades = 2 if not (rl in ["medic", "sniper", "drone"]) else 0
 	smoke_nades = 1 if rl in ["rifle", "medic"] else 0
 	if team == 1:
 		sname = "%s %s" % [NAMES_RA[randi() % NAMES_RA.size()], NAMES_RB[randi() % NAMES_RB.size()]]
@@ -131,7 +146,7 @@ func weapon() -> Dictionary:
 	return WPN[role]
 
 func can_fight() -> bool:
-	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "dive"])
+	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "dive", "aboard"])
 
 func incapacitated() -> bool:
 	return state in ["wounded", "dragged", "healing"]
@@ -192,6 +207,41 @@ func cmd_stop() -> void:
 	path = PackedVector3Array()
 	state = "idle"
 
+func cmd_board(v: Vehicle) -> void:
+	if not alive or incapacitated() or vehicle_in != null:
+		return
+	_release_patient()
+	build_site = null
+	board_target = v
+	order = "board"
+	_set_path(v.position)
+	state = "move"
+
+func board(v: Vehicle) -> void:
+	vehicle_in = v
+	board_target = null
+	order = ""
+	state = "aboard"
+	target = null
+	path = PackedVector3Array()
+	vel = Vector3.ZERO
+	cover_type = 0
+	popped = false
+	v.cargo.append(self)
+	visible = v.riders_visible()
+	if selected and G.player and not v.riders_visible():
+		G.player.deselect(self)
+
+func dismount(p: Vector3) -> void:
+	if vehicle_in:
+		vehicle_in.cargo.erase(self)
+	vehicle_in = null
+	position = G.grid.nearest_free(G.on_ground(p), Grid.M_INF)
+	state = "idle"
+	stance = CROUCH
+	dest = position
+	visible = true
+
 func cmd_build(site: Node3D) -> void:
 	if not alive or incapacitated():
 		return
@@ -225,6 +275,9 @@ func _process(dt: float) -> void:
 		if dead_t > 3.0 and state != "fly":
 			set_process(false)
 		return
+	if state == "aboard":
+		_aboard(dt)
+		return
 	_timers(dt)
 	think_t -= dt
 	if think_t <= 0.0:
@@ -237,9 +290,22 @@ func _process(dt: float) -> void:
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
 	body.position = Vector3(lean_cur.x, 0, lean_cur.z).rotated(Vector3.UP, -rotation.y)
 
+func _aboard(dt: float) -> void:
+	var v := vehicle_in
+	if v == null or not is_instance_valid(v) or not v.alive:
+		dismount(position)
+		return
+	var seat: Vector3 = v.seat_pos(self)
+	position = seat
+	rotation.y = v.heading + PI * (0.5 if v.cargo.find(self) % 2 == 0 else -0.5)
+	body.animate(dt, "crouch", 0.0)
+	body.position = Vector3.ZERO
+
 func _timers(dt: float) -> void:
 	fire_cd -= dt
 	gren_cd -= dt
+	mortar_cd -= dt
+	drone_cd -= dt
 	cover_cd -= dt
 	popup_t -= dt
 	if G.time - sup_t > 1.2:
@@ -262,13 +328,15 @@ func _timers(dt: float) -> void:
 
 func _resupply() -> void:
 	var W := weapon()
-	if ammo >= W["ammo"] and (role != "at" or rockets >= 4) and grenades >= 2:
+	if ammo >= W["ammo"] and (role != "at" or rockets >= 4) and grenades >= 2 and (role != "mortar" or mortar_rounds >= 24):
 		return
 	for u in G.near(position, 16.0):
 		if u is Building and u.team == team and u.done and u.is_base():
 			ammo = mini(W["ammo"], ammo + 50)
 			if role == "at":
 				rockets = mini(4, rockets + 1)
+			if role == "mortar":
+				mortar_rounds = mini(24, mortar_rounds + 4)
 			if role != "medic":
 				grenades = mini(2, grenades + 1)
 			return
@@ -281,7 +349,7 @@ func _resupply() -> void:
 # ------------------------------------------------------------ karar
 func _think() -> void:
 	match state:
-		"fly", "dive", "dragged", "healing", "surrender":
+		"fly", "dive", "dragged", "healing", "surrender", "aboard":
 			return
 		"wounded":
 			_think_wounded()
@@ -304,6 +372,21 @@ func _think() -> void:
 				state = "idle"
 				order = ""
 		"move":
+			if order == "board" and board_target != null:
+				if not is_instance_valid(board_target) or not board_target.alive:
+					board_target = null
+					order = ""
+				elif dist2(board_target) < board_target.radius + 2.0:
+					if board_target.can_load():
+						board(board_target)
+						return
+					else:
+						say("ARAÇ DOLU!")
+						board_target = null
+						order = ""
+				elif path_i >= path.size() or randf() < 0.2:
+					_set_path(board_target.position)
+				return
 			if path_i >= path.size():
 				_arrive()
 			elif not force_move and suppression > 80 and randf() < 0.3:
@@ -311,6 +394,7 @@ func _think() -> void:
 				stance = PRONE
 		"idle":
 			_think_idle()
+			_think_role()
 	_stance()
 
 func _arrive() -> void:
@@ -361,6 +445,70 @@ func _think_idle() -> void:
 			state = "move"
 			return
 	_think_grenade()
+
+func _think_role() -> void:
+	match role:
+		"engineer":
+			_think_repair()
+		"drone":
+			_think_drone()
+
+func _think_repair() -> void:
+	if state != "idle" or G.time - threat_time < 4.0:
+		repair_target = null
+		return
+	if repair_target == null or not is_instance_valid(repair_target) or not repair_target.alive or repair_target.hp >= repair_target.max_hp:
+		repair_target = null
+		var best := 20.0
+		for u in G.friends_near(position, 20.0, team):
+			if (u is Vehicle and u.vtype != "fpv" and (u.hp < u.max_hp or u.tracks_broken > 0.0)) or (u is Building and u.done and u.hp < u.max_hp):
+				var d := dist2(u)
+				if d < best:
+					best = d
+					repair_target = u
+	if repair_target == null:
+		return
+	var rr: float = repair_target.radius + 1.2
+	if dist2(repair_target) > rr + 0.8:
+		if path_i >= path.size():
+			_set_path(repair_target.position + (position - repair_target.position).normalized() * rr)
+		state = "move"
+		return
+	repair_target.hp = minf(repair_target.max_hp, repair_target.hp + 40.0 * 0.32)
+	if repair_target is Vehicle and repair_target.tracks_broken > 0.0:
+		repair_target.tracks_broken = maxf(0.0, repair_target.tracks_broken - 3.0)
+	_face_to(repair_target.position)
+	state_t = 0.0
+	if randf() < 0.3:
+		Sfx.play3d("hammer", position, -10.0, 0.15, 0.2)
+
+func _think_drone() -> void:
+	if my_drone != null and is_instance_valid(my_drone) and my_drone.alive:
+		return
+	my_drone = null
+	if drone_cd > 0.0:
+		return
+	var best: Unit = null
+	var bs := 1e9
+	for e in G.enemies_near(position, 85.0, team):
+		if not e.alive or not G.is_seen(e, team) or e is Building:
+			continue
+		if e is Vehicle and e.is_air():
+			continue
+		var sc := dist2(e) - (40.0 if e is Vehicle else 0.0)
+		if e is Soldier and e.incapacitated():
+			continue
+		if sc < bs:
+			bs = sc
+			best = e
+	if best == null:
+		return
+	drone_cd = 24.0
+	var dr: Vehicle = G.main.spawn_vehicle(team, "fpv", position + Vector3(0, 0, 0), rotation.y)
+	dr.forced_target = best
+	dr.operator = self
+	my_drone = dr
+	say("DRONE HAVADA!")
 
 func _think_grenade() -> void:
 	if grenades <= 0 or gren_cd > 0.0 or state != "idle" or suppression > 75:
@@ -430,6 +578,10 @@ func _scan() -> void:
 				continue
 			if role == "at" and rockets > 0:
 				sc -= 40.0
+			elif e.vtype == "fpv":
+				sc -= 30.0 if d < 30.0 else 0.0
+			elif role == "sniper":
+				sc += 1000.0
 			else:
 				sc += 12.0
 		elif e is Building:
@@ -487,6 +639,8 @@ func _stance() -> void:
 		stance = PRONE if suppression > 40 else CROUCH
 	else:
 		stance = STAND
+	if role == "sniper" and cover_type == 0 and not G.grid.in_trench(position):
+		stance = PRONE
 	if suppression > 80 and cover_type != 1:
 		stance = PRONE
 
@@ -642,6 +796,8 @@ func _combat(_dt: float) -> void:
 	if not can_fight() or state in ["throw", "drag", "heal", "build", "dazed", "rescue"]:
 		popped = false
 		return
+	if role == "mortar" and state == "idle":
+		_mortar_fire()
 	if reload_t > 0.0:
 		popped = false if cover_type == 1 else popped
 		return
@@ -654,6 +810,8 @@ func _combat(_dt: float) -> void:
 			_area_fire()
 		return
 	if state == "move" and (force_move or stance == PRONE):
+		return
+	if role == "mortar":
 		return
 	# tanksavar roket
 	if role == "at" and rockets > 0 and (t is Vehicle or t is Building):
@@ -709,6 +867,40 @@ func _combat(_dt: float) -> void:
 	if ammo < 40:
 		rof *= 4.0
 	fire_cd = rof if burst_left > 0 else randf_range(W["p0"], W["p1"]) * (0.7 if covering else 1.0)
+
+func _mortar_fire() -> void:
+	if mortar_cd > 0.0 or mortar_rounds <= 0:
+		return
+	var best: Unit = null
+	var bs := 1e9
+	for e in G.enemies_near(position, 85.0, team):
+		if not e.alive or not G.is_seen(e, team) or (e is Vehicle and e.is_air()):
+			continue
+		var d := dist2(e)
+		if d < 16.0:
+			continue
+		var sc := d
+		if e is Soldier:
+			if e.incapacitated():
+				continue
+			# kalabalık hedefleri tercih et
+			sc -= G.enemies_near(e.position, 6.0, team).size() * 8.0
+		if sc < bs:
+			bs = sc
+			best = e
+	if best == null:
+		return
+	mortar_cd = randf_range(4.0, 5.5)
+	mortar_rounds -= 1
+	var d2 := dist2(best)
+	var err := d2 * 0.06 + 1.5
+	var tp := best.position + Vector3(randf_range(-err, err), 0, randf_range(-err, err))
+	G.bal.mortar(position + Vector3(0, 1.0, 0), tp, team, self)
+	_face_to(best.position)
+	Sfx.play3d("mortar", position, 0.0)
+	G.fx.muzzle(position + Vector3(0, 1.2, 0), Vector3.UP, true)
+	if randf() < 0.2:
+		say("ATEŞ! HAVAN!")
 
 func _shoot(t: Unit) -> void:
 	var W := weapon()
@@ -1039,6 +1231,20 @@ func _release_patient() -> void:
 			patient.state = "wounded"
 	patient = null
 
+func on_drone(p: Vector3) -> void:
+	if not can_fight() or state in ["throw", "drag", "heal", "dive", "aboard"]:
+		return
+	if randf() < 0.55:
+		var away := position - p
+		away.y = 0
+		away = away.normalized() if away.length() > 0.05 else Vector3(1, 0, 0)
+		state = "dive"
+		state_t = 0.0
+		fly_vel = away * 5.0
+		stance = PRONE
+		face_yaw = _yaw_of(away)
+		say("DRONE!")
+
 func on_grenade(g_pos: Vector3, fuse_left: float, thrower: Unit) -> bool:
 	# true: geri attı (bomba yok edilir)
 	if not can_fight() or state in ["throw", "drag", "heal"]:
@@ -1064,6 +1270,8 @@ func on_grenade(g_pos: Vector3, fuse_left: float, thrower: Unit) -> bool:
 	return false
 
 func _pose() -> String:
+	if role == "mortar" and state == "idle" and mortar_cd > 2.5:
+		return "crouch_aim"
 	match state:
 		"dead":
 			return "dead"
@@ -1100,7 +1308,7 @@ func _physics_process(dt: float) -> void:
 		_process_drag_heal(dt)
 	if alive and state == "build" and build_site != null and is_instance_valid(build_site):
 		if dist2(build_site) < build_site.radius + 2.5:
-			build_site.add_work(dt * (1.0 if role != "medic" else 0.7))
+			build_site.add_work(dt * (2.0 if role == "engineer" else (0.7 if role == "medic" else 1.0)))
 		else:
 			_set_path(build_site.position + (position - build_site.position).normalized() * (build_site.radius + 0.8))
 			state = "move"

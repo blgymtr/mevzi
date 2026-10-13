@@ -252,11 +252,11 @@ func _tab_items() -> Array:
 		"def":
 			return ["sandbags", "concrete", "trench", "wire", "trap", "mgnest", "tower"]
 		"inf":
-			return ["rifle_squad", "mg_team", "at_squad", "medic_team"]
+			return ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"]
 		"armor":
-			return ["technical", "apc", "tank"]
+			return ["technical", "apc", "ifv", "aa", "tank", "arty"]
 		"air":
-			return ["heli"]
+			return ["heli", "transport"]
 	return []
 
 func _producer(id: String) -> Building:
@@ -479,6 +479,8 @@ func _rebuild_card() -> void:
 		card_v.remove_meta("live")
 	if card_v.has_meta("status"):
 		card_v.remove_meta("status")
+	if card_v.has_meta("cargo"):
+		card_v.remove_meta("cargo")
 	var sel: Array = G.player.selected
 	card_box.visible = not sel.is_empty()
 	card_box.offset_top = -190
@@ -503,9 +505,22 @@ func _rebuild_card() -> void:
 		card_v.set_meta("live", _label(card_v, "", 14, TXT, font_m))
 		return
 	if sel.size() == 1 and u is Vehicle:
-		_label(card_v, "ZIRHLI BİRLİK", 13, DIM, font_m)
+		_label(card_v, "HAVA UNSURU" if u.is_air() else "ZIRHLI BİRLİK", 13, DIM, font_m)
 		_label(card_v, u.title.to_upper(), 30, TXT, font_b)
 		card_v.set_meta("live", _label(card_v, "", 15, TXT, font_m))
+		if u.capacity() > 0 and u.team == G.player_team:
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 8)
+			card_v.add_child(row)
+			var cl := _label(row, "", 15, AMBER, font_b)
+			cl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			card_v.set_meta("cargo", cl)
+			var b := Button.new()
+			b.text = "İNDİR  [U]"
+			b.add_theme_font_override("font", font_b)
+			b.add_theme_font_size_override("font_size", 15)
+			b.pressed.connect(func(): G.player.unload_selected())
+			row.add_child(b)
 		return
 	if sel.size() == 1 and u is Building:
 		_label(card_v, "YAPI", 13, DIM, font_m)
@@ -575,6 +590,11 @@ func _update_card_live() -> void:
 		live.text = "%d YARALANMA   ·   %s   ·   %s   ·   MERMİ %d" % [u.downs, stt, tm, u.ammo]
 	elif u is Vehicle:
 		live.text = "ZIRH %d / %d%s" % [int(u.hp), int(u.max_hp), "   ·   PALET KOPUK" if u.tracks_broken > 0 else ""]
+		if card_v.has_meta("cargo"):
+			var cl = card_v.get_meta("cargo")
+			if is_instance_valid(cl):
+				var full: bool = u.cargo.size() >= u.capacity()
+				cl.text = ("DOLU  ·  " if full else "") + "YOLCU %d / %d" % [u.cargo.size(), u.capacity()]
 	elif u is Building:
 		var q := ""
 		if not u.queue.is_empty():

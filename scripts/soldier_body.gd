@@ -75,7 +75,7 @@ func _mi(parent: Node3D, m: Mesh) -> MeshInstance3D:
 
 static func _art_meshes(team: int, rl: String) -> Dictionary:
 	var model := "soldier_blue" if team == 0 else "soldier_red"
-	var wpn := {"mg": "mg", "at": "rpg"}.get(rl, "rifle")
+	var wpn: String = {"mg": "mg", "at": "rpg", "sniper": "sniper", "engineer": "smg", "mortar": "mortar", "drone": "tablet"}.get(rl, "rifle")
 	var M := {
 		"torso": Art.skinned(model, "torso", team), "head": null,
 		"upper": Art.skinned(model, "arm", team), "fore": Art.skinned(model, "fore", team),
@@ -86,6 +86,14 @@ static func _art_meshes(team: int, rl: String) -> Dictionary:
 		M["extra"] = Art.skinned(model, "x_medic", team)
 	elif rl == "at":
 		M["extra"] = Art.skinned(model, "x_at", team)
+	elif rl == "engineer":
+		M["extra"] = Art.skinned(model, "x_eng", team)
+	elif rl == "sniper":
+		M["extra"] = Art.skinned(model, "x_sniper", team)
+	elif rl == "mortar":
+		M["extra"] = Art.skinned(model, "x_mortar", team)
+	elif rl == "drone":
+		M["extra"] = Art.skinned(model, "x_radio", team)
 	return M
 
 static func _make_meshes(team: int, rl: String, winter: bool) -> Dictionary:

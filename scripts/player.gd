@@ -99,6 +99,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				for u in selected:
 					if is_instance_valid(u):
 						u.cmd_stop()
+			KEY_U:
+				unload_selected()
 			KEY_H:
 				for u in G.units:
 					if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
@@ -177,9 +179,11 @@ func _finish_box(add: bool, ctrl: bool) -> void:
 	for u in G.units:
 		if not is_instance_valid(u) or not u.alive or u.team != team or u is Building:
 			continue
-		if u is Vehicle and u.vtype == "truck":
+		if u is Vehicle and u.vtype in ["truck", "fpv"]:
 			continue
-		if r.has_point(G.cam.screen(u.position + Vector3(0, 0.6, 0))):
+		if u is Soldier and u.state == "aboard" and not u.visible:
+			continue
+		if r.has_point(G.cam.screen((u.aim_point() if u is Vehicle else u.position + Vector3(0, 0.6, 0)))):
 			select(u)
 			got_mobile = true
 	if not got_mobile:
@@ -188,6 +192,11 @@ func _finish_box(add: bool, ctrl: bool) -> void:
 				select(u)
 	if not selected.is_empty():
 		Sfx.play2d("ui_select", -8.0)
+
+func unload_selected() -> void:
+	for u in selected:
+		if is_instance_valid(u) and u is Vehicle and not u.cargo.is_empty():
+			u.unload()
 
 func _select_same(u: Unit) -> void:
 	for o in G.units:
@@ -225,6 +234,14 @@ func _command(sp: Vector2, force: bool, _queue: bool) -> void:
 		Sfx.play2d("ui_attack", -8.0)
 		_voice(mobile, ["Saldırıyoruz!", "Hedef alındı!", "Ateş!"])
 		return
+	if tu != null and tu is Vehicle and tu.team == team and tu.capacity() > 0:
+		var inf := mobile.filter(func(u): return u is Soldier and u.can_fight())
+		if not inf.is_empty():
+			for u in inf:
+				u.cmd_board(tu)
+			markers.append([tu.position, G.time, Color(0.4, 0.8, 1.0)])
+			_voice(inf, ["Biniyoruz!", "Araca!"])
+			return
 	if tu != null and tu is Building and tu.team == team and not tu.done:
 		for u in mobile:
 			if u is Soldier:

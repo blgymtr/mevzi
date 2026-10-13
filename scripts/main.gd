@@ -362,6 +362,29 @@ func _run_shots() -> void:
 	G.player.select(G.units[0])
 	await _wait(0.5)
 	await _shot(kind + "_09_hud")
+	G.player.clear_sel()
+	for u in G.units:
+		if u is Soldier and u.team == 0 and u.alive:
+			u.add_xp(20)
+			G.player.select(u)
+			break
+	G.hud.set_tab("inf")
+	G.cam.jump_to(G.player.selected[0].position if not G.player.selected.is_empty() else G.hq_pos[0], true)
+	G.cam.size = 20.0
+	G.cam.target_size = 20.0
+	await _wait(0.8)
+	await _shot(kind + "_10_soldier")
+	G.player.clear_sel()
+	var sq: Squad = null
+	for u in G.units:
+		if u is Soldier and u.team == 0 and u.alive and u.squad:
+			sq = u.squad
+			break
+	if sq:
+		G.player.select_squad_of(sq.alive_members()[0])
+	G.hud.set_tab("armor")
+	await _wait(0.8)
+	await _shot(kind + "_11_squad")
 	print("SHOTS DONE units=%d fps=%d" % [G.units.size(), Engine.get_frames_per_second()])
 	get_tree().quit()
 
@@ -381,6 +404,28 @@ func _skirmish(c: Vector3) -> void:
 		v.cmd_move(c + off * 0.5)
 		var v2 := spawn_vehicle(t, "technical", G.grid.nearest_free(c + off * 1.5 + Vector3(8, 0, -8), Grid.M_LIGHT), Soldier._yaw_of(toward))
 		v2.cmd_move(c + off * 0.6 + Vector3(6, 0, -6))
+	# yeni sınıflar
+	for t in 2:
+		var off2 := Vector3(-1, 0, -1).normalized() * (34.0 if t == 1 else -34.0)
+		var sq2 := Squad.new(t, "Destek")
+		G.squads.append(sq2)
+		for i in 6:
+			var rl: String = ["mortar", "mortar", "sniper", "drone", "drone", "engineer"][i]
+			var sp := spawn_soldier(t, rl, G.grid.nearest_free(c + off2 + Vector3(i * 1.5 - 4, 0, 6), Grid.M_INF), sq2)
+			sp.rotation.y = Soldier._yaw_of(-off2)
+		var aa := spawn_vehicle(t, "aa", G.grid.nearest_free(c + off2 * 1.2 + Vector3(-8, 0, 8), Grid.M_HEAVY), Soldier._yaw_of(-off2))
+		aa.cmd_move(c + off2 * 0.9 + Vector3(-8, 0, 8))
+		var ar := spawn_vehicle(t, "arty", G.grid.nearest_free(c + off2 * 1.8, Grid.M_HEAVY), Soldier._yaw_of(-off2))
+		var ifv := spawn_vehicle(t, "ifv", G.grid.nearest_free(c + off2 * 1.3 + Vector3(8, 0, 0), Grid.M_HEAVY), Soldier._yaw_of(-off2))
+		ifv.cmd_move(c + off2 * 0.4 + Vector3(8, 0, 0))
+	var tr := spawn_vehicle(0, "transport", c + Vector3(-40, 0, -40), Soldier._yaw_of(Vector3(1, 0, 1)))
+	var sqt := Squad.new(0, "İndirme")
+	G.squads.append(sqt)
+	for i in 6:
+		var ps := spawn_soldier(0, "rifle", tr.position, sqt)
+		ps.board(tr)
+	tr.cmd_move(c + Vector3(-14, 0, -18))
+	tr.landing = true
 	var h := spawn_vehicle(0, "heli", c + Vector3(30, 0, 30), Soldier._yaw_of(Vector3(-1, 0, -1)))
 	h.cmd_move(c + Vector3(8, 0, 8))
 	G.explode(c + Vector3(3, 0, 5), 4.0, 100.0, "shell", -1, null)

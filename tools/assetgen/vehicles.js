@@ -20,7 +20,7 @@ function wheelNode(m, i, x, y, z, r, w) {
 }
 
 // paletli yürüyen aksam: palet, yol tekerleri, ön çark, gergi
-function tracks(m, L, x, y0, wheels, r, opt = {}) {
+export function tracks(m, L, x, y0, wheels, r, opt = {}) {
   for (const s of [-1, 1]) {
     const X = s * x;
     m.box('track', 0.66, 0.1, L, V(X, y0 - r + 0.05, 0), { uvScale: 1.0 });

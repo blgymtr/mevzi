@@ -133,10 +133,10 @@ func _production() -> void:
 		match b.btype:
 			"factory":
 				var r := randf()
-				pick = "tank" if (r < 0.35 and t > 200.0) else ("apc" if r < 0.65 else "technical")
+				pick = "tank" if (r < 0.3 and t > 200.0) else ("ifv" if r < 0.45 else ("apc" if r < 0.6 else ("aa" if r < 0.7 else ("arty" if r < 0.78 and t > 300.0 else "technical"))))
 			"barracks":
 				var r2 := randf()
-				pick = "at_squad" if r2 < 0.3 else ("mg_team" if r2 < 0.45 else ("medic_team" if r2 < 0.55 else "rifle_squad"))
+				pick = "at_squad" if r2 < 0.22 else ("mg_team" if r2 < 0.34 else ("medic_team" if r2 < 0.42 else ("sniper_team" if r2 < 0.5 else ("mortar_team" if r2 < 0.58 else ("drone_team" if r2 < 0.66 else ("engineer_squad" if r2 < 0.72 else "rifle_squad"))))))
 			_:
 				pick = "rifle_squad" if randf() < 0.8 else "medic_team"
 		if not opts.has(pick):

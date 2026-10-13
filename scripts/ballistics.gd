@@ -71,6 +71,51 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target) -> void:
 	p.node.position = from
 	projs.append(p)
 
+func mortar(from: Vector3, to: Vector3, team: int, src) -> void:
+	_lob(from, to, team, src, "mortar", 2.2 + from.distance_to(to) * 0.02)
+
+func artillery(from: Vector3, to: Vector3, team: int, src) -> void:
+	_lob(from, to, team, src, "arty", 2.5 + from.distance_to(to) * 0.025)
+
+func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float) -> void:
+	var p := Proj.new()
+	p.kind = kind
+	p.pos = from
+	var g := Vector3(0, -9.8, 0)
+	p.vel = (to - from - 0.5 * g * T * T) / T
+	p.team = team
+	p.src = src
+	p.life = T + 0.5
+	p.aim = to
+	p.node = _node(_gmesh)
+	p.node.scale = Vector3(1.6, 2.2, 1.6)
+	p.node.position = from
+	projs.append(p)
+
+func _step_lob(p: Proj, dt: float) -> bool:
+	p.t += dt
+	p.vel.y -= 9.8 * dt
+	var np := p.pos + p.vel * dt
+	p.trail -= dt
+	if p.trail <= 0.0:
+		p.trail = 0.05
+		G.fx.emit(Fx.P_SMOKE, p.pos, Vector3.ZERO, 0.6, 0.15, 0.4, 0.0, 1.0, Color(0.8, 0.8, 0.78, 0.35))
+	# düşüş ıslığı
+	if p.vel.y < 0.0 and not p.landed and np.y < 18.0:
+		p.landed = true
+		Sfx.play3d("incoming", p.aim, -2.0, 0.1, 0.1)
+	var hit := np.y <= 0.0 or (np.y < 6.0 and G.grid.height_at(np) > np.y)
+	p.pos = np
+	p.node.position = np
+	if hit or p.t > p.life:
+		var at := Vector3(np.x, maxf(np.y, 0.0), np.z)
+		if p.kind == "mortar":
+			G.explode(at, 4.0, 110.0, "shell", p.team, p.src)
+		else:
+			G.explode(at, 6.0, 180.0, "big", p.team, p.src)
+		return true
+	return false
+
 func grenade(from: Vector3, to: Vector3, team: int, src, smoke := false) -> void:
 	var p := Proj.new()
 	p.kind = "grenade"
@@ -102,6 +147,8 @@ func _process(dt: float) -> void:
 				done = _step_rocket(p, dt)
 			"grenade":
 				done = _step_grenade(p, dt)
+			"mortar", "arty":
+				done = _step_lob(p, dt)
 		if done:
 			if p.node:
 				p.node.queue_free()
