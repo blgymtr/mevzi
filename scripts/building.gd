@@ -381,19 +381,34 @@ func _make_line() -> void:
 				G.grid.kind[ci] = Grid.K_WIRE
 				G.grid.refresh([ci])
 		"trench":
-			G.grid.set_trench(a, b, 1.3)
-			G.terrain.paint_line(a, b, 1.5, 2, 0.35)
-			G.terrain.paint_line(a, b, 1.0, 1, 0.9)
-			var from := G.blocks.bpos.size()
+			G.grid.set_trench(a, b, 1.4)
+			G.terrain.carve_trench(a, b, 1.4, 1.05)
+			G.terrain.paint_line(a, b, 2.6, 1, 0.5)
 			var dir := (b - a).normalized()
 			var side := Vector3(-dir.z, 0, dir.x)
-			G.blocks.wall_line(a + side * 0.95, b + side * 0.95, 1, Color(0.7, 0.62, 0.44), Grid.K_WALL, {"len": 0.62, "h": 0.25, "t": 0.4, "type": Blocks.T_SANDBAG, "solid": false})
-			G.blocks.commit_runtime(from)
+			var rotm := Basis(Vector3.UP, atan2(-dir.z, dir.x))
 			var mb := MB.new()
-			mb.box(Vector3.ZERO, Vector3(L, 0.02, 1.1), Color(0.25, 0.2, 0.14), Basis(Vector3.UP, atan2(-dir.z, dir.x)))
+			var wood := Color(0.42, 0.33, 0.24)
+			var snow := G.map_kind == "winter"
+			var berm := Color(0.9, 0.91, 0.94) if snow else (Color(0.52, 0.42, 0.3) if G.map_kind == "desert" else Color(0.34, 0.28, 0.2))
+			var c0 := (a + b) * 0.5
+			# taban tahtaları
+			var nb := maxi(1, int(L / 0.5))
+			for i in nb:
+				var p := a.lerp(b, (i + 0.5) / nb) - c0
+				mb.box(p + Vector3(0, -1.0, 0), Vector3(0.42, 0.05, 1.2), wood.darkened(0.1 * (i % 2)), rotm)
+			# iki yanda tahta perdeleme + dikmeler + set (toprak/kar)
+			for sg in [-1.0, 1.0]:
+				var off: Vector3 = side * sg * 0.7
+				mb.box(off + Vector3(0, -0.5, 0), Vector3(L, 1.05, 0.06), wood, rotm)
+				var np := maxi(1, int(L / 1.6))
+				for i in np + 1:
+					var p := a.lerp(b, float(i) / np) - c0 + off
+					mb.box(p + Vector3(0, -0.45, 0), Vector3(0.1, 1.2, 0.12), wood.darkened(0.2), rotm)
+				mb.prism(PackedVector2Array([Vector2(-0.6, -0.05), Vector2(0.6, -0.05), Vector2(0.35, 0.16), Vector2(0.0, 0.24), Vector2(-0.35, 0.16)]), L + 0.4, berm, off + side * sg * 0.62, rotm * Basis(Vector3.UP, PI * 0.5))
 			var mi := MeshInstance3D.new()
 			mi.mesh = mb.commit(Mats.vc())
-			mi.position = (a + b) * 0.5 + Vector3(0, 0.02, 0)
+			mi.position = c0
 			G.world.add_child(mi)
 
 # ------------------------------------------------------------ döngü

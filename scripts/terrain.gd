@@ -144,6 +144,29 @@ func carve(pts: PackedVector3Array, width: float, depth: float) -> void:
 					himg.set_pixel(x, z, Color(hh, 0, 0, 1))
 	has_water = true
 
+func carve_trench(a: Vector3, b: Vector3, w: float, depth: float) -> void:
+	var k := float(HRES) / G.MAP
+	var r := w * 0.5 + 1.0
+	var a2 := Vector2(a.x, a.z)
+	var ab := Vector2(b.x, b.z) - a2
+	var L2 := maxf(ab.length_squared(), 1e-5)
+	for z in range(maxi(0, int((minf(a.z, b.z) - r) * k)), mini(HRES - 1, int((maxf(a.z, b.z) + r) * k)) + 1):
+		for x in range(maxi(0, int((minf(a.x, b.x) - r) * k)), mini(HRES - 1, int((maxf(a.x, b.x) + r) * k)) + 1):
+			var q := Vector2((x + 0.5) / k, (z + 0.5) / k)
+			var t := clampf((q - a2).dot(ab) / L2, 0.0, 1.0)
+			var d := (q - (a2 + ab * t)).length()
+			var hh := 0.0
+			if d < w * 0.5:
+				hh = -depth
+			elif d < w * 0.5 + 0.9:
+				hh = 0.12 * (1.0 - absf((d - w * 0.5 - 0.45) / 0.45))
+			else:
+				continue
+			var cur := himg.get_pixel(x, z).r
+			if hh < 0.0 and hh < cur or hh > 0.0 and cur >= 0.0 and hh > cur:
+				himg.set_pixel(x, z, Color(hh, 0, 0, 1))
+	htex.update(himg)
+
 func raise_flat(p: Vector3, size: Vector2, rot: float) -> void:
 	# köprü/yol rampası için yatağı doldur (yükseklik 0)
 	var k := float(HRES) / G.MAP

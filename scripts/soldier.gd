@@ -716,6 +716,8 @@ func _movement(dt: float) -> void:
 			elif G.grid.height_at(nz) < 0.45:
 				position = nz
 	position.y = 0.0
+	if G.grid.in_trench(position):
+		position.y = G.terrain.ground_h(position)
 	# yön
 	var aiming := target != null and is_instance_valid(target) and can_fight() and state in ["idle", "move"] and (burst_left > 0 or fire_cd < 0.6 or popped)
 	if state == "drag":

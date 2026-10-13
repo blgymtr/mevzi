@@ -488,7 +488,7 @@ func _run_test() -> void:
 	for s in soldiers.slice(0, 6):
 		G.player.select(s)
 	G.player._assign_builders(fob)
-	hq.enqueue("rifle_squad")
+	print("TEST enqueue=", hq.enqueue("rifle_squad"), " supply=", G.supply[0], " q=", hq.queue.size())
 	var bar: Building = null
 	await _wait(8.0)
 	for r in [16.0, 20.0, 24.0, 28.0]:
@@ -538,6 +538,24 @@ func _run_test() -> void:
 	await _wait(60.0)
 	print("TEST supply after 60s: %d -> %d" % [int(s0), int(G.supply[0])])
 	print("TEST sandbag line done=", not is_instance_valid(line))
+	var ta: Vector3 = fob.position + toward * 14.0 - Vector3(-toward.z, 0, toward.x) * 6.0
+	var tb: Vector3 = ta + Vector3(-toward.z, 0, toward.x) * 12.0
+	var tl := place_line(0, "trench", ta, tb)
+	tl.complete()
+	var tc := place_line(0, "trench", tb, tb + toward * 6.0)
+	tc.complete()
+	G.player.clear_sel()
+	var k := 0
+	for s2 in soldiers.slice(0, 6):
+		if is_instance_valid(s2) and s2.alive:
+			s2.cmd_move(ta.lerp(tb, (k + 0.5) / 6.0))
+			k += 1
+	await _wait(12.0)
+	G.cam.jump_to((ta + tb) * 0.5, true)
+	G.cam.size = 18.0
+	G.cam.target_size = 18.0
+	await _wait(1.0)
+	await _shot("test_03_trench")
 	G.cam.jump_to(fob.position, true)
 	await _wait(1.0)
 	await _shot("test_02_fob")

@@ -604,3 +604,36 @@ func _bridge_mesh(L: float, W: float) -> ArrayMesh:
 				var p1 := Vector3(cx + cos(a1) * rr, -0.52, z)
 				mb.quad(p0, p1, q1, q0, st.darkened(0.15), Vector3(0, 0, sg))
 	return mb.commit(Mats.stone())
+
+# ------------------------------------------------------------ seçili birliklerin üstündeki ağaçları saydamlaştır
+var _fade_t := 0.0
+var _faded: Array = []
+
+func _process(dt: float) -> void:
+	_fade_t -= dt
+	if _fade_t > 0.0 or G.player == null or not is_instance_valid(G.player):
+		return
+	_fade_t = 0.2
+	var pts: Array = []
+	for u in G.player.selected:
+		if is_instance_valid(u) and not (u is Building):
+			pts.append(u.position)
+	if G.cam and G.cam.cam:
+		pts.append(G.cam.mouse_ground(get_viewport().get_mouse_position()))
+	var now: Array = []
+	for it in items:
+		if it["kind"] != "tree" or not it["alive"]:
+			continue
+		var p: Vector3 = it["pos"]
+		for q in pts:
+			# ağaç tepesi ekranda yukarı (-x -z yönündeki zemin) düşer: birliğin +x +z kadar ötesindeki ağaçlar örter
+			var d := Vector2(p.x - 2.2 - q.x, p.z - 2.2 - q.z).length()
+			if d < 4.5:
+				now.append(it["node"])
+				break
+	for n in _faded:
+		if is_instance_valid(n) and not now.has(n):
+			n.transparency = 0.0
+	for n in now:
+		n.transparency = 0.65
+	_faded = now

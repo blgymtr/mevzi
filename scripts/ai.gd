@@ -75,7 +75,7 @@ func _economy() -> void:
 		_place_near("barracks", hq.position, 14.0, 26.0)
 	elif _buildings("factory").is_empty() and t > 50.0:
 		_place_near("factory", hq.position, 16.0, 30.0)
-	var want_fobs := mini(5, 1 + int(t / 140.0))
+	var want_fobs := mini(7, 1 + int(t / 120.0) + (1 if G.supply[team] > 1500 else 0))
 	if fobs.size() < want_fobs and G.supply[team] >= 300:
 		var sites: Array = G.fob_sites.duplicate()
 		sites.sort_custom(func(a, b): return a.distance_to(hq.position) < b.distance_to(hq.position))
@@ -176,6 +176,10 @@ func _attack() -> void:
 		power += 4 if u is Vehicle else 1
 	var need = [16, 22, 26][G.difficulty] if team != G.player_team else 20
 	need += int(G.time / 120.0)
+	if G.time > 600.0:
+		need = 16
+	if G.cap_used[team] >= G.cap_max[team] - 2:
+		need = mini(need, 12)
 	if attackers.size() < 3 and (power >= need or (wave_t <= 0.0 and power >= 10)):
 		wave_t = 160.0
 		attackers.clear()
