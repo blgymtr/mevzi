@@ -12,6 +12,8 @@ var hb := PackedFloat32Array()
 var h := PackedFloat32Array()
 var kind := PackedByteArray()
 var trench := PackedByteArray()
+var water := PackedByteArray()
+var bridge := PackedByteArray()
 var base_l := PackedByteArray()
 var base_h := PackedByteArray()
 var nav: Array = []
@@ -23,6 +25,8 @@ func _init() -> void:
 	h.resize(N * N)
 	kind.resize(N * N)
 	trench.resize(N * N)
+	water.resize(N * N)
+	bridge.resize(N * N)
 	base_l.resize(NN * NN)
 	base_h.resize(NN * NN)
 	for i in 3:
@@ -143,11 +147,14 @@ func _update_base(c: Vector2i) -> void:
 	var hard_l := false
 	var hard_h := false
 	var wall_h := false
+	var wet := false
 	for dz in 2:
 		for dx in 2:
 			var i := (c.y * 2 + dz) * N + c.x * 2 + dx
 			var v := h[i]
 			var k := kind[i]
+			if water[i] == 1 and bridge[i] == 0:
+				wet = true
 			mx = maxf(mx, v)
 			if k == K_WIRE:
 				wire = true
@@ -162,8 +169,12 @@ func _update_base(c: Vector2i) -> void:
 					pass
 				else:
 					hard_h = true
+	if wet:
+		hard_l = true
+		hard_h = true
+		wall_h = false
 	var inf: AStarGrid2D = nav[M_INF]
-	inf.set_point_solid(c, mx >= 0.45)
+	inf.set_point_solid(c, mx >= 0.45 or wet)
 	inf.set_point_weight_scale(c, 5.0 if wire else 1.0)
 	base_l[c.y * NN + c.x] = 1 if hard_l else 0
 	base_h[c.y * NN + c.x] = 1 if hard_h else (2 if wall_h else 0)
@@ -386,3 +397,24 @@ func find_cover(around: Vector3, threat: Vector3, radius: float, claimed: Array,
 			if sc > best["score"]:
 				best = {"pos": p, "type": typ, "score": sc}
 	return best
+
+func set_bridge(center: Vector3, size: Vector2, rot: float) -> void:
+	var c := cos(rot)
+	var s := sin(rot)
+	var ext := maxf(size.x, size.y) * 0.75
+	var changed: Array = []
+	for z in range(ci(center.z - ext), ci(center.z + ext) + 1):
+		for x in range(ci(center.x - ext), ci(center.x + ext) + 1):
+			var px := (x + 0.5) * CS - center.x
+			var pz := (z + 0.5) * CS - center.z
+			var lx := px * c - pz * s
+			var lz := px * s + pz * c
+			if absf(lx) <= size.x * 0.5 and absf(lz) <= size.y * 0.5:
+				var i := z * N + x
+				bridge[i] = 1
+				changed.append(i)
+	refresh(changed)
+
+func is_water(p: Vector3) -> bool:
+	var i := idx(p)
+	return water[i] == 1 and bridge[i] == 0

@@ -427,8 +427,9 @@ func show_menu() -> void:
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 40)
 	vb.add_child(spacer)
-	_menu_btn(vb, "ÇÖL SEKTÖRÜ", func(): G.main.start_game("desert"))
-	_menu_btn(vb, "KIŞ SEKTÖRÜ", func(): G.main.start_game("winter"))
+	for id in MapGen.MAPS:
+		var mid: String = id
+		_menu_btn(vb, MapGen.MAPS[id]["title"].to_upper(), func(): G.main.start_game(mid))
 	var diff := Button.new()
 	diff.custom_minimum_size = Vector2(360, 50)
 	diff.add_theme_font_size_override("font_size", 22)

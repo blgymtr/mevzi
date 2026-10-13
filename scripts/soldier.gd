@@ -520,7 +520,7 @@ func _movement(dt: float) -> void:
 		var np := position + mv
 		np.x = clampf(np.x, 1.0, G.MAP - 1.0)
 		np.z = clampf(np.z, 1.0, G.MAP - 1.0)
-		if G.grid.height_at(np) < 0.45 or G.grid.height_at(position) >= 0.45:
+		if (G.grid.height_at(np) < 0.45 and not G.grid.is_water(np)) or G.grid.height_at(position) >= 0.45:
 			position = np
 		else:
 			var nx := Vector3(np.x, 0, position.z)

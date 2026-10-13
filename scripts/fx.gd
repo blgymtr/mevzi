@@ -21,6 +21,7 @@ var dot_tex: ImageTexture
 var crater_tex: ImageTexture
 var scorch_tex: ImageTexture
 var winter := false
+var sand_col := Color(0.78, 0.6, 0.4)
 
 func _ready() -> void:
 	rng.randomize()
@@ -261,7 +262,7 @@ func _rv(r: float, ry := -1.0) -> Vector3:
 	return Vector3(rng.randf_range(-r, r), rng.randf_range(-(ry if ry >= 0 else r), ry if ry >= 0 else r), rng.randf_range(-r, r))
 
 func _sand() -> Color:
-	return Color(0.9, 0.88, 0.86) if winter else Color(0.78, 0.6, 0.4)
+	return sand_col
 
 # ------------------------------------------------------------ hazır efektler
 func explosion(p: Vector3, size: float, kind := "") -> void:

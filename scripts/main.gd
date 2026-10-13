@@ -86,22 +86,14 @@ func _apply_theme(kind: String) -> void:
 	var elev := deg_to_rad(30.0)
 	var dir := Vector3(-0.25, 0, 1).normalized() * cos(elev) + Vector3(0, -sin(elev), 0)
 	sun.look_at_from_position(Vector3.ZERO, dir, Vector3.UP)
-	if kind == "winter":
-		sun.light_color = Color(1.0, 0.94, 0.86)
-		sun.light_energy = 1.9
-		env.ambient_light_color = Color(0.62, 0.68, 0.8)
-		env.ambient_light_energy = 0.75
-		env.background_color = Color(0.9, 0.92, 0.95)
-		env.adjustment_saturation = 1.05
-		env.tonemap_exposure = 0.92
-	else:
-		sun.light_color = Color(1.0, 0.85, 0.66)
-		sun.light_energy = 2.5
-		env.ambient_light_color = Color(0.78, 0.66, 0.52)
-		env.ambient_light_energy = 0.62
-		env.background_color = Color(0.85, 0.66, 0.42)
-		env.adjustment_saturation = 1.04
-		env.tonemap_exposure = 1.0
+	var b := Biomes.get_biome(kind)
+	sun.light_color = b["sun"]
+	sun.light_energy = b["sun_e"]
+	env.ambient_light_color = b["amb"]
+	env.ambient_light_energy = b["amb_e"]
+	env.background_color = b["bg"]
+	env.adjustment_saturation = b["sat"]
+	env.tonemap_exposure = b["exp"]
 
 # ------------------------------------------------------------ kurulum
 func _clear_world() -> void:
@@ -121,9 +113,15 @@ func _clear_world() -> void:
 	G.reset()
 	bodies.clear()
 
-func build_world(kind: String, seed_v: int) -> void:
+func build_world(id: String, seed_v: int) -> void:
 	_clear_world()
+	if not MapGen.MAPS.has(id):
+		id = {"desert": "desert_town", "winter": "winter_village"}.get(id, "desert_canal")
+	var kind: String = MapGen.MAPS[id]["biome"]
 	G.map_kind = kind
+	G.map_id = id
+	var bio := Biomes.get_biome(kind)
+	G.biome = bio
 	_apply_theme(kind)
 	world = Node3D.new()
 	world.name = "World"
@@ -133,9 +131,10 @@ func build_world(kind: String, seed_v: int) -> void:
 	var t := Terrain.new()
 	world.add_child(t)
 	G.terrain = t
-	t.build(kind)
+	t.build(bio)
 	var fx := Fx.new()
 	fx.winter = kind == "winter"
+	fx.sand_col = bio["sand"]
 	world.add_child(fx)
 	G.fx = fx
 	var bl := Blocks.new()
@@ -154,7 +153,7 @@ func build_world(kind: String, seed_v: int) -> void:
 	ground.add_child(gs)
 	world.add_child(ground)
 	var mg := MapGen.new()
-	mg.build(kind, seed_v)
+	mg.build(id, seed_v)
 	var lg := Logistics.new()
 	add_child(lg)
 	G.logi = lg
@@ -240,7 +239,7 @@ func register_body(s: Soldier) -> void:
 # ------------------------------------------------------------ akış
 func to_menu() -> void:
 	G.spectate = true
-	build_world("desert" if randf() < 0.6 else "winter", randi())
+	build_world(MapGen.MAPS.keys()[randi() % MapGen.MAPS.size()], randi())
 	_spectate_ai()
 	G.cam.auto_pan = true
 	G.cam.input_enabled = false
@@ -330,7 +329,7 @@ func _wait(sec: float) -> void:
 func _run_shots() -> void:
 	get_window().size = Vector2i(1920, 1080)
 	Sfx.muted = true
-	var kind := "winter" if shot_scene.begins_with("winter") else "desert"
+	var kind := shot_scene if MapGen.MAPS.has(shot_scene) else "desert_canal"
 	G.spectate = true
 	build_world(kind, 12345)
 	_spectate_ai()
@@ -339,6 +338,7 @@ func _run_shots() -> void:
 	G.cam.size = 40.0
 	G.cam.target_size = 40.0
 	await _wait(2.0)
+	print("DBG h=", G.terrain.ground_h(Vector3(110, 0, 120)), " water=", G.terrain.has_water, " wnode=", G.terrain.water)
 	await _shot(kind + "_00_town")
 	# karşılaşma kur: iki grup merkezde
 	_skirmish(Vector3(128, 0, 128))
@@ -386,7 +386,7 @@ func _skirmish(c: Vector3) -> void:
 func _run_autoplay() -> void:
 	Sfx.muted = true
 	G.spectate = true
-	build_world(shot_scene if shot_scene != "" else "desert", 777)
+	build_world(shot_scene if shot_scene != "" else "desert_canal", 777)
 	_spectate_ai()
 	Engine.time_scale = 4.0
 	var t0 := Time.get_ticks_msec()
@@ -414,7 +414,7 @@ func _run_autoplay() -> void:
 func _run_test() -> void:
 	Sfx.muted = true
 	var fails := 0
-	start_game("desert")
+	start_game("desert_town")
 	Engine.time_scale = 3.0
 	var hq: Building = null
 	for u in G.units:

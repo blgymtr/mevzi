@@ -1,0 +1,16 @@
+Poly Haven (polyhaven.com) — CC0:
+aerial_sand
+aerial_beach_01
+aerial_grass_rock
+grass_path_2
+forest_ground_04
+aerial_mud_1
+brown_mud_dry
+dirt_aerial_02
+snow_field_aerial
+snow_02
+burned_ground_01
+rocky_terrain
+gravel_road
+dry_ground_01
+leaves_forest_ground
