@@ -496,9 +496,9 @@ func _movement(dt: float) -> void:
 		for o in G.near(position, 1.6):
 			if o == self or o == patient:
 				continue
-			var dv := position - o.position
+			var dv = position - o.position
 			dv.y = 0
-			var dl := dv.length()
+			var dl = dv.length()
 			if o is Soldier:
 				if not o.alive or o.state == "dragged":
 					continue
@@ -508,9 +508,9 @@ func _movement(dt: float) -> void:
 				pass
 		for o in G.near(position, 4.5):
 			if o is Vehicle and o.alive:
-				var dv := position - o.position
+				var dv = position - o.position
 				dv.y = 0
-				var dl := dv.length()
+				var dl = dv.length()
 				var rr: float = o.radius + 0.5
 				if dl < rr and dl > 0.001:
 					sep += dv / dl * (rr - dl) * 6.0

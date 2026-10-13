@@ -153,7 +153,8 @@ func add_block(pos: Vector3, size: Vector3, rot: float, col: Color, t: int, wall
 	return id
 
 func _xform(id: int) -> Transform3D:
-	return Transform3D(Basis(Vector3.UP, brot[id]).scaled(bsize[id] * 0.97), bpos[id])
+	var k := 0.997 if bkind[id] == Grid.K_HOUSE else 0.965
+	return Transform3D(Basis(Vector3.UP, brot[id]).scaled(bsize[id] * k), bpos[id])
 
 # a→b arası blok duvar. gaps: [[s0, s1, r0, r1, frame], ...] (duvar boyunca metre, sıra aralığı)
 func wall_line(a: Vector3, b: Vector3, rows: int, col: Color, k: int, opt := {}) -> int:
@@ -222,8 +223,8 @@ func wall_line(a: Vector3, b: Vector3, rows: int, col: Color, k: int, opt := {})
 		if gp.size() > 4 and gp[4]:
 			var s0: float = gp[0]
 			var s1: float = gp[1]
-			var ylo := y0 + bh * gp[2]
-			var yhi := y0 + bh * (gp[3] + 1)
+			var ylo = y0 + bh * gp[2]
+			var yhi = y0 + bh * (gp[3] + 1)
 			var fcol := Color(0.07, 0.07, 0.07)
 			var mid := a + dir * ((s0 + s1) * 0.5)
 			var fw := s1 - s0

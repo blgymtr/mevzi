@@ -125,7 +125,7 @@ func house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, col :
 				gaps.append([s - 0.6, s + 0.6, 0, 4, true])
 			else:
 				gaps.append([s - 0.55, s + 0.55, 2, 3, true, rng.randf() < 0.5])
-		B.wall_line(a, b, rows, col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.025})
+		B.wall_line(a, b, rows, col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.012, "type": Blocks.T_CONCRETE})
 	# düz çatı + korkuluk + çatı eşyaları
 	var mb := MB.new()
 	var rc := Color(0.84, 0.83, 0.8)
@@ -206,7 +206,7 @@ func house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Color,
 				gaps.append([s - 0.55, s + 0.55, 0, 4, true])
 			else:
 				gaps.append([s - 0.5, s + 0.5, 2, 3, true, true])
-		B.wall_line(a, b, rows, wall_col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.03})
+		B.wall_line(a, b, rows, wall_col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.025, "type": Blocks.T_CONCRETE})
 	roof.mesh = pitched_roof(w, d, top, roof_col, wall_col, snow)
 	roof.position = Vector3(c.x, 0, c.z)
 	B.add_child(roof)
@@ -222,9 +222,10 @@ func pitched_roof(w: float, d: float, top: float, col: Color, wall_col: Color, s
 	var bas := Basis() if along_z else Basis(Vector3.UP, PI * 0.5)
 	var fn := FastNoiseLite.new()
 	fn.seed = rng.randi()
-	fn.frequency = 0.35
-	var nu := 5
-	var nv := maxi(4, int(hl * 2.0 / 0.7))
+	fn.frequency = 0.16
+	fn.fractal_octaves = 3
+	var nu := 12
+	var nv := maxi(8, int(hl * 2.0 / 0.32))
 	for side in [-1.0, 1.0]:
 		for iu in nu:
 			for iv in nv:
@@ -232,16 +233,16 @@ func pitched_roof(w: float, d: float, top: float, col: Color, wall_col: Color, s
 				var u1 := float(iu + 1) / nu
 				var v0 := -hl - ov + (hl + ov) * 2.0 * iv / nv
 				var v1 := -hl - ov + (hl + ov) * 2.0 * (iv + 1) / nv
-				var x0 := side * (hw + ov) * (1.0 - u0)
-				var x1 := side * (hw + ov) * (1.0 - u1)
+				var x0 = side * (hw + ov) * (1.0 - u0)
+				var x1 = side * (hw + ov) * (1.0 - u1)
 				var y0 := top - ov * rh / hw + (rh + ov * rh / hw) * u0
 				var y1 := top - ov * rh / hw + (rh + ov * rh / hw) * u1
 				var cc := MB.jit(col, rng, 0.05)
 				if iv % 2 == 0:
 					cc = cc.darkened(0.04)
 				if snow:
-					var n := fn.get_noise_2d(iu * 1.3 + side * 7.0, iv * 1.0)
-					if n > -0.15:
+					var n := fn.get_noise_2d(iu * 1.0 + side * 37.0, iv * 1.0)
+					if n > -0.22:
 						cc = Color(0.94, 0.95, 0.97).darkened(0.02 * iu)
 				var a := bas * Vector3(x0, y0, v0)
 				var b := bas * Vector3(x1, y1, v0)
@@ -495,7 +496,7 @@ func _winter() -> void:
 					continue
 				var w := rng.randf_range(6.0, 9.0)
 				var dd := rng.randf_range(5.0, 7.0)
-				var p := a + side * sg * (dd * 0.5 + 6.5)
+				var p = a + side * sg * (dd * 0.5 + 6.5)
 				p.x = snappedf(p.x, 0.5)
 				p.z = snappedf(p.z, 0.5)
 				if not free_at(p, maxf(w, dd) * 0.6 + 1.0, 2.0):
@@ -512,10 +513,10 @@ func _winter() -> void:
 					var tt := fw
 					fw = fd
 					fd = tt
-				var x0 := p.x - fd * 0.5 if rot else p.x - fw * 0.5
-				var x1 := p.x + fd * 0.5 if rot else p.x + fw * 0.5
-				var z0 := p.z - fw * 0.5 if rot else p.z - fd * 0.5
-				var z1 := p.z + fw * 0.5 if rot else p.z + fd * 0.5
+				var x0 = p.x - fd * 0.5 if rot else p.x - fw * 0.5
+				var x1 = p.x + fd * 0.5 if rot else p.x + fw * 0.5
+				var z0 = p.z - fw * 0.5 if rot else p.z - fd * 0.5
+				var z1 = p.z + fw * 0.5 if rot else p.z + fd * 0.5
 				if rng.randf() < 0.75:
 					var fpts := [Vector3(x0, 0, z0), Vector3(x1, 0, z0), Vector3(x1, 0, z1), Vector3(x0, 0, z1)]
 					for k in 4:
@@ -525,7 +526,7 @@ func _winter() -> void:
 						if road_dist(mid) > 3.4 and rng.randf() < 0.85:
 							fence(fa, fb)
 				if rng.randf() < 0.5:
-					var sp := p + side * sg * (dd * 0.5 + 3.0) + d * rng.randf_range(-4, 4)
+					var sp = p + side * sg * (dd * 0.5 + 3.0) + d * rng.randf_range(-4, 4)
 					if free_at(sp, 1.6, 2.0):
 						P.shed(sp, rng.randf() * TAU)
 						reserve(sp, 2.0)

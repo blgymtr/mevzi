@@ -7,14 +7,14 @@ uniform sampler2D dune_n : filter_linear_mipmap, repeat_enable;
 uniform sampler2D ripple_n : filter_linear_mipmap, repeat_enable;
 uniform sampler2D grain : filter_linear_mipmap, repeat_enable;
 uniform float map_size = 256.0;
-uniform vec3 col_a : source_color = vec3(0.90, 0.68, 0.42);
-uniform vec3 col_b : source_color = vec3(0.80, 0.56, 0.32);
+uniform vec3 col_a : source_color = vec3(0.86, 0.69, 0.48);
+uniform vec3 col_b : source_color = vec3(0.80, 0.62, 0.41);
 uniform vec3 col_road : source_color = vec3(0.72, 0.52, 0.31);
 uniform vec3 col_track : source_color = vec3(0.47, 0.32, 0.19);
 uniform vec3 col_scorch : source_color = vec3(0.12, 0.10, 0.08);
-uniform vec3 col_crest : source_color = vec3(0.97, 0.78, 0.52);
+uniform vec3 col_crest : source_color = vec3(0.94, 0.80, 0.60);
 uniform float dune_strength = 1.1;
-uniform float ripple_strength = 0.55;
+uniform float ripple_strength = 0.32;
 uniform float rough = 0.93;
 
 varying vec3 wpos;
@@ -33,7 +33,7 @@ void fragment() {
 	vec2 dw = rot * w;
 	vec3 dn = texture(dune_n, dw * vec2(1.0 / 150.0, 1.0 / 55.0)).xyz * 2.0 - 1.0;
 	vec3 dn2 = texture(dune_n, dw * vec2(1.0 / 47.0, 1.0 / 21.0) + vec2(0.37, 0.11)).xyz * 2.0 - 1.0;
-	vec3 rn = texture(ripple_n, dw * vec2(1.0 / 2.6, 1.0 / 11.0)).xyz * 2.0 - 1.0;
+	vec3 rn = texture(ripple_n, dw * vec2(1.0 / 1.6, 1.0 / 7.0)).xyz * 2.0 - 1.0;
 	float g = texture(grain, w / 31.0).r;
 	float g2 = texture(grain, w / 4.3).r;
 	float g3 = texture(grain, w / 0.9).r;
@@ -44,7 +44,7 @@ void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
 
 	vec3 c = mix(col_b, col_a, smoothstep(0.25, 0.75, g));
-	c *= 0.93 + 0.12 * g2 + 0.05 * (g3 - 0.5);
+	c *= 0.96 + 0.06 * g2 + 0.03 * (g3 - 0.5);
 	// kumul tepeleri biraz açık
 	float crest = clamp(dn.x * 0.8 + dn.y * 0.4, 0.0, 1.0);
 	c = mix(c, col_crest, crest * 0.25 * (1.0 - flatten));

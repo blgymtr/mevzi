@@ -5,8 +5,8 @@ const PITCH := 40.0
 const DIST := 120.0
 var cam: Camera3D
 var listener: AudioListener3D
-var size := 52.0
-var target_size := 52.0
+var size := 40.0
+var target_size := 40.0
 var min_size := 22.0
 var max_size := 115.0
 var focus := Vector3(128, 0, 128)
@@ -47,8 +47,7 @@ func _apply() -> void:
 	if _shake > 0.0:
 		sh = (right_vec() * randf_range(-1, 1) + up_vec() * randf_range(-1, 1)) * _shake * 0.6
 	position = focus + sh
-	cam.position = off
-	cam.look_at_from_position(off, Vector3.ZERO, Vector3.UP)
+	cam.transform = Transform3D(Basis.looking_at(-off, Vector3.UP), off)
 	cam.size = size
 	listener.position = Vector3.ZERO
 	if light:

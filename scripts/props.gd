@@ -58,7 +58,7 @@ func _palm_mesh(seed_v: int) -> ArrayMesh:
 		var hd := Vector3(cos(a), 0, sin(a))
 		var side := Vector3(-hd.z, 0, hd.x)
 		var dead := r.randf() < 0.12
-		var base_c := Color(0.24, 0.40, 0.14) if not dead else Color(0.55, 0.45, 0.25)
+		var base_c := Color(0.07, 0.16, 0.045) if not dead else Color(0.4, 0.32, 0.18)
 		if dead:
 			el = -0.9
 		var steps := 7
@@ -77,8 +77,8 @@ func _palm_mesh(seed_v: int) -> ArrayMesh:
 			var col := MB.jit(base_c, r, 0.12)
 			for sg in [-1.0, 1.0]:
 				# yaprakçık: dış uç geriye ve aşağı
-				var o0 := p0 + side * sg * w0 - fwd * 0.12 + Vector3(0, -0.18 * w0, 0)
-				var o1 := p1 + side * sg * w1 - fwd * 0.18 + Vector3(0, -0.22 * w1, 0)
+				var o0 = p0 + side * sg * w0 - fwd * 0.12 + Vector3(0, -0.18 * w0, 0)
+				var o1 = p1 + side * sg * w1 - fwd * 0.18 + Vector3(0, -0.22 * w1, 0)
 				leaves.quad(p0, p1, o1, o0, col if sg > 0 else col.darkened(0.12), Vector3(0, 1, 0))
 	for i in 4:
 		var a := r.randf() * TAU
@@ -121,11 +121,11 @@ func _tree_mesh(seed_v: int, win: bool) -> ArrayMesh:
 	if win:
 		var cols := [Color(0.86, 0.64, 0.3), Color(0.78, 0.55, 0.24), Color(0.92, 0.75, 0.42), Color(0.7, 0.48, 0.25)]
 		for t in tips:
-			var nleaf := r.randi_range(16, 26)
+			var nleaf := r.randi_range(38, 55)
 			for k in nleaf:
-				var c: Vector3 = t + Vector3(r.randf_range(-0.8, 0.8), r.randf_range(-0.6, 0.6), r.randf_range(-0.8, 0.8))
+				var c: Vector3 = t + Vector3(r.randf_range(-0.9, 0.9), r.randf_range(-0.7, 0.7), r.randf_range(-0.9, 0.9)) * pow(r.randf(), 0.5)
 				var bas := Basis(Vector3(r.randf(), r.randf(), r.randf()).normalized(), r.randf() * TAU)
-				var s := r.randf_range(0.16, 0.3)
+				var s := r.randf_range(0.09, 0.17)
 				var col: Color = cols[r.randi() % 4]
 				if c.y > H and r.randf() < 0.3:
 					col = Color(0.95, 0.96, 0.98)
@@ -145,7 +145,7 @@ func car(p: Vector3, rot: float, color_idx := -1) -> void:
 	G.grid.set_static_rect(p, Vector2(4.2, 1.8), rot, 1.25, Grid.K_WRECK)
 
 static func car_mesh(v: int) -> ArrayMesh:
-	var cols := [Color(0.08, 0.1, 0.2), Color(0.06, 0.06, 0.07), Color(0.12, 0.14, 0.24), Color(0.8, 0.8, 0.78), Color(0.3, 0.08, 0.07)]
+	var cols := [Color(0.07, 0.09, 0.18), Color(0.05, 0.05, 0.06), Color(0.1, 0.12, 0.22), Color(0.75, 0.75, 0.73), Color(0.08, 0.08, 0.1)]
 	var c: Color = cols[v % cols.size()]
 	var mb := MB.new()
 	var glass := Color(0.05, 0.06, 0.08)

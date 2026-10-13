@@ -244,9 +244,9 @@ func _drive(dt: float) -> void:
 	for o in G.near(np, 7.0):
 		if o == self or not (o is Vehicle):
 			continue
-		var dv := np - o.position
+		var dv = np - o.position
 		dv.y = 0
-		var dl := dv.length()
+		var dl = dv.length()
 		var rr: float = (radius + o.radius) * 0.75
 		if dl < rr and dl > 0.01:
 			np += dv / dl * (rr - dl) * 0.5
@@ -259,7 +259,7 @@ func _drive(dt: float) -> void:
 		_crush_t -= dt
 		if _crush_t <= 0.0:
 			_crush_t = 0.12
-			var fp := position + f * (D["len"] * 0.42)
+			var fp = position + f * (D["len"] * 0.42)
 			if G.blocks.crush(fp, 1.7, f, 0.5):
 				cur_speed *= 0.6
 				rock_v -= 1.5
@@ -382,7 +382,7 @@ func _fire_cannon(t: Unit) -> void:
 	var d := mp.distance_to(tp)
 	var spread := d * 0.025 * (1.0 if t is Vehicle else 1.5)
 	tp += Vector3(randf_range(-spread, spread), randf_range(-0.3, 0.3), randf_range(-spread, spread))
-	var ap := t is Vehicle and t.armor > 0
+	var ap = t is Vehicle and t.armor > 0
 	G.bal.shell(mp, tp, team, self, t, "ap" if ap else "he")
 	G.fx.cannon_blast(mp, (tp - mp).normalized())
 	Sfx.play3d("tank_fire", mp, 5.0)
