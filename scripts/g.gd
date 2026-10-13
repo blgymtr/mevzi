@@ -66,6 +66,7 @@ func reset() -> void:
 	stats = {"kills": [0, 0], "lost": [0, 0], "built": [0, 0]}
 	fob_sites.clear()
 	_hash.clear()
+	Squad._count = [0, 0]
 
 func step(dt: float) -> void:
 	time += dt
@@ -214,6 +215,12 @@ func credit_kill(src, victim) -> void:
 		stats["lost"][victim.team] += 1
 	if src != null and is_instance_valid(src) and src.team >= 0 and src.team != victim.team:
 		stats["kills"][src.team] += 1
+		if src is Soldier:
+			src.add_xp(20 if victim is Vehicle else (30 if victim is Building else 6))
+			if src.squad:
+				for m in src.squad.alive_members():
+					if m != src:
+						m.add_xp(1)
 
 func check_victory() -> void:
 	if game_over or not running:

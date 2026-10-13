@@ -6,9 +6,18 @@ var members: Array = []
 var name := ""
 var _t := 0.0
 
+static var _count := [0, 0]
+
 func _init(t: int, n: String) -> void:
 	team = t
-	name = n
+	if t >= 0:
+		_count[t] += 1
+		name = "Tim %d" % _count[t]
+	else:
+		name = n
+	kind_name = n
+
+var kind_name := ""
 
 func add(s: Soldier) -> void:
 	members.append(s)

@@ -70,6 +70,34 @@ var shots := 0
 var res_t := 0.0
 var winter := false
 var held_by_vehicle := false
+var sname := ""
+var rank := 0
+var xp := 0
+const RANKS := ["ER", "ONBAŞI", "ÇAVUŞ", "ÜSTÇAVUŞ", "KD. ÇAVUŞ"]
+const RANK_S := ["ER", "ONB", "ÇVŞ", "ÜÇV", "KÇV"]
+const RANK_XP := [0, 15, 40, 80, 140]
+const NAMES_A := ["Ahmet", "Mehmet", "Mustafa", "Ali", "Hüseyin", "Hasan", "İbrahim", "Murat", "Emre", "Burak", "Serkan", "Volkan", "Kemal", "Yusuf", "Ömer", "Caner", "Tolga", "Kaan", "Barış", "Deniz", "Onur", "Cem", "Eren", "Uğur", "Selim", "Tarık", "Levent", "Erdem", "Okan", "Halil"]
+const NAMES_B := ["Yılmaz", "Kaya", "Demir", "Şahin", "Çelik", "Yıldız", "Aydın", "Öztürk", "Arslan", "Doğan", "Kılıç", "Aslan", "Çetin", "Kara", "Koç", "Kurt", "Özdemir", "Şimşek", "Polat", "Erdoğan", "Güneş", "Tekin", "Bulut", "Korkmaz", "Akın", "Ateş", "Bozkurt", "Tunç", "Uysal", "Keskin"]
+const NAMES_RA := ["Viktor", "Dmitri", "Ivan", "Sergei", "Alexei", "Pavel", "Nikolai", "Oleg", "Yuri", "Boris", "Mikhail", "Andrei", "Roman", "Artem", "Kirill", "Stepan", "Fyodor", "Leonid", "Grigori", "Maxim"]
+const NAMES_RB := ["Volkov", "Petrov", "Sokolov", "Morozov", "Popov", "Lebedev", "Kozlov", "Novikov", "Orlov", "Pavlov", "Zaitsev", "Belov", "Gusev", "Titov", "Krylov", "Frolov", "Sorokin", "Egorov", "Vlasov", "Antonov"]
+
+func add_xp(v: int) -> void:
+	if not alive:
+		return
+	xp += v
+	while rank < RANK_XP.size() - 1 and xp >= RANK_XP[rank + 1]:
+		rank += 1
+		accuracy_bonus = 0.06 * rank
+		if team == G.player_team and not G.spectate and G.hud:
+			G.hud.promoted(self)
+
+func display_name() -> String:
+	return "%s %s" % [RANK_S[rank], sname.get_slice(" ", 1)]
+
+func role_title() -> String:
+	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE"}.get(role, "ER")
+
+var accuracy_bonus := 0.0
 
 func setup(t: int, rl: String) -> void:
 	team = t
@@ -88,6 +116,10 @@ func setup(t: int, rl: String) -> void:
 	rockets = 4 if rl == "at" else 0
 	grenades = 2 if rl != "medic" else 0
 	smoke_nades = 1 if rl in ["rifle", "medic"] else 0
+	if team == 1:
+		sname = "%s %s" % [NAMES_RA[randi() % NAMES_RA.size()], NAMES_RB[randi() % NAMES_RB.size()]]
+	else:
+		sname = "%s %s" % [NAMES_A[randi() % NAMES_A.size()], NAMES_B[randi() % NAMES_B.size()]]
 	body = SoldierBody.new()
 	add_child(body)
 	body.build(t, rl, G.map_kind == "winter")
@@ -764,6 +796,7 @@ func _hit_chance(t: Unit, d: float) -> float:
 	if vel.length() > 0.5:
 		c *= 0.5
 	c *= 1.0 - suppression / 170.0
+	c *= 1.0 + accuracy_bonus
 	return clampf(c, 0.02, 0.95)
 
 func add_suppression(v: float, from: Vector3) -> void:
@@ -980,6 +1013,7 @@ func _process_drag_heal(dt: float) -> void:
 			return
 		heal_t -= dt
 		if heal_t <= 0.0:
+			add_xp(5)
 			patient.revive()
 			patient = null
 			state = "idle"
