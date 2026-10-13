@@ -454,18 +454,20 @@ func _flip(t: int) -> void:
 	G.check_victory()
 
 func _bearers() -> void:
-	# sahra hastanesi: sedyeci çifti en yakın yaralıyı getirir (soyut: yaralıyı hastaneye taşır)
-	for w in G.friends_near(position, 45.0, team):
-		if w is Soldier and w.state == "wounded" and w.rescuer == null and randf() < 0.25:
-			var tw := create_tween()
-			w.state = "dragged"
-			var p := position + Vector3(randf_range(-2, 2), 0, size.y * 0.5 + 1.5).rotated(Vector3.UP, rot)
-			tw.tween_property(w, "position", p, w.position.distance_to(p) / 2.5)
-			tw.tween_callback(func():
-				if is_instance_valid(w) and w.alive:
-					w.revive())
-			say("SEDYE!")
-			return
+	# sahra hastanesi: iki sıhhiye eri (sedyeci) bulundurur; yaralıları onlar sürükleyip tedavi eder
+	bearers = bearers.filter(func(x): return is_instance_valid(x) and x.alive)
+	if bearers.size() < 2 and G.time - supplied_t > 45.0:
+		supplied_t = G.time
+		var door := G.grid.nearest_free(position + Vector3(0, 0, size.y * 0.5 + 2.0).rotated(Vector3.UP, rot), Grid.M_INF)
+		var sq := Squad.new(team, "Sedyeciler")
+		G.squads.append(sq)
+		for i in 2 - bearers.size():
+			var s: Soldier = G.main.spawn_soldier(team, "medic", door + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)), sq)
+			s.cap_cost = 0
+			bearers.append(s)
+	for b in bearers:
+		if b.state == "idle" and b.dist2(self) > 14.0 and b.patient == null:
+			b.cmd_move(position + Vector3(randf_range(-4, 4), 0, size.y * 0.5 + 3.0).rotated(Vector3.UP, rot))
 
 func _production(dt: float) -> void:
 	if queue.is_empty():

@@ -249,7 +249,6 @@ func to_menu() -> void:
 	G.hud.show_menu()
 
 func _spectate_ai() -> void:
-	print("SPECTATE_AI world=", world, " ais_before=", G.ais.size())
 	for t in 2:
 		var a := AICmd.new(t)
 		add_child(a)
@@ -263,12 +262,13 @@ func restart_spectate() -> void:
 	if _restarting:
 		return
 	_restarting = true
-	print("RESTART_SPECTATE")
 	call_deferred("_do_restart")
 
 func _do_restart() -> void:
 	_restarting = false
 	to_menu()
+	if autoplay > 0.0:
+		Engine.time_scale = 4.0
 
 func start_game(kind: String) -> void:
 	G.hud.hide_menu()
@@ -391,9 +391,9 @@ func _run_autoplay() -> void:
 	Engine.time_scale = 4.0
 	var t0 := Time.get_ticks_msec()
 	var last := 0
-	while G.time < autoplay and not G.game_over:
+	while (Time.get_ticks_msec() - t0) / 1000.0 * 4.0 < autoplay:
 		await get_tree().process_frame
-		if int(G.time) / 30 != last:
+		if int(G.time) / 30 != last or G.time < 1.0 and last != 0:
 			last = int(G.time) / 30
 			var n := [0, 0]
 			var bl := ["", ""]
