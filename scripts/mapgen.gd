@@ -11,6 +11,9 @@ var kind := "desert"
 var map_id := "desert_town"
 var rivers: Array = []   # [noktalar, genişlik]
 var bridges: Array = []
+var ops: Array = []          # kayıtlı yerleştirme işlemleri (harita dosyası / editör)
+var _depth := 0
+var data_in: Dictionary = {}
 const MAPS := {
 	"desert_canal": {"title": "Çöl Kanalı", "biome": "desert", "desc": "Turkuaz bir sulama kanalı iki orduyu ayırıyor. Üç köprüyü tutan kazanır."},
 	"green_valley": {"title": "Yeşil Vadi", "biome": "green", "desc": "Kıvrılan nehir, toprak yollar ve tek taş köprü. Ağaçlıklar pusu için ideal."},
@@ -24,13 +27,18 @@ const BH := 0.42
 
 func build(id: String, seed_v: int) -> void:
 	map_id = id
-	kind = MAPS[id]["biome"]
+	kind = String(data_in.get("biome", "desert")) if id == "custom" else MAPS[id]["biome"]
 	rng.seed = seed_v
 	B = G.blocks
 	P = G.props
 	T = G.terrain
 	P.winter = kind == "winter"
+	ops.clear()
+	if id == "custom":
+		build_ops(data_in)
 	match id:
+		"custom":
+			pass
 		"desert_canal":
 			_desert_canal()
 		"green_valley":
@@ -62,7 +70,7 @@ func _spline(ctrl: Array, step := 3.0) -> PackedVector3Array:
 	out.append(ctrl[ctrl.size() - 1])
 	return out
 
-func road(ctrl: Array, w := 6.0) -> PackedVector3Array:
+func _x_road(ctrl: Array, w := 6.0) -> PackedVector3Array:
 	var pts := _spline(ctrl)
 	roads.append(pts)
 	T.road_polyline(pts, w, rng)
@@ -78,14 +86,14 @@ func _poly_dist(pts: PackedVector3Array, p: Vector3) -> float:
 		best = minf(best, (q - (a + ab * t)).length())
 	return best
 
-func river(ctrl: Array, w: float, depth := 1.7) -> PackedVector3Array:
+func _x_river(ctrl: Array, w: float, depth := 1.7) -> PackedVector3Array:
 	var pts := _spline(ctrl, 2.0)
 	rivers.append([pts, w])
 	T.carve(pts, w, depth)
 	return pts
 
 # yol-nehir kesişimlerine köprü
-func auto_bridges() -> void:
+func _x_auto_bridges() -> void:
 	for r in roads:
 		var rp: PackedVector3Array = r
 		for rv in rivers:
@@ -155,7 +163,7 @@ func reserve(p: Vector3, r: float) -> void:
 	keep.append([p, r])
 
 # ------------------------------------------------------------ yapılar
-func house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, col := WHITE) -> void:
+func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, col := WHITE) -> void:
 	if rot90:
 		var t := w
 		w = d
@@ -239,7 +247,7 @@ func _floor(c: Vector3, w: float, d: float) -> void:
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	B.add_child(mi)
 
-func house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Color, roof_col: Color, snow: bool, rows := 6) -> void:
+func _x_house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Color, roof_col: Color, snow: bool, rows := 6) -> void:
 	if rot90:
 		var t := w
 		w = d
@@ -330,10 +338,10 @@ func pitched_roof(w: float, d: float, top: float, col: Color, wall_col: Color, s
 	mb.box(bas * Vector3(hw * 0.4, top + rh * 0.8 + 0.66, chx), Vector3(0.62, 0.06, 0.62), Color(0.95, 0.95, 0.97) if snow else Color(0.4, 0.2, 0.15))
 	return mb.commit(Mats.vc())
 
-func wall(a: Vector3, b: Vector3, rows: int, ruin := 0.0, col := STONE) -> void:
+func _x_wall(a: Vector3, b: Vector3, rows: int, ruin := 0.0, col := STONE) -> void:
 	B.wall_line(a, b, rows, col, Grid.K_WALL, {"len": 0.62, "h": 0.46, "t": 0.52, "ruin": ruin, "jit": 0.07})
 
-func ruin_cluster(c: Vector3) -> void:
+func _x_ruin_cluster(c: Vector3) -> void:
 	var t := rng.randi() % 5
 	var ax := Vector3.RIGHT if rng.randf() < 0.5 else Vector3.BACK
 	var bx := Vector3(-ax.z, 0, ax.x)
@@ -362,7 +370,7 @@ func ruin_cluster(c: Vector3) -> void:
 					B.add_block(p + Vector3(rng.randf_range(-0.2, 0.2), 0.46, rng.randf_range(-0.2, 0.2)), Vector3(0.62, 0.46, 0.52), rng.randf() * TAU, MB.jit(STONE, rng, 0.08), Blocks.T_BOX, -1, 1, Grid.K_WALL, false)
 				var _u := id
 
-func compound(c: Vector3, w: float, d: float, rows: int, gate_side: int, col := STONE) -> void:
+func _x_compound(c: Vector3, w: float, d: float, rows: int, gate_side: int, col := STONE) -> void:
 	var x0 := c.x - w * 0.5
 	var x1 := c.x + w * 0.5
 	var z0 := c.z - d * 0.5
@@ -379,7 +387,7 @@ func compound(c: Vector3, w: float, d: float, rows: int, gate_side: int, col := 
 		else:
 			B.wall_line(a, b, rows, col, Grid.K_WALL, {"len": 0.62, "h": 0.46, "t": 0.5, "jit": 0.05, "ruin": rng.randf_range(0.0, 0.3)})
 
-func fence(a: Vector3, b: Vector3, col := Color(0.88, 0.86, 0.8)) -> void:
+func _x_fence(a: Vector3, b: Vector3, col := Color(0.88, 0.86, 0.8)) -> void:
 	var L := a.distance_to(b)
 	var n := maxi(1, int(L / 2.0))
 	var dir := (b - a) / L
@@ -485,14 +493,14 @@ func _desert() -> void:
 		for i in rng.randi_range(4, 11):
 			var p := c + Vector3(rng.randf_range(-7, 7), 0, rng.randf_range(-7, 7))
 			if free_at(p, 0.6, 1.5):
-				P.palm(p)
+				p_palm(p)
 	for i in 70:
 		var p := rand_free(0.8, 20, Rect2(6, 6, 244, 244), 2.5)
 		if p.x > 0:
 			if rng.randf() < 0.82:
-				P.palm(p)
+				p_palm(p)
 			else:
-				P.tree(p)
+				p_tree(p)
 	# direkler yol boyunca
 	_poles_along(roads[0], 16.0, 5.5)
 	_poles_along(roads[1], 18.0, 5.0)
@@ -500,22 +508,21 @@ func _desert() -> void:
 	for i in 26:
 		var p := rand_free(2.2, 30, Rect2(80, 80, 96, 96), 0.0)
 		if p.x > 0 and road_dist(p) < 9.0:
-			P.car(p, rng.randf() * TAU)
+			p_car(p, rng.randf() * TAU)
 	for i in 10:
 		var p := rand_free(2.0, 30, Rect2(30, 30, 196, 196), 1.0)
 		if p.x > 0:
-			P.car(p, rng.randf() * TAU)
+			p_car(p, rng.randf() * TAU)
 	for i in 12:
 		var p := rand_free(1.6, 30, Rect2(90, 90, 76, 76), 1.0)
 		if p.x > 0:
-			P.canopy(p, rng.randf() * TAU)
+			p_canopy(p, rng.randf() * TAU)
 	# eski kraterler
 	for i in 40:
 		var p := Vector3(rng.randf_range(60, 196), 0, rng.randf_range(60, 196))
 		if road_dist(p) > 3.0:
 			var s := rng.randf_range(2.0, 4.5)
-			G.fx.crater(p, s)
-			T.paint_circle(p, s * 0.7, 2, 0.3)
+			crater(p, s)
 
 func _poles_along(pts: PackedVector3Array, spacing: float, off: float) -> void:
 	var acc := 0.0
@@ -531,7 +538,7 @@ func _poles_along(pts: PackedVector3Array, spacing: float, off: float) -> void:
 				acc = 0.0
 				var p := a + d * s + side * off
 				if G.grid.height_at(p) < 0.1 and p.x > 2 and p.z > 2 and p.x < 254 and p.z < 254:
-					P.pole(p, rng.randf() < 0.25)
+					p_pole(p, rng.randf() < 0.25)
 			s += 1.0
 			acc += 1.0
 
@@ -593,7 +600,7 @@ func _winter() -> void:
 				if rng.randf() < 0.5:
 					var sp = p + side * sg * (dd * 0.5 + 3.0) + d * rng.randf_range(-4, 4)
 					if free_at(sp, 1.6, 2.0):
-						P.shed(sp, rng.randf() * TAU)
+						p_shed(sp, rng.randf() * TAU)
 						reserve(sp, 2.0)
 			i += 3
 	# karlı tuğla duvar parçaları
@@ -618,13 +625,13 @@ func _winter() -> void:
 			var p := c + Vector3(rng.randf_range(-8, 8), 0, rng.randf_range(-8, 8))
 			if free_at(p, 0.8, 1.5):
 				if conifer:
-					P.pine(p)
+					p_pine(p)
 				else:
-					P.tree(p)
+					p_tree(p)
 	for i in 110:
 		var p := rand_free(0.8, 20, Rect2(6, 6, 244, 244), 2.5)
 		if p.x > 0:
-			P.tree(p)
+			p_tree(p)
 	# taş duvar yıkıntıları
 	for i in 26:
 		var p := rand_free(3.0, 30)
@@ -637,13 +644,12 @@ func _winter() -> void:
 	for i in 14:
 		var p := rand_free(2.2, 30, Rect2(60, 60, 136, 136), 0.0)
 		if p.x > 0 and road_dist(p) < 8.0:
-			P.car(p, rng.randf() * TAU)
+			p_car(p, rng.randf() * TAU)
 	for i in 20:
 		var p := Vector3(rng.randf_range(60, 196), 0, rng.randf_range(60, 196))
 		if road_dist(p) > 3.0:
 			var s := rng.randf_range(2.0, 4.0)
-			G.fx.crater(p, s)
-			T.paint_circle(p, s * 0.6, 2, 0.3)
+			crater(p, s)
 
 
 # ------------------------------------------------------------ ortak süs: çöl
@@ -700,7 +706,7 @@ func _desert_canal() -> void:
 	road([Vector3(20, 0, 160), Vector3(54, 0, 118), Vector3(74, 0, 96), Vector3(100, 0, 52), Vector3(110, 0, 10)], 5.5)
 	auto_bridges()
 	# kanal kıyısı: palmiye sırası ve çalı
-	P.reeds_along(canal, 5.5)
+	p_reeds_along(canal, 5.5)
 	for i in range(0, canal.size() - 1, 2):
 		var a := canal[i]
 		var b := canal[i + 1]
@@ -710,7 +716,7 @@ func _desert_canal() -> void:
 			if rng.randf() < 0.42:
 				var q: Vector3 = a + side * sg * rng.randf_range(9.0, 12.0)
 				if free_at(q, 0.6, 1.5):
-					P.palm(q)
+					p_palm(q)
 	# kasabalar
 	_town(Vector3(176, 0, 92), 22, 7, true)
 	_town(Vector3(84, 0, 168), 22, 7, true)
@@ -728,32 +734,32 @@ func _desert_canal() -> void:
 		for i in rng.randi_range(4, 10):
 			var p := c + Vector3(rng.randf_range(-7, 7), 0, rng.randf_range(-7, 7))
 			if free_at(p, 0.6, 1.5):
-				P.palm(p)
+				p_palm(p)
 	for i in 50:
 		var p := rand_free(0.8, 20, Rect2(6, 6, 244, 244), 2.5)
 		if p.x > 0:
 			if rng.randf() < 0.8:
-				P.palm(p)
+				p_palm(p)
 			else:
-				P.tree(p)
+				p_tree(p)
 	_poles_along(roads[0], 16.0, 5.5)
 	for i in 22:
 		var p := rand_free(2.2, 30, Rect2(30, 30, 196, 196), 0.0)
 		if p.x > 0 and road_dist(p) < 9.0:
-			P.car(p, rng.randf() * TAU)
+			p_car(p, rng.randf() * TAU)
 	for i in 10:
 		var p := rand_free(1.6, 30, Rect2(40, 40, 176, 176), 1.0)
 		if p.x > 0:
-			P.canopy(p, rng.randf() * TAU)
+			p_canopy(p, rng.randf() * TAU)
 	for i in 30:
 		var p := Vector3(rng.randf_range(50, 206), 0, rng.randf_range(50, 206))
 		if road_dist(p) > 3.0 and T.ground_h(p) > -0.05:
 			var s := rng.randf_range(2.0, 4.0)
-			G.fx.crater(p, s)
+			crater(p, s)
 	_tracks(30, 0.3)
-	P.grass_field(900, Color(0.55, 0.48, 0.3), Rect2(2, 2, 252, 252), 0.4)
+	p_grass_field(900, Color(0.55, 0.48, 0.3), Rect2(2, 2, 252, 252), 0.4)
 
-func _tracks(n: int, amt: float) -> void:
+func _x_tracks(n: int, amt: float) -> void:
 	for i in n:
 		var a := Vector3(rng.randf_range(0, 256), 0, rng.randf_range(0, 256))
 		var dir := Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
@@ -778,10 +784,10 @@ func _green_valley() -> void:
 	road([Vector3(96, 0, 100), Vector3(104, 0, 62), Vector3(110, 0, 30), Vector3(96, 0, 4)], 4.5)
 	road([Vector3(160, 0, 150), Vector3(176, 0, 196), Vector3(150, 0, 230), Vector3(128, 0, 252)], 4.5)
 	auto_bridges()
-	P.reeds_along(riv, 6.5)
+	p_reeds_along(riv, 6.5)
 	# çayır yamaları (toprak/çim)
 	for i in 70:
-		T.patch_blob(Vector3(rng.randf_range(0, 256), 0, rng.randf_range(0, 256)), rng.randf_range(4, 14), rng.randf_range(0.5, 1.0))
+		patch(Vector3(rng.randf_range(0, 256), 0, rng.randf_range(0, 256)), rng.randf_range(4, 14), rng.randf_range(0.5, 1.0))
 	G.fob_sites = [Vector3(186, 0, 160), Vector3(160, 0, 188), Vector3(196, 0, 128), Vector3(128, 0, 196), Vector3(70, 0, 96), Vector3(96, 0, 70),
 		Vector3(60, 0, 128), Vector3(150, 0, 60), Vector3(84, 0, 196), Vector3(200, 0, 96)]
 	for s in G.fob_sites:
@@ -802,34 +808,34 @@ func _green_valley() -> void:
 		for i in rng.randi_range(5, 12):
 			var p := c + Vector3(rng.randf_range(-10, 10), 0, rng.randf_range(-10, 10))
 			if free_at(p, 0.7, 1.5):
-				P.tree(p)
+				p_tree(p)
 		for i in rng.randi_range(6, 14):
 			var p := c + Vector3(rng.randf_range(-13, 13), 0, rng.randf_range(-13, 13))
 			if free_at(p, 0.6, 1.0):
-				P.bush(p, rng.randf() < 0.3)
+				p_bush(p, rng.randf() < 0.3)
 	for i in 120:
 		var p := rand_free(0.8, 20, Rect2(6, 6, 244, 244), 2.0)
 		if p.x > 0:
 			var r := rng.randf()
 			if r < 0.35:
-				P.tree(p)
+				p_tree(p)
 			elif r < 0.8:
-				P.bush(p)
+				p_bush(p)
 			else:
-				P.rock(p, rng.randf_range(0.6, 1.3))
+				p_rock(p, rng.randf_range(0.6, 1.3))
 	for i in 30:
 		var p := rand_free(1.0, 20, Rect2(20, 20, 216, 216), 2.0)
 		if p.x > 0:
-			P.hay(p)
+			p_hay(p)
 	_poles_along(roads[0], 18.0, 5.0)
 	for i in 8:
 		var p := rand_free(2.2, 30, Rect2(30, 30, 196, 196), 0.0)
 		if p.x > 0 and road_dist(p) < 9.0:
-			P.car(p, rng.randf() * TAU)
+			p_car(p, rng.randf() * TAU)
 	_tracks(14, 0.25)
-	P.grass_field(16000, Color(0.42, 0.55, 0.24), Rect2(2, 2, 252, 252), 0.5)
+	p_grass_field(16000, Color(0.42, 0.55, 0.24), Rect2(2, 2, 252, 252), 0.5)
 
-func _brick_ruin(c: Vector3, col: Color) -> void:
+func _x_brick_ruin(c: Vector3, col: Color) -> void:
 	var ax := Vector3.RIGHT if rng.randf() < 0.5 else Vector3.BACK
 	var bx := Vector3(-ax.z, 0, ax.x)
 	var L1 := rng.randf_range(2.5, 5.0)
@@ -841,7 +847,7 @@ func _brick_ruin(c: Vector3, col: Color) -> void:
 		B.wall_line(c + bx * 0.7, c + bx * L2, rows, col, Grid.K_WALL, {"len": 0.7, "h": 0.5, "t": 0.6, "ruin": ruin, "jit": 0.12})
 
 
-func _snow_brick_wall(c: Vector3) -> void:
+func _x_snow_brick_wall(c: Vector3) -> void:
 	var ax := Vector3.RIGHT if rng.randf() < 0.5 else Vector3.BACK
 	var L := rng.randf_range(1.6, 4.0)
 	var rows := rng.randi_range(3, 5)
@@ -852,3 +858,198 @@ func _snow_brick_wall(c: Vector3) -> void:
 	B.wall_line(a + Vector3(0, rows * 0.36, 0), b + Vector3(0, rows * 0.36, 0), 1, Color(0.95, 0.96, 0.99), Grid.K_WALL, {"len": 0.55, "h": 0.14, "t": 0.66, "jit": 0.02, "solid": false, "y0": 0.0})
 	# dibinde kar yığını
 	B.wall_line(a + Vector3(0, 0, 0), b, 1, Color(0.95, 0.96, 0.99), Grid.K_WALL, {"len": 0.8, "h": 0.12, "t": 1.4, "jit": 0.02, "solid": false})
+
+
+# ============================================================ İŞLEMLER (kayıt + tekrar)
+# Her yerleştirme bir sözlük olarak kaydedilir; aynı tohumla yeniden çalıştırılınca aynı sonucu verir.
+static func vv(p: Vector3) -> Array:
+	return [snappedf(p.x, 0.01), snappedf(p.z, 0.01)]
+
+static func v3(a) -> Vector3:
+	return Vector3(float(a[0]), 0, float(a[1]))
+
+static func cc(c: Color) -> Array:
+	return [snappedf(c.r, 0.001), snappedf(c.g, 0.001), snappedf(c.b, 0.001)]
+
+static func col(a) -> Color:
+	return Color(float(a[0]), float(a[1]), float(a[2]))
+
+static func pts_out(arr: Array) -> Array:
+	var o: Array = []
+	for q in arr:
+		o.append(vv(q))
+	return o
+
+static func pts_in(arr: Array) -> Array:
+	var o: Array = []
+	for q in arr:
+		o.append(v3(q))
+	return o
+
+func exec(op: Dictionary):
+	if not op.has("s"):
+		op["s"] = rng.randi() % 1000000
+	var top := _depth == 0
+	if top:
+		ops.append(op)
+		var sd: int = int(op["s"])
+		rng.seed = sd
+		B.rng.seed = sd + 1
+		P.rng.seed = sd + 2
+	_depth += 1
+	var r = _run(op)
+	_depth -= 1
+	return r
+
+func _run(op: Dictionary):
+	match String(op["t"]):
+		"road":
+			return _x_road(pts_in(op["pts"]), float(op["w"]))
+		"river":
+			return _x_river(pts_in(op["pts"]), float(op["w"]), float(op.get("d", 1.7)))
+		"bridges":
+			_x_auto_bridges()
+		"house_flat":
+			_x_house_flat(v3(op["p"]), float(op["w"]), float(op["d"]), int(op["rows"]), bool(op["r90"]), col(op["col"]))
+		"house_pitched":
+			_x_house_pitched(v3(op["p"]), float(op["w"]), float(op["d"]), bool(op["r90"]), col(op["col"]), col(op["roof"]), bool(op["snow"]), int(op["rows"]))
+		"wall":
+			_x_wall(v3(op["a"]), v3(op["b"]), int(op["rows"]), float(op["ruin"]), col(op["col"]))
+		"ruin":
+			_x_ruin_cluster(v3(op["p"]))
+		"compound":
+			_x_compound(v3(op["p"]), float(op["w"]), float(op["d"]), int(op["rows"]), int(op["gate"]), col(op["col"]))
+		"fence":
+			_x_fence(v3(op["a"]), v3(op["b"]), col(op["col"]))
+		"brick_ruin":
+			_x_brick_ruin(v3(op["p"]), col(op["col"]))
+		"snow_wall":
+			_x_snow_brick_wall(v3(op["p"]))
+		"tracks":
+			_x_tracks(int(op["n"]), float(op["amt"]))
+		"palm":
+			P.palm(v3(op["p"]))
+		"tree":
+			P.tree(v3(op["p"]))
+		"pine":
+			P.pine(v3(op["p"]))
+		"bush":
+			P.bush(v3(op["p"]), bool(op.get("big", false)))
+		"rock":
+			P.rock(v3(op["p"]), float(op.get("sc", 1.0)))
+		"hay":
+			P.hay(v3(op["p"]))
+		"car":
+			P.car(v3(op["p"]), float(op["r"]), int(op.get("v", -1)))
+		"canopy":
+			P.canopy(v3(op["p"]), float(op["r"]))
+		"shed":
+			P.shed(v3(op["p"]), float(op["r"]))
+		"pole":
+			P.pole(v3(op["p"]), bool(op.get("lamp", false)))
+		"grass":
+			var rg: Array = op.get("rect", [2, 2, 252, 252])
+			P.grass_field(int(op["n"]), col(op["col"]), Rect2(rg[0], rg[1], rg[2], rg[3]), float(op.get("size", 0.5)))
+		"reeds":
+			P.reeds_along(PackedVector3Array(pts_in(op["pts"])), float(op["hw"]))
+		"crater":
+			var cp := v3(op["p"])
+			G.fx.crater(cp, float(op["sc"]))
+			T.paint_circle(cp, float(op["sc"]) * 0.65, 2, 0.3)
+		"patch":
+			T.patch_blob(v3(op["p"]), float(op["r"]), float(op["a"]))
+	return null
+
+# ---- sarmalayıcılar (prosedürel üretici ve editör bunları çağırır)
+func road(ctrl: Array, w := 6.0) -> PackedVector3Array:
+	return exec({"t": "road", "pts": pts_out(ctrl), "w": w})
+
+func river(ctrl: Array, w: float, depth := 1.7) -> PackedVector3Array:
+	return exec({"t": "river", "pts": pts_out(ctrl), "w": w, "d": depth})
+
+func auto_bridges() -> void:
+	exec({"t": "bridges"})
+
+func house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, cl := WHITE) -> void:
+	exec({"t": "house_flat", "p": vv(c), "w": w, "d": d, "rows": rows, "r90": rot90, "col": cc(cl)})
+
+func house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Color, roof_col: Color, snow: bool, rows := 6) -> void:
+	exec({"t": "house_pitched", "p": vv(c), "w": w, "d": d, "r90": rot90, "col": cc(wall_col), "roof": cc(roof_col), "snow": snow, "rows": rows})
+
+func wall(a: Vector3, b: Vector3, rows: int, ruin := 0.0, cl := STONE) -> void:
+	exec({"t": "wall", "a": vv(a), "b": vv(b), "rows": rows, "ruin": ruin, "col": cc(cl)})
+
+func ruin_cluster(c: Vector3) -> void:
+	exec({"t": "ruin", "p": vv(c)})
+
+func compound(c: Vector3, w: float, d: float, rows: int, gate_side: int, cl := STONE) -> void:
+	exec({"t": "compound", "p": vv(c), "w": w, "d": d, "rows": rows, "gate": gate_side, "col": cc(cl)})
+
+func fence(a: Vector3, b: Vector3, cl := Color(0.88, 0.86, 0.8)) -> void:
+	exec({"t": "fence", "a": vv(a), "b": vv(b), "col": cc(cl)})
+
+func _brick_ruin(c: Vector3, cl: Color) -> void:
+	exec({"t": "brick_ruin", "p": vv(c), "col": cc(cl)})
+
+func _snow_brick_wall(c: Vector3) -> void:
+	exec({"t": "snow_wall", "p": vv(c)})
+
+func _tracks(n: int, amt: float) -> void:
+	exec({"t": "tracks", "n": n, "amt": amt})
+
+func p_palm(p: Vector3) -> void:
+	exec({"t": "palm", "p": vv(p)})
+
+func p_tree(p: Vector3) -> void:
+	exec({"t": "tree", "p": vv(p)})
+
+func p_pine(p: Vector3) -> void:
+	exec({"t": "pine", "p": vv(p)})
+
+func p_bush(p: Vector3, big := false) -> void:
+	exec({"t": "bush", "p": vv(p), "big": big})
+
+func p_rock(p: Vector3, sc := 1.0) -> void:
+	exec({"t": "rock", "p": vv(p), "sc": sc})
+
+func p_hay(p: Vector3) -> void:
+	exec({"t": "hay", "p": vv(p)})
+
+func p_car(p: Vector3, r: float, v := -1) -> void:
+	exec({"t": "car", "p": vv(p), "r": r, "v": v})
+
+func p_canopy(p: Vector3, r: float) -> void:
+	exec({"t": "canopy", "p": vv(p), "r": r})
+
+func p_shed(p: Vector3, r: float) -> void:
+	exec({"t": "shed", "p": vv(p), "r": r})
+
+func p_pole(p: Vector3, lamp := false) -> void:
+	exec({"t": "pole", "p": vv(p), "lamp": lamp})
+
+func p_grass_field(n: int, cl: Color, region := Rect2(2, 2, 252, 252), size := 0.55, _avoid: Callable = Callable()) -> void:
+	exec({"t": "grass", "n": n, "col": cc(cl), "rect": [region.position.x, region.position.y, region.size.x, region.size.y], "size": size})
+
+func p_reeds_along(pts: PackedVector3Array, hw: float) -> void:
+	exec({"t": "reeds", "pts": pts_out(Array(pts)), "hw": hw})
+
+func crater(p: Vector3, sc: float) -> void:
+	exec({"t": "crater", "p": vv(p), "sc": sc})
+
+func patch(p: Vector3, r: float, a: float) -> void:
+	exec({"t": "patch", "p": vv(p), "r": r, "a": a})
+
+# ---- harita verisi
+func to_data(name: String) -> Dictionary:
+	return {"v": 1, "name": name, "map": map_id, "biome": kind, "hq": [vv(G.hq_pos[0]), vv(G.hq_pos[1])], "fobs": pts_out(G.fob_sites), "ops": ops.duplicate(true)}
+
+func build_ops(d: Dictionary) -> void:
+	var hq: Array = d.get("hq", [[214, 214], [42, 42]])
+	G.hq_pos = [v3(hq[0]), v3(hq[1])]
+	reserve(G.hq_pos[0], 26)
+	reserve(G.hq_pos[1], 26)
+	G.fob_sites = pts_in(d.get("fobs", []))
+	for f in G.fob_sites:
+		reserve(f, 8.0)
+	for op in d.get("ops", []):
+		exec(op.duplicate(true))

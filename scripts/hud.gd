@@ -448,6 +448,9 @@ func _build_left() -> void:
 	root.add_child(promo_box)
 
 func promoted(s: Soldier) -> void:
+	promoted_text("TERFİ", s.display_name().to_upper())
+
+func promoted_text(a: String, b: String) -> void:
 	var pc := PanelContainer.new()
 	var sb := _sb(Color(0.06, 0.06, 0.055, 0.92), Color(0.45, 0.4, 0.3, 0.8))
 	sb.content_margin_left = 12
@@ -460,8 +463,8 @@ func promoted(s: Soldier) -> void:
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 12)
 	pc.add_child(hb)
-	_label(hb, "TERFİ", 13, DIM, font_m)
-	_label(hb, s.display_name().to_upper(), 15, TXT, font_b)
+	_label(hb, a, 13, DIM, font_m)
+	_label(hb, b, 15, TXT, font_b)
 	promo_box.add_child(pc)
 	_toast.append([pc, 6.0, Vector3.ZERO])
 	while promo_box.get_child_count() > 4:
@@ -749,6 +752,8 @@ func show_menu() -> void:
 	for id in MapGen.MAPS:
 		var mid: String = id
 		_menu_btn(vb, MapGen.MAPS[id]["title"].to_upper(), func(): G.main.start_game(mid))
+	_menu_btn(vb, "ÖZEL HARİTALAR", func(): _custom_list())
+	_menu_btn(vb, "HARİTA EDİTÖRÜ", func(): _editor_menu())
 	var diff := Button.new()
 	diff.custom_minimum_size = Vector2(360, 50)
 	diff.add_theme_font_size_override("font_size", 22)
@@ -793,6 +798,43 @@ func _menu_btn(parent: Control, text: String, cb: Callable) -> void:
 		Sfx.play2d("ui_click", -4.0)
 		cb.call())
 	parent.add_child(b)
+
+func _sub_menu(title: String) -> VBoxContainer:
+	if menu.has_meta("sub"):
+		var old = menu.get_meta("sub")
+		if is_instance_valid(old):
+			old.queue_free()
+	var pc := PanelContainer.new()
+	pc.position = Vector2(520, 330)
+	pc.custom_minimum_size = Vector2(360, 0)
+	menu.add_child(pc)
+	menu.set_meta("sub", pc)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	pc.add_child(v)
+	_label(v, title, 26, AMBER, font_b)
+	return v
+
+func _custom_list() -> void:
+	var v := _sub_menu("ÖZEL HARİTALAR")
+	var maps := MapEditor.list_maps()
+	if maps.is_empty():
+		_label(v, "Kayıtlı harita yok. Harita editöründen oluşturun.", 15, DIM, font_m)
+	for m in maps:
+		var mn: String = m
+		_menu_btn(v, mn.to_upper(), func(): G.main.start_game("", MapEditor.load_map(mn)))
+
+func _editor_menu() -> void:
+	var v := _sub_menu("HARİTA EDİTÖRÜ")
+	_menu_btn(v, "BOŞ ÇÖL HARİTASI", func(): G.main.new_map("desert"))
+	_menu_btn(v, "BOŞ YEŞİL HARİTA", func(): G.main.new_map("green"))
+	_menu_btn(v, "BOŞ KIŞ HARİTASI", func(): G.main.new_map("winter"))
+	for id in MapGen.MAPS:
+		var mid: String = id
+		_menu_btn(v, "DÜZENLE: " + MapGen.MAPS[id]["title"].to_upper(), func(): G.main.open_editor_from_builtin(mid))
+	for m in MapEditor.list_maps():
+		var mn: String = m
+		_menu_btn(v, "AÇ: " + mn.to_upper(), func(): G.main.open_editor(MapEditor.load_map(mn)))
 
 func hide_menu() -> void:
 	if menu:

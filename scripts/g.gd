@@ -30,6 +30,8 @@ var speed := 1.0
 var map_kind := "desert"
 var map_id := "desert_canal"
 var biome: Dictionary = {}
+var mapgen: MapGen
+var editor := false
 var player_team := 0
 var spectate := false
 var difficulty := 1

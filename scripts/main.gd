@@ -32,7 +32,11 @@ func _ready() -> void:
 			shot_scene = a.substr(8)
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
-	if shot_dir != "" and shot_scene.begins_with("gallery"):
+	if shot_dir != "" and shot_scene == "editortest":
+		_run_editor_test()
+	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
+		_run_roundtrip()
+	elif shot_dir != "" and shot_scene.begins_with("gallery"):
 		_run_gallery()
 	elif shot_dir != "" and shot_scene == "test":
 		_run_test()
@@ -115,11 +119,13 @@ func _clear_world() -> void:
 	G.reset()
 	bodies.clear()
 
-func build_world(id: String, seed_v: int) -> void:
+func build_world(id: String, seed_v: int, data := {}) -> void:
 	_clear_world()
-	if not MapGen.MAPS.has(id):
+	if not data.is_empty():
+		id = "custom"
+	elif not MapGen.MAPS.has(id):
 		id = {"desert": "desert_town", "winter": "winter_village"}.get(id, "desert_canal")
-	var kind: String = MapGen.MAPS[id]["biome"]
+	var kind: String = String(data.get("biome", "desert")) if id == "custom" else MapGen.MAPS[id]["biome"]
 	G.map_kind = kind
 	G.map_id = id
 	var bio := Biomes.get_biome(kind)
@@ -155,6 +161,8 @@ func build_world(id: String, seed_v: int) -> void:
 	ground.add_child(gs)
 	world.add_child(ground)
 	var mg := MapGen.new()
+	mg.data_in = data
+	G.mapgen = mg
 	mg.build(id, seed_v)
 	var lg := Logistics.new()
 	add_child(lg)
@@ -163,6 +171,9 @@ func build_world(id: String, seed_v: int) -> void:
 	add_child(pc)
 	G.player = pc
 	pc.team = G.player_team
+	if G.editor:
+		G.running = false
+		return
 	_start_forces()
 	G.running = true
 	if ambience:
@@ -239,7 +250,40 @@ func register_body(s: Soldier) -> void:
 			o.queue_free()
 
 # ------------------------------------------------------------ akış
+var editor: MapEditor
+
+func _close_editor() -> void:
+	if editor and is_instance_valid(editor):
+		editor.queue_free()
+	editor = null
+	G.editor = false
+
+func open_editor(d: Dictionary, reset_cam := true) -> void:
+	G.hud.hide_menu()
+	_close_editor()
+	G.editor = true
+	G.spectate = false
+	build_world("", 1, d)
+	editor = MapEditor.new()
+	add_child(editor)
+	editor.open(d)
+	G.cam.auto_pan = false
+	G.cam.input_enabled = true
+	if reset_cam:
+		G.cam.jump_to(Vector3(128, 0, 128), true)
+		G.cam.target_size = 70.0
+
+func open_editor_from_builtin(id: String) -> void:
+	G.editor = true
+	build_world(id, randi())
+	var d := G.mapgen.to_data(MapGen.MAPS[id]["title"].to_lower().replace(" ", "_"))
+	open_editor(d, false)
+
+func new_map(biome: String) -> void:
+	open_editor({"v": 1, "name": "yeni_harita", "biome": biome, "hq": [[214, 214], [42, 42]], "fobs": [[186, 160], [160, 186], [70, 96], [96, 70], [128, 128]], "ops": []})
+
 func to_menu() -> void:
+	_close_editor()
 	G.spectate = true
 	build_world(MapGen.MAPS.keys()[randi() % MapGen.MAPS.size()], randi())
 	_spectate_ai()
@@ -271,11 +315,12 @@ func _do_restart() -> void:
 	if autoplay > 0.0:
 		Engine.time_scale = 4.0
 
-func start_game(kind: String) -> void:
+func start_game(kind: String, data := {}) -> void:
 	G.hud.hide_menu()
+	_close_editor()
 	G.spectate = false
 	G.player_team = 0
-	build_world(kind, randi())
+	build_world(kind, randi(), data)
 	var a := AICmd.new(1)
 	add_child(a)
 	G.ais.append(a)
@@ -611,4 +656,86 @@ func _run_gallery() -> void:
 	G.cam.target_size = 14.0
 	await _wait(1.0)
 	await _shot("gallery_" + mid + "_tanks")
+	get_tree().quit()
+
+# harita kayıt → yeniden kurma testi
+func _run_roundtrip() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var mid := shot_scene.substr(10) if shot_scene.length() > 10 else "desert_canal"
+	G.spectate = true
+	build_world(mid, 999)
+	await _wait(0.5)
+	var a := [G.blocks.bpos.size(), G.props.items.size(), G.mapgen.ops.size()]
+	var data := G.mapgen.to_data("test")
+	var json := JSON.stringify(data)
+	G.cam.input_enabled = false
+	G.cam.jump_to(Vector3(140, 0, 140), true)
+	G.cam.size = 60.0
+	G.cam.target_size = 60.0
+	await _wait(1.0)
+	await _shot("rt_a")
+	var d2 = JSON.parse_string(json)
+	build_world("", 1, d2)
+	await _wait(0.5)
+	var b := [G.blocks.bpos.size(), G.props.items.size(), G.mapgen.ops.size()]
+	G.cam.jump_to(Vector3(140, 0, 140), true)
+	await _wait(1.0)
+	await _shot("rt_b")
+	print("ROUNDTRIP a=%s b=%s json=%dKB" % [a, b, json.length() / 1024])
+	get_tree().quit()
+
+func _run_editor_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	new_map("green")
+	await _wait(0.5)
+	var ed := editor
+	ed.tool = "river"
+	ed._click(Vector3(10, 0, 150), false)
+	ed._click(Vector3(90, 0, 130), false)
+	ed._click(Vector3(170, 0, 110), false)
+	ed._click(Vector3(250, 0, 100), false)
+	ed._finish_line()
+	await _wait(0.5)
+	ed = editor
+	ed.tool = "road"
+	ed._click(Vector3(214, 0, 214), false)
+	ed._click(Vector3(128, 0, 128), false)
+	ed._click(Vector3(42, 0, 42), false)
+	ed._finish_line()
+	ed.tool = "house_pitched"
+	for i in 6:
+		ed._click(Vector3(110 + i * 11, 0, 150 + (i % 2) * 12), false)
+	ed.tool = "house_flat"
+	ed.size_i = 2
+	ed._click(Vector3(150, 0, 90), false)
+	ed.tool = "tree"
+	for i in 6:
+		ed._click(Vector3(60 + i * 9, 0, 180), true)
+	ed.tool = "wall"
+	ed._click(Vector3(100, 0, 100), false)
+	ed._click(Vector3(112, 0, 100), false)
+	ed.tool = "ruin"
+	ed._click(Vector3(140, 0, 70), false)
+	ed.name_edit.text = "test_haritasi"
+	ed.save()
+	G.cam.jump_to(Vector3(128, 0, 128), true)
+	G.cam.size = 80.0
+	G.cam.target_size = 80.0
+	await _wait(1.0)
+	await _shot("ed_01")
+	var n_ops: int = ed.data["ops"].size()
+	# silme testi
+	ed._delete_near(Vector3(150, 0, 90))
+	await _wait(0.5)
+	print("EDTEST ops=%d after_delete=%d maps=%s" % [n_ops, editor.data["ops"].size(), MapEditor.list_maps()])
+	var d := MapEditor.load_map("test_haritasi")
+	start_game("", d)
+	await _wait(3.0)
+	G.cam.jump_to(Vector3(128, 0, 128), true)
+	G.cam.size = 80.0
+	await _wait(1.0)
+	await _shot("ed_02_play")
+	print("EDTEST play units=%d running=%s map=%s" % [G.units.size(), G.running, G.map_id])
 	get_tree().quit()
