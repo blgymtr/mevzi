@@ -32,6 +32,8 @@ var map_id := "desert_canal"
 var biome: Dictionary = {}
 var mapgen: MapGen
 var editor := false
+var scenario: Dictionary = {}     # boşsa normal çatışma
+var zone_t := [0.0, 0.0]
 var player_team := 0
 var spectate := false
 var difficulty := 1
@@ -66,6 +68,7 @@ func reset() -> void:
 	game_over = false
 	winner = -1
 	stats = {"kills": [0, 0], "lost": [0, 0], "built": [0, 0]}
+	zone_t = [0.0, 0.0]
 	fob_sites.clear()
 	_hash.clear()
 	Squad._count = [0, 0]
@@ -224,9 +227,51 @@ func credit_kill(src, victim) -> void:
 					if m != src:
 						m.add_xp(1)
 
+func _end(w: int) -> void:
+	game_over = true
+	winner = w
+	if hud:
+		hud.show_game_over(winner)
+
+func scenario_step(dt: float) -> void:
+	if scenario.is_empty() or game_over:
+		return
+	var win := String(scenario.get("win", "bases"))
+	match win:
+		"survive":
+			if time >= float(scenario.get("time", 600)):
+				_end(player_team)
+		"hold":
+			var z := MapGen.v3(scenario.get("zone", [128, 128]))
+			var cnt := [0, 0]
+			for u in near(z, 14.0):
+				if u.alive and u.team >= 0 and (u is Soldier and u.can_fight() or u is Vehicle and not u.is_air()):
+					cnt[u.team] += 1
+			for t in 2:
+				if cnt[t] > 0 and cnt[1 - t] == 0:
+					zone_t[t] += dt
+					if zone_t[t] >= float(scenario.get("time", 120)):
+						_end(t)
+						return
+		"annihilate":
+			for t in 2:
+				var any := false
+				for u in units:
+					if is_instance_valid(u) and u.alive and u.team == t and (u is Soldier and not u.incapacitated() or u is Vehicle and u.vtype != "truck"):
+						any = true
+						break
+				if not any:
+					_end(1 - t)
+					return
+
 func check_victory() -> void:
 	if game_over or not running:
 		return
+	if not scenario.is_empty():
+		var win := String(scenario.get("win", "bases"))
+		if win != "bases":
+			# her iki tarafın da üssü yoksa üs kontrolünü atla
+			return
 	for t in 2:
 		var has := false
 		for u in units:

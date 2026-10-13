@@ -41,6 +41,10 @@ var info: Label
 var list_box: Control
 var hud: Hud
 var dirty := false
+var mode := "map"
+var team := 0
+var grid: GridContainer
+var rules: VBoxContainer
 
 func open(d: Dictionary) -> void:
 	data = d
@@ -92,28 +96,35 @@ func _build_ui() -> void:
 		var bb := _btn(biome_row, b[1], func(): _set_biome(bid))
 		bb.toggle_mode = true
 		bb.button_pressed = data.get("biome", "desert") == bid
+	var mr := HBoxContainer.new()
+	mr.add_theme_constant_override("separation", 4)
+	v.add_child(mr)
+	var bm := _btn(mr, "HARİTA", func(): _set_mode("map"))
+	bm.toggle_mode = true
+	bm.button_pressed = mode == "map"
+	bm.set_meta("mode", "map")
+	var bs := _btn(mr, "SENARYO", func(): _set_mode("scen"))
+	bs.toggle_mode = true
+	bs.button_pressed = mode == "scen"
+	bs.set_meta("mode", "scen")
+	mr.set_meta("is_mode", true)
 	var sc := ScrollContainer.new()
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	v.add_child(sc)
-	var grid := GridContainer.new()
+	var sv := VBoxContainer.new()
+	sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(sv)
+	rules = VBoxContainer.new()
+	rules.add_theme_constant_override("separation", 4)
+	sv.add_child(rules)
+	grid = GridContainer.new()
 	grid.columns = 2
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
-	sc.add_child(grid)
-	for t in TOOLS:
-		var tid: String = t[0]
-		var b := Button.new()
-		b.text = t[1]
-		b.toggle_mode = true
-		b.button_pressed = tid == tool
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 36)
-		b.add_theme_font_size_override("font_size", 14)
-		b.set_meta("tool", tid)
-		b.pressed.connect(func(): _set_tool(tid, grid))
-		grid.add_child(b)
+	sv.add_child(grid)
+	_fill_tools()
 	info = hud._label(v, "", 14, Hud.DIM, hud.font_m)
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD
 	info.custom_minimum_size = Vector2(300, 60)
@@ -129,10 +140,127 @@ func _btn(parent: Control, t: String, cb: Callable) -> Button:
 	parent.add_child(b)
 	return b
 
-func _set_tool(t: String, grid: Control) -> void:
+func _tool_list() -> Array:
+	if mode == "map":
+		return TOOLS
+	var out: Array = [["sec", "SİL", "Sağ tık: en yakın birliği sil"], ["zone", "HEDEF BÖLGE", "Bölgeyi tut koşulu için nokta"]]
+	for id in Main.SCEN_UNITS:
+		out.append([id, Main.SCEN_UNITS[id], "Tıkla: yerleştir · R: 90° döndür"])
+	return out
+
+func _fill_tools() -> void:
+	for c in grid.get_children():
+		c.queue_free()
+	for c in rules.get_children():
+		c.queue_free()
+	if mode == "scen":
+		_build_rules()
+	for t in _tool_list():
+		var tid: String = t[0]
+		var b := Button.new()
+		b.text = t[1]
+		b.toggle_mode = true
+		b.button_pressed = tid == tool
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size = Vector2(0, 34)
+		b.add_theme_font_size_override("font_size", 13)
+		b.set_meta("tool", tid)
+		b.pressed.connect(func(): _set_tool(tid, grid))
+		grid.add_child(b)
+
+func _set_mode(m: String) -> void:
+	mode = m
+	tool = "house_flat" if m == "map" else "rifle_squad"
+	pts.clear()
+	for c in panel.get_child(0).get_children():
+		if c is HBoxContainer and c.has_meta("is_mode"):
+			for b in c.get_children():
+				b.button_pressed = b.get_meta("mode") == m
+	_fill_tools()
+	_update_info()
+
+func _scen() -> Dictionary:
+	if not data.has("scenario"):
+		data["scenario"] = {"enabled": true, "units": [], "supply": [650, 650], "ai": [false, true], "hq": [true, true], "win": "bases", "time": 600, "zone": [128, 128], "brief": ""}
+	return data["scenario"]
+
+func _build_rules() -> void:
+	var sc := _scen()
+	var tr := HBoxContainer.new()
+	tr.add_theme_constant_override("separation", 4)
+	rules.add_child(tr)
+	for t in 2:
+		var tt := t
+		var b := _btn(tr, ["MAVİ ORDU", "KIZIL ORDU"][t], func(): _set_team(tt, tr))
+		b.toggle_mode = true
+		b.button_pressed = team == t
+		b.add_theme_color_override("font_color", G.TEAM_COL[t])
+	var en := CheckBox.new()
+	en.text = "Senaryo etkin (kapalıysa normal çatışma)"
+	en.button_pressed = bool(sc.get("enabled", true))
+	en.toggled.connect(func(v): sc["enabled"] = v)
+	rules.add_child(en)
+	var wr := HBoxContainer.new()
+	rules.add_child(wr)
+	hud._label(wr, "ZAFER:", 14, Hud.DIM, hud.font_m)
+	var ob := OptionButton.new()
+	var wins := ["bases", "annihilate", "survive", "hold"]
+	for w in ["Üsleri yok et", "Tüm düşmanı yok et", "Süre boyunca dayan", "Bölgeyi tut"]:
+		ob.add_item(w)
+	ob.selected = maxi(0, wins.find(String(sc.get("win", "bases"))))
+	ob.item_selected.connect(func(i): sc["win"] = wins[i])
+	ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wr.add_child(ob)
+	_spin(rules, "SÜRE (sn)", float(sc.get("time", 600)), 30, 3600, func(v): sc["time"] = v)
+	var sup: Array = sc.get("supply", [650, 650])
+	_spin(rules, "MAVİ İKMAL", float(sup[0]), 0, 20000, func(v): sup[0] = v)
+	_spin(rules, "KIZIL İKMAL", float(sup[1]), 0, 20000, func(v): sup[1] = v)
+	var ai: Array = sc.get("ai", [false, true])
+	var hq: Array = sc.get("hq", [true, true])
+	var cr := GridContainer.new()
+	cr.columns = 2
+	rules.add_child(cr)
+	for t in 2:
+		var tt := t
+		var c1 := CheckBox.new()
+		c1.text = ["Mavi karargâh", "Kızıl karargâh"][t]
+		c1.button_pressed = bool(hq[t])
+		c1.toggled.connect(func(v): hq[tt] = v)
+		cr.add_child(c1)
+	var c2 := CheckBox.new()
+	c2.text = "Kızıl: yapay zekâ"
+	c2.button_pressed = bool(ai[1])
+	c2.toggled.connect(func(v): ai[1] = v)
+	cr.add_child(c2)
+	var br := LineEdit.new()
+	br.placeholder_text = "Brifing metni (oyun başında görünür)"
+	br.text = String(sc.get("brief", ""))
+	br.text_changed.connect(func(t): sc["brief"] = t)
+	rules.add_child(br)
+	hud._label(rules, "BİRLİK YERLEŞTİR", 15, Hud.AMBER, hud.font_b)
+
+func _spin(parent: Control, label: String, val: float, lo: float, hi: float, cb: Callable) -> void:
+	var h := HBoxContainer.new()
+	parent.add_child(h)
+	var l := hud._label(h, label, 14, Hud.DIM, hud.font_m)
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var sp := SpinBox.new()
+	sp.min_value = lo
+	sp.max_value = hi
+	sp.step = 10
+	sp.value = val
+	sp.value_changed.connect(cb)
+	h.add_child(sp)
+
+func _set_team(t: int, row: Control) -> void:
+	team = t
+	for i in row.get_child_count():
+		row.get_child(i).button_pressed = i == t
+
+func _set_tool(t: String, g: Control) -> void:
 	tool = t
 	pts.clear()
-	for b in grid.get_children():
+	for b in g.get_children():
 		b.button_pressed = b.get_meta("tool") == t
 	_update_info()
 	Sfx.play2d("ui_click", -10.0)
@@ -142,7 +270,11 @@ func _update_info() -> void:
 	for t in TOOLS:
 		if t[0] == tool:
 			hint = t[2]
-	info.text = "%s\nBoyut: %s   Döndür: %s\nOrta tuş / WASD: kamera · Tekerlek: yakınlaştır\nİşlem sayısı: %d" % [hint, ["KÜÇÜK", "ORTA", "BÜYÜK"][size_i], "EVET" if rot90 else "HAYIR", data.get("ops", []).size()]
+	for t in _tool_list():
+		if t[0] == tool:
+			hint = t[2]
+	var nu: int = data.get("scenario", {}).get("units", []).size()
+	info.text = "%s\nBoyut: %s   Döndür: %s\nOrta tuş / WASD: kamera · Tekerlek: yakınlaştır\nİşlem: %d   Senaryo birliği: %d" % [hint, ["KÜÇÜK", "ORTA", "BÜYÜK"][size_i], "EVET" if rot90 else "HAYIR", data.get("ops", []).size(), nu]
 
 func over_ui() -> bool:
 	var m := root.get_viewport().get_mouse_position()
@@ -188,6 +320,9 @@ func _unhandled_input(e: InputEvent) -> void:
 		_update_info()
 
 func _click(p: Vector3, brush: bool) -> void:
+	if mode == "scen":
+		_scen_click(p)
+		return
 	var mg: MapGen = G.mapgen
 	var r := G.rng
 	match tool:
@@ -266,6 +401,24 @@ func _nature(tk: String, p: Vector3, n: int) -> void:
 			"rock":
 				mg.p_rock(q, r.randf_range(0.6, 1.4))
 
+func _scen_click(p: Vector3) -> void:
+	var sc := _scen()
+	if tool == "zone":
+		sc["zone"] = MapGen.vv(p)
+		return
+	if tool == "sec":
+		return
+	var yaw := Soldier._yaw_of(G.hq_pos[1 - team] - G.hq_pos[team])
+	if rot90:
+		yaw += PI * 0.5
+	var e := {"team": team, "id": tool, "p": MapGen.vv(p), "r": snappedf(yaw, 0.01)}
+	var arr: Array = sc.get("units", [])
+	arr.append(e)
+	sc["units"] = arr
+	G.main.spawn_scenario_units({"units": [e]}, true)
+	Sfx.play2d("ui_place", -8.0)
+	_update_info()
+
 func _finish_line() -> void:
 	var mg: MapGen = G.mapgen
 	var line := pts.duplicate()
@@ -301,6 +454,20 @@ func _op(f: Callable) -> void:
 	var _n := n0
 
 func _delete_near(p: Vector3) -> void:
+	if mode == "scen":
+		var sc := _scen()
+		var arr: Array = sc.get("units", [])
+		var bi := -1
+		var bd2 := 6.0
+		for i in arr.size():
+			var d := MapGen.v3(arr[i]["p"]).distance_to(p)
+			if d < bd2:
+				bd2 = d
+				bi = i
+		if bi >= 0:
+			arr.remove_at(bi)
+			_rebuild()
+		return
 	if tool == "fob" or tool == "sec":
 		var f: Array = data.get("fobs", [])
 		for i in f.size():
@@ -343,9 +510,18 @@ func _op_pos(op: Dictionary) -> Vector3:
 func _rebuild() -> void:
 	var focus: Vector3 = G.cam.target_focus
 	var size: float = G.cam.target_size
+	var m := mode
+	var t := team
+	var tl := tool
 	G.main.open_editor(data, false)
 	G.cam.jump_to(focus, true)
 	G.cam.target_size = size
+	var ne: MapEditor = G.main.editor
+	ne.team = t
+	if m != "map":
+		ne._set_mode(m)
+	ne.tool = tl
+	ne._fill_tools()
 
 func _set_biome(b: String) -> void:
 	data["biome"] = b
@@ -442,6 +618,11 @@ class EdOverlay extends Control:
 			var p := MapGen.v3(fp)
 			_ring(p, 7.0, Hud.AMBER, 2.0)
 			draw_string(f, G.cam.screen(p) + Vector2(-40, -6), "ÜS NOKTASI", HORIZONTAL_ALIGNMENT_CENTER, 80, 13, Hud.AMBER)
+		var scd: Dictionary = ed.data.get("scenario", {})
+		if not scd.is_empty() and String(scd.get("win", "")) == "hold":
+			var zp := MapGen.v3(scd.get("zone", [128, 128]))
+			_ring(zp, 14.0, Color(1, 1, 1, 0.9), 3.0)
+			draw_string(f, G.cam.screen(zp) + Vector2(-50, -8), "HEDEF BÖLGE", HORIZONTAL_ALIGNMENT_CENTER, 100, 15, Color(1, 1, 1))
 		# çizilmekte olan çizgi
 		var prev := Vector2.INF
 		for q in ed.pts:
@@ -456,7 +637,7 @@ class EdOverlay extends Control:
 		var r: float = {"house_flat": 5.0, "house_pitched": 5.0, "compound": 8.0, "ruin": 3.0, "crater": 2.5, "patch": 8.0, "hq0": 13.0, "hq1": 13.0, "fob": 7.0}.get(ed.tool, 1.5)
 		_ring(gp, r * ([0.8, 1.0, 1.3][ed.size_i] if ed.tool in ["house_flat", "house_pitched", "compound", "patch", "crater"] else 1.0), Color(0.5, 1.0, 0.7, 0.9), 2.0)
 		var title := ""
-		for t in MapEditor.TOOLS:
+		for t in ed._tool_list():
 			if t[0] == ed.tool:
 				title = t[1]
 		draw_string(f, m + Vector2(18, 28), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.95))

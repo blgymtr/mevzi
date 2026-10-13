@@ -1,4 +1,4 @@
-extends Node3D
+class_name Main extends Node3D
 # Ana sahne: ortam/ışık, oyun kurulumu, menü (arka planda yapay zekâ savaşı), test kancaları.
 
 var env: Environment
@@ -32,7 +32,9 @@ func _ready() -> void:
 			shot_scene = a.substr(8)
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
-	if shot_dir != "" and shot_scene == "editortest":
+	if shot_dir != "" and shot_scene == "scentest":
+		_run_scen_test()
+	elif shot_dir != "" and shot_scene == "editortest":
 		_run_editor_test()
 	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
 		_run_roundtrip()
@@ -171,10 +173,17 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	add_child(pc)
 	G.player = pc
 	pc.team = G.player_team
+	var scen: Dictionary = data.get("scenario", {}) if data is Dictionary else {}
+	G.scenario = scen if (not scen.is_empty() and scen.get("enabled", false)) else {}
 	if G.editor:
 		G.running = false
+		if not scen.is_empty():
+			spawn_scenario_units(scen, true)
 		return
-	_start_forces()
+	if G.scenario.is_empty():
+		_start_forces()
+	else:
+		_start_scenario(G.scenario)
 	G.running = true
 	if ambience:
 		ambience.queue_free()
@@ -206,6 +215,48 @@ func _start_forces() -> void:
 		spawn_vehicle(t, "technical", G.grid.nearest_free(base - toward * 6.0 - side * 6.0, Grid.M_LIGHT), Soldier._yaw_of(toward))
 		G.supply[t] = 650.0
 		var _r := rot
+
+func _start_scenario(sc: Dictionary) -> void:
+	var hqs: Array = sc.get("hq", [true, true])
+	for t in 2:
+		if hqs[t]:
+			var hq := place_building(t, "hq", G.hq_pos[t], 0.0)
+			hq.complete()
+	spawn_scenario_units(sc, false)
+	var sup: Array = sc.get("supply", [650, 650])
+	G.supply = [float(sup[0]), float(sup[1])]
+
+const SCEN_UNITS := {
+	"rifle_squad": "TÜFEK TİMİ", "mg_team": "MAKİNELİ TİM", "at_squad": "TANKSAVAR TİMİ", "medic_team": "SIHHİYE TİMİ",
+	"sniper_team": "KESKİN NİŞANCI", "engineer_squad": "İSTİHKÂM TİMİ", "mortar_team": "HAVAN TİMİ", "drone_team": "DRONE EKİBİ",
+	"technical": "TEKNİK ARAÇ", "apc": "ZPT", "ifv": "PSA", "aa": "UÇAKSAVAR", "tank": "TANK", "arty": "OBÜS", "heli": "SALDIRI HELİ.", "transport": "NAKLİYE HELİ.",
+	"fob": "İLERİ ÜS", "barracks": "KIŞLA", "factory": "FABRİKA", "helipad": "HELİKOPTER PİSTİ", "hospital": "HASTANE", "mgnest": "MG YUVASI", "tower": "KULE",
+}
+
+func spawn_scenario_units(sc: Dictionary, preview: bool) -> void:
+	for e in sc.get("units", []):
+		var t := int(e["team"])
+		var id := String(e["id"])
+		var p := MapGen.v3(e["p"])
+		var r := float(e.get("r", 0.0))
+		if Building.BDEF.has(id):
+			var b := place_building(t, id, p, r)
+			b.complete()
+		elif Building.PDEF.has(id):
+			var P: Dictionary = Building.PDEF[id]
+			if P.has("vehicle"):
+				var v := spawn_vehicle(t, P["vehicle"], p, r)
+				if preview:
+					v.set_process(false)
+			else:
+				var sq := Squad.new(t, P["title"])
+				G.squads.append(sq)
+				var us: Array = P["units"]
+				for i in us.size():
+					var q := G.grid.nearest_free(p + Vector3((i % 3 - 1) * 1.4, 0, (i / 3) * 1.4).rotated(Vector3.UP, r), Grid.M_INF)
+					var s := spawn_soldier(t, us[i], q, sq)
+					s.rotation.y = r
+					s.face_yaw = r
 
 func spawn_soldier(t: int, role: String, p: Vector3, sq: Squad, hp_v := 100.0) -> Soldier:
 	var s := Soldier.new()
@@ -321,9 +372,16 @@ func start_game(kind: String, data := {}) -> void:
 	G.spectate = false
 	G.player_team = 0
 	build_world(kind, randi(), data)
-	var a := AICmd.new(1)
-	add_child(a)
-	G.ais.append(a)
+	var ai_on: Array = [false, true]
+	if not G.scenario.is_empty():
+		ai_on = G.scenario.get("ai", [false, true])
+	for t in 2:
+		if ai_on[t] and t != G.player_team:
+			var a := AICmd.new(t)
+			add_child(a)
+			G.ais.append(a)
+	if not G.scenario.is_empty() and String(G.scenario.get("brief", "")) != "":
+		G.say(String(G.scenario["brief"]), G.hq_pos[0], 0)
 	G.cam.auto_pan = false
 	G.cam.input_enabled = true
 	G.cam.jump_to(G.hq_pos[0] + (G.hq_pos[1] - G.hq_pos[0]).normalized() * 18.0, true)
@@ -341,6 +399,7 @@ func _process(dt: float) -> void:
 		G.squads = G.squads.filter(func(s): return not s.alive_members().is_empty())
 	if not G.spectate:
 		G.check_victory()
+		G.scenario_step(dt)
 
 # ------------------------------------------------------------ ayarlar
 func _load_cfg() -> void:
@@ -738,4 +797,51 @@ func _run_editor_test() -> void:
 	await _wait(1.0)
 	await _shot("ed_02_play")
 	print("EDTEST play units=%d running=%s map=%s" % [G.units.size(), G.running, G.map_id])
+	get_tree().quit()
+
+func _run_scen_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	open_editor_from_builtin("winter_village")
+	await _wait(0.5)
+	var ed := editor
+	ed._set_mode("scen")
+	var sc := ed._scen()
+	sc["hq"] = [false, false]
+	sc["win"] = "annihilate"
+	ed.team = 0
+	for id in ["rifle_squad", "rifle_squad", "mg_team", "tank", "mortar_team"]:
+		ed.tool = id
+		ed._scen_click(Vector3(150 + randf_range(-10, 10), 0, 150 + randf_range(-10, 10)))
+	ed.team = 1
+	for id in ["rifle_squad", "at_squad", "ifv", "sniper_team", "drone_team"]:
+		ed.tool = id
+		ed._scen_click(Vector3(110 + randf_range(-10, 10), 0, 110 + randf_range(-10, 10)))
+	G.cam.jump_to(Vector3(130, 0, 130), true)
+	G.cam.size = 55.0
+	G.cam.target_size = 55.0
+	await _wait(1.0)
+	await _shot("scen_01_editor")
+	ed.name_edit.text = "test_senaryo"
+	ed.save()
+	var d := MapEditor.load_map("test_senaryo")
+	start_game("", d)
+	G.cam.jump_to(Vector3(130, 0, 130), true)
+	G.cam.size = 55.0
+	G.cam.target_size = 55.0
+	var any_blue := 0
+	for u in G.units:
+		if u.team == 0:
+			any_blue += 1
+	print("SCENTEST units=%d blue=%d scen=%s" % [G.units.size(), any_blue, not G.scenario.is_empty()])
+	# kızıl yapay zekâ yerine mavi birlikleri de saldırt
+	for u in G.units:
+		if u is Soldier or u is Vehicle:
+			u.cmd_move(Vector3(130, 0, 130))
+	Engine.time_scale = 3.0
+	var t0 := Time.get_ticks_msec()
+	while not G.game_over and Time.get_ticks_msec() - t0 < 60000:
+		await get_tree().process_frame
+	await _shot("scen_02_play")
+	print("SCENTEST over=%s winner=%d t=%d" % [G.game_over, G.winner, int(G.time)])
 	get_tree().quit()
