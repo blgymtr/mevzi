@@ -54,9 +54,9 @@ func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String) -> 
 	projs.append(p)
 	G.fx.tracer(from, from + p.vel * p.life, sp, Color(1.0, 0.8, 0.45) if mode != "auto" else Color(1.0, 0.6, 0.3), 0.16 if mode != "auto" else 0.1, 6.0 if mode != "auto" else 3.0)
 
-func rocket(from: Vector3, to: Vector3, team: int, src, target) -> void:
+func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -> void:
 	var p := Proj.new()
-	p.kind = "rpg"
+	p.kind = kind
 	p.pos = from
 	var d := to - from
 	var L := d.length()
@@ -143,7 +143,7 @@ func _process(dt: float) -> void:
 		match p.kind:
 			"ap", "he", "auto":
 				done = _step_shell(p, dt)
-			"rpg":
+			"rpg", "atgm":
 				done = _step_rocket(p, dt)
 			"grenade":
 				done = _step_grenade(p, dt)
@@ -194,6 +194,7 @@ func _shell_hit(p: Proj, at: Vector3, direct: Unit) -> void:
 	match p.kind:
 		"ap":
 			if direct:
+				if direct is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
 				direct.take_damage(230.0, p.src, "ap")
 				G.fx.impact(at, "metal")
 				G.fx.explosion(at, 0.8, "ap")
@@ -202,10 +203,12 @@ func _shell_hit(p: Proj, at: Vector3, direct: Unit) -> void:
 				G.explode(at, 2.5, 60.0, "shell", p.team, p.src)
 		"he":
 			if direct:
+				if direct is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
 				direct.take_damage(140.0, p.src, "he")
 			G.explode(at, 4.5, 130.0, "shell", p.team, p.src)
 		"auto":
 			if direct:
+				if direct is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
 				direct.take_damage(32.0, p.src, "auto")
 				G.fx.impact(at, "metal")
 			G.explode(at, 1.7, 40.0, "auto", p.team, p.src)
@@ -221,7 +224,8 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 	var tgt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
 	if tgt != null and tgt.alive and not (tgt is Soldier):
 		if np.distance_to(tgt.aim_point()) < tgt.radius * 0.85:
-			tgt.take_damage(270.0, p.src, "rpg")
+			if tgt is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
+			tgt.take_damage(310.0 if p.kind == "atgm" else 270.0, p.src, p.kind)
 			G.fx.explosion(np, 1.1, "rpg")
 			Sfx.play3d("expl_med", np, 2.0)
 			G.fx.impact(np, "metal")

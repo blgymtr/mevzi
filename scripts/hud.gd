@@ -672,7 +672,10 @@ func _update_info() -> void:
 		status.text = "%s   ·   %s" % [I18n.s(stt), I18n.s(tm)]
 		status.add_theme_color_override("font_color", RED if u.suppression >= 70 or u.incapacitated() else (AMBER if u.suppression >= 30 else GREEN))
 	elif u is Vehicle:
-		var parts: Array = ["%s %d / %d" % [I18n.s("ZIRH"), int(u.hp), int(u.max_hp)]]
+		var parts: Array = ["%s %d / %d" % [I18n.s("GÖVDE"), int(u.hp), int(u.max_hp)]]
+		if Vehicle.ARMOR.has(u.vtype):
+			var ar: Array = Vehicle.ARMOR[u.vtype][0]
+			parts.append("%s %d·%d·%d·%d" % [I18n.s("ZIRH"), ar[0], ar[1], ar[2], ar[3]])
 		if u.crew_max > 0:
 			parts.append("%s %d/%d" % [I18n.s("MÜRETTEBAT"), u.crew_n, u.crew_max])
 		if u.capacity() > 0:

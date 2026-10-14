@@ -243,6 +243,8 @@ const EN := {
 	"ELLER YUKARI!": "HANDS UP!",
 	"MERMİ ALDIM": "GOT AMMO",
 	"SEKTİ!": "BOUNCED!",
+	"DELEMEDİ!": "NO PENETRATION!",
+	"GÖVDE": "HULL",
 	"ÇEKİL!": "MOVE!",
 	"SÜRÜKLE!": "DRAGGING HIM!",
 	"DAYAN!": "HANG ON!",

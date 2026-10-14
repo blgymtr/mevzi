@@ -45,6 +45,8 @@ func _ready() -> void:
 		_run_art_test()
 	elif shot_dir != "" and shot_scene == "vehtest":
 		_run_veh_test()
+	elif shot_dir != "" and shot_scene == "armortest":
+		_run_armor_test()
 	elif shot_dir != "" and shot_scene == "crash":
 		_run_crash_test()
 	elif shot_dir != "" and shot_scene == "editortest":
@@ -636,6 +638,73 @@ func _run_crash_test() -> void:
 	await _wait(2.0)
 	await _shot("crash_end")
 	print("CRASH done alive=%s,%s" % [h1.alive, h2.alive])
+	get_tree().quit()
+
+func _run_armor_test() -> void:
+	# 4 yönlü zırh + mesafeye bağlı delme: aynı atış önden/yandan/arkadan/üstten farklı hasar verir
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	sandbox_ui.run("fog")
+	sandbox_ui.run("ai off")
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var res := {}
+	for vt in ["tank", "ifv", "apc", "technical"]:
+		for k in ["bullet", "hmg", "auto", "rpg", "atgm", "ap", "shell"]:
+			var row: Array = []
+			for side in 4:
+				var v := spawn_vehicle(1, vt, c, 0.0)
+				v.cmd_hold()
+				var dirs := [v.forward(), v.forward().cross(Vector3.UP), -v.forward(), Vector3.UP]
+				var from: Vector3 = v.position + dirs[side] * 25.0
+				Vehicle.shot_from = from
+				var h0: float = v.hp
+				v.take_damage(100.0, null, k)
+				row.append(int(h0 - v.hp))
+				v.queue_free()
+				G.units.erase(v)
+			res[vt + ":" + k] = row
+			print("ARMOR %-10s %-7s ön/yan/arka/üst = %s" % [vt, k, row])
+	# beklentiler
+	if res["tank:rpg"][0] > 10 or res["tank:rpg"][2] < 90:
+		fails += 1
+	if res["tank:auto"][0] > 0 or res["tank:auto"][1] < 50:
+		fails += 1
+	if res["tank:bullet"].max() > 0:
+		fails += 1
+	if res["apc:hmg"][1] < 90 or res["apc:hmg"][0] >= res["apc:hmg"][1]:
+		fails += 1
+	if res["tank:ap"][0] < 90:
+		fails += 1
+	if res["technical:bullet"][0] <= 0:
+		fails += 1
+	# mesafe: yakın ve uzak kinetik delme
+	var tk := spawn_vehicle(1, "ifv", c, 0.0)
+	var near_p: float = tk.pen_at("auto", 5.0)
+	var far_p: float = tk.pen_at("auto", 80.0)
+	print("ARMOR pen auto near=%.1f far=%.1f" % [near_p, far_p])
+	if near_p <= far_p:
+		fails += 1
+	# gerçek mermi: piyade tanksavarı tankı önden ve arkadan vurur
+	var tank := spawn_vehicle(1, "tank", c, 0.0)
+	tank.cmd_hold()
+	tk.queue_free()
+	G.units.erase(tk)
+	var h0: float = tank.hp
+	G.bal.rocket(tank.position + tank.forward() * 20.0 + Vector3(0, 1.2, 0), tank.aim_point(), 0, null, tank)
+	await _wait(1.5)
+	var d_front: float = h0 - tank.hp
+	h0 = tank.hp
+	G.bal.rocket(tank.position - tank.forward() * 20.0 + Vector3(0, 1.2, 0), tank.aim_point(), 0, null, tank)
+	await _wait(1.5)
+	var d_rear: float = h0 - tank.hp
+	print("ARMOR live rpg front=%d rear=%d side=%s" % [int(d_front), int(d_rear), tank.SIDE_NAME[maxi(tank.last_side, 0)]])
+	if d_rear <= d_front:
+		fails += 1
+	G.cam.jump_to(tank.position, true)
+	await _shot("armor_01")
+	print("ARMORTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_veh_test() -> void:

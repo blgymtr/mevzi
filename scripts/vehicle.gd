@@ -31,6 +31,33 @@ var wheels: Array = []
 var gunner: SoldierBody
 var M: Dictionary
 var armor := 0
+# 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
+const ARMOR := {
+	"tank": [[22, 8, 5, 3], [26, 11, 5, 3]],
+	"ifv": [[8, 4, 3, 2], [10, 5, 3, 2]],
+	"apc": [[5, 3, 2, 1], [6, 3, 2, 1]],
+	"aa": [[6, 3, 2, 1], [7, 3, 2, 1]],
+	"arty": [[4, 3, 2, 1], [5, 3, 2, 1]],
+	"heli": [[2, 2, 2, 1], [2, 2, 2, 1]],
+	"transport": [[1, 1, 1, 1], [1, 1, 1, 1]],
+	"fieldgun": [[2, 0, 0, 0], [2, 0, 0, 0]],
+	"atgun": [[2, 0, 0, 0], [2, 0, 0, 0]],
+	"howitzer": [[1, 0, 0, 0], [1, 0, 0, 0]],
+	"mtngun": [[1, 0, 0, 0], [1, 0, 0, 0]],
+}
+# silah delmesi: [tip 0=kinetik 1=HEAT, yakın delme, 60 m+ delme, üstten saldırı]
+const PEN := {
+	"bullet": [0, 1, 0, false], "sniper": [0, 3, 2, false], "hmg": [0, 5, 3, false], "auto": [0, 10, 7, false],
+	"crush": [0, 0, 0, false], "melee": [0, 0, 0, false], "blast": [1, 2, 2, false],
+	"ap": [0, 28, 23, false], "he": [1, 7, 7, false], "rpg": [1, 17, 17, false], "atgm": [1, 27, 27, false],
+	"topatk": [1, 24, 24, true], "grenade": [1, 2, 2, false], "shell": [1, 6, 6, true], "big": [1, 9, 9, true],
+	"mortar": [1, 4, 4, true], "mine": [0, 12, 12, true], "fpv": [1, 10, 10, true],
+}
+const SIDE_NAME := ["ÖN", "YAN", "ARKA", "ÜST"]
+static var shot_from := Vector3.INF
+var _nopen_t := 0.0
+var last_side := -1
+var last_pen := 0.0
 var speed_max := 6.0
 var cur_speed := 0.0
 var heading := 0.0
@@ -822,7 +849,7 @@ func _aim_fire(dt: float) -> void:
 				if atgm_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air():
 					atgm_cd = 14.0
 					var mp := muzzle_world() + Vector3(0, 0.4, 0)
-					G.bal.rocket(mp, t.aim_point(), team, self, t)
+					G.bal.rocket(mp, t.aim_point(), team, self, t, "atgm")
 					Sfx.play3d("rpg", mp, 2.0)
 			"aa", "aagun":
 				_fire_flak(t)
@@ -1110,6 +1137,8 @@ func _visuals(dt: float) -> void:
 
 # ------------------------------------------------------------ hasar
 func take_damage(amount: float, src, k := "bullet") -> void:
+	var from := shot_from
+	shot_from = Vector3.INF
 	if not alive:
 		return
 	var m := 1.0
@@ -1133,33 +1162,26 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 		if hp <= 0.0:
 			destroy(src)
 		return
-	match k:
-		"bullet", "crush":
-			m = [0.6, 0.04, 0.0][armor]
-			if armor == 2 and randf() < 0.05:
-				Sfx.play3d("ricochet", position, -6.0)
-		"hmg":
-			m = [1.0, 0.3, 0.0][armor]
-		"grenade":
-			m = [1.0, 0.5, 0.12][armor]
-		"auto":
-			m = [1.0, 0.7, 0.15][armor]
-	# ön zırhtan sekme (eğik açı): tanksavar roketi ve tank mermisi
-	if (k == "ap" or k == "rpg") and armor == 2 and src != null and is_instance_valid(src):
-		var to_src: Vector3 = src.position - position
-		to_src.y = 0
-		if to_src.length() > 0.1:
-			var front := forward().dot(to_src.normalized())
-			var chance := 0.35 if front > 0.55 else (0.12 if front > -0.2 else 0.0)
-			if randf() < chance:
-				Sfx.play3d("ricochet", position, 2.0)
+	if from == Vector3.INF and src != null and is_instance_valid(src):
+		from = src.position
+	var pk := k
+	if k == "bullet" and src != null and is_instance_valid(src) and src is Soldier and src.role == "sniper":
+		pk = "sniper"
+	m = pen_mult(pk, from)
+	if m <= 0.0:
+		# delemedi: sekme
+		if src != null and is_instance_valid(src) and src is Unit:
+			attacker = src
+		last_hit = G.time
+		if k in ["ap", "rpg", "atgm", "auto", "hmg", "topatk"]:
+			Sfx.play3d("ricochet", position, 2.0 if k in ["ap", "rpg", "atgm"] else -6.0)
+			if k in ["ap", "rpg", "atgm", "topatk"]:
 				G.fx.impact(aim_point(), "metal")
 				G.fx.flash(aim_point(), 3.0, 4.0, 0.08, Color(1.0, 0.85, 0.5))
-				say("SEKTİ!")
-				last_hit = G.time
-				if src is Unit:
-					attacker = src
-				return
+				if G.time - _nopen_t > 2.0:
+					_nopen_t = G.time
+					say("SEKTİ!" if last_side == 0 else "DELEMEDİ!")
+		return
 	var dmg := amount * m
 	if dmg <= 0.0:
 		return
@@ -1171,11 +1193,62 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if hp <= 0.0:
 		destroy(src)
 
+# atışın geldiği yöne göre zırh yanı: 0 ön, 1 yan, 2 arka, 3 üst
+func armor_side(from: Vector3, k: String) -> int:
+	var pd: Array = PEN.get(k, PEN["bullet"])
+	if pd[3] or from == Vector3.INF:
+		return 3
+	var to := from - position
+	to.y = 0.0
+	if to.length() < 0.1:
+		return 3
+	var f := forward().dot(to.normalized())
+	if f > 0.5:
+		return 0
+	if f < -0.6:
+		return 2
+	return 1
+
+func armor_value(kind: int, side: int) -> int:
+	var a: Array = ARMOR.get(vtype, [])
+	if a.is_empty():
+		return 0
+	return a[kind][side]
+
+func pen_at(k: String, dist: float) -> float:
+	var pd: Array = PEN.get(k, PEN["bullet"])
+	return lerpf(float(pd[1]), float(pd[2]), clampf(dist / 60.0, 0.0, 1.0))
+
+# delme - zırh farkına göre hasar çarpanı (0 = delemedi)
+func pen_mult(k: String, from: Vector3) -> float:
+	var pd: Array = PEN.get(k, PEN["bullet"])
+	var side := armor_side(from, k)
+	var a := armor_value(pd[0], side)
+	var dist := 0.0 if from == Vector3.INF else from.distance_to(position)
+	var p := pen_at(k, dist)
+	last_side = side
+	last_pen = p
+	if a <= 0:
+		return 0.6 if k == "bullet" else 1.0
+	var diff := p - a
+	if diff >= 0.0:
+		return 1.0 + minf(diff, 8.0) * 0.025
+	# delemeyen isabet: kinetik küçük kalibre hiç işlemez (sınırda hafif), patlayıcı şok/parça hasarı verir
+	if pd[0] == 0 and k in ["bullet", "sniper", "hmg", "auto"]:
+		return 0.25 if diff > -1.0 else 0.0
+	return maxf(0.0, 1.0 + diff * 0.3) * 0.45
+
+func armor_text() -> String:
+	var a: Array = ARMOR.get(vtype, [])
+	if a.is_empty():
+		return "-"
+	return "%d/%d/%d/%d · HEAT %d/%d/%d/%d" % [a[0][0], a[0][1], a[0][2], a[0][3], a[1][0], a[1][1], a[1][2], a[1][3]]
+
 func _subsystem_hit(dmg: float, src, k: String) -> void:
-	var boom := k in ["rpg", "ap", "he", "shell", "big", "mine", "grenade"]
+	var boom := k in ["rpg", "atgm", "topatk", "fpv", "mortar", "ap", "he", "shell", "big", "mine", "grenade"]
 	# palet: patlama ve tanksavar
 	if vtype in TRACKED and tracks_broken <= 0.0:
-		var pc := {"mine": 0.9, "rpg": 0.2, "ap": 0.14, "he": 0.18, "shell": 0.22, "big": 0.3}.get(k, 0.0)
+		var pc := {"mine": 1.0, "rpg": 0.2, "atgm": 0.2, "topatk": 0.1, "ap": 0.14, "he": 0.18, "shell": 0.22, "big": 0.3}.get(k, 0.0)
 		if randf() < pc:
 			tracks_broken = 45.0
 			say("PALET KOPTU!", 3.0)

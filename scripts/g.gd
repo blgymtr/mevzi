@@ -218,6 +218,8 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 			var r_eff: float = radius + u.radius
 			if d < r_eff:
 				var f := 1.0 - clampf((d - u.radius) / radius, 0.0, 1.0) * 0.7
+				if u is Vehicle:
+					Vehicle.shot_from = p
 				u.take_damage(dmg * f, src, kind)
 	for s in near(p, radius * 4.0):
 		if s is Soldier and s.alive:

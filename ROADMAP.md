@@ -3,6 +3,16 @@
 Ana test aracı: **Sandbox** (her yeni birim/yapı otomatik listelenir, sınırsız çıkarılır).
 Takımlar: **Müttefikler vs Mihver** — uluslar: ABD, Rusya, Almanya, Birleşik Krallık, Türkiye. Şu an odak: **ABD vs Rusya**.
 
+## 🎯 Çekirdek plan (BA REA + Sudden Strike 5 / CoH3 / Men of War AS2)
+Model ve ulus içerikleri en sona; önce sistem, kural, mekanik. Sıra: **4 → 3 → 5 → 6**, sonra modeller/uluslar.
+1. ✅ Organik asker modelleri (Blender, iskeletli)
+2. ✅ Helikopter düşüşü
+3. ⏳ Stres (Sarsılmış/Panik, BA) + araç kritikleri (hareket/optik/nişan/dolum, sarı/kırmızı) + CoH3 tarzı moral geri çekilmesi
+4. ✅ Zırh: 4 yön × kinetik/HEAT, mesafeye bağlı delme, üstten saldırı, sekme/delemedi (MoW AS2 tarzı yön önemli)
+5. ⏳ Lojistik + modlar: kg ikmal, mühimmat maliyeti, üsse dönüş iadesi (BA), konuşlanma aşaması, Fetih + Savaş Hedefleri, SS5 tarzı ikmal hattı
+6. ⏳ Hava durumu + gece: kum fırtınası, sağanak/sel, kar fırtınası/donma/ısınma, gece görüşü
+7. ⏳ Asker modelleri v3 (referans: gerçek oranlı ABD/Rus piyadesi, plaka taşıyıcı, kask+gözlük, dizlik, eldiven) — ardından uluslar ve araç listeleri
+
 ## ✅ Bitenler
 - Görsel temel: fotoğraf dokulu arazi, su/köprü, three.js model üreticisi (tüm araçlar ve askerler v2)
 - Arayüz: kompakt alt panel, CoH2/SS5/BA emirleri, İngilizce
