@@ -5,7 +5,7 @@ const BDEF := {
 	"hq": {"title": "Karargâh", "hp": 3200.0, "size": Vector2(17, 13), "cost": 0, "time": 1.0, "cap": 40, "sight": 46.0, "prod": ["rifle_squad", "medic_team"], "desc": "Ana üs. Kaybedilirse ve ileri üs kalmazsa savaş biter."},
 	"fob": {"title": "İleri Üs", "hp": 1800.0, "size": Vector2(10, 10), "cost": 300, "time": 40.0, "cap": 12, "sight": 40.0, "prod": ["rifle_squad", "medic_team"], "desc": "Birlik sınırını artırır, mühimmat verir, yol ve ikmal kamyonu getirir. Ele geçirilebilir."},
 	"barracks": {"title": "Kışla", "hp": 1200.0, "size": Vector2(9, 6), "cost": 250, "time": 30.0, "cap": 0, "sight": 30.0, "prod": ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"], "desc": "Tüm piyade timlerini eğitir."},
-	"factory": {"title": "Araç Fabrikası", "hp": 1600.0, "size": Vector2(12, 9), "cost": 400, "time": 45.0, "cap": 0, "sight": 30.0, "prod": ["technical", "apc", "ifv", "aa", "tank", "arty"], "desc": "Teknik araç, ZPT ve tank üretir."},
+	"factory": {"title": "Araç Fabrikası", "hp": 1600.0, "size": Vector2(12, 9), "cost": 400, "time": 45.0, "cap": 0, "sight": 30.0, "prod": ["technical", "apc", "ifv", "aa", "tank", "arty", "fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun", "mlrs"], "desc": "Zırhlı araçlar ve topçu üretir."},
 	"helipad": {"title": "Helikopter Pisti", "hp": 900.0, "size": Vector2(11, 11), "cost": 450, "time": 40.0, "cap": 0, "sight": 32.0, "prod": ["heli", "transport"], "desc": "Saldırı helikopteri üretir."},
 	"hospital": {"title": "Sahra Hastanesi", "hp": 700.0, "size": Vector2(7, 6), "cost": 180, "time": 22.0, "cap": 0, "sight": 28.0, "prod": [], "desc": "Sedyeciler 45 m içindeki yaralıları toplar; yakındakiler iyileşir."},
 	"mgnest": {"title": "MG Yuvası", "hp": 600.0, "size": Vector2(4, 4), "cost": 120, "time": 18.0, "cap": 0, "sight": 46.0, "prod": [], "desc": "Kum torbalı sabit makineli tüfek."},
@@ -14,6 +14,7 @@ const BDEF := {
 	"concrete": {"title": "Beton Duvar", "hp": 300.0, "size": Vector2(1, 1), "cost": 12, "time": 2.0, "cap": 0, "sight": 10.0, "prod": [], "line": true, "desc": "Yüksek, sağlam duvar (metre başına)."},
 	"wire": {"title": "Dikenli Tel", "hp": 100.0, "size": Vector2(1, 1), "cost": 3, "time": 0.6, "cap": 0, "sight": 10.0, "prod": [], "line": true, "desc": "Piyadeyi yavaşlatır."},
 	"trench": {"title": "Siper Hendeği", "hp": 100.0, "size": Vector2(1, 1), "cost": 4, "time": 1.4, "cap": 0, "sight": 10.0, "prod": [], "line": true, "desc": "Her yönden korunma sağlar."},
+	"coastal": {"title": "Sahil Topçusu", "hp": 2600.0, "size": Vector2(6, 6), "cost": 550, "time": 45.0, "cap": 0, "sight": 50.0, "prod": [], "desc": "Sabit ağır top: 190 m menzil, araçları ve yığınakları döver."},
 	"trap": {"title": "Tank Tuzağı", "hp": 100.0, "size": Vector2(2, 2), "cost": 30, "time": 6.0, "cap": 0, "sight": 10.0, "prod": [], "desc": "Araçları durdurur."},
 }
 
@@ -28,11 +29,18 @@ const PDEF := {
 	"drone_team": {"title": "Drone Ekibi", "cost": 190, "time": 14.0, "cap": 2, "units": ["drone", "drone"], "icon": "inf"},
 	"ifv": {"title": "Piyade Savaş Aracı", "cost": 480, "time": 24.0, "cap": 3, "vehicle": "ifv", "icon": "apc"},
 	"aa": {"title": "Uçaksavar", "cost": 420, "time": 22.0, "cap": 3, "vehicle": "aa", "icon": "aa"},
-	"arty": {"title": "Obüs", "cost": 600, "time": 30.0, "cap": 4, "vehicle": "arty", "icon": "arty"},
+	"arty": {"title": "Kundağı Motorlu Obüs", "cost": 600, "time": 30.0, "cap": 4, "vehicle": "arty", "icon": "arty"},
 	"transport": {"title": "Nakliye Helikopteri", "cost": 520, "time": 28.0, "cap": 3, "vehicle": "transport", "icon": "heli"},
 	"technical": {"title": "Teknik Araç", "cost": 160, "time": 14.0, "cap": 2, "vehicle": "technical", "icon": "tech"},
 	"apc": {"title": "ZPT", "cost": 380, "time": 22.0, "cap": 3, "vehicle": "apc", "icon": "apc"},
 	"tank": {"title": "Tank", "cost": 650, "time": 30.0, "cap": 4, "vehicle": "tank", "icon": "tank"},
+	"fieldgun": {"title": "Sahra Topu", "cost": 280, "time": 16.0, "cap": 3, "vehicle": "fieldgun", "icon": "arty"},
+	"howitzer": {"title": "Çekili Obüs", "cost": 420, "time": 22.0, "cap": 3, "vehicle": "howitzer", "icon": "arty"},
+	"atgun": {"title": "Tanksavar Topu", "cost": 300, "time": 16.0, "cap": 3, "vehicle": "atgun", "icon": "arty"},
+	"aagun": {"title": "Uçaksavar Topu", "cost": 240, "time": 14.0, "cap": 2, "vehicle": "aagun", "icon": "aa"},
+	"hmortar": {"title": "Ağır Havan", "cost": 220, "time": 12.0, "cap": 2, "vehicle": "hmortar", "icon": "arty"},
+	"mtngun": {"title": "Dağ Topu", "cost": 260, "time": 14.0, "cap": 2, "vehicle": "mtngun", "icon": "arty"},
+	"mlrs": {"title": "Roketatar", "cost": 700, "time": 32.0, "cap": 4, "vehicle": "mlrs", "icon": "arty"},
 	"heli": {"title": "Saldırı Helikopteri", "cost": 800, "time": 36.0, "cap": 5, "vehicle": "heli", "icon": "heli"},
 }
 
@@ -56,6 +64,7 @@ var gun_burst := 0
 var gun_target: Unit = null
 var gunner: SoldierBody
 var gun_pivot: Node3D
+var gun_muzzle := Vector3.ZERO
 var think_t := 0.0
 var bearers: Array = []
 var job: Stretcher = null
@@ -248,6 +257,27 @@ func _build_model() -> void:
 	mi.mesh = mb.commit(Mats.vc())
 	model.add_child(mi)
 	set_layer(model, 1)
+	if btype == "coastal":
+		var CM := Art.vehicle("coastal", team)
+		if not CM.is_empty():
+			for hm in CM["hulls"]:
+				var hmi := MeshInstance3D.new()
+				hmi.mesh = hm[0]
+				hmi.position = hm[1]
+				model.add_child(hmi)
+			gun_pivot = Node3D.new()
+			gun_pivot.position = CM["turret_pos"]
+			gun_pivot.rotation.y = rot
+			add_child(gun_pivot)
+			var tmi := MeshInstance3D.new()
+			tmi.mesh = CM["turret"]
+			gun_pivot.add_child(tmi)
+			var bmi := MeshInstance3D.new()
+			bmi.mesh = CM["barrel"]
+			bmi.position = CM["barrel_pos"]
+			gun_pivot.add_child(bmi)
+			gun_muzzle = CM["barrel_pos"] + CM["muzzle"]
+			set_layer(gun_pivot, 2)
 	if btype == "mgnest":
 		gun_pivot = Node3D.new()
 		gun_pivot.position = Vector3(0, 0, 0.3)
@@ -278,7 +308,7 @@ func _apply_construct_look() -> void:
 			c.material_override = null if done else Mats.construct()
 	var bs := Vector3(1.35, 1.25, 1.35) if btype == "hq" else Vector3.ONE
 	model.scale = bs if done else Vector3(bs.x, bs.y * lerpf(0.25, 1.0, progress), bs.z)
-	if gunner:
+	if gun_pivot:
 		gun_pivot.visible = done
 
 func occupy_grid() -> void:
@@ -288,6 +318,8 @@ func occupy_grid() -> void:
 			h = 4.0
 		"fob", "mgnest":
 			h = 1.0
+		"coastal":
+			h = 1.1
 		"helipad":
 			h = 0.0
 		"tower":
@@ -429,6 +461,8 @@ func _process(dt: float) -> void:
 	_production(dt)
 	if btype == "mgnest":
 		_mg(dt)
+	elif btype == "coastal" and gun_pivot:
+		_coastal(dt)
 
 func _think() -> void:
 	if btype == "fob" or btype == "hq":
@@ -603,6 +637,36 @@ func _spawn(id: String) -> void:
 			G.say(I18n.s("%s hazır") % I18n.s(P["title"]), door, team)
 	if team == G.player_team and not G.spectate:
 		Sfx.play2d("ui_done", -6.0)
+
+func _coastal(dt: float) -> void:
+	gun_cd -= dt
+	if gun_target == null or not is_instance_valid(gun_target) or not gun_target.alive or randf() < 0.01:
+		gun_target = null
+		var best := 1e9
+		for e in G.enemies_near(position, 190.0, team):
+			if not G.is_seen(e, team) or (e is Vehicle and e.is_air()):
+				continue
+			var d := dist2(e)
+			if d < 25.0:
+				continue
+			var sc := d - (60.0 if e is Vehicle else 0.0) - G.enemies_near(e.position, 8.0, team).size() * 6.0
+			if sc < best:
+				best = sc
+				gun_target = e
+	if gun_target == null:
+		return
+	var want := Soldier._yaw_of(gun_target.position - position)
+	gun_pivot.rotation.y = rotate_toward(gun_pivot.rotation.y, want, dt * 0.35)
+	if gun_cd > 0.0 or absf(angle_difference(gun_pivot.rotation.y, want)) > 0.06:
+		return
+	gun_cd = 9.0
+	var mp := gun_pivot.global_transform * gun_muzzle
+	var d2 := dist2(gun_target)
+	var err := d2 * 0.04 + 2.0
+	G.bal.artillery(mp, gun_target.position + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self)
+	G.fx.cannon_blast(mp, (gun_target.position - mp).normalized())
+	Sfx.play3d("tank_fire", mp, 8.0)
+	G.cam.shake(0.25, position)
 
 func _mg(dt: float) -> void:
 	gun_cd -= dt

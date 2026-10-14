@@ -8,9 +8,16 @@ const DEF := {
 	"heli": {"title": "Saldırı Helikopteri", "hp": 650.0, "armor": 1, "speed": 17.0, "accel": 6.0, "turn": 1.4, "radius": 3.6, "len": 11.0, "nav": Grid.M_LIGHT, "sight": 62.0, "cap": 5, "tturn": 0.0, "icon": "heli"},
 	"ifv": {"title": "Piyade Savaş Aracı", "hp": 620.0, "armor": 1, "speed": 8.0, "accel": 3.0, "turn": 0.9, "radius": 2.6, "len": 6.8, "nav": Grid.M_HEAVY, "sight": 50.0, "cap": 3, "tturn": 1.5, "icon": "apc"},
 	"aa": {"title": "Uçaksavar", "hp": 480.0, "armor": 1, "speed": 7.5, "accel": 2.8, "turn": 0.9, "radius": 2.6, "len": 6.6, "nav": Grid.M_HEAVY, "sight": 70.0, "cap": 3, "tturn": 2.4, "icon": "aa"},
-	"arty": {"title": "Obüs", "hp": 420.0, "armor": 1, "speed": 6.0, "accel": 2.2, "turn": 0.7, "radius": 2.8, "len": 7.0, "nav": Grid.M_HEAVY, "sight": 34.0, "cap": 4, "tturn": 0.6, "icon": "arty"},
+	"arty": {"title": "Kundağı Motorlu Obüs", "hp": 420.0, "armor": 1, "speed": 6.0, "accel": 2.2, "turn": 0.7, "radius": 2.8, "len": 7.0, "nav": Grid.M_HEAVY, "sight": 34.0, "cap": 4, "tturn": 0.6, "icon": "arty"},
 	"transport": {"title": "Nakliye Helikopteri", "hp": 520.0, "armor": 1, "speed": 20.0, "accel": 6.0, "turn": 1.3, "radius": 4.0, "len": 12.0, "nav": Grid.M_LIGHT, "sight": 50.0, "cap": 3, "tturn": 0.0, "icon": "heli"},
 	"fpv": {"title": "FPV Drone", "hp": 22.0, "armor": 0, "speed": 21.0, "accel": 16.0, "turn": 4.0, "radius": 0.6, "len": 0.5, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 0, "tturn": 0.0, "icon": "fpv"},
+	"fieldgun": {"title": "Sahra Topu", "hp": 360.0, "armor": 0, "speed": 1.6, "accel": 1.5, "turn": 0.6, "radius": 1.6, "len": 4.0, "nav": Grid.M_LIGHT, "sight": 40.0, "cap": 3, "tturn": 0.7, "icon": "arty"},
+	"howitzer": {"title": "Çekili Obüs", "hp": 380.0, "armor": 0, "speed": 1.1, "accel": 1.0, "turn": 0.45, "radius": 2.0, "len": 5.0, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 3, "tturn": 0.45, "icon": "arty"},
+	"atgun": {"title": "Tanksavar Topu", "hp": 300.0, "armor": 0, "speed": 1.5, "accel": 1.5, "turn": 0.7, "radius": 1.5, "len": 4.0, "nav": Grid.M_LIGHT, "sight": 44.0, "cap": 3, "tturn": 0.8, "icon": "arty"},
+	"aagun": {"title": "Uçaksavar Topu", "hp": 260.0, "armor": 0, "speed": 1.7, "accel": 1.6, "turn": 0.8, "radius": 1.6, "len": 3.6, "nav": Grid.M_LIGHT, "sight": 62.0, "cap": 2, "tturn": 2.6, "icon": "aa"},
+	"hmortar": {"title": "Ağır Havan", "hp": 200.0, "armor": 0, "speed": 1.3, "accel": 1.4, "turn": 1.0, "radius": 1.2, "len": 2.0, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 2, "tturn": 1.2, "icon": "arty"},
+	"mtngun": {"title": "Dağ Topu", "hp": 240.0, "armor": 0, "speed": 2.3, "accel": 2.0, "turn": 0.9, "radius": 1.3, "len": 3.0, "nav": Grid.M_LIGHT, "sight": 34.0, "cap": 2, "tturn": 0.9, "icon": "arty"},
+	"mlrs": {"title": "Roketatar", "hp": 320.0, "armor": 0, "speed": 10.0, "accel": 3.0, "turn": 1.0, "radius": 2.3, "len": 7.0, "nav": Grid.M_LIGHT, "sight": 32.0, "cap": 4, "tturn": 0.6, "icon": "arty"},
 	"truck": {"title": "İkmal Kamyonu", "hp": 160.0, "armor": 0, "speed": 10.0, "accel": 3.0, "turn": 1.0, "radius": 2.3, "len": 7.0, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 0, "tturn": 0.0, "icon": "truck"},
 }
 
@@ -75,6 +82,11 @@ var amove_dest := Vector3.INF
 var smoke_charges := 2
 var ground_pt := Vector3.ZERO
 var ground_until := 0.0
+const TOWED := ["fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun"]
+const INDIRECT := ["arty", "howitzer", "hmortar", "mtngun", "mlrs"]
+var crew: Array = []
+var mlrs_left := 0
+var mlrs_t := 0.0
 const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2}
 
 func is_air() -> bool:
@@ -186,6 +198,17 @@ func setup(t: int, vt: String) -> void:
 		turret.add_child(gunner)
 		gunner.build(t, "rifle", G.map_kind == "winter")
 		gunner.weapon.visible = false
+	if vt in TOWED:
+		# çekili top: yanında çömelmiş mürettebat
+		var spots := [Vector3(-0.9, 0, 1.3), Vector3(0.9, 0, 1.1), Vector3(0.3, 0, 2.2)]
+		for i in (2 if vt in ["hmortar", "mtngun", "aagun"] else 3):
+			var cb := SoldierBody.new()
+			cb.position = spots[i]
+			cb.rotation.y = randf_range(-0.4, 0.4)
+			hull.add_child(cb)
+			cb.build(t, "rifle", G.map_kind == "winter")
+			cb.weapon.visible = false
+			crew.append(cb)
 	if vt == "fpv":
 		hull.position.y = 2.2
 		Sfx.loop3d("drone", self, -6.0)
@@ -223,7 +246,7 @@ func setup(t: int, vt: String) -> void:
 	dest = position
 	_last_pos = position
 	think_t = randf() * 0.5
-	if vt != "fpv":
+	if vt != "fpv" and not (vt in TOWED):
 		engine = Sfx.loop3d("heli" if vt in ["heli", "transport"] else ("engine_tank" if vt in ["tank", "apc", "ifv", "aa", "arty"] else "engine_truck"), self, -8.0 if vt in ["heli", "transport"] else -10.0)
 
 func forward() -> Vector3:
@@ -333,13 +356,13 @@ func cmd_smoke() -> bool:
 	return true
 
 func can_ground_fire() -> bool:
-	return vtype in ["tank", "apc", "ifv", "technical", "arty"]
+	return vtype in ["tank", "apc", "ifv", "technical", "arty", "fieldgun", "howitzer", "atgun", "hmortar", "mtngun", "mlrs"]
 
 func cmd_suppress(p: Vector3) -> void:
 	if not alive or not can_ground_fire():
 		return
 	ground_pt = G.on_ground(p)
-	ground_until = G.time + (24.0 if vtype == "arty" else 12.0)
+	ground_until = G.time + (24.0 if vtype in INDIRECT else 12.0)
 	if order != "retreat":
 		path = PackedVector3Array()
 		order = ""
@@ -367,6 +390,20 @@ func _range() -> float:
 			return 150.0
 		"transport":
 			return 30.0
+		"fieldgun":
+			return 64.0
+		"howitzer":
+			return 175.0
+		"atgun":
+			return 60.0
+		"aagun":
+			return 64.0
+		"hmortar":
+			return 110.0
+		"mtngun":
+			return 125.0
+		"mlrs":
+			return 180.0
 	return 0.0
 
 # ------------------------------------------------------------ döngü
@@ -544,8 +581,19 @@ func _scan() -> void:
 			continue
 		elif air:
 			sc += 15.0
-		if vtype == "arty":
-			if d < 30.0 or air:
+		if vtype == "aagun":
+			if air:
+				sc -= 200.0
+			elif d > 40.0 or e is Building or (e is Vehicle and e.armor > 0):
+				continue
+		elif vtype == "atgun":
+			if air:
+				continue
+			sc -= 60.0 if (e is Vehicle and e.armor > 0) else (0.0 if e is Vehicle else -25.0)
+		elif vtype == "fieldgun" and air:
+			continue
+		if vtype in INDIRECT:
+			if d < (18.0 if vtype == "hmortar" else 30.0) or air:
 				continue
 			sc -= G.enemies_near(e.position, 8.0, team).size() * 6.0 + (25.0 if e is Building else 0.0)
 		if vtype == "tank":
@@ -576,7 +624,7 @@ func _scan() -> void:
 		if n > 4:
 			break
 		var e: Unit = cc[1]
-		if vtype == "arty" or (e is Vehicle and e.is_air()) or G.grid.los(eye, e.aim_point(), D["len"] * 0.5, 0.5):
+		if (vtype in INDIRECT) or (e is Vehicle and e.is_air()) or G.grid.los(eye, e.aim_point(), D["len"] * 0.5, 0.5):
 			best = e
 			break
 	target = best
@@ -627,11 +675,78 @@ func _aim_fire(dt: float) -> void:
 					var mp := muzzle_world() + Vector3(0, 0.4, 0)
 					G.bal.rocket(mp, t.aim_point(), team, self, t)
 					Sfx.play3d("rpg", mp, 2.0)
-			"aa":
+			"aa", "aagun":
 				_fire_flak(t)
 			"arty":
 				_fire_arty(t)
+			"fieldgun":
+				_fire_cannon(t)
+				main_cd = 5.0
+			"atgun":
+				_fire_atgun(t)
+			"howitzer":
+				_fire_arty(t)
+				main_cd = 11.0
+			"mtngun":
+				_fire_arty(t)
+				main_cd = 7.0
+			"hmortar":
+				_fire_hmortar(t.position)
+			"mlrs":
+				if mlrs_left <= 0:
+					mlrs_left = 12
+					mlrs_aim = t.position
 	_coax(dt)
+	_mlrs_tick(dt)
+	_crew_anim(dt)
+
+var mlrs_aim := Vector3.ZERO
+
+# roketatar: 12 roketlik salvo, sonra uzun dolum
+func _mlrs_tick(dt: float) -> void:
+	if vtype != "mlrs" or mlrs_left <= 0:
+		return
+	mlrs_t -= dt
+	if mlrs_t > 0.0:
+		return
+	mlrs_t = 0.22
+	mlrs_left -= 1
+	var mp := muzzle_world() + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.2), 0)
+	var d := dist2_p(mlrs_aim)
+	var err := d * 0.07 + 4.0
+	G.bal.artillery(mp, mlrs_aim + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self)
+	Sfx.play3d("rpg", mp, 3.0, 0.15, 0.05)
+	var back := -(mlrs_aim - position).normalized()
+	for i in 3:
+		G.fx.emit(Fx.P_SMOKE, mp, back * randf_range(3, 7) + Vector3(randf_range(-1, 1), randf_range(0.5, 2), randf_range(-1, 1)), randf_range(1.5, 2.8), 0.6, 2.6, -0.1, 1.5, Color(0.82, 0.8, 0.76, 0.55))
+	G.fx.muzzle(mp, -back, true)
+	if mlrs_left <= 0:
+		main_cd = 32.0
+
+func _fire_atgun(t: Unit) -> void:
+	main_cd = 4.2
+	var mp := muzzle_world()
+	var tp := t.aim_point()
+	var spread := mp.distance_to(tp) * 0.015
+	tp += Vector3(randf_range(-spread, spread), randf_range(-0.2, 0.2), randf_range(-spread, spread))
+	G.bal.shell(mp, tp, team, self, t, "ap" if t is Vehicle or t is Building else "he")
+	G.fx.cannon_blast(mp, (tp - mp).normalized())
+	Sfx.play3d("tank_fire", mp, 3.0)
+	recoil = 1.0
+
+func _fire_hmortar(tp: Vector3) -> void:
+	main_cd = randf_range(4.5, 5.5)
+	var d := dist2_p(tp)
+	var err := d * 0.05 + 2.0
+	var mp := muzzle_world()
+	G.bal.mortar(mp, tp + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self)
+	Sfx.play3d("mortar", mp, 3.0)
+	G.fx.muzzle(mp, Vector3.UP, true)
+	recoil = 0.6
+
+func _crew_anim(dt: float) -> void:
+	for cb in crew:
+		cb.animate(dt, "crouch_aim" if target != null else "crouch", 0.0)
 
 func dist2_p(p: Vector3) -> float:
 	return Vector2(position.x - p.x, position.z - p.z).length()
@@ -678,6 +793,25 @@ func _fire_ground() -> void:
 			Sfx.play3d("tank_fire", mp, 6.0)
 			recoil = 1.0
 			rock_v += 3.0
+		"fieldgun", "atgun":
+			main_cd = 5.0
+			G.bal.shell(mp, p, team, self, null, "he")
+			G.fx.cannon_blast(mp, (p - mp).normalized())
+			Sfx.play3d("tank_fire", mp, 3.0)
+			recoil = 1.0
+		"howitzer", "mtngun":
+			main_cd = 10.0 if vtype == "howitzer" else 7.0
+			G.bal.artillery(mp, p, team, self)
+			G.fx.cannon_blast(mp, (p - mp).normalized())
+			Sfx.play3d("tank_fire", mp, 5.0)
+			recoil = 1.0
+		"hmortar":
+			_fire_hmortar(p)
+		"mlrs":
+			if mlrs_left <= 0:
+				mlrs_left = 12
+				mlrs_aim = ground_pt
+			main_cd = 0.5
 		_:
 			main_cd = 1.0
 

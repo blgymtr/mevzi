@@ -41,6 +41,8 @@ func _ready() -> void:
 		_run_behav_test()
 	elif shot_dir != "" and shot_scene == "sandbox":
 		_run_sandbox_test()
+	elif shot_dir != "" and shot_scene == "arttest":
+		_run_art_test()
 	elif shot_dir != "" and shot_scene == "editortest":
 		_run_editor_test()
 	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
@@ -610,6 +612,54 @@ func _run_autoplay() -> void:
 	get_tree().quit()
 
 # oyuncu akışı testi: üs kur, üret, ikmal, savunma hattı
+func _run_art_test() -> void:
+	# topçu: her tip düşman hedeflere ateş ediyor mu
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	sandbox_ui.run("fog")
+	var c: Vector3 = G.hq_pos[0] + (G.hq_pos[1] - G.hq_pos[0]).normalized() * 30.0
+	var fwd: Vector3 = (G.hq_pos[1] - G.hq_pos[0]).normalized()
+	var side := Vector3(-fwd.z, 0, fwd.x)
+	var types := ["fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun", "arty", "mlrs"]
+	var guns: Array = []
+	for i in types.size():
+		var g := spawn_vehicle(0, types[i], G.grid.nearest_free(c + side * (i - 3.5) * 6.0, Grid.M_LIGHT), Soldier._yaw_of(fwd))
+		guns.append(g)
+	var cb: Building = place_building(0, "coastal", G.grid.nearest_free(c - fwd * 12.0, Grid.M_HEAVY), 0.0)
+	cb.add_work(99999.0)
+	# hedefler
+	for i in 4:
+		spawn_vehicle(1, "tank" if i % 2 == 0 else "apc", G.grid.nearest_free(c + fwd * (45.0 + i * 12.0) + side * (i - 1.5) * 8.0, Grid.M_HEAVY), Soldier._yaw_of(-fwd))
+	var sq := Squad.new(1, "T")
+	for i in 6:
+		spawn_soldier(1, "rifle", G.grid.nearest_free(c + fwd * 40.0 + side * (i - 3) * 2.0, Grid.M_INF), sq)
+	spawn_vehicle(1, "heli", c + fwd * 50.0, 0.0)
+	G.cam.jump_to(c + fwd * 15.0, true)
+	G.cam.size = 52.0
+	G.cam.target_size = 52.0
+	var fired := {}
+	for k in 50:
+		await _wait(0.5)
+		for g in guns:
+			if is_instance_valid(g) and (g.main_cd > 0.5 or g.mlrs_left > 0):
+				fired[g.vtype] = true
+		if k % 10 == 0:
+			var aa = guns[3]
+			print("ART dbg aa target=%s cd=%.2f yaw=%.2f" % [aa.target, aa.main_cd, aa.turret_yaw])
+		if k == 14:
+			await _shot("art_01")
+	var coastal_fired := cb.gun_cd > 0.0 or cb.gun_target != null
+	print("ART fired=%s coastal=%s" % [fired.keys(), coastal_fired])
+	for t in types:
+		if not fired.has(t):
+			print("ART not fired: ", t)
+			fails += 1
+	await _shot("art_02")
+	print("ART RESULT fails=%d" % fails)
+	get_tree().quit()
+
 func _run_sandbox_test() -> void:
 	get_window().size = Vector2i(1920, 1080)
 	Sfx.muted = true

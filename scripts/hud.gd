@@ -781,7 +781,7 @@ func _build_prod() -> void:
 	tabs = HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 3)
 	v.add_child(tabs)
-	for t in [["base", "ÜS"], ["def", "SAVUNMA"], ["inf", "PİYADE"], ["armor", "ZIRH"], ["air", "HAVA"]]:
+	for t in [["base", "ÜS"], ["def", "SAVUNMA"], ["inf", "PİYADE"], ["armor", "ZIRH"], ["art", "TOPÇU"], ["air", "HAVA"]]:
 		var b := Button.new()
 		b.text = I18n.s(t[1])
 		b.toggle_mode = true
@@ -811,11 +811,13 @@ func _tab_items() -> Array:
 		"base":
 			return ["fob", "barracks", "factory", "helipad", "hospital"]
 		"def":
-			return ["sandbags", "concrete", "trench", "wire", "trap", "mgnest", "tower"]
+			return ["sandbags", "concrete", "trench", "wire", "trap", "mgnest", "tower", "coastal"]
 		"inf":
 			return ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"]
 		"armor":
-			return ["technical", "apc", "ifv", "aa", "tank", "arty"]
+			return ["technical", "apc", "ifv", "aa", "tank"]
+		"art":
+			return ["fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun", "arty", "mlrs"]
 		"air":
 			return ["heli", "transport"]
 	return []
