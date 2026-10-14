@@ -38,7 +38,7 @@ var rng := RandomNumberGenerator.new()
 
 func _ready() -> void:
 	rng.seed = 777
-	meshes = [bevel_box(0.07), bevel_box(0.42), fence_panel(), bevel_box(0.03)]
+	meshes = [bevel_box(0.07), bevel_box(0.42), fence_panel(), bevel_box(0.006)]
 	rubble = MultiMesh.new()
 	rubble.transform_format = MultiMesh.TRANSFORM_3D
 	rubble.use_colors = true

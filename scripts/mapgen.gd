@@ -177,6 +177,7 @@ func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, co
 	var z0 := c.z - d * 0.5
 	var z1 := c.z + d * 0.5
 	var door_side := rng.randi() % 4
+	var deco: Array = []
 	var sides := [
 		[Vector3(x0 - t2 * 0.5, 0, z0), Vector3(x1 + t2 * 0.5, 0, z0)],
 		[Vector3(x0 - t2 * 0.5, 0, z1), Vector3(x1 + t2 * 0.5, 0, z1)],
@@ -198,6 +199,7 @@ func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, co
 			else:
 				gaps.append([s - 0.55, s + 0.55, 2, 3, true, rng.randf() < 0.5])
 		B.wall_line(a, b, rows, col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.012, "type": Blocks.T_CONCRETE})
+		deco.append([a - c, b - c, gaps, si])
 	# düz çatı + korkuluk + çatı eşyaları
 	var mb := MB.new()
 	var rc := Color(0.84, 0.83, 0.8)
@@ -226,10 +228,85 @@ func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, co
 				mb.box(Vector3(px, top + 0.7, pz), Vector3(1.4, 1.0, 1.2), pc.darkened(0.04))
 			3:
 				mb.cyl(Vector3(px, top + 0.2, pz), 0.04, 0.03, 2.6, 4, Color(0.3, 0.3, 0.3))
-	roof.mesh = mb.commit(Mats.vc())
+	var rmesh := mb.commit(Mats.vc())
+	roof.mesh = _facade(deco, top, t2, col, false, rmesh)
 	roof.position = Vector3(c.x, 0, c.z)
 	B.add_child(roof)
 	_floor(c, w, d)
+
+# cephe detayı: cam, çerçeve, denizlik, kepenk, kapı, basamak, saçak ve süpürgelik bandı, klima, oluk
+# (çatı düğümüne eklenir; ev çökünce çatıyla birlikte kaybolur)
+func _facade(deco: Array, top: float, t2: float, wall: Color, pitched: bool, mesh: ArrayMesh) -> ArrayMesh:
+	var mb := MB.new()
+	var frame := Color(0.92, 0.9, 0.86) if not pitched else Color(0.42, 0.3, 0.2)
+	var glass := Color(0.12, 0.16, 0.2)
+	var shut: Color = [Color(0.3, 0.42, 0.5), Color(0.38, 0.32, 0.22), Color(0.3, 0.38, 0.26), Color(0.55, 0.5, 0.42)][rng.randi() % 4]
+	var door: Color = [Color(0.35, 0.24, 0.15), Color(0.22, 0.26, 0.3), Color(0.45, 0.2, 0.12)][rng.randi() % 3]
+	var band := wall.darkened(0.12)
+	for e in deco:
+		var a: Vector3 = e[0]
+		var b: Vector3 = e[1]
+		var gaps: Array = e[2]
+		var d := b - a
+		d.y = 0
+		var L := d.length()
+		var dir := d / L
+		# dışa bakan normal: duvarın orta noktasından ev merkezinden uzağa
+		var mid := (a + b) * 0.5
+		var out := Vector3(-dir.z, 0, dir.x)
+		if out.dot(mid) < 0.0:
+			out = -out
+		var bas := Basis(dir, Vector3.UP, -out)
+		var off := out * (t2 * 0.5)
+		# süpürgelik ve saçak bandı
+		mb.box(mid + off + out * 0.02 + Vector3(0, 0.2, 0), Vector3(L + 0.06, 0.4, 0.05), band, bas)
+		mb.box(mid + off + out * 0.05 + Vector3(0, top - 0.08, 0), Vector3(L + 0.2, 0.16, 0.12), wall.lightened(0.05), bas)
+		for gp in gaps:
+			var s0: float = gp[0]
+			var s1: float = gp[1]
+			var ylo: float = BH * gp[2]
+			var yhi: float = BH * (gp[3] + 1)
+			var cw := s1 - s0
+			var cpos := a + dir * ((s0 + s1) * 0.5)
+			if gp[2] == 0:
+				# kapı: kanat (içe gömük), kasa, üst atkı, basamak
+				mb.box(cpos + Vector3(0, yhi * 0.5, 0) - out * 0.05, Vector3(cw - 0.08, yhi - 0.05, 0.06), door, bas)
+				mb.box(cpos + off + Vector3(0, yhi + 0.05, 0), Vector3(cw + 0.2, 0.1, 0.08), frame, bas)
+				for sx in [-1.0, 1.0]:
+					mb.box(cpos + dir * sx * (cw * 0.5 + 0.04) + off + Vector3(0, yhi * 0.5, 0), Vector3(0.08, yhi, 0.08), frame, bas)
+				mb.box(cpos + off + out * 0.25 + Vector3(0, 0.08, 0), Vector3(cw + 0.5, 0.16, 0.5), Color(0.6, 0.58, 0.55), bas)
+				mb.box(cpos + dir * (cw * 0.28) + Vector3(0, yhi * 0.48, 0) - out * 0.01, Vector3(0.04, 0.04, 0.04), Color(0.7, 0.65, 0.4), bas)
+			else:
+				# pencere: cam, kayıt (artı), çerçeve, denizlik, kepenk ya da demir parmaklık
+				var cy := (ylo + yhi) * 0.5
+				var ch := yhi - ylo
+				mb.box(cpos + Vector3(0, cy, 0) - out * 0.08, Vector3(cw, ch, 0.03), glass, bas)
+				mb.box(cpos + Vector3(0, cy, 0) - out * 0.06, Vector3(0.04, ch, 0.04), frame, bas)
+				mb.box(cpos + Vector3(0, cy, 0) - out * 0.06, Vector3(cw, 0.04, 0.04), frame, bas)
+				for sx in [-1.0, 1.0]:
+					mb.box(cpos + dir * sx * (cw * 0.5 + 0.03) + off + Vector3(0, cy, 0), Vector3(0.06, ch + 0.06, 0.05), frame, bas)
+				mb.box(cpos + off + Vector3(0, yhi + 0.03, 0), Vector3(cw + 0.12, 0.06, 0.06), frame, bas)
+				mb.box(cpos + off + out * 0.05 + Vector3(0, ylo - 0.03, 0), Vector3(cw + 0.18, 0.06, 0.16), wall.lightened(0.08), bas)
+				if pitched or rng.randf() < 0.4:
+					for sx in [-1.0, 1.0]:
+						var sp: Vector3 = cpos + dir * sx * (cw * 0.5 + 0.3) + off + out * 0.03 + Vector3(0, cy, 0)
+						mb.box(sp, Vector3(0.5, ch, 0.04), shut, bas)
+						for k in 4:
+							mb.box(sp + out * 0.025 + Vector3(0, -ch * 0.4 + k * ch * 0.27, 0), Vector3(0.46, 0.03, 0.01), shut.darkened(0.2), bas)
+				elif rng.randf() < 0.5:
+					for k in 4:
+						mb.box(cpos + dir * (-cw * 0.5 + (k + 0.5) * cw / 4.0) + off + out * 0.03 + Vector3(0, cy, 0), Vector3(0.025, ch, 0.025), Color(0.15, 0.15, 0.15), bas)
+		# klima / oluk borusu
+		if not pitched and rng.randf() < 0.5 and L > 4.0:
+			var ap := a + dir * (L * rng.randf_range(0.2, 0.8)) + off + out * 0.2 + Vector3(0, top - 0.7, 0)
+			mb.box(ap, Vector3(0.8, 0.55, 0.32), Color(0.85, 0.85, 0.83), bas)
+			mb.cyl(ap + out * 0.17, 0.2, 0.2, 0.02, 12, Color(0.3, 0.3, 0.3), bas * Basis(Vector3.RIGHT, PI * 0.5))
+		if rng.randf() < 0.5:
+			var gp2 := a + dir * (0.15 if rng.randf() < 0.5 else L - 0.15) + off + out * 0.06
+			mb.cyl(gp2 + Vector3(0, top * 0.5, 0), 0.05, 0.05, top, 6, Color(0.45, 0.45, 0.45) if not pitched else Color(0.4, 0.36, 0.3))
+	if mb.count == 0:
+		return mesh
+	return mb.commit(Mats.vc(), mesh)
 
 func _floor(c: Vector3, w: float, d: float) -> void:
 	var mb := MB.new()
@@ -266,6 +343,7 @@ func _x_house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Col
 		[Vector3(x0, 0, z0 + t2 * 0.5), Vector3(x0, 0, z1 - t2 * 0.5)],
 		[Vector3(x1, 0, z0 + t2 * 0.5), Vector3(x1, 0, z1 - t2 * 0.5)]]
 	var door_side := rng.randi() % 4
+	var deco: Array = []
 	for si in 4:
 		var a: Vector3 = sides[si][0]
 		var b: Vector3 = sides[si][1]
@@ -279,7 +357,8 @@ func _x_house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Col
 			else:
 				gaps.append([s - 0.5, s + 0.5, 2, 3, true, true])
 		B.wall_line(a, b, rows, wall_col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.025, "type": Blocks.T_CONCRETE})
-	roof.mesh = pitched_roof(w, d, top, roof_col, wall_col, snow)
+		deco.append([a - c, b - c, gaps, si])
+	roof.mesh = _facade(deco, top, t2, wall_col, true, pitched_roof(w, d, top, roof_col, wall_col, snow))
 	roof.position = Vector3(c.x, 0, c.z)
 	B.add_child(roof)
 	_floor(c, w, d)
