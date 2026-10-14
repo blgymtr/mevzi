@@ -1651,6 +1651,37 @@ class Overlay extends Control:
 				var blink := 0.6 + 0.4 * sin(G.time * 6.0)
 				draw_rect(Rect2(s3.x - 6, s3.y - 2, 12, 4), Color(1, 0.2, 0.2, blink))
 				draw_rect(Rect2(s3.x - 2, s3.y - 6, 4, 12), Color(1, 0.2, 0.2, blink))
+			# seçili asker: nişan çizgisi + bilgi etiketi (rol · durum %)
+			if u is Soldier and u.selected and own and u.alive and cam.size < 70.0:
+				if u.target != null and is_instance_valid(u.target) and u.target.alive and u.can_fight():
+					var a0 := cam.screen(u.position + Vector3(0, 1.3, 0))
+					var a1 := cam.screen(u.target.aim_point())
+					draw_line(a0, a1, Color(1.0, 0.85, 0.3, 0.55), 1.2, true)
+				elif u.state == "move" and u.path_i < u.path.size():
+					draw_line(cam.screen(u.position + Vector3(0, 0.05, 0)), cam.screen(u.dest + Vector3(0, 0.05, 0)), Color(0.4, 0.75, 1.0, 0.35), 1.0, true)
+				var ls := cam.screen(p + Vector3(0, 2.6, 0))
+				var role_s: String = {"rifle": "RFL", "mg": "LMG", "at": "AT", "medic": "MED", "sniper": "SNP", "engineer": "ENG", "mortar": "MRT", "drone": "UAV", "leader": "SL", "crew": "CRW"}.get(u.role, "INF")
+				var st_s := ""
+				var pct := -1
+				match u.state:
+					"heal":
+						st_s = I18n.s("TEDAVİ")
+						pct = int((1.0 - u.heal_t / (4.0 if u.role == "medic" else 8.0)) * 100.0)
+					"healing", "wounded", "dragged":
+						st_s = I18n.s("YARALI")
+						pct = int(u.bleed)
+					"build":
+						st_s = I18n.s("İNŞA")
+					"move":
+						st_s = I18n.s("İLERLİYOR")
+					_:
+						if u.suppression > 5.0:
+							st_s = I18n.s("BASKI")
+							pct = int(u.suppression)
+				var lc := Color(0.45, 0.72, 1.0, 0.95)
+				draw_string(hud.font_b, ls + Vector2(-30, 0), role_s + " ■", HORIZONTAL_ALIGNMENT_CENTER, 60, 15, lc)
+				if st_s != "":
+					draw_string(hud.font_b, ls + Vector2(-50, 13), st_s + (" %d%%" % clampi(pct, 0, 100) if pct >= 0 else ""), HORIZONTAL_ALIGNMENT_CENTER, 100, 15, lc)
 			# durum ikonları (baş üstünde koyu kutucuklar)
 			if u is Soldier and u.alive and cam.size < 60.0 and (own or vt < 0):
 				var icons: Array = []

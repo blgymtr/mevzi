@@ -123,6 +123,8 @@ const EN := {
 	"kuzeybatı": "north-west",
 	"SEDYE!": "STRETCHER!",
 	"SANDBOX": "SANDBOX",
+	"TEDAVİ": "REVIVING",
+	"BASKI": "SUP",
 	"Ekip Lideri": "Squad Leader",
 	"EKİP LİDERİ": "SQUAD LEADER",
 	"Sınırsız ikmal, birlik sınırı yok, geliştirici komutları.": "Unlimited supply, no unit cap, developer commands.",

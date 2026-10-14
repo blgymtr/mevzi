@@ -54,7 +54,7 @@ function body(m, blue) {
   m.rings('dark', [[0.95, 0.168, 0.116], [0.99, 0.168, 0.116]], { seg: 16 });
   m.bevel('pack', 0.08, 0.09, 0.06, V(-0.15, 0.97, -0.07), 0.015, { tint: [0.8, 0.8, 0.78] });
   m.bevel('pack', 0.07, 0.1, 0.07, V(0.16, 0.96, 0.04), 0.015, { tint: [0.78, 0.78, 0.76] });
-  S('team', new THREE.CylinderGeometry(0.064, 0.064, 0.05, 14, 1, true), V(-0.2, 1.34, 0.0));
+  for (const sx of [-1, 1]) S('team', new THREE.SphereGeometry(0.06, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.45), V(sx * 0.205, 1.43, 0.0), { scale: [1.15, 0.8, 1.15] });
   // boyun + baş
   m.rings('skin', [[1.49, 0.05, 0.05], [1.57, 0.047, 0.05]], { seg: 12 });
   S('skin', new THREE.SphereGeometry(0.1, 18, 14), V(0, 1.655, -0.005), { scale: [0.88, 1.06, 0.98] });
@@ -68,13 +68,13 @@ function body(m, blue) {
     m.bevel('dark', 0.07, 0.05, 0.035, V(0, 1.745, -0.12), 0.012);
     m.bevel('pack', 0.1, 0.06, 0.04, V(0, 1.7, 0.13), 0.015, { tint: [0.8, 0.8, 0.78] });
     S('dark', new THREE.CylinderGeometry(0.1, 0.1, 0.035, 18, 1, true, -Math.PI * 0.35, Math.PI * 0.7), V(0, 1.665, 0.0), { rot: [0, Math.PI, 0] });   // gözlük
-    m.box('team', 0.03, 0.012, 0.18, V(0, 1.787, 0.01));
+    S('team', new THREE.CylinderGeometry(0.146, 0.146, 0.05, 22, 1, true), V(0, 1.7, 0.008), { scale: [1, 1, 1.08] });
   } else {
     // yuvarlak kask + gözlük bandı
     S('helmet', new THREE.SphereGeometry(0.145, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), V(0, 1.652, 0.0), { scale: [1.02, 1.0, 1.06] });
     S('dark', new THREE.CylinderGeometry(0.136, 0.136, 0.022, 20, 1, true), V(0, 1.7, 0.0), { scale: [1.02, 1, 1.06] });
     m.bevel('dark', 0.14, 0.045, 0.04, V(0, 1.72, -0.12), 0.012);
-    m.box('team', 0.2, 0.02, 0.03, V(0, 1.64, 0.13));
+    S('team', new THREE.CylinderGeometry(0.15, 0.15, 0.05, 22, 1, true), V(0, 1.69, 0.0), { scale: [1.02, 1, 1.06] });
     S('uniform', new THREE.TorusGeometry(0.06, 0.022, 8, 14), V(0, 1.565, 0), { rot: RX(Math.PI / 2), tint: [0.85, 0.85, 0.8] });   // boyunluk
   }
   // ---------------- kol (omuz pivotu)
@@ -94,7 +94,7 @@ function body(m, blue) {
   m.group('shin', V(0, 0.48, 0));
   m.ringScale = 1.14;
   m.rings('uniform', [[0.5, 0.06, 0.063], [0.4, 0.061, 0.066, 0, 0.01], [0.28, 0.05, 0.053, 0, 0.005], [0.17, 0.045, 0.048]], { seg: 14 });
-  m.rings('dark', [[0.5, 0.058, 0.04, 0, -0.04], [0.42, 0.058, 0.04, 0, -0.045]], { seg: 12 });          // dizlik
+  m.rings('team', [[0.5, 0.058, 0.04, 0, -0.04], [0.42, 0.058, 0.04, 0, -0.045]], { seg: 12 });          // dizlik (takım rengi)
   // bot
   m.rings('boot', [[0.2, 0.05, 0.055], [0.1, 0.055, 0.075, 0, -0.025], [0.04, 0.055, 0.13, 0, -0.045], [0.0, 0.055, 0.135, 0, -0.045]], { seg: 14 });
   m.rings('dark', [[0.0, 0.058, 0.138, 0, -0.045], [0.025, 0.058, 0.138, 0, -0.045]], { seg: 14 });     // taban

@@ -55,8 +55,8 @@ static func paint_tex(team: int) -> String:
 static func uniform_tex(team: int) -> String:
 	var b: String = G.map_kind
 	if team == 0:
-		return {"desert": "fab_desert", "green": "fab_multicam", "winter": "fab_multicam"}.get(b, "fab_multicam")
-	return {"desert": "fab_khaki", "green": "fab_olive", "winter": "fab_olive"}.get(b, "fab_olive")
+		return {"desert": "fab_desert", "green": "fab_multicam", "winter": "fab_snow"}.get(b, "fab_multicam")
+	return {"desert": "fab_khaki", "green": "fab_olive", "winter": "fab_snow"}.get(b, "fab_olive")
 
 static var _armor_shader: Shader
 
@@ -205,7 +205,10 @@ static func material(name: String, team: int) -> Material:
 			tint = Color(0.72, 0.55, 0.42)
 			m.roughness = 0.7
 		"team":
-			tint = Color(0.28, 0.48, 0.78) if team == 0 else Color(0.72, 0.2, 0.14)
+			tint = Color(0.12, 0.45, 0.95) if team == 0 else Color(0.85, 0.12, 0.08)
+			m.emission_enabled = true
+			m.emission = tint
+			m.emission_energy_multiplier = 0.25
 		"medic":
 			tint = Color(0.95, 0.95, 0.95)
 		"red":
