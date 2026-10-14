@@ -39,6 +39,12 @@ var cover_pos := Vector3.ZERO
 var cover_cd := 0.0
 var to_cover := false
 var suppression := 0.0
+# stres (BA): baskıdan ayrı, yavaş birikir/yavaş iner. 1 = sarsılmış, 2 = panik
+var stress := 0.0
+var cost_share := 0.0      # üretim maliyetinden payı (iade/imha puanı)
+var stress_lv := 0
+var stress_t := -99.0
+var panic_fled := false
 var sup_t := -99.0
 var ammo := 0
 var mag := 0
@@ -459,6 +465,9 @@ func _timers(dt: float) -> void:
 	popup_t -= dt
 	if G.time - sup_t > 1.2:
 		suppression = maxf(0.0, suppression - dt * (22.0 if led() else 16.0))
+	if stress > 0.0 and G.time - stress_t > 3.0:
+		stress = maxf(0.0, stress - dt * (5.0 if led() else 3.2) * (0.5 if suppression > 40.0 else 1.0))
+		_stress_level()
 	if reload_t > 0.0:
 		reload_t -= dt
 		if reload_t <= 0.0:
@@ -518,6 +527,9 @@ func _think() -> void:
 			if state_t > 2.4:
 				state = "idle"
 			return
+	if stress_lv == 2 and not panic_fled and can_fight() and order != "retreat" and state in ["idle", "move"]:
+		_panic_flee()
+		return
 	_scan()
 	if can_fight() and _think_melee():
 		return
@@ -590,7 +602,7 @@ func _arrive() -> void:
 	elif order == "build" and build_site != null and is_instance_valid(build_site):
 		state = "build"
 		return
-	if order == "move" or order == "retreat" or order == "grenade" or order == "smoke":
+	if order == "move" or order == "retreat" or order == "grenade" or order == "smoke" or order == "panic":
 		if order == "retreat":
 			suppression = 0.0
 		order = ""
@@ -657,11 +669,11 @@ func _think_repair() -> void:
 	if state != "idle" or G.time - threat_time < 4.0:
 		repair_target = null
 		return
-	if repair_target == null or not is_instance_valid(repair_target) or not repair_target.alive or repair_target.hp >= repair_target.max_hp:
+	if repair_target == null or not is_instance_valid(repair_target) or not repair_target.alive or (repair_target.hp >= repair_target.max_hp and not (repair_target is Vehicle and (repair_target.has_crit() or repair_target.tracks_broken > 0.0 or repair_target.tires > 0))):
 		repair_target = null
 		var best := 20.0
 		for u in G.friends_near(position, 20.0, team):
-			if (u is Vehicle and u.vtype != "fpv" and (u.hp < u.max_hp or u.tracks_broken > 0.0 or u.tires > 0)) or (u is Building and u.done and u.hp < u.max_hp):
+			if (u is Vehicle and u.vtype != "fpv" and (u.hp < u.max_hp or u.tracks_broken > 0.0 or u.tires > 0 or u.has_crit())) or (u is Building and u.done and u.hp < u.max_hp):
 				var d := dist2(u)
 				if d < best:
 					best = d
@@ -679,6 +691,10 @@ func _think_repair() -> void:
 		repair_target.tires -= 1
 	if repair_target is Vehicle and repair_target.tracks_broken > 0.0:
 		repair_target.tracks_broken = maxf(0.0, repair_target.tracks_broken - 3.0)
+	if repair_target is Vehicle:
+		for ck in repair_target.crit:
+			if repair_target.crit[ck] > 0:
+				repair_target.crit_t[ck] -= 4.0
 	_face_to(repair_target.position)
 	state_t = 0.0
 	if randf() < 0.3:
@@ -825,6 +841,9 @@ func _scan() -> void:
 			return
 
 func _stance() -> void:
+	if stress_lv == 2 and state == "idle":
+		stance = PRONE
+		return
 	if state == "escort":
 		stance = CROUCH if suppression > 50 else STAND
 		return
@@ -1110,7 +1129,7 @@ func _combat(_dt: float) -> void:
 		popped = true
 		if suppression > 88.0 and randf() < 0.7:
 			return
-	if fire_cd > 0.0:
+	if fire_cd > 0.0 or stress_lv == 2:
 		return
 	var W := weapon()
 	if burst_left <= 0:
@@ -1123,6 +1142,7 @@ func _combat(_dt: float) -> void:
 	if ammo < 40:
 		rof *= 4.0
 	fire_cd = rof if burst_left > 0 else randf_range(W["p0"], W["p1"]) * (0.7 if covering else 1.0)
+	fire_cd *= [1.0, 1.35, 2.0][stress_lv]
 
 func _mortar_fire() -> void:
 	if mortar_cd > 0.0 or mortar_rounds <= 0:
@@ -1172,7 +1192,7 @@ func _shoot(t: Unit) -> void:
 		low_ammo_said = true
 		say("MERMİ AZ!")
 	if mag <= 0:
-		reload_t = W["reload"]
+		reload_t = W["reload"] * (1.0 + stress_lv * 0.4)
 		burst_left = 0
 		if randf() < 0.15:
 			say("ŞARJÖR!")
@@ -1223,7 +1243,7 @@ func _area_fire(center := Vector3.INF, spread := 3.0) -> void:
 	ammo -= 1
 	shots += 1
 	if mag <= 0:
-		reload_t = W["reload"]
+		reload_t = W["reload"] * (1.0 + stress_lv * 0.4)
 	G.fx.muzzle(mp, (p - mp).normalized(), role == "mg")
 	Sfx.play3d(W["snd"], mp, -3.0, 0.1, 0.02)
 	G.fx.impact(Vector3(p.x, 0.02, p.z), "dirt")
@@ -1251,8 +1271,48 @@ func _hit_chance(t: Unit, d: float) -> float:
 	if vel.length() > 0.5:
 		c *= 0.5
 	c *= 1.0 - suppression / 170.0
+	c *= [1.0, 0.78, 0.5][stress_lv]
 	c *= 1.0 + accuracy_bonus
 	return clampf(c, 0.02, 0.95)
+
+func add_stress(v: float) -> void:
+	if not alive or incapacitated() or state in ["prisoner", "surrender", "hospital", "aboard"]:
+		return
+	if led():
+		v *= 0.7
+	stress = minf(100.0, stress + v)
+	stress_t = G.time
+	_stress_level()
+
+func _stress_level() -> void:
+	var nl := 2 if stress >= 85.0 else (1 if stress >= 50.0 else 0)
+	# gecikmeli dönüş: panik 55'in altına, sarsılma 35'in altına inince biter
+	if stress_lv == 2 and stress > 55.0:
+		nl = 2
+	elif stress_lv >= 1 and nl == 0 and stress > 35.0:
+		nl = 1
+	if nl == stress_lv:
+		return
+	if nl > stress_lv:
+		say("PANİK!" if nl == 2 else ["SARSILDIM!", "KAFAM GİTTİ!", "ÇOK YAKINDI!"][randi() % 3], 2.0)
+	if nl < 2:
+		panic_fled = false
+	stress_lv = nl
+
+# panik: tehditten uzağa kaç (en yakın siper/üs yönü), sonra yere yat
+func _panic_flee() -> void:
+	panic_fled = true
+	var away := position - threat_pos
+	away.y = 0.0
+	if away.length() < 0.5 or G.time - threat_time > 12.0:
+		var b := nearest_base()
+		away = (b.position - position) if b != null else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
+		away.y = 0.0
+	var p := position + away.normalized() * 16.0
+	cmd_move(G.grid.nearest_free(G.on_ground(p), Grid.M_INF), true)
+	order = "panic"
+	target = null
+	burst_left = 0
 
 func add_suppression(v: float, from: Vector3) -> void:
 	if not alive:
@@ -1261,6 +1321,7 @@ func add_suppression(v: float, from: Vector3) -> void:
 		v *= 0.3
 	suppression = minf(100.0, suppression + v)
 	sup_t = G.time
+	add_stress(v * 0.32)
 	if G.time - threat_time > 2.0 or target == null:
 		threat_pos = from
 		threat_time = G.time
@@ -1286,12 +1347,15 @@ func take_damage(amount: float, src, _kind := "bullet") -> void:
 	hp -= amount
 	suppression = minf(100.0, suppression + 18.0)
 	sup_t = G.time
+	add_stress(20.0)
 	if hp <= 0.0:
 		_down(src, _kind != "bullet")
 	elif randf() < 0.2:
 		say("VURULDUM!")
 
 func on_blast(p: Vector3, r: float, dmg: float, d: float, src) -> void:
+	if alive:
+		add_stress(clampf(1.0 - d / (r * 2.6), 0.0, 1.0) * (35.0 + dmg * 0.15))
 	var away := position - p
 	away.y = 0
 	var al := away.length()
@@ -1383,6 +1447,13 @@ func die(src, keep_fly := false) -> void:
 			rv = away.normalized() * randf_range(1.2, 2.8) + Vector3(0, randf_range(0.4, 1.4), 0)
 	state = "dead"
 	keep_fly = keep_fly
+	for f in G.friends_near(position, 10.0, team):
+		if f is Soldier and f != self:
+			f.add_stress(10.0)
+	if role == "leader" and squad:
+		for m in squad.members:
+			if is_instance_valid(m) and m != self:
+				m.add_stress(20.0)
 	rag = Ragdoll.new()
 	rag.start(body, rv, spin)
 	set_process(true)

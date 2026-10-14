@@ -22,6 +22,8 @@ var bal: Ballistics
 var hud: Hud
 var player: PlayerCtl
 var logi: Logistics
+var mode := "bases"        # bases | conquest | wargoals
+var modes: Modes = null
 var cam: CamRig
 var ais: Array = []
 
@@ -233,12 +235,24 @@ func credit_kill(src, victim) -> void:
 		stats["lost"][victim.team] += 1
 	if src != null and is_instance_valid(src) and src.team >= 0 and src.team != victim.team:
 		stats["kills"][src.team] += 1
+		if modes != null and is_instance_valid(modes):
+			modes.add_destruction(src.team, unit_value(victim) * 0.1)
 		if src is Soldier:
 			src.add_xp(20 if victim is Vehicle else (30 if victim is Building else 6))
 			if src.squad:
 				for m in src.squad.alive_members():
 					if m != src:
 						m.add_xp(1)
+
+# birim değeri (imha puanı / iade için)
+func unit_value(u) -> float:
+	if u is Vehicle:
+		return float(Building.PDEF.get(u.vtype, {}).get("cost", 100))
+	if u is Building:
+		return float(Building.BDEF.get(u.btype, {}).get("cost", 100))
+	if u is Soldier:
+		return u.cost_share if u.cost_share > 0.0 else 30.0
+	return 0.0
 
 func _end(w: int) -> void:
 	game_over = true
@@ -279,6 +293,8 @@ func scenario_step(dt: float) -> void:
 
 func check_victory() -> void:
 	if game_over or not running:
+		return
+	if modes != null and is_instance_valid(modes):
 		return
 	if not scenario.is_empty():
 		var win := String(scenario.get("win", "bases"))

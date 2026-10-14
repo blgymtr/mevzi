@@ -55,6 +55,13 @@ const PEN := {
 }
 const SIDE_NAME := ["ÖN", "YAN", "ARKA", "ÜST"]
 static var shot_from := Vector3.INF
+# kritik hasar (BA): 4 tür x 2 seviye (1 sarı, 2 kırmızı); mürettebat zamanla onarır
+const CRIT_NAME := {"mob": "HAREKET", "opt": "OPTİK", "tgt": "NİŞAN", "load": "DOLUM"}
+var crit := {"mob": 0, "opt": 0, "tgt": 0, "load": 0}
+var crit_t := {"mob": 0.0, "opt": 0.0, "tgt": 0.0, "load": 0.0}
+var vstress := 0.0
+var vstress_t := -99.0
+var vstress_lv := 0
 var _nopen_t := 0.0
 var last_side := -1
 var last_pen := 0.0
@@ -170,6 +177,7 @@ func _cargo_lost() -> void:
 	for s in cargo.duplicate():
 		if is_instance_valid(s) and s.alive:
 			s.dismount(position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)))
+			s.add_stress(65.0)
 			if randf() < 0.5:
 				s.die(null)
 			else:
@@ -455,7 +463,8 @@ func _process(dt: float) -> void:
 	if not alive:
 		_wreck_tick(dt)
 		return
-	main_cd -= dt * (0.5 if (crew_max >= 3 and crew_n == 1) else 1.0)
+	main_cd -= dt * (0.5 if (crew_max >= 3 and crew_n == 1) else 1.0) / load_mult()
+	_stress_tick(dt)
 	coax_cd -= dt
 	if abandon_t >= 0.0:
 		abandon_t -= dt
@@ -485,10 +494,80 @@ func _process(dt: float) -> void:
 	_visuals(dt)
 
 func immobile() -> bool:
-	return tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (vtype in WHEELED and tires >= maxi(wheels.size(), 4))
+	return crit["mob"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (vtype in WHEELED and tires >= maxi(wheels.size(), 4))
 
 func speed_factor() -> float:
-	return clampf(1.0 - 0.2 * tires, 0.3, 1.0)
+	return clampf(1.0 - 0.2 * tires, 0.3, 1.0) * (0.55 if crit["mob"] == 1 else 1.0)
+
+func has_crit() -> bool:
+	for k in crit:
+		if crit[k] > 0:
+			return true
+	return false
+
+func load_mult() -> float:
+	return [1.0, 1.6, 2.6][crit["load"]] * (1.3 if vstress_lv >= 1 else 1.0)
+
+func aim_mult() -> float:
+	return [1.0, 1.8, 3.0][crit["tgt"]] * (1.3 if vstress_lv >= 1 else 1.0)
+
+func tturn_mult() -> float:
+	return [1.0, 0.65, 0.35][crit["tgt"]]
+
+func add_crit(k: String, lvl: int) -> void:
+	if not alive or is_air():
+		return
+	crit[k] = mini(2, crit[k] + lvl)
+	crit_t[k] = 22.0 if crit[k] == 1 else 40.0
+	sight = D["sight"] * [1.0, 0.7, 0.4][crit["opt"]]
+	say(I18n.s(CRIT_NAME[k]) + (" " + I18n.s("HASARLI!") if crit[k] == 1 else " " + I18n.s("KRİTİK!")), 2.5)
+
+func _crit_roll(dmg: float, m: float, k: String) -> void:
+	if crew_max <= 0 and ARMOR.get(vtype, []).is_empty():
+		return
+	var pen := m > 0.46
+	var light_at := k in ["rpg", "atgm", "topatk", "fpv"]
+	var ch := 0.0
+	if pen:
+		ch = 1.0 if light_at else 0.1 + dmg / max_hp * 1.2
+	elif k in ["rpg", "atgm", "ap", "he", "shell", "big", "mortar", "topatk"]:
+		ch = 0.2
+	if randf() >= ch:
+		return
+	var lvl := 2 if (pen and (dmg > max_hp * 0.2 or randf() < 0.3)) else 1
+	var r := randf()
+	var top := k in ["topatk", "shell", "big", "mortar", "fpv"]
+	var kk := "mob" if r < 0.3 else ("opt" if r < (0.65 if top else 0.55) else ("tgt" if r < 0.8 else "load"))
+	add_crit(kk, lvl)
+
+func add_vstress(v: float) -> void:
+	if crew_max <= 0 or is_air():
+		return
+	vstress = minf(100.0, vstress + v)
+	vstress_t = G.time
+
+func _stress_tick(dt: float) -> void:
+	if vstress > 0.0 and G.time - vstress_t > 5.0:
+		vstress = maxf(0.0, vstress - dt * 4.0)
+	var nl := 2 if vstress >= 85.0 else (1 if vstress >= 50.0 else 0)
+	if vstress_lv == 2 and vstress > 55.0:
+		nl = 2
+	if nl > vstress_lv:
+		say("MÜRETTEBAT PANİKTE!" if nl == 2 else "MÜRETTEBAT SARSILDI!", 2.5)
+		if nl == 2 and order != "retreat" and not immobile() and hp < max_hp * 0.6:
+			cmd_retreat()
+	vstress_lv = nl
+	# kritik onarımı: mürettebat ateş altında değilken
+	if crew_n > 0 and G.time - last_hit > 5.0:
+		for k in crit:
+			if crit[k] > 0:
+				crit_t[k] -= dt
+				if crit_t[k] <= 0.0:
+					crit[k] -= 1
+					crit_t[k] = 22.0
+					sight = D["sight"] * [1.0, 0.7, 0.4][crit["opt"]]
+					if crit[k] == 0:
+						say(I18n.s(CRIT_NAME[k]) + " " + I18n.s("ONARILDI"), 2.0)
 
 func needs_crew() -> bool:
 	return alive and abandon_t < 0.0 and crew_max > 0 and (crew_n < crew_max or not driver_ok or not gunner_ok)
@@ -813,7 +892,7 @@ func _aim_fire(dt: float) -> void:
 		return
 	if G.time < ground_until and fire_mode != 2:
 		var wl := wrapf(Soldier._yaw_of(ground_pt - position) - heading, -PI, PI)
-		turret_yaw = rotate_toward(turret_yaw, wl, D["tturn"] * dt)
+		turret_yaw = rotate_toward(turret_yaw, wl, D["tturn"] * tturn_mult() * dt)
 		turret.rotation.y = turret_yaw
 		if barrel:
 			recoil = move_toward(recoil, 0.0, dt * 1.4)
@@ -826,7 +905,7 @@ func _aim_fire(dt: float) -> void:
 	if t != null and is_instance_valid(t) and t.alive:
 		var d := t.position - position
 		want_local = wrapf(Soldier._yaw_of(d) - heading, -PI, PI)
-	turret_yaw = rotate_toward(turret_yaw, want_local, D["tturn"] * dt)
+	turret_yaw = rotate_toward(turret_yaw, want_local, D["tturn"] * tturn_mult() * dt)
 	turret.rotation.y = turret_yaw
 	if barrel:
 		recoil = move_toward(recoil, 0.0, dt * 1.4)
@@ -1038,7 +1117,7 @@ func _fire_cannon(t: Unit) -> void:
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var d := mp.distance_to(tp)
-	var spread := d * 0.025 * (1.0 if t is Vehicle else 1.5)
+	var spread := d * 0.025 * (1.0 if t is Vehicle else 1.5) * aim_mult()
 	tp += Vector3(randf_range(-spread, spread), randf_range(-0.3, 0.3), randf_range(-spread, spread))
 	var ap = t is Vehicle and t.armor > 0
 	G.bal.shell(mp, tp, team, self, t, "ap" if ap else "he")
@@ -1056,7 +1135,7 @@ func _fire_auto(t: Unit) -> void:
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var d := mp.distance_to(tp)
-	var spread := d * 0.04
+	var spread := d * 0.04 * aim_mult()
 	tp += Vector3(randf_range(-spread, spread), randf_range(-0.2, 0.4), randf_range(-spread, spread))
 	G.bal.shell(mp, tp, team, self, t, "auto")
 	G.fx.muzzle(mp, (tp - mp).normalized(), true)
@@ -1100,6 +1179,7 @@ func _hitscan(t: Unit, dmg: float, acc: float, sup: float, k: String, from_barre
 		c = 0.85
 	if absf(cur_speed) > 1.0:
 		c *= 0.6
+	c /= aim_mult()
 	var impact := tp
 	if randf() < c:
 		t.take_damage(dmg * randf_range(0.8, 1.2), self, k)
@@ -1169,7 +1249,10 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 		pk = "sniper"
 	m = pen_mult(pk, from)
 	if m <= 0.0:
-		# delemedi: sekme
+		# delemedi: sekme (mürettebat yine de sarsılır)
+		if k in ["ap", "rpg", "atgm", "topatk", "he"]:
+			add_vstress(9.0)
+			_crit_roll(0.0, 0.0, k)
 		if src != null and is_instance_valid(src) and src is Unit:
 			attacker = src
 		last_hit = G.time
@@ -1190,6 +1273,8 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if src != null and is_instance_valid(src):
 		attacker = src
 	_subsystem_hit(dmg, src, k)
+	_crit_roll(dmg, m, k)
+	add_vstress(dmg / max_hp * 120.0)
 	if hp <= 0.0:
 		destroy(src)
 

@@ -45,6 +45,10 @@ func _ready() -> void:
 		_run_art_test()
 	elif shot_dir != "" and shot_scene == "vehtest":
 		_run_veh_test()
+	elif shot_dir != "" and shot_scene == "modetest":
+		_run_mode_test()
+	elif shot_dir != "" and shot_scene == "stresstest":
+		_run_stress_test()
 	elif shot_dir != "" and shot_scene == "armortest":
 		_run_armor_test()
 	elif shot_dir != "" and shot_scene == "crash":
@@ -135,6 +139,9 @@ func _clear_world() -> void:
 		G.player.queue_free()
 	if G.logi and is_instance_valid(G.logi):
 		G.logi.queue_free()
+	if G.modes and is_instance_valid(G.modes):
+		G.modes.queue_free()
+	G.modes = null
 	G.reset()
 	bodies.clear()
 
@@ -405,6 +412,10 @@ func start_game(kind: String, data := {}, sandbox := false) -> void:
 	if sandbox:
 		sandbox_ui = Sandbox.new()
 		add_child(sandbox_ui)
+	elif G.scenario.is_empty() and G.mode != "bases":
+		G.modes = Modes.new()
+		add_child(G.modes)
+		G.modes.setup(G.mode)
 	var ai_on: Array = [false, true]
 	if not G.scenario.is_empty():
 		ai_on = G.scenario.get("ai", [false, true])
@@ -638,6 +649,129 @@ func _run_crash_test() -> void:
 	await _wait(2.0)
 	await _shot("crash_end")
 	print("CRASH done alive=%s,%s" % [h1.alive, h2.alive])
+	get_tree().quit()
+
+func _run_mode_test() -> void:
+	# Fetih: bölge ele geçirme, çekişme, puan; Savaş Hedefleri: aşama sonu puanı
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	G.mode = "conquest"
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var zs: Array = G.modes.zones
+	print("MODE zones=%d" % zs.size())
+	if zs.size() != 5:
+		fails += 1
+	var za: Vector3 = zs[0]["p"]
+	var ze: Vector3 = zs[4]["p"]
+	var zc: Vector3 = zs[2]["p"]
+	for i in 3:
+		spawn_soldier(0, "rifle", G.grid.nearest_free(za + Vector3(i, 0, 0), Grid.M_INF), null).cmd_hold()
+		spawn_soldier(1, "rifle", G.grid.nearest_free(ze + Vector3(i, 0, 0), Grid.M_INF), null).cmd_hold()
+	var b0 := spawn_soldier(0, "rifle", G.grid.nearest_free(zc, Grid.M_INF), null)
+	var r0 := spawn_soldier(1, "rifle", G.grid.nearest_free(zc + Vector3(2, 0, 0), Grid.M_INF), null)
+	b0.fire_mode = 2
+	r0.fire_mode = 2
+	b0.cmd_hold()
+	r0.cmd_hold()
+	await _wait(9.0)
+	G.cam.jump_to(za, true)
+	G.cam.target_size = 45.0
+	await _wait(1.0)
+	await _shot("mode_01_conquest")
+	print("MODE A owner=%d prog=%.2f  E owner=%d  C contested=%s owner=%d  score=%s" % [zs[0]["owner"], zs[0]["prog"], zs[4]["owner"], zs[2]["contested"], zs[2]["owner"], G.modes.score])
+	if zs[0]["owner"] != 0 or zs[4]["owner"] != 1 or not zs[2]["contested"] or zs[2]["owner"] != -1:
+		fails += 1
+	await _wait(5.0)
+	if G.modes.score[0] <= 0.0 or G.modes.score[1] <= 0.0:
+		fails += 1
+	# Savaş Hedefleri
+	G.mode = "wargoals"
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var z0: Vector3 = G.modes.zones[1]["p"]
+	for i in 4:
+		spawn_soldier(0, "rifle", G.grid.nearest_free(z0 + Vector3(i, 0, 0), Grid.M_INF), null).cmd_hold()
+	await _wait(8.0)
+	G.modes.phase_t = 0.5
+	await _wait(1.0)
+	print("MODE wargoals phase=%d score=%s owner=%d" % [G.modes.phase, G.modes.score, G.modes.zones[1]["owner"]])
+	if G.modes.phase != 2 or G.modes.score[0] < 40.0:
+		fails += 1
+	G.mode = "bases"
+	print("MODETEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_stress_test() -> void:
+	# stres: baskı → sarsılmış → panik (kaçar, ateş etmez) → toparlanma; araç kritikleri ve onarım
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	sandbox_ui.run("fog")
+	sandbox_ui.run("ai off")
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
+	var s := spawn_soldier(0, "rifle", c, null)
+	await _wait(0.5)
+	for i in 6:
+		s.add_suppression(30.0, c + Vector3(20, 0, 0))
+	var lv1 := s.stress_lv
+	for i in 10:
+		s.add_suppression(40.0, c + Vector3(20, 0, 0))
+	var lv2 := s.stress_lv
+	await _wait(1.0)
+	var fled := s.order == "panic" or s.position.distance_to(c) > 2.0
+	var shots0: int = s.shots
+	var e := spawn_soldier(1, "rifle", c + Vector3(15, 0, 0), null)
+	e.cmd_hold()
+	await _wait(3.0)
+	var fired := s.shots > shots0
+	G.cam.jump_to(s.position, true)
+	await _shot("stress_01_panic")
+	e.queue_free()
+	G.units.erase(e)
+	print("STRESS lv1=%d lv2=%d fled=%s fired_while_panic=%s stress=%d" % [lv1, lv2, fled, fired, int(s.stress)])
+	if lv1 < 1 or lv2 != 2 or not fled or fired:
+		fails += 1
+	var st0: float = s.stress
+	await _wait(12.0)
+	print("STRESS recover %d -> %d lv=%d" % [int(st0), int(s.stress), s.stress_lv])
+	if s.stress > st0 - 15.0:
+		fails += 1
+	# araç: hafif tanksavar delerse her zaman kritik
+	var vc := G.grid.nearest_free(c + Vector3(0, 0, 25), Grid.M_HEAVY)
+	var tk := spawn_vehicle(1, "tank", vc, 0.0)
+	tk.cmd_hold()
+	Vehicle.shot_from = tk.position - tk.forward() * 20.0
+	tk.take_damage(270.0, null, "rpg")
+	var crits := tk.has_crit()
+	var txt := ""
+	for k in tk.crit:
+		txt += "%s=%d " % [k, tk.crit[k]]
+	print("STRESS tank crit=%s %s vstress=%d" % [crits, txt, int(tk.vstress)])
+	if not crits:
+		fails += 1
+	tk.add_crit("mob", 2)
+	var imm := tk.immobile()
+	tk.add_crit("load", 1)
+	var lm := tk.load_mult()
+	G.cam.jump_to(tk.position, true)
+	G.player.selected = [tk]
+	await _wait(0.5)
+	await _shot("stress_02_crit")
+	await _wait(50.0)
+	var left := 0
+	for k in tk.crit:
+		left += tk.crit[k]
+	print("STRESS mob_red_immobile=%s load_mult=%.2f crit_left_after_50s=%d" % [imm, lm, left])
+	if not imm or lm <= 1.0 or left >= 4:
+		fails += 1
+	print("STRESSTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_armor_test() -> void:
@@ -1058,7 +1192,7 @@ func _run_orders_test() -> void:
 	await _shot("orders_01_pending")
 	G.player.exec_order("grenade", red.alive_members()[0].position if not red.alive_members().is_empty() else c)
 	G.player.pending_order = ""
-	await _wait(5.0)
+	await _wait(12.0)
 	var g1 := 0
 	for m in blue.alive_members():
 		g1 += m.grenades

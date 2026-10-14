@@ -668,9 +668,11 @@ func _update_info() -> void:
 		elif u.order == "hold" and u.state == "idle":
 			stt = "MEVZİDE"
 		var tm := "SAKİN" if u.suppression < 30 else ("GERGİN" if u.suppression < 70 else "BASTIRILDI")
-		stats.text = "%s %d   ·   %s %d   ·   %s %d" % [I18n.s("MERMİ"), u.ammo, I18n.s("BOMBA"), u.grenades, I18n.s("YARALANMA"), u.downs]
+		if u.stress_lv > 0:
+			tm = "PANİK" if u.stress_lv == 2 else "SARSILMIŞ"
+		stats.text = "%s %d   ·   %s %d   ·   %s %d   ·   %s %d" % [I18n.s("MERMİ"), u.ammo, I18n.s("BOMBA"), u.grenades, I18n.s("YARALANMA"), u.downs, I18n.s("STRES"), int(u.stress)]
 		status.text = "%s   ·   %s" % [I18n.s(stt), I18n.s(tm)]
-		status.add_theme_color_override("font_color", RED if u.suppression >= 70 or u.incapacitated() else (AMBER if u.suppression >= 30 else GREEN))
+		status.add_theme_color_override("font_color", RED if u.suppression >= 70 or u.stress_lv == 2 or u.incapacitated() else (AMBER if u.suppression >= 30 or u.stress_lv == 1 else GREEN))
 	elif u is Vehicle:
 		var parts: Array = ["%s %d / %d" % [I18n.s("GÖVDE"), int(u.hp), int(u.max_hp)]]
 		if Vehicle.ARMOR.has(u.vtype):
@@ -682,7 +684,7 @@ func _update_info() -> void:
 			parts.append(I18n.s("YOLCU %d / %d") % [u.cargo.size(), u.capacity()])
 		if u.has_smoke():
 			parts.append("%s %d" % [I18n.s("Sis").to_upper(), u.smoke_charges])
-		stats.text = "   ·   ".join(parts)
+		stats.text = "  ·  ".join(parts)
 		var s2 := ""
 		var probs: Array = []
 		if u.tracks_broken > 0.0:
@@ -695,6 +697,11 @@ func _update_info() -> void:
 			probs.append(I18n.s("NİŞANCI YOK"))
 		if u.abandon_t >= 0.0:
 			probs.append(I18n.s("İMHA EDİLİYOR") + " %d" % int(u.abandon_t + 1))
+		for ck in u.crit:
+			if u.crit[ck] > 0:
+				probs.append(I18n.s(Vehicle.CRIT_NAME[ck]) + (" ●" if u.crit[ck] == 1 else " ●●"))
+		if u.vstress_lv > 0:
+			probs.append(I18n.s("PANİK" if u.vstress_lv == 2 else "SARSILMIŞ"))
 		if not probs.is_empty():
 			s2 = "  ·  ".join(probs)
 		elif u.retreating and s2 == "":
@@ -1168,6 +1175,12 @@ func show_menu() -> void:
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 34)
 	vb.add_child(spacer)
+	var mb := _menu_btn(vb, "", func(): pass, I18n.s("Klasik: üsleri yok et · Fetih: bölge tut, puan topla · Savaş Hedefleri: 3 aşama, bölge + imha puanı"))
+	mb.text = I18n.s("MOD") + ": " + I18n.s(Modes.MODE_NAME[G.mode])
+	mb.pressed.connect(func():
+		var ks := Modes.MODE_NAME.keys()
+		G.mode = ks[(ks.find(G.mode) + 1) % ks.size()]
+		mb.text = I18n.s("MOD") + ": " + I18n.s(Modes.MODE_NAME[G.mode]))
 	for id in MapGen.MAPS:
 		var mid: String = id
 		_menu_btn(vb, I18n.s(MapGen.MAPS[id]["title"]).to_upper(), func(): G.main.start_game(mid), I18n.s(MapGen.MAPS[id].get("desc", "")))

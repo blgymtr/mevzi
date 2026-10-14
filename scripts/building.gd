@@ -631,6 +631,7 @@ func _spawn(id: String) -> void:
 		var units: Array = P["units"]
 		for i in units.size():
 			var s: Soldier = G.main.spawn_soldier(team, units[i], door + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5)), sq)
+			s.cost_share = float(P["cost"]) / units.size()
 			var off := Vector3((i % 3 - 1) * 1.5, 0, (i / 3) * 1.5)
 			s.cmd_move(rally + off)
 		if team == G.player_team and not G.spectate:

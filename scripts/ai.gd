@@ -7,6 +7,7 @@ var wave_t := 150.0
 var target_pos := Vector3.INF
 var target_b: Building = null
 var attackers: Array = []
+var target_zone = null
 var reissue := 0.0
 var think_n := 0
 
@@ -175,6 +176,8 @@ func _attack() -> void:
 	for u in units:
 		power += 4 if u is Vehicle else 1
 	var need = [16, 22, 26][G.difficulty] if team != G.player_team else 20
+	if G.modes != null and is_instance_valid(G.modes):
+		need = int(need * 0.5)
 	need += int(G.time / 120.0)
 	if G.time > 600.0:
 		need = 16
@@ -196,7 +199,10 @@ func _attack() -> void:
 		_pick_target()
 		reissue = 0.0
 	if attackers.size() >= 3:
-		if target_b == null or not is_instance_valid(target_b) or not target_b.alive or target_b.team == team:
+		if target_zone != null:
+			if target_zone["owner"] == team:
+				_pick_target()
+		elif target_b == null or not is_instance_valid(target_b) or not target_b.alive or target_b.team == team:
 			_pick_target()
 		if reissue <= 0.0 and target_pos != Vector3.INF:
 			reissue = 14.0
@@ -209,6 +215,23 @@ func _attack() -> void:
 			G.player.move_group(attackers, p)
 
 func _pick_target() -> void:
+	if G.modes != null and is_instance_valid(G.modes):
+		var lead: Vector3 = _centroid(attackers) if not attackers.is_empty() else G.hq_pos[team]
+		var bz = null
+		var bzd := 1e9
+		for z in G.modes.zones:
+			if z["owner"] == team:
+				continue
+			var d: float = lead.distance_to(z["p"])
+			if d < bzd:
+				bzd = d
+				bz = z
+		if bz != null:
+			target_zone = bz
+			target_b = null
+			target_pos = bz["p"]
+			return
+	target_zone = null
 	var best: Building = null
 	var bd := 1e9
 	var from: Vector3 = G.hq_pos[team]
