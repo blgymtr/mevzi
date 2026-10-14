@@ -56,3 +56,80 @@ Esin: Sudden Strike 5, Men of War AS2, Company of Heroes 2/3, Red Alert tarzı R
 ## Bilinmeyenler
 - Harita metre boyutları (sahneler oyun paketinde; bunları açmadık).
 - Birimlerin sayısal istatistikleri (paketli veride; çıkarmadık).
+
+---
+
+# Derin analiz (2. tur)
+
+Kaynaklar: Lua API belgeleri (`MissionEditor/3. Lua/*.md`), IL2CPP meta verisindeki sınıf/alan **adları**
+(yalnızca isimler; kod çözülmedi), Addressables kataloğundaki prefab **adları**. Varlık çıkarılmadı.
+
+## 1. Hasar modeli
+- **Zırh**: her araçta 4 yön × 2 tip: `KinArmorFront/Sides/Rear/Top` ve `HeatArmorFront/Sides/Rear/Top`.
+  Atış vektörüne göre yan seçilir (`GetArmorSideFromShotVector`); bazı mühimmat **üstten saldırı** yapar (`TopArmorAttack`, ör. Javelin).
+- **Delme**: `PenetrationAtMinRange`, `PenetrationAtEffectiveRange`, `PenetrationAtGroundRange` → mesafeye göre doğrusal düşüş.
+- **Kritik hasar** (`CriticalEffectSystem`): 4 tür × 2 seviye (sarı/kırmızı):
+  `Mobility` (hareket), `Optics` (görüş), `Targeting` (nişan), `Loading` (dolum/şarjör).
+  `CriticalBaseProbability`, `RedCritsActivationThreshold`; hafif tanksavar her zaman kritik verir.
+- **Yakıt**: `FuelSystem` — turuncu/kırmızı bölge, uçaklar yakıt bitince düşer, art yakıcı 2× yakar.
+
+## 2. Stres (baskılanma) — morali yok, stres var
+- `StressSystem`: `CurrentStressValue` → seviye 1 **Shocked** (sarsılmış), seviye 2 **Panicked** (panik).
+- Stres: isabet, alan etkisi (`StressAOERadius`), füze uyarısı, taşıtın vurulması (`OnTransportDeathCargoForcedStressPercentage`).
+- Etkisi: şarjör değiştirme ve atış arası süre uzar (`MagazineReloadTimeStressModifier`, `TimeBetweenBurstsStressModifier`), isabet düşer, panikte birim kaçar.
+- Toparlanma: `StressRecovery`, `StressRecoveryMultiplier`.
+
+## 3. Görüş ve gizlilik
+- `Optics` (yer / alçak irtifa / yüksek irtifa ayrı değer) karşı `Stealth` (min/max; hareket edince düşer, ateş edince açığa çıkar).
+- Duman görüşü keser (`GetDistanceViaSmokes`), radar optiği artırır ama SEAD hedefi olur.
+- Sis-i harp birim bazlı (`FogOfWarUnit`), binada gizlenme.
+
+## 4. Ekonomi ve lojistik
+- Gelir/dakika (`DefaultIncomePerMinute`) + gelir eğrisi (`IncomeCurve`) + bakım (`Upkeep`, uçaklar ayrı çarpan).
+- İkmal: **kg cinsinden** ikmal kutuları / depolar (`Supply`, `MaxSupplyPoints`), taşıtla taşınır, havadan atılır,
+  ele geçirilir (`HandleCapturedSupply`), müttefikle paylaşılır. Mühimmat maliyetle ölçülür (`AmmoCost`, `AmmoResupplyModifier`).
+- Onarım (`RepairSystem`, maliyetli) ve iyileştirme ikmalden.
+- Birim **üsse dönüş** = maliyet iadesi (hasar ve harcanan mühimmat düşülür).
+- **Konuşlanma aşaması** (`DeploymentPhase`) maç başında.
+
+## 5. Oyun modları (kod adları)
+- `WarGoals`: aşamalar, aşama sonu hedef sahipliği + imha puanı (`WarGoalsConquestPoints`, `WarGoalsDestructionPoints`, `WarGoalsPhasePointsMultiplier`), kaybedene VP telafisi.
+- `Conquest`: bölge başına sürekli puan (`ConquestPointsPerZone`), 3 hedef eşiği (`ConquestGoal1-3`).
+- `Destruction`.
+- Hedef bölgeler: ele geçirilir, çekişmeli olur, tehdit altında uyarısı (`ObjectiveThreatened`, `ObjectiveContested`).
+
+## 6. Hava
+- Uçak irtifası alçak/yüksek; aldatıcı (decoy) ve APS şarjlı.
+- **Helikopter düşüşü** (`HelicopterCrashFlySystem`): vurulan helikopter kontrolsüz dönerek, alçalarak düşer; alçak irtifada farklı düşüş; düşüş efektleri ayrı.
+- Havadan atma: birlik ve ikmal kargo uçağından tek tek atlar (`Airdrop`, `Paradrop`).
+
+## 7. Ortam
+- `WeatherController`: yağmur (`CloudRain`, `CloudRainHeavy`, şimşek), kar (`Snowing`, `SnowTextures`), hacimsel sis, gece görüşü.
+- Bina: içinde piyade koltuk sayısı (`GetHouseCapacity`), yıkılabilir.
+
+## 8. Piyade tim yapısı (prefab adlarından)
+Her tim aynı rol iskeletinden oluşuyor:
+`officer` (tim lideri) · `radio` (telsizci) · `rifle` / `rifle1` / `rifle2` (tüfekçi) · `MG` (makineli) ·
+`granade` (bombacı) · `heavy` / `Weapon` (ağır silah: AGS, Kornet, TOW, M2) · ayrıca `Engineer`, `Sniper`, `driver`.
+Örnek birlik türleri: ABD — Army, Marines, Rangers, Airborne, Delta, Force Recon, Scout Sniper, Engineer;
+Rusya — Motostrelki, VDV, Morskaya pehota, GRU, Razvedka, Snaipery, Ingenery-shturmoviki, Conscripts.
+Silah sınıfları: piyade tüfeği, karabina, hafif makineli (SAW), genel amaçlı makineli, keskin nişancı (7.62 / .338 / 12.7),
+bombaatar, tek kullanımlık roket, güdümlü tanksavar (tripod), omuzdan uçaksavar, otomatik bomba atar.
+
+## 9. Roster ölçeği
+Kara: ABD ~80, Rusya ~87 · Helikopter 36 · Uçak 51 · Piyade silahı ~180.
+Rol aileleri: ana tank, PSA/ZPT, keşif, tanksavar araç, uçaksavar (top/füze), obüs (çekili/KMO), çok namlulu roketatar,
+balistik füze, havan aracı, mühendis/köprü, lojistik kamyon, komuta/gözetleme, insansız hava aracı, kargo uçağı.
+
+## 10. Görsel stil (gözlem; ekran görüntüsü referansına göre)
+- Kamera: yüksek, eğik, döndürülebilir; ortografik değil perspektif.
+- Efekt matrisi: kalibre × yüzey; büyük patlamalarda kalıcı duman sütunu, ateş, saçılan toprak ve şok dalgası tozu.
+- Askerler: gerçek insan oranları, düzgün (yumuşak) gölgelendirme, çok parçalı teçhizat.
+
+## Mevzi'ye aktarılacaklar (öncelik sırası)
+1. Yumuşak gölgelendirmeli, organik asker modelleri (lego görünümünün kaynağı düz gölgelendirmeydi).
+2. Helikopter düşüşü: kontrolsüz dönüş + yavaşlayan pal + yere çarpma; dönen disk düşerken gizlenir.
+3. Stres seviyeleri (sarsılmış / panik) ve kritik hasar türleri (hareket/optik/nişan/dolum) mevcut baskı ve palet sistemine eklenir.
+4. 4 yönlü iki tip zırh + mesafeye bağlı delme.
+5. kg cinsinden ikmal kutuları, üsse dönüş iadesi, konuşlanma aşaması, Fetih/Savaş Hedefleri modları.
+6. Hava durumu ve gece.
