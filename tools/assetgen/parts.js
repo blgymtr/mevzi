@@ -40,26 +40,31 @@ export function sprocket(m, x, y, z, r, w, s) {
 
 // palet zinciri: alt/üst koşu + ön/arka yaylar + kılavuz dişleri
 export function trackBelt(m, x, w, zF, zB, yC, r, topY = null) {
-  const L = zB - zF;
-  const t = 0.09;
-  m.box('track', w, t, L, V(x, yC - r + t * 0.5, (zF + zB) / 2), { uvScale: 0.85 });
+  // palet: ayrı bakla (pabuç) blokları — alt/üst koşu ve ön/arka yaylar boyunca
+  const t = 0.07, pitch = 0.17;
+  const link = (px, py, pz, ang) => {
+    m.box('track', w, t, pitch * 0.82, V(px, py, pz), { rot: RX(ang), uvScale: 0.85 });
+    m.box('track', w * 0.18, t * 0.9, pitch * 0.5, V(px, py + Math.cos(ang) * t * 0.7, pz + Math.sin(ang) * t * 0.7), { rot: RX(ang), tint: [0.8, 0.8, 0.8] });   // kılavuz dişi
+  };
   const ty = topY ?? yC + r - t * 0.5;
-  m.box('track', w, t, L * 0.94, V(x, ty, (zF + zB) / 2), { uvScale: 0.85 });
+  // iç gövde (bakla aralarında koyu bant görünmesin)
+  m.box('track', w * 0.92, t * 0.6, zB - zF, V(x, yC - r + t * 0.5, (zF + zB) / 2), { tint: [0.5, 0.5, 0.5] });
+  m.box('track', w * 0.92, t * 0.6, (zB - zF) * 0.94, V(x, ty, (zF + zB) / 2), { tint: [0.5, 0.5, 0.5] });
+  const n = Math.floor((zB - zF) / pitch);
+  for (let i = 0; i < n; i++) {
+    const z = zF + (i + 0.5) * ((zB - zF) / n);
+    link(x, yC - r + t * 0.5, z, 0);
+    if (z > zF + 0.15 && z < zB - 0.15) link(x, ty, z, Math.PI);
+  }
   for (const zc of [zF, zB]) {
     const sgn = zc === zF ? -1 : 1;
-    const seg = 7;
-    for (let i = 0; i <= seg; i++) {
+    const seg = Math.max(5, Math.round((Math.PI * r) / pitch));
+    for (let i = 1; i < seg; i++) {
       const a = (i / seg) * Math.PI - Math.PI / 2;
-      const cz = zc + sgn * Math.cos(a) * r;
-      const cy = yC + Math.sin(a) * r;
-      m.box('track', w, t, (Math.PI * r) / seg + 0.03, V(x, cy, cz), { rot: RX(sgn * (a + Math.PI / 2)), uvScale: 0.85 });
+      const cz = zc + sgn * Math.cos(a) * (r - t * 0.5);
+      const cy = yC + Math.sin(a) * (r - t * 0.5);
+      link(x, cy, cz, sgn * (a + Math.PI / 2));
     }
-  }
-  // palet dişleri (pabuç kabartması): alt koşunun dış kenarında
-  const n = Math.floor(L / 0.32);
-  for (let i = 0; i < n; i++) {
-    const z = zF + (i + 0.5) * (L / n);
-    m.box('track', w * 1.04, 0.035, 0.07, V(x, yC - r - 0.01, z));
   }
 }
 

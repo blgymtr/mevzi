@@ -48,58 +48,69 @@ export function tank_blue() {
     towHook(m, s * 0.9, 0.7, 3.85);
     jerrycan(m, s * 1.25, 1.33, 3.45, Math.PI / 2);
   }
-  // ---- taret ----
+  // ---- taret: Abrams tipi (alçak, geniş, köşeli; önde V plakalar) ----
   m.group('turret', V(0, 1.4, -0.3));
-  // çekirdek gövde
-  m.loft('paint', [
-    [-2.2, [[1.15, 1.45], [1.05, 2.16]]],
-    [-1.4, [[1.72, 1.43], [1.66, 2.2]]],
-    [1.35, [[1.7, 1.46], [1.62, 2.22]]],
-    [1.6, [[1.45, 1.5], [1.4, 2.16]]],
-  ], { mirror: true });
-  // kama ön ek zırh (iki yanda, ortada namlu boşluğu)
+  const tp = [];
   for (const s of [-1, 1]) {
-    const pts = [];
-    for (const y of [1.47, 2.13]) {
-      pts.push([s * 0.42, y, -2.88], [s * 0.42, y - (y > 2 ? 0.04 : 0), -2.25], [s * 1.8, y, -1.62], [s * 1.8, y, -1.32]);
-    }
-    m.hull('paint', pts);
-    m.box('dark', 0.02, 0.6, 0.02, V(s * 1.1, 1.8, -2.25));
+    tp.push([s * 0.52, 1.44, -2.62], [s * 0.48, 2.02, -2.42]);      // namlu yanı (V'nin dibi)
+    tp.push([s * 1.78, 1.44, -1.95], [s * 1.66, 2.08, -1.78]);      // ön köşe
+    tp.push([s * 1.84, 1.44, 1.15], [s * 1.72, 2.14, 1.15]);        // yan arka
+    tp.push([s * 1.62, 1.48, 1.95], [s * 1.5, 2.1, 1.95]);          // bagaj başlangıcı
   }
-  // bagaj sepeti
-  m.bevel('paint', 3.0, 0.5, 1.05, V(0, 1.72, 2.1), 0.05);
-  for (let i = 0; i < 5; i++) m.box('dark', 3.1, 0.04, 0.04, V(0, 2.08, 1.65 + i * 0.24));
-  for (const s of [-1, 1]) m.box('dark', 0.04, 0.4, 1.1, V(s * 1.53, 1.98, 2.1));
-  bag(m, -0.7, 1.97, 2.1, 1.1, 0.34, 0.75, 0.05);
-  bag(m, 0.65, 1.97, 2.05, 0.9, 0.3, 0.7, -0.08);
-  jerrycan(m, 1.25, 1.97, 2.25, 0.0);
-  // tavan: komutan kubbesi, panoramik nişangah, nişancı nişangahı, yükleyici kapağı
-  m.cyl('paint', 0.42, 0.46, 0.18, 14, V(-0.65, 2.29, 0.25));
-  for (let k = 0; k < 6; k++) periscope(m, -0.65 + Math.sin(k) * 0.4, 2.3, 0.25 + Math.cos(k) * 0.4, k);
-  hatch(m, -0.65, 2.38, 0.25, 0.32);
-  m.bevel('paint', 0.42, 0.4, 0.42, V(-0.95, 2.42, -0.55), 0.06);
-  m.box('glass', 0.3, 0.2, 0.02, V(-0.95, 2.48, -0.77));
-  m.cyl('trim', 0.12, 0.14, 0.2, 10, V(-0.95, 2.2, -0.55));
-  m.bevel('paint', 0.55, 0.32, 0.7, V(0.78, 2.32, -1.15), 0.06);
-  m.box('glass', 0.38, 0.18, 0.02, V(0.78, 2.35, -1.51));
-  hatch(m, 0.6, 2.21, 0.45, 0.3);
-  m.cyl('trim', 0.05, 0.05, 0.3, 6, V(0.62, 2.37, 0.05));
-  mg(m, 0.62, 2.55, 0.0, 1.1);
+  m.hull('paint', tp);
+  // ön plaka ek yerleri
   for (const s of [-1, 1]) {
-    smokeLaunchers(m, s * 1.6, 1.98, 0.85, 4, s * -0.9, 0.55);
-    antenna(m, s * 1.25, 2.2, 1.35, 2.4, { leanZ: -s * 0.05 });
-    toolbox(m, s * 1.78, 1.5, 0.35, 0.18, 0.5, 1.4);
-    chevron(m, s * 1.87, 1.75, 0.35, 1.0, s);
+    m.box('dark', 0.02, 0.55, 0.02, V(s * 1.15, 1.75, -2.2), { rot: RY(s * 0.5) });
+    m.box('dark', 1.2, 0.02, 0.02, V(s * 1.1, 2.06, -2.08), { rot: RY(-s * 0.45) });
   }
-  m.cyl('dark', 0.015, 0.015, 0.5, 4, V(0, 2.45, 1.25));
-  m.cyl('trim', 0.06, 0.06, 0.06, 6, V(0, 2.72, 1.25));
-  // kalkan (mantolet) — tarete bağlı
-  m.bevel('trim', 0.74, 0.62, 0.55, V(0, 1.86, -2.62), 0.06);
-  // ---- namlu ----
-  m.group('barrel', V(0, 1.86, -2.65));
-  cannon(m, 1.86, -2.85, 5.0, 0.115, { bands: 4, evacAt: 0.42 });
-  m.box('trim', 0.12, 0.08, 0.1, V(0, 2.0, -7.7));               // namlu referans sensörü
-  m.meta = { muzzle: V(0, 1.86, -7.9), radius: 2.9 };
+  // bagaj sepeti (ızgaralı)
+  m.bevel('paint', 3.0, 0.12, 1.05, V(0, 1.52, 2.45), 0.03);
+  for (let i = 0; i < 6; i++) m.box('dark', 0.03, 0.5, 0.03, V(-1.45 + i * 0.58, 1.8, 2.95));
+  for (const y of [1.78, 2.05]) m.box('dark', 3.0, 0.03, 0.03, V(0, y, 2.97));
+  for (const s of [-1, 1]) for (const y of [1.78, 2.05]) m.box('dark', 0.03, 0.03, 1.05, V(s * 1.5, y, 2.45));
+  bag(m, -0.75, 1.58, 2.45, 1.2, 0.42, 0.8, 0.05);
+  bag(m, 0.55, 1.58, 2.4, 0.8, 0.36, 0.75, -0.06);
+  jerrycan(m, 1.2, 1.58, 2.5, 0.0);
+  m.cyl('canvas', 0.2, 0.2, 1.6, 10, V(0, 2.0, 2.55), { rot: RZ(Math.PI / 2), tint: [0.45, 0.47, 0.34] });   // rulo kamuflaj ağı
+  // yan kutular
+  for (const s of [-1, 1]) {
+    toolbox(m, s * 1.86, 1.55, 0.2, 0.16, 0.42, 1.6);
+    smokeLaunchers(m, s * 1.55, 2.08, -1.55, 6, s * -0.75, 0.5);
+    chevron(m, s * 1.9, 1.82, -0.6, 1.0, s);
+  }
+  // komutan (sağ): uzaktan kumandalı silah + kapak + periskoplar
+  m.cyl('paint', 0.45, 0.48, 0.14, 14, V(0.75, 2.2, 0.35));
+  for (let k = 0; k < 6; k++) periscope(m, 0.75 + Math.sin(k * 1.05) * 0.42, 2.2, 0.35 + Math.cos(k * 1.05) * 0.42, k * 1.05);
+  hatch(m, 0.75, 2.27, 0.45, 0.3);
+  m.bevel('trim', 0.34, 0.3, 0.45, V(0.75, 2.55, 0.0), 0.04);
+  m.box('glass', 0.18, 0.12, 0.02, V(0.85, 2.58, -0.23));
+  mg(m, 0.62, 2.62, -0.1, 1.3);
+  m.bevel('pack', 0.2, 0.2, 0.26, V(0.48, 2.55, 0.05), 0.03, { tint: [0.42, 0.44, 0.32] });
+  // nişancı ana nişangahı (sağ ön, "köpek kulübesi")
+  m.bevel('paint', 0.62, 0.36, 0.78, V(0.95, 2.26, -1.35), 0.06);
+  m.box('glass', 0.42, 0.2, 0.02, V(0.95, 2.3, -1.75));
+  // yükleyici (sol): kapak + kalkanlı makineli
+  hatch(m, -0.68, 2.15, 0.35, 0.32);
+  m.cyl('trim', 0.05, 0.05, 0.28, 6, V(-0.68, 2.3, -0.05));
+  m.bevel('paint', 0.62, 0.32, 0.04, V(-0.68, 2.48, -0.32), 0.015);
+  mg(m, -0.68, 2.5, -0.15, 1.15);
+  // komutanın bağımsız görüş sistemi (sol arka)
+  m.cyl('trim', 0.14, 0.16, 0.25, 10, V(-1.05, 2.25, 0.9));
+  m.bevel('paint', 0.34, 0.3, 0.36, V(-1.05, 2.5, 0.9), 0.04);
+  m.box('glass', 0.22, 0.14, 0.02, V(-1.05, 2.52, 0.71));
+  // rüzgâr sensörü ve antenler
+  m.cyl('dark', 0.015, 0.015, 0.55, 4, V(0.0, 2.4, 1.6));
+  m.cyl('trim', 0.05, 0.05, 0.08, 6, V(0.0, 2.7, 1.6));
+  antenna(m, -1.35, 2.12, 1.65, 2.6, { leanZ: 0.05 });
+  antenna(m, 1.35, 2.12, 1.65, 2.2, { leanZ: -0.05 });
+  // kalkan (mantolet): dikdörtgen blok + eş eksenli makineli deliği
+  m.bevel('trim', 0.92, 0.66, 0.5, V(0, 1.8, -2.62), 0.05);
+  m.cyl('dark', 0.04, 0.04, 0.06, 6, V(0.3, 1.82, -2.88), { rot: RX(Math.PI / 2) });
+  // ---- namlu: 120 mm, ısı kılıfı, duman tahliyesi yok ----
+  m.group('barrel', V(0, 1.82, -2.65));
+  cannon(m, 1.82, -2.85, 5.05, 0.115, { bands: 5, evac: false });
+  m.box('trim', 0.12, 0.08, 0.12, V(0, 1.96, -7.75));
+  m.meta = { muzzle: V(0, 1.82, -7.95), radius: 2.9 };
   return m;
 }
 
