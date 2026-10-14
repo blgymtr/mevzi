@@ -604,7 +604,7 @@ func _bridge_mesh(L: float, W: float) -> ArrayMesh:
 				var q1 := Vector3(cx + cos(a1) * rr, -1.9 + sin(a1) * 1.2, z)
 				var p1 := Vector3(cx + cos(a1) * rr, -0.52, z)
 				mb.quad(p0, p1, q1, q0, st.darkened(0.15), Vector3(0, 0, sg))
-	return mb.commit(Mats.stone())
+	return mb.commit(Mats.masonry())
 
 # ------------------------------------------------------------ seçili birliklerin üstündeki ağaçları saydamlaştır
 var _fade_t := 0.0

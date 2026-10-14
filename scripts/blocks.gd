@@ -47,7 +47,7 @@ func _ready() -> void:
 	rubble.visible_instance_count = 0
 	var rmi := MultiMeshInstance3D.new()
 	rmi.multimesh = rubble
-	rmi.material_override = Mats.stone()
+	rmi.material_override = Mats.masonry()
 	add_child(rmi)
 
 # ------------------------------------------------------------ meshler
@@ -92,7 +92,7 @@ static func fence_panel() -> ArrayMesh:
 func _type_mat(t: int) -> Material:
 	match t:
 		T_BOX, T_CONCRETE:
-			return Mats.stone()
+			return Mats.masonry()
 		T_FENCE:
 			return Mats.vc2()
 	return Mats.vc()
@@ -101,7 +101,7 @@ func _color_mat(col: Color, t: int) -> Material:
 	var q := Color(snappedf(col.r, 0.06), snappedf(col.g, 0.06), snappedf(col.b, 0.06))
 	var key := "%s_%d" % [q.to_html(), t]
 	if not _mat_cache.has(key):
-		var base: StandardMaterial3D = _type_mat(t)
+		var base: StandardMaterial3D = Mats.stone() if t != T_FENCE else Mats.vc2()
 		var m: StandardMaterial3D = base.duplicate()
 		m.vertex_color_use_as_albedo = false
 		m.albedo_color = q

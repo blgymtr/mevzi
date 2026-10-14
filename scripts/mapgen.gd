@@ -296,8 +296,8 @@ func pitched_roof(w: float, d: float, top: float, col: Color, wall_col: Color, s
 	fn.seed = rng.randi()
 	fn.frequency = 0.09
 	fn.fractal_octaves = 3
-	var nu := 22
-	var nv := maxi(12, int(hl * 2.0 / 0.18))
+	var nu := 2
+	var nv := 2
 	for side in [-1.0, 1.0]:
 		for iu in nu:
 			for iv in nv:
@@ -309,19 +309,15 @@ func pitched_roof(w: float, d: float, top: float, col: Color, wall_col: Color, s
 				var x1 = side * (hw + ov) * (1.0 - u1)
 				var y0 := top - ov * rh / hw + (rh + ov * rh / hw) * u0
 				var y1 := top - ov * rh / hw + (rh + ov * rh / hw) * u1
-				var cc := MB.jit(col, rng, 0.05)
-				if iv % 2 == 0:
-					cc = cc.darkened(0.04)
-				if snow:
-					var n := fn.get_noise_2d(iu * 1.0 + side * 37.0, iv * 1.0)
-					if n > -0.22:
-						cc = Color(0.94, 0.95, 0.97).darkened(0.02 * iu)
+				var cc := col
 				var a := bas * Vector3(x0, y0, v0)
 				var b := bas * Vector3(x1, y1, v0)
 				var c2 := bas * Vector3(x1, y1, v1)
 				var dd := bas * Vector3(x0, y0, v1)
 				var n2 := bas * Vector3(side * rh, hw, 0).normalized()
 				mb.quad(a, b, c2, dd, cc, n2)
+	var rmesh := mb.commit(Mats.roof(snow))
+	mb = MB.new()
 	# alın (üçgen) duvarlar
 	for e in [-1.0, 1.0]:
 		var p0 := bas * Vector3(-hw, top, e * hl)
@@ -336,7 +332,7 @@ func pitched_roof(w: float, d: float, top: float, col: Color, wall_col: Color, s
 	var chx := rng.randf_range(-hl * 0.5, hl * 0.5)
 	mb.box(bas * Vector3(hw * 0.4, top + rh * 0.8, chx), Vector3(0.55, 1.3, 0.55), Color(0.55, 0.25, 0.18))
 	mb.box(bas * Vector3(hw * 0.4, top + rh * 0.8 + 0.66, chx), Vector3(0.62, 0.06, 0.62), Color(0.95, 0.95, 0.97) if snow else Color(0.4, 0.2, 0.15))
-	return mb.commit(Mats.vc())
+	return mb.commit(Mats.masonry(), rmesh)
 
 func _x_wall(a: Vector3, b: Vector3, rows: int, ruin := 0.0, col := STONE) -> void:
 	B.wall_line(a, b, rows, col, Grid.K_WALL, {"len": 0.62, "h": 0.46, "t": 0.52, "ruin": ruin, "jit": 0.07})

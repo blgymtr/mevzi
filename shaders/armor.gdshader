@@ -40,9 +40,9 @@ void vertex() {
 }
 
 vec4 tri(sampler2D t, vec3 p, vec3 n) {
-	vec3 b = pow(abs(n), vec3(4.0));
-	b /= (b.x + b.y + b.z + 1e-5);
-	return texture(t, p.zy) * b.x + texture(t, p.xz) * b.y + texture(t, p.xy) * b.z;
+	vec3 a = abs(n);
+	if (a.y > a.x && a.y > a.z) return texture(t, p.xz);
+	return a.x > a.z ? texture(t, p.zy) : texture(t, p.xy);
 }
 
 float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }

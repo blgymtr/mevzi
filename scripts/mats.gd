@@ -32,6 +32,46 @@ static func metal() -> StandardMaterial3D:
 		_c["metal"] = m
 	return _c["metal"]
 
+static func _mt(id: String, map: String) -> Texture2D:
+	var p := "res://assets/materials/%s/%s.jpg" % [id, map]
+	return load(p) if ResourceLoader.exists(p) else null
+
+# duvar blokları: sıva / tuğla / beton (CC0), kesintisiz dünya izdüşümü
+static func masonry() -> Material:
+	if not _c.has("masonry"):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/masonry.gdshader")
+		m.set_shader_parameter("plaster_alb", _mt("painted_plaster_wall", "albedo"))
+		m.set_shader_parameter("plaster_nrm", _mt("painted_plaster_wall", "normal"))
+		m.set_shader_parameter("brick_alb", _mt("brick_wall_02", "albedo"))
+		m.set_shader_parameter("brick_nrm", _mt("brick_wall_02", "normal"))
+		m.set_shader_parameter("concrete_alb", _mt("concrete_wall_005", "albedo"))
+		m.set_shader_parameter("concrete_nrm", _mt("concrete_wall_005", "normal"))
+		m.set_shader_parameter("streak_tex", _mt("rusty_painted_metal", "albedo"))
+		_c["masonry"] = m
+	return _c["masonry"]
+
+# çatı: kiremit dokusu eğime hizalı, kışta yumuşak kar
+static func roof(snow: bool) -> Material:
+	var key := "roof_%s" % snow
+	if not _c.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/roof.gdshader")
+		m.set_shader_parameter("tile_alb", _mt("grey_roof_tiles", "albedo"))
+		m.set_shader_parameter("tile_nrm", _mt("grey_roof_tiles", "normal"))
+		var nt := NoiseTexture2D.new()
+		nt.width = 256
+		nt.height = 256
+		nt.seamless = true
+		var fn := FastNoiseLite.new()
+		fn.frequency = 0.02
+		fn.fractal_octaves = 4
+		nt.noise = fn
+		m.set_shader_parameter("noise_tex", nt)
+		m.set_shader_parameter("snow", 1.0 if snow else 0.0)
+		_c[key] = m
+	return _c[key]
+
 static func stone() -> StandardMaterial3D:
 	# taş/sıva bloklar: dünya üç düzlemli hafif gürültü dokusu
 	if not _c.has("stone"):
