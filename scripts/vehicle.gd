@@ -82,6 +82,16 @@ var amove_dest := Vector3.INF
 var smoke_charges := 2
 var ground_pt := Vector3.ZERO
 var ground_until := 0.0
+const TRACKED := ["tank", "ifv", "aa", "arty"]
+const WHEELED := ["technical", "apc", "truck", "mlrs"]
+const CREWED := {"tank": 3, "ifv": 3, "aa": 3, "arty": 4, "apc": 2, "technical": 2, "truck": 1, "mlrs": 2}
+var crew_max := 0
+var crew_n := 0
+var driver_ok := true
+var gunner_ok := true
+var tires := 0
+var abandon_t := -1.0
+var repair_body: SoldierBody = null
 const TOWED := ["fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun"]
 const INDIRECT := ["arty", "howitzer", "hmortar", "mtngun", "mlrs"]
 var crew: Array = []
@@ -156,6 +166,8 @@ func setup(t: int, vt: String) -> void:
 	sight = D["sight"]
 	cap_cost = D["cap"]
 	icon = D["icon"]
+	crew_max = CREWED.get(vt, 0)
+	crew_n = crew_max
 	M = Art.vehicle(vt, t)
 	if M.is_empty():
 		M = VehicleModels.get_model(vt, t, G.map_kind == "winter")
@@ -414,11 +426,19 @@ func _process(dt: float) -> void:
 	if not alive:
 		_wreck_tick(dt)
 		return
-	main_cd -= dt
+	main_cd -= dt * (0.5 if (crew_max >= 3 and crew_n == 1) else 1.0)
 	coax_cd -= dt
+	if abandon_t >= 0.0:
+		abandon_t -= dt
+		if abandon_t <= 0.0:
+			say("İMHA!")
+			destroy(null)
+			return
 	think_t -= dt
 	if think_t <= 0.0:
 		think_t = 0.45 + randf() * 0.15
+		if not is_air() and G.grid.is_water(position):
+			position = G.grid.nearest_free(position, nav_mode, 30)
 		_scan()
 	atgm_cd -= dt
 	if vtype == "fpv":
@@ -431,14 +451,107 @@ func _process(dt: float) -> void:
 	_aim_fire(dt)
 	_visuals(dt)
 
-func _drive(dt: float) -> void:
-	if tracks_broken > 0.0:
+func immobile() -> bool:
+	return tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (vtype in WHEELED and tires >= maxi(wheels.size(), 4))
+
+func speed_factor() -> float:
+	return clampf(1.0 - 0.2 * tires, 0.3, 1.0)
+
+func needs_crew() -> bool:
+	return alive and abandon_t < 0.0 and crew_max > 0 and (crew_n < crew_max or not driver_ok or not gunner_ok)
+
+# piyade araca binip eksik mürettebatın yerine geçer
+func add_crew(s) -> void:
+	if not driver_ok:
+		driver_ok = true
+	elif not gunner_ok:
+		gunner_ok = true
+		if gunner:
+			gunner.visible = true
+	crew_n = mini(crew_max, crew_n + 1)
+	say("MÜRETTEBAT TAMAM" if crew_n >= crew_max and driver_ok and gunner_ok else "YERİME GEÇTİ")
+	if s != null and is_instance_valid(s):
+		s.vanish()
+
+# palet: mürettebat ateş altında değilken onarır (mühendis daha hızlı)
+func _repair_tick(dt: float) -> void:
+	var busy := tracks_broken > 0.0 and crew_n > 0 and G.time - last_hit > 7.0
+	if busy:
 		tracks_broken -= dt
-		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
 		if tracks_broken <= 0.0:
+			tracks_broken = 0.0
 			say("PALET ONARILDI")
+	if busy and repair_body == null:
+		repair_body = SoldierBody.new()
+		hull.add_child(repair_body)
+		repair_body.build(team, "engineer", G.map_kind == "winter")
+		repair_body.position = Vector3(1.9 if randf() < 0.5 else -1.9, 0, 1.0)
+		repair_body.rotation.y = PI * 0.5 * signf(repair_body.position.x)
+	elif not busy and repair_body != null:
+		repair_body.queue_free()
+		repair_body = null
+	if repair_body:
+		repair_body.animate(dt, "build", 0.0)
+
+func cmd_abandon() -> void:
+	if not alive or crew_n <= 0 or abandon_t >= 0.0 or is_air():
+		return
+	unload()
+	var sq := Squad.new(team, "Mürettebat")
+	G.squads.append(sq)
+	var back := -forward()
+	var sd := Vector3(-back.z, 0, back.x)
+	for i in crew_n:
+		var p: Vector3 = position + back * (D["len"] * 0.5 + 1.0) + sd * (i - 1) * 1.3
+		var s: Soldier = G.main.spawn_soldier(team, "crew", G.grid.nearest_free(p, Grid.M_INF), sq)
+		s.cmd_move(G.grid.nearest_free(p + back * 6.0, Grid.M_INF), true)
+	crew_n = 0
+	abandon_t = 6.0
+	target = null
+	path = PackedVector3Array()
+	say("ARAÇ TERK EDİLDİ!", 3.0)
+	if selected and G.player:
+		G.player.deselect(self)
+
+func _kill_gunner(src) -> void:
+	if not gunner_ok:
+		return
+	gunner_ok = false
+	crew_n = maxi(0, crew_n - 1)
+	target = null
+	if gunner and gunner.visible:
+		var gp := gunner.global_position
+		gunner.visible = false
+		var s: Soldier = G.main.spawn_soldier(team, "rifle", G.on_ground(gp), null)
+		s.position = gp
+		s.die(src)
+	say("NİŞANCI VURULDU!", 2.5)
+
+func _kill_driver(src) -> void:
+	if not driver_ok:
+		return
+	driver_ok = false
+	crew_n = maxi(0, crew_n - 1)
+	cur_speed = 0.0
+	path = PackedVector3Array()
+	say("SÜRÜCÜ VURULDU!", 2.5)
+	src = src
+
+func _cell_ok(p: Vector3) -> bool:
+	if G.grid.is_water(p):
+		return false
+	var h := G.grid.height_at(p)
+	var k := G.grid.kind_at(p)
+	if k == Grid.K_TRAP:
+		return false
+	return h < 0.3 or k == Grid.K_TREE or (nav_mode == Grid.M_HEAVY and k == Grid.K_WALL)
+
+func _drive(dt: float) -> void:
+	_repair_tick(dt)
+	if immobile():
+		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
 	var target_speed := 0.0
-	if tracks_broken <= 0.0:
+	if not immobile():
 		while path_i < path.size():
 			var tp := path[path_i]
 			var d := Vector3(tp.x - position.x, 0, tp.z - position.z)
@@ -450,6 +563,18 @@ func _drive(dt: float) -> void:
 					_arrive()
 				continue
 			var want := Soldier._yaw_of(-d if reverse else d)
+			# köprüde: eksene hizalan, korkuluğa sürtünme
+			var br := G.grid.bridge_at(position)
+			if not br.is_empty():
+				var ax: Vector3 = br["d"]
+				var mv := -d if reverse else d
+				if ax.dot(mv) < 0.0:
+					ax = -ax
+				var rel: Vector3 = position - br["c"]
+				rel.y = 0
+				var on_axis: Vector3 = br["c"] + br["d"] * rel.dot(br["d"])
+				var aim: Vector3 = on_axis + ax * 6.0 - position
+				want = Soldier._yaw_of(-aim if reverse else aim)
 			var diff := absf(angle_difference(heading, want))
 			var tr: float = D["turn"]
 			if armor < 2:
@@ -471,6 +596,7 @@ func _drive(dt: float) -> void:
 				path = PackedVector3Array()
 			elif order == "amove" and target != null and fire_mode != 2:
 				target_speed = 0.0
+			target_speed *= speed_factor()
 			if reverse:
 				target_speed = -minf(target_speed, speed_max * 0.45)
 			break
@@ -485,15 +611,26 @@ func _drive(dt: float) -> void:
 	var kf := G.grid.kind_at(front)
 	var blocked := (hf >= 0.3 and kf != Grid.K_TREE and not (nav_mode == Grid.M_HEAVY and kf == Grid.K_WALL)) or kf == Grid.K_TRAP
 	if blocked:
-		if true:
-			cur_speed = 0.0
-			_stuck_t += dt
-			if _stuck_t > 1.0:
-				_stuck_t = 0.0
-				if path_i < path.size():
-					path = G.grid.find_path(position, path[path.size() - 1], nav_mode)
-					path_i = 0
-			return
+		# boş tarafa dönerek kaymaya çalış
+		var sd := Vector3(-f.z, 0, f.x)
+		var lf := _cell_ok(front + sd * 1.4)
+		var rf := _cell_ok(front - sd * 1.4)
+		if lf and not rf:
+			heading -= D["turn"] * dt
+		elif rf and not lf:
+			heading += D["turn"] * dt
+		cur_speed = 0.0
+		_stuck_t += dt
+		if _stuck_t > 1.2:
+			_stuck_t = 0.0
+			# biraz geri çekil ve yeniden yol bul
+			var bp := position - f * signf(cur_speed + 0.001) * 0.8
+			if _cell_ok(bp):
+				position = bp
+			if path_i < path.size():
+				path = G.grid.find_path(position, path[path.size() - 1], nav_mode)
+				path_i = 0
+		return
 	# diğer araçlarla ayrışma
 	for o in G.near(np, 7.0):
 		if o == self or not (o is Vehicle):
@@ -506,6 +643,12 @@ func _drive(dt: float) -> void:
 			np += dv / dl * (rr - dl) * 0.5
 	np.x = clampf(np.x, 2.0, G.MAP - 2.0)
 	np.z = clampf(np.z, 2.0, G.MAP - 2.0)
+	if not _cell_ok(np):
+		# ayrışma itmesi suya / korkuluğa sokmasın
+		np = position + f * cur_speed * dt
+		if not _cell_ok(np) and G.grid.is_water(np):
+			cur_speed = 0.0
+			return
 	var moved := np.distance_to(position)
 	position = np
 	# ezme
@@ -549,7 +692,7 @@ func _arrive() -> void:
 func _scan() -> void:
 	if vtype == "truck":
 		return
-	if retreating or fire_mode == 2 or (fire_mode == 1 and G.time - last_hit > 10.0):
+	if retreating or fire_mode == 2 or (fire_mode == 1 and G.time - last_hit > 10.0) or not gunner_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0:
 		target = null
 		coax_target = null
 		return
@@ -1018,11 +1161,47 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	last_hit = G.time
 	if src != null and is_instance_valid(src):
 		attacker = src
-	if (k == "rpg" or k == "ap") and randf() < 0.14 and vtype in ["tank", "apc"] and tracks_broken <= 0.0:
-		tracks_broken = 30.0
-		say("PALET KOPTU!", 3.0)
+	_subsystem_hit(dmg, src, k)
 	if hp <= 0.0:
 		destroy(src)
+
+func _subsystem_hit(dmg: float, src, k: String) -> void:
+	var boom := k in ["rpg", "ap", "he", "shell", "big", "mine", "grenade"]
+	# palet: patlama ve tanksavar
+	if vtype in TRACKED and tracks_broken <= 0.0:
+		var pc := {"mine": 0.9, "rpg": 0.2, "ap": 0.14, "he": 0.18, "shell": 0.22, "big": 0.3}.get(k, 0.0)
+		if randf() < pc:
+			tracks_broken = 45.0
+			say("PALET KOPTU!", 3.0)
+	# teker: kurşun / patlama
+	if vtype in WHEELED:
+		var tc := {"bullet": 0.03, "hmg": 0.08, "auto": 0.15, "grenade": 0.35, "shell": 0.4, "big": 0.5, "rpg": 0.3, "mine": 0.9, "he": 0.4}.get(k, 0.0)
+		if randf() < tc and tires < maxi(wheels.size(), 4):
+			tires += 1
+			say("TEKER PATLADI!", 2.0)
+	# mürettebat
+	if crew_max <= 0:
+		return
+	var sniper: bool = src != null and is_instance_valid(src) and src is Soldier and src.role == "sniper"
+	if armor == 0 and (k == "bullet" or k == "hmg"):
+		# açık araç: nişancı ve sürücü vurulabilir
+		if gunner and gunner_ok and randf() < (0.7 if sniper else 0.18):
+			_kill_gunner(src)
+		elif driver_ok and randf() < (0.35 if sniper else 0.06):
+			_kill_driver(src)
+	elif boom and dmg > 60.0 and randf() < 0.22:
+		crew_n = maxi(0, crew_n - 1)
+		if crew_n == 0:
+			driver_ok = false
+			gunner_ok = false
+			say("MÜRETTEBAT ÖLDÜ!", 3.0)
+		else:
+			say("YARALI VAR!", 2.0)
+	elif armor == 0 and boom and randf() < 0.25:
+		if randf() < 0.5:
+			_kill_gunner(src)
+		else:
+			_kill_driver(src)
 
 func _heli(dt: float) -> void:
 	var goal := dest

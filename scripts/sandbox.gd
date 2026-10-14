@@ -128,7 +128,7 @@ func _spawn_btn(id: String, title: String) -> void:
 
 func _set_team(t: int) -> void:
 	spawn_team = t
-	team_btn.text = I18n.s("MAVİ" if t == 0 else "KIZIL")
+	team_btn.text = I18n.s("MÜTTEFİK" if t == 0 else "MİHVER")
 	team_btn.add_theme_color_override("font_color", G.TEAM_COL[t])
 
 func _process(_dt: float) -> void:
@@ -290,7 +290,7 @@ func run(cmd: String) -> void:
 			G.player.clear_sel()
 			G.player_team = 1 - G.player_team
 			G.player.team = G.player_team
-			_print("kontrol: %s" % ("MAVİ" if G.player_team == 0 else "KIZIL"))
+			_print("kontrol: %s" % ("MÜTTEFİK" if G.player_team == 0 else "MİHVER"))
 		"boom":
 			var r := float(a[1]) if a.size() > 1 else 5.0
 			G.explode(G.cam.mouse_ground(get_viewport().get_mouse_position()), r, r * 40.0, "big", 1 - G.player_team, null)

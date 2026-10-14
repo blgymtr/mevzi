@@ -295,6 +295,9 @@ func exec_order(id: String, gp: Vector3) -> void:
 			markers.append([gp, G.time, Color(1.0, 0.6, 0.2)])
 			_voice(sol, ["Bastırın!"])
 			Sfx.play2d("ui_attack", -8.0)
+		"abandon":
+			for v in veh:
+				v.cmd_abandon()
 		"demolish":
 			for u in selected.duplicate():
 				if u is Building and not u.done and u.team == team:

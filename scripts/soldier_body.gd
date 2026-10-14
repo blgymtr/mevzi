@@ -87,7 +87,7 @@ func _mi(parent: Node3D, m: Mesh) -> MeshInstance3D:
 
 static func _art_meshes(team: int, rl: String) -> Dictionary:
 	var model := "soldier_blue" if team == 0 else "soldier_red"
-	var wpn: String = {"mg": "mg", "at": "rpg", "sniper": "sniper", "engineer": "smg", "mortar": "mortar", "drone": "tablet"}.get(rl, "rifle")
+	var wpn: String = {"mg": "mg", "at": "rpg", "sniper": "sniper", "engineer": "smg", "crew": "smg", "mortar": "mortar", "drone": "tablet"}.get(rl, "rifle")
 	var M := {
 		"torso": Art.skinned(model, "torso", team), "head": null,
 		"upper": Art.skinned(model, "arm", team), "fore": Art.skinned(model, "fore", team),

@@ -5,7 +5,10 @@ signal alert(text: String, pos: Vector3, team: int)
 
 const MAP := 256.0
 const TEAM_COL := [Color(0.32, 0.66, 1.0), Color(1.0, 0.3, 0.22)]
-const TEAM_NAME := ["MAVİ KUVVET", "KIZIL CEPHE"]
+const TEAM_NAME := ["MÜTTEFİKLER", "MİHVER"]
+# uluslar (ileride: Alman, Rus, ABD, İngiliz, Türk); şimdilik ABD (Müttefik) - Rusya (Mihver)
+const NATIONS := {"usa": "ABD", "rus": "Rusya", "ger": "Almanya", "gbr": "Birleşik Krallık", "tur": "Türkiye"}
+var nation := ["usa", "rus"]
 const HC := 8.0
 
 var main: Node3D

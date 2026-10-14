@@ -27,13 +27,14 @@ const ORDERS := {
 	"fire": {"t": "Ateş Modu", "k": "V", "tgt": false, "d": "Serbest ateş / Sadece karşılık / Ateşi kes"},
 	"stance": {"t": "Duruş", "k": "C", "tgt": false, "d": "Otomatik / Ayakta / Çömel / Yat"},
 	"unload": {"t": "İndir", "k": "U", "tgt": false, "d": "Yolcuları indir."},
+	"abandon": {"t": "Terk Et", "k": "K", "tgt": false, "d": "Mürettebat aracı terk eder; araç 6 sn sonra kendini imha eder."},
 	"grenade": {"t": "El Bombası", "k": "G", "tgt": true, "d": "Seçilen noktaya el bombası at."},
 	"smoke": {"t": "Sis", "k": "Z", "tgt": true, "d": "Sis bombası at / sis atarları ateşle."},
 	"suppress": {"t": "Baskı Ateşi", "k": "B", "tgt": true, "d": "Bir bölgeyi 12 sn boyunca ateş altında tut."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "grenade", "smoke", "suppress", "demolish"]
-const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_DELETE: "demolish"}
+const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "grenade", "smoke", "suppress", "abandon", "demolish"]
+const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
 const STANCE_TXT := ["OTO", "AYAKTA", "ÇÖMEL", "YAT"]
 const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "medic": "medic_team", "sniper": "sniper_team", "engineer": "engineer_squad", "mortar": "mortar_team", "drone": "drone_team"}
@@ -363,6 +364,10 @@ func order_state(id: String, sel: Array) -> int:
 			"demolish":
 				if u is Building and not u.done and u.team == G.player_team:
 					return 1
+			"abandon":
+				if veh and u.crew_max > 0 and not u.is_air():
+					any = true
+					ok = ok or (u.crew_n > 0 and u.abandon_t < 0.0)
 	if not any:
 		return -1
 	return 1 if ok else 0
@@ -668,22 +673,35 @@ func _update_info() -> void:
 		status.add_theme_color_override("font_color", RED if u.suppression >= 70 or u.incapacitated() else (AMBER if u.suppression >= 30 else GREEN))
 	elif u is Vehicle:
 		var parts: Array = ["%s %d / %d" % [I18n.s("ZIRH"), int(u.hp), int(u.max_hp)]]
+		if u.crew_max > 0:
+			parts.append("%s %d/%d" % [I18n.s("MÜRETTEBAT"), u.crew_n, u.crew_max])
 		if u.capacity() > 0:
 			parts.append(I18n.s("YOLCU %d / %d") % [u.cargo.size(), u.capacity()])
 		if u.has_smoke():
 			parts.append("%s %d" % [I18n.s("Sis").to_upper(), u.smoke_charges])
 		stats.text = "   ·   ".join(parts)
 		var s2 := ""
+		var probs: Array = []
 		if u.tracks_broken > 0.0:
-			s2 = I18n.s("PALET KOPUK")
-		elif u.retreating:
+			probs.append(I18n.s("PALET KOPUK") + " %d" % int(u.tracks_broken))
+		if u.tires > 0:
+			probs.append(I18n.s("%d TEKER PATLAK") % u.tires)
+		if not u.driver_ok:
+			probs.append(I18n.s("SÜRÜCÜ YOK"))
+		if not u.gunner_ok and u.gunner:
+			probs.append(I18n.s("NİŞANCI YOK"))
+		if u.abandon_t >= 0.0:
+			probs.append(I18n.s("İMHA EDİLİYOR") + " %d" % int(u.abandon_t + 1))
+		if not probs.is_empty():
+			s2 = "  ·  ".join(probs)
+		elif u.retreating and s2 == "":
 			s2 = I18n.s("GERİ ÇEKİLİYOR")
 		elif G.time - u.last_hit < 4.0 or u.target != null:
 			s2 = I18n.s("ÇATIŞMADA")
 		else:
 			s2 = I18n.s("HAZIR")
 		status.text = s2
-		status.add_theme_color_override("font_color", RED if u.tracks_broken > 0.0 or u.target != null else GREEN)
+		status.add_theme_color_override("font_color", RED if (not probs.is_empty() or u.target != null) else GREEN)
 	elif u is Building:
 		var q := ""
 		if not u.done:

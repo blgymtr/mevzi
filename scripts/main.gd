@@ -43,6 +43,8 @@ func _ready() -> void:
 		_run_sandbox_test()
 	elif shot_dir != "" and shot_scene == "arttest":
 		_run_art_test()
+	elif shot_dir != "" and shot_scene == "vehtest":
+		_run_veh_test()
 	elif shot_dir != "" and shot_scene == "editortest":
 		_run_editor_test()
 	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
@@ -612,6 +614,97 @@ func _run_autoplay() -> void:
 	get_tree().quit()
 
 # oyuncu akışı testi: üs kur, üret, ikmal, savunma hattı
+func _run_veh_test() -> void:
+	# köprü geçişi, suya düşmeme, palet/teker/nişancı/sürücü hasarı, terk etme
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	sandbox_ui.run("fog")
+	if G.grid.bridges.is_empty():
+		print("VEH no bridge")
+		get_tree().quit()
+		return
+	var br: Dictionary = G.grid.bridges[0]
+	var bc: Vector3 = br["c"]
+	var ax: Vector3 = br["d"]
+	var vs: Array = []
+	for i in 5:
+		var vt: String = ["tank", "apc", "ifv", "truck", "technical"][i]
+		var p := G.grid.nearest_free(bc - ax * (22.0 + i * 8.0), Grid.M_HEAVY)
+		var v := spawn_vehicle(0, vt, p, Soldier._yaw_of(ax))
+		v.cmd_move(bc + ax * (28.0 + i * 3.0))
+		vs.append(v)
+	G.cam.jump_to(bc, true)
+	G.cam.size = 50.0
+	G.cam.target_size = 50.0
+	for k in 70:
+		await _wait(0.5)
+		if k == 24:
+			await _shot("veh_01_bridge")
+	var crossed := 0
+	var wet := 0
+	for v in vs:
+		if (v.position - bc).dot(ax) > 10.0:
+			crossed += 1
+		if G.grid.is_water(v.position):
+			wet += 1
+	print("VEH bridge crossed=%d/5 wet=%d" % [crossed, wet])
+	if crossed < 5 or wet > 0:
+		fails += 1
+	# palet
+	var tk: Vehicle = vs[0]
+	tk.take_damage(80.0, null, "mine")
+	var broke := tk.tracks_broken > 0.0 and tk.immobile()
+	tk.tracks_broken = 2.0
+	await _wait(10.0)
+	print("VEH tracks broke=%s repaired=%s" % [broke, tk.tracks_broken <= 0.0])
+	if not broke or tk.tracks_broken > 0.0:
+		fails += 1
+	# nişancı: keskin nişancı vurur, piyade yerine geçer
+	var tech: Vehicle = vs[4]
+	var sn := spawn_soldier(1, "sniper", tech.position + Vector3(30, 0, 30), null)
+	for i in 20:
+		if not tech.gunner_ok:
+			break
+		tech.take_damage(5.0, sn, "bullet")
+	var g_dead := not tech.gunner_ok
+	var rep := spawn_soldier(0, "rifle", G.grid.nearest_free(tech.position + Vector3(4, 0, 0), Grid.M_INF), null)
+	rep.cmd_board(tech)
+	await _wait(6.0)
+	print("VEH gunner killed=%s replaced=%s" % [g_dead, tech.gunner_ok])
+	if not g_dead or not tech.gunner_ok:
+		fails += 1
+	# teker
+	for i in 10:
+		tech.take_damage(5.0, null, "grenade")
+	var flat := tech.tires
+	var eng := spawn_soldier(0, "engineer", G.grid.nearest_free(tech.position + Vector3(-3, 0, 0), Grid.M_INF), null)
+	await _wait(12.0)
+	print("VEH tires flat=%d after_engineer=%d" % [flat, tech.tires])
+	if flat == 0 or tech.tires >= flat:
+		fails += 1
+	eng = eng
+	# terk et
+	var n0 := 0
+	for u in G.units:
+		if u is Soldier and u.role == "crew":
+			n0 += 1
+	var ifv: Vehicle = vs[2]
+	ifv.cmd_abandon()
+	await _wait(1.0)
+	var n1 := 0
+	for u in G.units:
+		if u is Soldier and u.role == "crew" and u.alive:
+			n1 += 1
+	await _shot("veh_02_abandon")
+	await _wait(6.5)
+	print("VEH abandon crew=%d destroyed=%s" % [n1 - n0, not ifv.alive])
+	if n1 - n0 < 3 or ifv.alive:
+		fails += 1
+	print("VEHTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
 func _run_art_test() -> void:
 	# topçu: her tip düşman hedeflere ateş ediyor mu
 	get_window().size = Vector2i(1920, 1080)
@@ -642,8 +735,10 @@ func _run_art_test() -> void:
 	var fired := {}
 	for k in 50:
 		await _wait(0.5)
+		if k == 8 or k == 20:
+			spawn_vehicle(1, "heli", guns[3].position + fwd * 35.0, 0.0)
 		for g in guns:
-			if is_instance_valid(g) and (g.main_cd > 0.5 or g.mlrs_left > 0):
+			if is_instance_valid(g) and (g.main_cd > 0.5 or g.mlrs_left > 0 or (g.vtype == "aagun" and g.target != null)):
 				fired[g.vtype] = true
 		if k % 10 == 0:
 			var aa = guns[3]

@@ -10,6 +10,7 @@ const WPN := {
 	"mortar": {"range": 24.0, "dmg": 18.0, "rof": 0.2, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.5, "mag": 15, "ammo": 60, "acc": 0.35, "sup": 4.0, "snd": "pistol", "tr": 4, "reload": 2.0},
 	"drone": {"range": 24.0, "dmg": 18.0, "rof": 0.2, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.5, "mag": 15, "ammo": 60, "acc": 0.35, "sup": 4.0, "snd": "pistol", "tr": 4, "reload": 2.0},
 	"leader": {"range": 36.0, "dmg": 24.0, "rof": 0.13, "b0": 2, "b1": 4, "p0": 0.5, "p1": 1.2, "mag": 30, "ammo": 240, "acc": 0.52, "sup": 6.0, "snd": "rifle", "tr": 3, "reload": 2.2},
+	"crew": {"range": 22.0, "dmg": 14.0, "rof": 0.09, "b0": 3, "b1": 6, "p0": 0.6, "p1": 1.2, "mag": 30, "ammo": 120, "acc": 0.34, "sup": 4.0, "snd": "rifle", "tr": 3, "reload": 2.0},
 	"medic": {"range": 28.0, "dmg": 20.0, "rof": 0.2, "b0": 1, "b1": 3, "p0": 0.7, "p1": 1.4, "mag": 30, "ammo": 150, "acc": 0.4, "sup": 5.0, "snd": "rifle", "tr": 4, "reload": 2.2},
 }
 const STAND := 0
@@ -101,10 +102,10 @@ func add_xp(v: int) -> void:
 func display_name() -> String:
 	return "%s %s" % [I18n.s(RANK_S[rank]), I18n.s(ROLE_TITLE.get(role, "Piyade"))]
 
-const ROLE_TITLE := {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "medic": "Sıhhiye", "sniper": "Keskin Nişancı", "engineer": "İstihkâmcı", "mortar": "Havancı", "drone": "Drone Operatörü", "leader": "Ekip Lideri"}
+const ROLE_TITLE := {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "medic": "Sıhhiye", "sniper": "Keskin Nişancı", "engineer": "İstihkâmcı", "mortar": "Havancı", "drone": "Drone Operatörü", "leader": "Ekip Lideri", "crew": "Mürettebat"}
 
 func role_title() -> String:
-	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE", "sniper": "KESKİN NİŞANCI", "engineer": "İSTİHKÂMCI", "mortar": "HAVANCI", "drone": "DRONE OPERATÖRÜ", "leader": "EKİP LİDERİ"}.get(role, "ER")
+	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE", "sniper": "KESKİN NİŞANCI", "engineer": "İSTİHKÂMCI", "mortar": "HAVANCI", "drone": "DRONE OPERATÖRÜ", "leader": "EKİP LİDERİ", "crew": "MÜRETTEBAT"}.get(role, "ER")
 
 # timde yakında canlı ekip lideri var mı (isabet ve toparlanma bonusu)
 func led() -> bool:
@@ -538,6 +539,9 @@ func _think() -> void:
 					board_target = null
 					order = ""
 				elif dist2(board_target) < board_target.radius + 2.0:
+					if board_target.needs_crew():
+						board_target.add_crew(self)
+						return
 					if board_target.can_load():
 						board(board_target)
 						return
@@ -657,7 +661,7 @@ func _think_repair() -> void:
 		repair_target = null
 		var best := 20.0
 		for u in G.friends_near(position, 20.0, team):
-			if (u is Vehicle and u.vtype != "fpv" and (u.hp < u.max_hp or u.tracks_broken > 0.0)) or (u is Building and u.done and u.hp < u.max_hp):
+			if (u is Vehicle and u.vtype != "fpv" and (u.hp < u.max_hp or u.tracks_broken > 0.0 or u.tires > 0)) or (u is Building and u.done and u.hp < u.max_hp):
 				var d := dist2(u)
 				if d < best:
 					best = d
@@ -671,6 +675,8 @@ func _think_repair() -> void:
 		state = "move"
 		return
 	repair_target.hp = minf(repair_target.max_hp, repair_target.hp + 40.0 * 0.32)
+	if repair_target is Vehicle and repair_target.tires > 0 and randf() < 0.12:
+		repair_target.tires -= 1
 	if repair_target is Vehicle and repair_target.tracks_broken > 0.0:
 		repair_target.tracks_broken = maxf(0.0, repair_target.tracks_broken - 3.0)
 	_face_to(repair_target.position)

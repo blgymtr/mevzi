@@ -24,8 +24,8 @@ const TOOLS := [
 	["pole", "DİREK", "Tıkla"],
 	["crater", "KRATER", "Tıkla"],
 	["patch", "ÇİM / KAR YAMASI", "Tıkla"],
-	["hq0", "MAVİ KARARGÂH", "Mavi ordunun başlangıcı"],
-	["hq1", "KIZIL KARARGÂH", "Kızıl ordunun başlangıcı"],
+	["hq0", "MÜTTEFİK KARARGÂHI", "Müttefiklerin başlangıcı"],
+	["hq1", "MİHVER KARARGÂHI", "Mihverin başlangıcı"],
 	["fob", "İLERİ ÜS NOKTASI", "Yapay zekânın üs kuracağı yer · sağ tık: sil"],
 ]
 
@@ -191,7 +191,7 @@ func _build_rules() -> void:
 	rules.add_child(tr)
 	for t in 2:
 		var tt := t
-		var b := _btn(tr, ["MAVİ ORDU", "KIZIL ORDU"][t], func(): _set_team(tt, tr))
+		var b := _btn(tr, ["MÜTTEFİKLER", "MİHVER"][t], func(): _set_team(tt, tr))
 		b.toggle_mode = true
 		b.button_pressed = team == t
 		b.add_theme_color_override("font_color", G.TEAM_COL[t])
@@ -213,8 +213,8 @@ func _build_rules() -> void:
 	wr.add_child(ob)
 	_spin(rules, "SÜRE (sn)", float(sc.get("time", 600)), 30, 3600, func(v): sc["time"] = v)
 	var sup: Array = sc.get("supply", [650, 650])
-	_spin(rules, "MAVİ İKMAL", float(sup[0]), 0, 20000, func(v): sup[0] = v)
-	_spin(rules, "KIZIL İKMAL", float(sup[1]), 0, 20000, func(v): sup[1] = v)
+	_spin(rules, "MÜTTEFİK İKMALİ", float(sup[0]), 0, 20000, func(v): sup[0] = v)
+	_spin(rules, "MİHVER İKMALİ", float(sup[1]), 0, 20000, func(v): sup[1] = v)
 	var ai: Array = sc.get("ai", [false, true])
 	var hq: Array = sc.get("hq", [true, true])
 	var cr := GridContainer.new()
@@ -223,12 +223,12 @@ func _build_rules() -> void:
 	for t in 2:
 		var tt := t
 		var c1 := CheckBox.new()
-		c1.text = ["Mavi karargâh", "Kızıl karargâh"][t]
+		c1.text = ["Müttefik karargâhı", "Mihver karargâhı"][t]
 		c1.button_pressed = bool(hq[t])
 		c1.toggled.connect(func(v): hq[tt] = v)
 		cr.add_child(c1)
 	var c2 := CheckBox.new()
-	c2.text = "Kızıl: yapay zekâ"
+	c2.text = "Mihver: yapay zekâ"
 	c2.button_pressed = bool(ai[1])
 	c2.toggled.connect(func(v): ai[1] = v)
 	cr.add_child(c2)
@@ -613,7 +613,7 @@ class EdOverlay extends Control:
 		for t in 2:
 			var p := MapGen.v3(hq[t])
 			_ring(p, 13.0, G.TEAM_COL[t], 3.0)
-			draw_string(f, G.cam.screen(p) + Vector2(-50, -10), ["MAVİ KARARGÂH", "KIZIL KARARGÂH"][t], HORIZONTAL_ALIGNMENT_CENTER, 100, 16, G.TEAM_COL[t])
+			draw_string(f, G.cam.screen(p) + Vector2(-50, -10), ["MÜTTEFİK KARARGÂHI", "MİHVER KARARGÂHI"][t], HORIZONTAL_ALIGNMENT_CENTER, 100, 16, G.TEAM_COL[t])
 		for fp in ed.data.get("fobs", []):
 			var p := MapGen.v3(fp)
 			_ring(p, 7.0, Hud.AMBER, 2.0)

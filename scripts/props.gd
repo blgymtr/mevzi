@@ -568,6 +568,7 @@ func bridge(center: Vector3, dir: Vector3, length: float, width := 6.5) -> void:
 	mi.rotation.y = rot
 	add_child(mi)
 	G.grid.set_bridge(center, Vector2(length + 2.0, width - 0.8), rot)
+	G.grid.add_bridge(center, dir, length + 2.0, width - 0.8)
 	var side := Vector3(-dir.z, 0, dir.x)
 	for sg in [-1.0, 1.0]:
 		G.grid.set_static_rect(center + side * sg * (width * 0.5 - 0.15), Vector2(length, 0.3), rot, 0.75, Grid.K_HOUSE)

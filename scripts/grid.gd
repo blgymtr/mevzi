@@ -18,6 +18,7 @@ var base_l := PackedByteArray()
 var vault := PackedByteArray()      # piyadenin üstünden atlayabildiği alçak engel hücreleri
 var base_h := PackedByteArray()
 var nav: Array = []
+var bridges: Array = []       # {c, d, L, w}: araçlar köprüde eksene hizalanır
 var _dirty := {}
 
 func _init() -> void:
@@ -424,6 +425,20 @@ func set_bridge(center: Vector3, size: Vector2, rot: float) -> void:
 				bridge[i] = 1
 				changed.append(i)
 	refresh(changed)
+
+func add_bridge(c: Vector3, d: Vector3, L: float, w: float) -> void:
+	var dd := Vector3(d.x, 0, d.z).normalized()
+	bridges.append({"c": Vector3(c.x, 0, c.z), "d": dd, "L": L, "w": w})
+
+func bridge_at(p: Vector3) -> Dictionary:
+	for b in bridges:
+		var rel: Vector3 = p - b["c"]
+		rel.y = 0
+		var along: float = rel.dot(b["d"])
+		var side: float = rel.cross(b["d"]).y
+		if absf(along) <= b["L"] * 0.5 + 1.0 and absf(side) <= b["w"] * 0.5 + 0.5:
+			return b
+	return {}
 
 func is_water(p: Vector3) -> bool:
 	var i := idx(p)
