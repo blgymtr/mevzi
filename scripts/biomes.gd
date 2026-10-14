@@ -19,12 +19,12 @@ static func get_biome(id: String) -> Dictionary:
 		"green":
 			return {
 				"id": "green", "winter": false,
-				"a": "aerial_grass_rock", "b": "forest_ground_04", "road": "brown_mud_dry", "bank": "brown_mud_dry", "burn": "burned_ground_01",
-				"tint_a": Color(0.62, 0.92, 0.42), "tint_a2": Color(0.78, 0.95, 0.48), "tint_b": Color(0.85, 0.82, 0.6), "tint_road": Color(0.6, 0.53, 0.46),
+				"a": "aerial_grass_rock", "b": "forest_ground_04", "road": "dirt_aerial_02", "bank": "brown_mud_dry", "burn": "burned_ground_01",
+				"tint_a": Color(0.68, 0.82, 0.48), "tint_a2": Color(0.8, 0.86, 0.54), "tint_b": Color(0.85, 0.82, 0.6), "tint_road": Color(0.6, 0.53, 0.46),
 				"tint_bank": Color(0.6, 0.48, 0.36), "tint_track": Color(0.55, 0.42, 0.3),
 				"scale_a": 9.0, "scale_b": 8.0, "scale_road": 4.0, "patch_noise": 0.6, "dune": 0.35, "nstr": 1.2, "macro": 0.22,
 				"water_shallow": Color(0.38, 0.5, 0.42), "water_deep": Color(0.14, 0.24, 0.24), "clarity": 0.3,
-				"sun": Color(1.0, 0.94, 0.82), "sun_e": 2.2, "amb": Color(0.62, 0.68, 0.6), "amb_e": 0.65, "bg": Color(0.4, 0.5, 0.3), "sat": 1.05, "exp": 0.95,
+				"sun": Color(1.0, 0.94, 0.82), "sun_e": 2.2, "amb": Color(0.66, 0.7, 0.66), "amb_e": 0.8, "bg": Color(0.4, 0.5, 0.3), "sat": 0.95, "exp": 1.0,
 				"sand": Color(0.5, 0.46, 0.34),
 			}
 		"winter":

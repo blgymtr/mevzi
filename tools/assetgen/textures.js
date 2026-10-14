@@ -52,10 +52,10 @@ function camo(out, name, cols, seed, { scale = 3, grime = 0.12, panels = true } 
 
 export function buildTextures(out) {
   // ---- araç boyaları ----
-  camo(out, 'camo_wood', [[0.3, 0.33, 0.2], [0.2, 0.24, 0.14], [0.36, 0.3, 0.2], [0.12, 0.12, 0.1]], 11, { scale: 3 });
+  camo(out, 'camo_wood', [[0.4, 0.43, 0.28], [0.28, 0.33, 0.2], [0.46, 0.39, 0.27], [0.17, 0.17, 0.14]], 11, { scale: 3 });
   camo(out, 'camo_desert', [[0.74, 0.66, 0.5], [0.6, 0.5, 0.36], [0.82, 0.76, 0.62]], 21, { scale: 3 });
   camo(out, 'camo_snow', [[0.86, 0.87, 0.86], [0.55, 0.57, 0.55], [0.95, 0.95, 0.96], [0.35, 0.36, 0.33]], 31, { scale: 3 });
-  camo(out, 'paint_olive', [[0.28, 0.31, 0.2], [0.24, 0.27, 0.17]], 41, { scale: 2, grime: 0.18 });
+  camo(out, 'paint_olive', [[0.38, 0.41, 0.27], [0.33, 0.36, 0.23]], 41, { scale: 2, grime: 0.18 });
   camo(out, 'paint_sand', [[0.76, 0.7, 0.56], [0.7, 0.63, 0.48]], 51, { scale: 2, grime: 0.18 });
   camo(out, 'paint_dark', [[0.2, 0.22, 0.2], [0.16, 0.17, 0.16], [0.3, 0.32, 0.28]], 61, { scale: 3, grime: 0.15 });
   // ---- metal (namlu, çark) ----

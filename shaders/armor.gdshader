@@ -1,0 +1,87 @@
+shader_type spatial;
+// Araç / asker malzemesi: kamuflaj ya da kumaş tabanı + gerçek (CC0) doku katmanları:
+// yağmur akıntısı izleri, pas lekeleri, metal mikro yüzey normali, altta çamur, üstte toz.
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
+
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool has_albedo = false;
+uniform vec4 tint : source_color = vec4(1.0);
+uniform float uv_scale = 1.0;
+uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool has_normal = false;
+uniform float normal_strength = 0.8;
+uniform float roughness = 0.8;
+uniform float metallic = 0.0;
+
+// ayrıntı katmanları (model uzayında üçlü izdüşüm)
+uniform sampler2D streak_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;   // akıntı/pas izleri
+uniform sampler2D grime_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;    // leke / kir gürültüsü
+uniform sampler2D micro_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;     // metal yüzey normali
+uniform sampler2D micro_rough : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float detail_scale = 0.45;
+uniform float streaks = 0.35;
+uniform float rust = 0.25;
+uniform float micro = 0.6;
+uniform vec4 rust_col : source_color = vec4(0.30, 0.17, 0.09, 1.0);
+uniform vec4 dirt_col : source_color = vec4(0.36, 0.30, 0.22, 1.0);
+uniform float dirt_height = 0.9;
+uniform float dirt_amount = 0.6;
+uniform vec4 dust_col : source_color = vec4(0.6, 0.55, 0.45, 1.0);
+uniform float dust_amount = 0.0;
+
+varying vec3 mpos;
+varying vec3 mnrm;
+varying float wy;
+
+void vertex() {
+	mpos = VERTEX;
+	mnrm = NORMAL;
+	wy = (MODEL_MATRIX * vec4(VERTEX, 1.0)).y;
+}
+
+vec4 tri(sampler2D t, vec3 p, vec3 n) {
+	vec3 b = pow(abs(n), vec3(4.0));
+	b /= (b.x + b.y + b.z + 1e-5);
+	return texture(t, p.zy) * b.x + texture(t, p.xz) * b.y + texture(t, p.xy) * b.z;
+}
+
+float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+void fragment() {
+	vec3 vc = pow(max(COLOR.rgb, vec3(0.0)), vec3(2.2));
+	vec3 base = tint.rgb * vc;
+	if (has_albedo) {
+		base *= texture(albedo_tex, UV * uv_scale).rgb;
+	}
+	vec3 p = mpos * detail_scale;
+	vec3 n = normalize(mnrm);
+	// yağmur akıntısı: dikey izler yan yüzlerde, dokunun parlaklık sapması kadar
+	vec3 st = tri(streak_tex, p * vec3(1.0, 0.6, 1.0), n).rgb;
+	float sl = lum(st);
+	float side = 1.0 - abs(n.y);
+	base *= mix(1.0, clamp(0.55 + sl * 1.15, 0.6, 1.25), streaks * (0.4 + side * 0.6));
+	// pas / aşınma: koyu izlerde pas rengine kay
+	float rmask = smoothstep(0.28, 0.12, sl) * rust;
+	base = mix(base, rust_col.rgb * (0.7 + sl), clamp(rmask, 0.0, 1.0));
+	// kir lekeleri
+	float g = lum(tri(grime_tex, p * 1.7 + vec3(3.1, 0.0, 1.7), n).rgb);
+	// alt kısımda çamur, üst yüzeyde toz
+	float dh = clamp(1.0 - wy / max(dirt_height, 0.01), 0.0, 1.0);
+	float dirt = clamp(dh * dh * dirt_amount * (0.6 + g * 1.4), 0.0, 1.0);
+	base = mix(base, dirt_col.rgb, dirt);
+	float dust = clamp(smoothstep(0.55, 0.95, n.y) * dust_amount * (0.5 + g), 0.0, 1.0);
+	base = mix(base, dust_col.rgb, dust);
+	ALBEDO = base;
+	// yüzey ayrıntısı
+	float mr = tri(micro_rough, p * 2.0, n).r;
+	ROUGHNESS = clamp(roughness * mix(1.0, 0.75 + mr * 0.5, micro) + dirt * 0.25, 0.05, 1.0);
+	METALLIC = metallic * (1.0 - dirt);
+	vec3 nm = vec3(0.5, 0.5, 1.0);
+	if (has_normal) {
+		nm = texture(normal_tex, UV * uv_scale).rgb;
+	}
+	vec3 dn = tri(micro_nrm, p * 2.0, n).rgb;
+	nm = normalize(vec3((nm.xy - 0.5) + (dn.xy - 0.5) * micro, 0.5)) * 0.5 + 0.5;
+	NORMAL_MAP = nm;
+	NORMAL_MAP_DEPTH = normal_strength;
+}

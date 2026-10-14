@@ -58,49 +58,142 @@ static func uniform_tex(team: int) -> String:
 		return {"desert": "fab_desert", "green": "fab_multicam", "winter": "fab_snow"}.get(b, "fab_multicam")
 	return {"desert": "fab_khaki", "green": "fab_olive", "winter": "fab_snow"}.get(b, "fab_olive")
 
-static func material(name: String, team: int) -> StandardMaterial3D:
+static var _armor_shader: Shader
+
+static func mat_tex(id: String, map: String) -> Texture2D:
+	var p := "res://assets/materials/%s/%s.jpg" % [id, map]
+	return load(p) if ResourceLoader.exists(p) else null
+
+# biyoma göre çamur / toz
+static func _dirt() -> Dictionary:
+	match G.map_kind:
+		"desert":
+			return {"dirt": Color(0.62, 0.52, 0.38), "dust": Color(0.74, 0.65, 0.5), "dust_a": 0.35}
+		"winter":
+			return {"dirt": Color(0.42, 0.4, 0.37), "dust": Color(0.92, 0.93, 0.96), "dust_a": 0.45}
+	return {"dirt": Color(0.4, 0.34, 0.24), "dust": Color(0.52, 0.5, 0.4), "dust_a": 0.1}
+
+static func material(name: String, team: int) -> Material:
 	var key := "%s|%d|%s" % [name, team, G.map_kind]
 	if _mat.has(key):
 		return _mat[key]
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.vertex_color_is_srgb = true
-	m.roughness = 0.85
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	var t := ""
 	var tint := Color.WHITE
 	var uvs := 1.0
+	var rough := 0.85
+	var metal := 0.0
+	# katman şiddetleri: [akıntı, pas, mikro, çamur]
+	var lay := [0.0, 0.0, 0.3, 0.3]
+	var normal_tex := ""
+	var shaded := true
 	match name:
 		"paint":
 			t = paint_tex(team)
-			m.roughness = 0.7
-			m.metallic = 0.1
+			rough = 0.68
+			metal = 0.12
 			uvs = 0.6
+			lay = [0.4, 0.22, 0.7, 0.75]
 		"trim":
 			t = paint_tex(team)
 			tint = Color(0.72, 0.72, 0.72)
 			uvs = 0.6
-			m.roughness = 0.75
+			rough = 0.72
+			metal = 0.12
+			lay = [0.45, 0.3, 0.7, 0.8]
 		"metal":
 			t = "metal"
-			m.metallic = 0.45
-			m.roughness = 0.5
+			metal = 0.55
+			rough = 0.45
+			lay = [0.2, 0.35, 0.9, 0.6]
 		"track":
 			t = "track"
-			m.roughness = 0.9
-			m.metallic = 0.2
+			rough = 0.85
+			metal = 0.3
+			lay = [0.1, 0.5, 0.6, 1.0]
 		"rubber":
 			t = "rubber"
-			m.roughness = 0.95
+			rough = 0.95
+			lay = [0.0, 0.0, 0.2, 1.0]
+		"canvas":
+			t = "canvas"
+			rough = 0.95
+			normal_tex = "hessian_230"
+			lay = [0.25, 0.0, 0.0, 0.5]
+		"uniform", "vest", "helmet":
+			t = uniform_tex(team)
+			rough = 0.95 if name != "helmet" else 0.8
+			uvs = 2.5
+			normal_tex = "hessian_230"
+			if name == "vest":
+				tint = Color(0.82, 0.82, 0.78) if team == 0 else Color(0.62, 0.6, 0.5)
+			elif name == "helmet":
+				tint = Color(0.85, 0.85, 0.82)
+			lay = [0.0, 0.0, 0.0, 0.55]
+		"pack":
+			t = "canvas"
+			tint = Color(0.48, 0.48, 0.36) if G.map_kind != "desert" else Color(0.7, 0.62, 0.46)
+			if G.map_kind == "winter":
+				tint = Color(0.82, 0.83, 0.82)
+			normal_tex = "hessian_230"
+			lay = [0.0, 0.0, 0.0, 0.5]
+		"boot":
+			t = "leather"
+			tint = Color(0.2, 0.16, 0.12) if G.map_kind != "desert" else Color(0.55, 0.45, 0.32)
+			normal_tex = "brown_leather"
+			lay = [0.0, 0.0, 0.0, 0.9]
+		"gun":
+			t = "metal"
+			tint = Color(0.45, 0.45, 0.45)
+			metal = 0.4
+			rough = 0.55
+			lay = [0.0, 0.1, 0.6, 0.0]
+		"wood":
+			tint = Color(0.42, 0.26, 0.14)
+			lay = [0.2, 0.0, 0.3, 0.3]
+		_:
+			shaded = false
+	if shaded:
+		if _armor_shader == null:
+			_armor_shader = load("res://shaders/armor.gdshader")
+		var sm := ShaderMaterial.new()
+		sm.shader = _armor_shader
+		var at := tex(t) if t != "" else null
+		sm.set_shader_parameter("has_albedo", at != null)
+		if at:
+			sm.set_shader_parameter("albedo_tex", at)
+		var nt: Texture2D = mat_tex(normal_tex, "normal") if normal_tex != "" else (tex(t + "_n") if t != "" else null)
+		sm.set_shader_parameter("has_normal", nt != null)
+		if nt:
+			sm.set_shader_parameter("normal_tex", nt)
+		sm.set_shader_parameter("tint", tint)
+		sm.set_shader_parameter("uv_scale", uvs)
+		sm.set_shader_parameter("roughness", rough)
+		sm.set_shader_parameter("metallic", metal)
+		sm.set_shader_parameter("streak_tex", mat_tex("rusty_painted_metal", "albedo"))
+		sm.set_shader_parameter("grime_tex", mat_tex("rust_coarse_01", "albedo"))
+		sm.set_shader_parameter("micro_nrm", mat_tex("metal_plate_02", "normal"))
+		sm.set_shader_parameter("micro_rough", mat_tex("metal_plate_02", "rough"))
+		sm.set_shader_parameter("streaks", lay[0])
+		sm.set_shader_parameter("rust", lay[1])
+		sm.set_shader_parameter("micro", lay[2])
+		var dd := _dirt()
+		sm.set_shader_parameter("dirt_amount", lay[3])
+		sm.set_shader_parameter("dirt_col", dd["dirt"])
+		sm.set_shader_parameter("dust_col", dd["dust"])
+		sm.set_shader_parameter("dust_amount", dd["dust_a"] if name in ["paint", "trim", "canvas", "pack", "helmet"] else 0.0)
+		sm.set_shader_parameter("dirt_height", 0.5 if name in ["uniform", "vest", "helmet", "pack", "boot"] else 1.0)
+		_mat[key] = sm
+		return sm
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
+	m.roughness = 0.85
+	match name:
 		"glass":
 			tint = Color(0.1, 0.13, 0.16)
 			m.roughness = 0.12
 			m.metallic = 0.4
-		"canvas":
-			t = "canvas"
-			m.roughness = 0.95
 		"mark":
-			tint = G.TEAM_COL[team]
 			tint = G.TEAM_COL[team].lerp(Color(0.85, 0.85, 0.8), 0.25)
 			m.roughness = 0.6
 		"light":
@@ -110,56 +203,18 @@ static func material(name: String, team: int) -> StandardMaterial3D:
 			m.emission_energy_multiplier = 0.4
 		"dark":
 			tint = Color(0.07, 0.07, 0.07)
-		"uniform":
-			t = uniform_tex(team)
-			m.roughness = 0.95
-			uvs = 2.5
-		"vest":
-			t = uniform_tex(team)
-			tint = Color(0.82, 0.82, 0.78) if team == 0 else Color(0.62, 0.6, 0.5)
-			m.roughness = 0.95
-			uvs = 2.5
-		"helmet":
-			t = uniform_tex(team)
-			tint = Color(0.85, 0.85, 0.82)
-			m.roughness = 0.8
-			uvs = 2.5
-		"pack":
-			t = "canvas"
-			tint = Color(0.48, 0.48, 0.36) if G.map_kind != "desert" else Color(0.7, 0.62, 0.46)
-			if G.map_kind == "winter":
-				tint = Color(0.82, 0.83, 0.82)
 		"skin":
 			tint = Color(0.72, 0.55, 0.42)
 			m.roughness = 0.7
 		"team":
 			tint = Color(0.28, 0.48, 0.78) if team == 0 else Color(0.72, 0.2, 0.14)
-		"boot":
-			t = "leather"
-			tint = Color(0.2, 0.16, 0.12) if G.map_kind != "desert" else Color(0.55, 0.45, 0.32)
-		"gun":
-			t = "metal"
-			tint = Color(0.45, 0.45, 0.45)
-			m.metallic = 0.4
-			m.roughness = 0.55
-		"wood":
-			tint = Color(0.42, 0.26, 0.14)
 		"medic":
 			tint = Color(0.95, 0.95, 0.95)
 		"red":
 			tint = Color(0.8, 0.08, 0.08)
-	if t != "":
-		m.albedo_texture = tex(t)
-		var n := tex(t + "_n")
-		if n:
-			m.normal_enabled = true
-			m.normal_texture = n
-			m.normal_scale = 0.8
-		m.uv1_scale = Vector3(uvs, uvs, uvs)
 	m.albedo_color = tint
 	_mat[key] = m
 	return m
-
 static func skinned(model: String, node: String, team: int) -> ArrayMesh:
 	var key := "%s|%s|%d|%s" % [model, node, team, G.map_kind]
 	if _skin.has(key):
