@@ -439,6 +439,10 @@ func _process(dt: float) -> void:
 		think_t = 0.45 + randf() * 0.15
 		if not is_air() and G.grid.is_water(position):
 			position = G.grid.nearest_free(position, nav_mode, 30)
+		# emir yarıda kaldıysa (yol boşaldı ama hedefe varılmadı) yeniden yol bul
+		if not is_air() and order in ["move", "amove", "retreat"] and path_i >= path.size() and dist2_p(dest) > 4.0 and not immobile():
+			path = G.grid.find_path(position, dest, nav_mode)
+			path_i = 0
 		_scan()
 	atgm_cd -= dt
 	if vtype == "fpv":

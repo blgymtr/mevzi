@@ -631,9 +631,10 @@ func _run_veh_test() -> void:
 	var vs: Array = []
 	for i in 5:
 		var vt: String = ["tank", "apc", "ifv", "truck", "technical"][i]
-		var p := G.grid.nearest_free(bc - ax * (22.0 + i * 8.0), Grid.M_HEAVY)
+		var p := G.grid.nearest_free(bc - ax * (22.0 + i * 8.0), Vehicle.DEF[vt]["nav"])
 		var v := spawn_vehicle(0, vt, p, Soldier._yaw_of(ax))
 		v.cmd_move(bc + ax * (28.0 + i * 3.0))
+		print("VEH spawn %s p=%s path=%d" % [vt, v.position, v.path.size()])
 		vs.append(v)
 	G.cam.jump_to(bc, true)
 	G.cam.size = 50.0
@@ -649,7 +650,9 @@ func _run_veh_test() -> void:
 			crossed += 1
 		if G.grid.is_water(v.position):
 			wet += 1
-	print("VEH bridge crossed=%d/5 wet=%d" % [crossed, wet])
+	print("VEH bridge crossed=%d/5 wet=%d fps=%d t=%.1f" % [crossed, wet, Engine.get_frames_per_second(), G.time])
+	for v in vs:
+		print("VEH  %s along=%.1f path=%d/%d spd=%.1f imm=%s" % [v.vtype, (v.position - bc).dot(ax), v.path_i, v.path.size(), v.cur_speed, v.immobile()])
 	if crossed < 5 or wet > 0:
 		fails += 1
 	# palet
@@ -669,6 +672,7 @@ func _run_veh_test() -> void:
 			break
 		tech.take_damage(5.0, sn, "bullet")
 	var g_dead := not tech.gunner_ok
+	sn.die(null)
 	var rep := spawn_soldier(0, "rifle", G.grid.nearest_free(tech.position + Vector3(4, 0, 0), Grid.M_INF), null)
 	rep.cmd_board(tech)
 	await _wait(6.0)
