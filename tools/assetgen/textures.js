@@ -50,6 +50,33 @@ function camo(out, name, cols, seed, { scale = 3, grime = 0.12, panels = true } 
   });
 }
 
+
+// OCP benzeri (çok renkli, yumuşak lekeler + ince dallar) — ABD üniforması
+function ocp(out, name, base, cols, seed) {
+  const n1 = fbm(seed, 5, 4), n2 = fbm(seed + 7, 9, 4), n3 = fbm(seed + 13, 14, 3), br = fbm(seed + 21, 30, 3), wv = fbm(seed + 31, 64, 2);
+  make(out, name, 512, (u, v, x, y) => {
+    let c = base;
+    if (n1(u, v) > 0.55) c = cols[0];
+    if (n2(u, v) > 0.6) c = cols[1];
+    if (n3(u, v) > 0.66) c = cols[2];
+    if (Math.abs(br(u, v) - 0.5) < 0.018) c = cols[3];
+    const weave = ((x + y) % 3 === 0 ? 0.97 : 1.0) * (0.95 + wv(u, v) * 0.1);
+    return [c[0] * weave, c[1] * weave, c[2] * weave, 0.5 + (wv(u, v) - 0.5) * 0.3];
+  });
+}
+// EMR benzeri dijital (piksel) desen — Rus üniforması
+function digital(out, name, base, cols, seed, px = 8) {
+  const ns = cols.map((_, i) => fbm(seed + i * 11, 6 + i * 2, 3));
+  const wv = fbm(seed + 51, 64, 2);
+  make(out, name, 512, (u, v, x, y) => {
+    const qu = Math.floor(x / px) * px / 512, qv = Math.floor(y / px) * px / 512;
+    let c = base;
+    for (let i = 0; i < cols.length; i++) if (ns[i](qu, qv) > 0.54 + i * 0.03) c = cols[i];
+    const weave = 0.95 + wv(u, v) * 0.1;
+    return [c[0] * weave, c[1] * weave, c[2] * weave, 0.5];
+  });
+}
+
 export function buildTextures(out) {
   // ---- araç boyaları ----
   camo(out, 'camo_wood', [[0.4, 0.43, 0.28], [0.28, 0.33, 0.2], [0.46, 0.39, 0.27], [0.17, 0.17, 0.14]], 11, { scale: 3 });
@@ -103,6 +130,12 @@ export function buildTextures(out) {
   camo(out, 'fab_desert', [[0.72, 0.64, 0.48], [0.62, 0.52, 0.38], [0.8, 0.74, 0.6]], 121, { scale: 6, panels: false, grime: 0.1 });
   camo(out, 'fab_snow', [[0.88, 0.89, 0.9], [0.66, 0.68, 0.68], [0.95, 0.95, 0.96]], 131, { scale: 6, panels: false, grime: 0.08 });
   camo(out, 'fab_khaki', [[0.56, 0.5, 0.36], [0.5, 0.44, 0.31]], 141, { scale: 5, panels: false, grime: 0.12 });
+  // ---- üniformalar ----
+  ocp(out, 'fab_ocp', [0.6, 0.55, 0.42], [[0.46, 0.45, 0.32], [0.52, 0.43, 0.3], [0.33, 0.3, 0.22], [0.27, 0.23, 0.16]], 701);
+  digital(out, 'fab_emr', [0.4, 0.42, 0.3], [[0.28, 0.32, 0.2], [0.48, 0.43, 0.3], [0.18, 0.18, 0.14]], 801);
+  digital(out, 'fab_emr_desert', [0.66, 0.6, 0.45], [[0.55, 0.48, 0.34], [0.72, 0.68, 0.55], [0.45, 0.38, 0.27]], 811);
+  ocp(out, 'fab_coyote', [0.5, 0.42, 0.3], [[0.47, 0.4, 0.28], [0.52, 0.45, 0.33], [0.44, 0.37, 0.26], [0.42, 0.35, 0.25]], 721);
+  digital(out, 'fab_ratnik', [0.36, 0.38, 0.27], [[0.3, 0.33, 0.22], [0.4, 0.41, 0.3], [0.26, 0.27, 0.2]], 821, 12);
   // ---- deri / bot ----
   {
     const g = fbm(151, 32, 3);

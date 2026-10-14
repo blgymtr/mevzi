@@ -54,9 +54,16 @@ static func paint_tex(team: int) -> String:
 
 static func uniform_tex(team: int) -> String:
 	var b: String = G.map_kind
+	if b == "winter":
+		return "fab_snow"
 	if team == 0:
-		return {"desert": "fab_desert", "green": "fab_multicam", "winter": "fab_snow"}.get(b, "fab_multicam")
-	return {"desert": "fab_khaki", "green": "fab_olive", "winter": "fab_snow"}.get(b, "fab_olive")
+		return "fab_ocp"
+	return "fab_emr_desert" if b == "desert" else "fab_emr"
+
+static func vest_tex(team: int) -> String:
+	if G.map_kind == "winter":
+		return "fab_snow"
+	return "fab_coyote" if team == 0 else ("fab_emr_desert" if G.map_kind == "desert" else "fab_ratnik")
 
 static var _armor_shader: Shader
 
@@ -120,23 +127,21 @@ static func material(name: String, team: int) -> Material:
 			normal_tex = "hessian_230"
 			lay = [0.25, 0.0, 0.0, 0.5]
 		"uniform", "vest", "helmet":
-			t = uniform_tex(team)
+			t = uniform_tex(team) if name == "uniform" else vest_tex(team)
 			rough = 0.95 if name != "helmet" else 0.8
 			uvs = 2.5
 			normal_tex = "hessian_230"
-			if name == "vest":
-				tint = Color(0.82, 0.82, 0.78) if team == 0 else Color(0.62, 0.6, 0.5)
-			elif name == "helmet":
-				tint = Color(0.85, 0.85, 0.82)
+			if name == "helmet":
+				tint = Color(0.92, 0.92, 0.9)
 			lay = [0.0, 0.0, 0.0, 0.55]
 		"pack":
-			t = "canvas"
-			tint = Color(0.48, 0.48, 0.36) if G.map_kind != "desert" else Color(0.7, 0.62, 0.46)
+			t = vest_tex(team)
+			uvs = 2.5
 			normal_tex = "hessian_230"
 			lay = [0.0, 0.0, 0.0, 0.5]
 		"boot":
 			t = "leather"
-			tint = Color(0.2, 0.16, 0.12) if G.map_kind != "desert" else Color(0.55, 0.45, 0.32)
+			tint = Color(0.62, 0.5, 0.36) if team == 0 else Color(0.09, 0.08, 0.07)
 			normal_tex = "brown_leather"
 			lay = [0.0, 0.0, 0.0, 0.9]
 		"gun":
@@ -145,6 +150,10 @@ static func material(name: String, team: int) -> Material:
 			metal = 0.4
 			rough = 0.55
 			lay = [0.0, 0.1, 0.6, 0.0]
+		"glove":
+			tint = Color(0.36, 0.3, 0.22)
+			rough = 0.9
+			lay = [0.0, 0.0, 0.0, 0.3]
 		"wood":
 			tint = Color(0.42, 0.26, 0.14)
 			lay = [0.2, 0.0, 0.3, 0.3]

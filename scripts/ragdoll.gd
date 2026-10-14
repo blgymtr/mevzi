@@ -167,6 +167,7 @@ func _apply() -> void:
 	wx = wx.normalized()
 	var wy := wz.cross(wx).normalized()
 	b.weapon.global_transform = Transform3D(Basis(wx, wy, wz), p[W0])
+	b.sync_skin()
 
 func center() -> Vector3:
 	return p[HIP]

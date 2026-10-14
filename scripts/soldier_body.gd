@@ -38,32 +38,94 @@ func build(team: int, rl: String, winter: bool) -> void:
 	add_child(pelvis)
 	spine = Node3D.new()
 	pelvis.add_child(spine)
-	_mi(spine, M["torso"])
-	head = _mi(spine, M["head"])
+	var rig_model := "soldier_%s_rig" % ("usa" if team == 0 else "rus")
+	var skinned := Art.has(rig_model)
 	arm_r = _pivot(spine, Vector3(-0.21, 0.5, 0))
-	_mi(arm_r, M["upper"])
 	fore_r = _pivot(arm_r, Vector3(0, -0.29, 0))
-	_mi(fore_r, M["fore"])
 	arm_l = _pivot(spine, Vector3(0.21, 0.5, 0))
-	_mi(arm_l, M["upper"])
 	fore_l = _pivot(arm_l, Vector3(0, -0.29, 0))
-	_mi(fore_l, M["fore"])
 	leg_r = _pivot(pelvis, Vector3(-0.1, 0, 0))
-	_mi(leg_r, M["thigh"])
 	knee_r = _pivot(leg_r, Vector3(0, -0.44, 0))
-	_mi(knee_r, M["shin"])
 	leg_l = _pivot(pelvis, Vector3(0.1, 0, 0))
-	_mi(leg_l, M["thigh"])
 	knee_l = _pivot(leg_l, Vector3(0, -0.44, 0))
-	_mi(knee_l, M["shin"])
+	if skinned:
+		_build_skin(rig_model, team)
+	else:
+		_mi(spine, M["torso"])
+		head = _mi(spine, M["head"])
+		_mi(arm_r, M["upper"])
+		_mi(fore_r, M["fore"])
+		_mi(arm_l, M["upper"])
+		_mi(fore_l, M["fore"])
+		_mi(leg_r, M["thigh"])
+		_mi(knee_r, M["shin"])
+		_mi(leg_l, M["thigh"])
+		_mi(knee_l, M["shin"])
 	weapon = _mi(spine, M["weapon"])
-	if M.has("extra") and M["extra"] != null:
+	if M.has("extra") and M["extra"] != null and not (skinned and rl in ["leader", "rifle"]):
 		_mi(spine, M["extra"])
 	phase = rng.randf() * TAU
 	for n in [spine, arm_r, arm_l, fore_r, fore_l, leg_r, leg_l, knee_r, knee_l]:
 		rest[n] = n.position
 
 var rest := {}
+
+# ------------------------------------------------------------ iskeletli (Blender) gövde
+var skel: Skeleton3D = null
+var bone_map: Array = []       # [kemik indeksi, pivot düğümü, dinlenme farkı D]
+static var _rig_scenes := {}
+
+func _build_skin(model: String, team: int) -> void:
+	if not _rig_scenes.has(model):
+		_rig_scenes[model] = load("res://assets/models/%s.glb" % model)
+	var inst: Node3D = (_rig_scenes[model] as PackedScene).instantiate()
+	add_child(inst)
+	skel = _find_skel(inst)
+	if skel == null:
+		return
+	for c in skel.get_children():
+		if c is MeshInstance3D:
+			var mi := c as MeshInstance3D
+			mi.layers = 2
+			for i in mi.mesh.get_surface_count():
+				var sm := mi.mesh.surface_get_material(i)
+				var nm := String(sm.resource_name) if sm else "uniform"
+				mi.set_surface_override_material(i, Art.material(nm, team))
+	var pv := {"pelvis": pelvis, "spine": spine, "arm_r": arm_r, "fore_r": fore_r, "arm_l": arm_l, "fore_l": fore_l, "leg_r": leg_r, "knee_r": knee_r, "leg_l": leg_l, "knee_l": knee_l}
+	var S := _rel(skel)
+	for i in skel.get_bone_count():
+		var bn := skel.get_bone_name(i)
+		if not pv.has(bn):
+			continue
+		var P_rest: Transform3D = S.affine_inverse() * _rel(pv[bn])
+		var D := P_rest.affine_inverse() * skel.get_bone_global_rest(i)
+		bone_map.append([i, pv[bn], D])
+
+func _find_skel(n: Node) -> Skeleton3D:
+	if n is Skeleton3D:
+		return n
+	for c in n.get_children():
+		var r := _find_skel(c)
+		if r:
+			return r
+	return null
+
+# düğümün bu gövdeye göre dönüşümü (ağaçta olmasa da çalışır)
+func _rel(n: Node3D) -> Transform3D:
+	var t := n.transform
+	var p := n.get_parent()
+	while p != null and p != self and p is Node3D:
+		t = (p as Node3D).transform * t
+		p = p.get_parent()
+	return t
+
+# pivotlar (poz / ragdoll) → kemikler
+func sync_skin() -> void:
+	if skel == null:
+		return
+	var Si := _rel(skel).affine_inverse()
+	for e in bone_map:
+		skel.set_bone_global_pose(e[0], Si * _rel(e[1]) * e[2])
 
 # ragdoll sonrası iskeleti kurulum konumlarına döndür
 func reset_rig() -> void:
@@ -467,6 +529,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	var wt := _weapon_xf(wpn)
 	wp_cur = wp_cur.interpolate_with(wt, rate)
 	weapon.transform = wp_cur
+	sync_skin()
 
 func _weapon_xf(w: int) -> Transform3D:
 	match w:
