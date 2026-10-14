@@ -210,6 +210,13 @@ static func material(name: String, team: int) -> Material:
 			m.emission_energy_multiplier = 0.4
 		"dark":
 			tint = Color(0.07, 0.07, 0.07)
+		"lens":
+			tint = Color(0.95, 0.5, 0.08)
+			m.roughness = 0.15
+			m.metallic = 0.3
+			m.emission_enabled = true
+			m.emission = Color(0.9, 0.45, 0.05)
+			m.emission_energy_multiplier = 0.25
 		"skin":
 			tint = Color(0.72, 0.55, 0.42)
 			m.roughness = 0.7

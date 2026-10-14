@@ -45,6 +45,8 @@ func _ready() -> void:
 		_run_art_test()
 	elif shot_dir != "" and shot_scene == "vehtest":
 		_run_veh_test()
+	elif shot_dir != "" and shot_scene == "posetest":
+		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
 		_run_weather_test()
 	elif shot_dir != "" and shot_scene == "logitest":
@@ -664,6 +666,48 @@ func _run_crash_test() -> void:
 	await _wait(2.0)
 	await _shot("crash_end")
 	print("CRASH done alive=%s,%s" % [h1.alive, h2.alive])
+	get_tree().quit()
+
+func _run_pose_test() -> void:
+	# iskeletli asker: tüm pozlar yan yana (ABD üst sıra, Rusya alt sıra), yakın çekim
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	G.spectate = true
+	build_world("green_valley", 4242)
+	for u in G.units.duplicate():
+		if u is Soldier or u is Vehicle:
+			u.queue_free()
+	await get_tree().process_frame
+	var c := Vector3(170, 0, 170)
+	G.props.clear_area(c, 30.0)
+	var poses := [["stand", 0.0], ["walk", 1.6], ["run", 4.0], ["aim", 0.0], ["crouch", 0.0], ["crouch_aim", 0.0], ["prone", 0.0], ["crawl", 0.6], ["vault", 0.0], ["slide", 0.0], ["carry", 1.5], ["wounded", 0.0]]
+	var bodies: Array = []
+	for t in 2:
+		for i in poses.size():
+			var s := spawn_soldier(t, ["rifle", "mg", "at", "rifle"][i % 4], c + Vector3(-11 + i * 2.0, 0, t * 3.2), null)
+			s.position = c + Vector3(-11 + i * 2.0, 0, t * 3.2)
+			s.rotation.y = PI * 1.3
+			s.set_process(false)
+			bodies.append([s, poses[i]])
+	G.running = false
+	G.cam.input_enabled = false
+	for k in 40:
+		for b in bodies:
+			b[0].body.animate(0.033, b[1][0], b[1][1], 0.5)
+		await get_tree().process_frame
+	G.cam.jump_to(c + Vector3(0, 0, 1.6), true)
+	G.cam.size = 13.0
+	G.cam.target_size = 13.0
+	await _wait(0.8)
+	for b in bodies:
+		b[0].body.animate(0.0, b[1][0], b[1][1], 0.5)
+	await _shot("pose_all")
+	G.cam.jump_to(c + Vector3(-6, 0, 1.6), true)
+	G.cam.size = 5.0
+	G.cam.target_size = 5.0
+	await _wait(0.8)
+	await _shot("pose_close")
+	print("POSETEST DONE")
 	get_tree().quit()
 
 func _run_weather_test() -> void:

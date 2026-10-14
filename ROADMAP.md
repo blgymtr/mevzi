@@ -1,39 +1,126 @@
-# MEVZİ — Steam yol haritası
+# MEVZİ — Steam'e hazır oyun yol haritası (eksiksiz)
 
 Ana test aracı: **Sandbox** (her yeni birim/yapı otomatik listelenir, sınırsız çıkarılır).
 Takımlar: **Müttefikler vs Mihver** — uluslar: ABD, Rusya, Almanya, Birleşik Krallık, Türkiye. Şu an odak: **ABD vs Rusya**.
+İlham: Broken Arrow (REA tasarım analizi), Sudden Strike 5, Men of War AS2, CoH 2/3, Red Alert tarzı RTS. Defilade'den farklı olmalı.
 
-## 🎯 Çekirdek plan (BA REA + Sudden Strike 5 / CoH3 / Men of War AS2)
-Model ve ulus içerikleri en sona; önce sistem, kural, mekanik. Sıra: **4 → 3 → 5 → 6**, sonra modeller/uluslar.
-1. ✅ Organik asker modelleri (Blender, iskeletli)
-2. ✅ Helikopter düşüşü
-3. ✅ Stres (Sarsılmış/Panik, BA) + araç kritikleri (hareket/optik/nişan/dolum, sarı/kırmızı) + CoH3 tarzı moral geri çekilmesi
-4. ✅ Zırh: 4 yön × kinetik/HEAT, mesafeye bağlı delme, üstten saldırı, sekme/delemedi (MoW AS2 tarzı yön önemli)
-5. ✅ Lojistik + modlar: kg ikmal, mühimmat maliyeti, üsse dönüş iadesi (BA), konuşlanma aşaması, Fetih + Savaş Hedefleri, SS5 tarzı ikmal hattı
-6. ✅ Hava durumu + gece: kum fırtınası, sağanak/sel, kar fırtınası/donma/ısınma, gece görüşü
-7. ⏳ Asker modelleri v3 (referans: gerçek oranlı ABD/Rus piyadesi, plaka taşıyıcı, kask+gözlük, dizlik, eldiven) — ardından uluslar ve araç listeleri
+Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den önce şart) · **P1** (çıkışta olmalı) · **P2** (çıkış sonrası olabilir).
 
-## ✅ Bitenler
-- Görsel temel: fotoğraf dokulu arazi, su/köprü, three.js model üreticisi (tüm araçlar ve askerler v2)
-- Arayüz: kompakt alt panel, CoH2/SS5/BA emirleri, İngilizce
-- Asker davranışları: siper, baskı, mermi, yaralı/sürükleme/sedye, ragdoll, esir/istihbarat, yakın dövüş, irkilme, duvar atlama
-- Sınıflar: tüfekçi, ekip lideri, makineli, tanksavar, sıhhiye, keskin nişancı, istihkâm, havan, drone, mürettebat
-- Araçlar: tank, ZPT, PSA, uçaksavar, teknik araç, kamyon, saldırı/nakliye helikopteri, FPV
-- Topçu: sahra topu, çekili obüs, tanksavar topu, uçaksavar topu, ağır havan, dağ topu, kundağı motorlu obüs, roketatar, sahil topçusu
-- Araç hasarı: palet (mürettebat/istihkâm onarır), teker, nişancı/sürücü (piyade yerine geçer), mürettebat kaybı, terk et + imha
-- Haritalar (4) + harita editörü + senaryo editörü + Sandbox
+---
 
-## ⏳ Sıradaki (her gün bir özellik)
-1. Broken Arrow REA — tasarım analizi (ölçek, modlar, mekanik)
-2. Büyük harita (MP ≥ 20 dk) + oyun modları
-3. Tim şablonları: kışlada "TİM" sekmesi, kendi timini tasarla, hazır timler, tim tek birim gibi yönetilir
-4. Havadan ikmal (air drop) + paraşütçüler
-5. Hava durumu: kum fırtınası (hava aracı/drone yok), sağanak (geçilmez sel), kar fırtınası (görüş düşer, askerler donar → üs/FOB/şehirde ısınma)
-6. Patlama / atış efektleri (Defilade kalitesi)
-7. 14 helikopter tipi (yalnız jenerik kategori adları)
-8. Uluslara göre model setleri (ABD, Rusya önce)
-9. Araç listeleri (50+ kara, 50+ hava) — veri kataloğu ile
-10. Kayıt/yükleme, ayarlar, eğitim görevi
+## A. Çekirdek oynanış
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Seçim, sürükle-seç, kontrol grupları (Ctrl+1-9), çift tık ile aynı türü seç | 🟡 (kontrol grupları kontrol edilecek) |
+| P0 | Emirler: hareket, hızlı, saldırı hareketi, geri vites, dur, mevzi tut, geri çekil, ateş modu, duruş, indir, el bombası, sis, baskı ateşi, terk et, iade | ✅ |
+| P0 | Formasyonlar (hat, kol, kama) + sağ tık sürükleyerek yön/genişlik (CoH/SS5) | ⏳ |
+| P0 | **Binaya girme / garnizon** (pencereden ateş, kat bonusu, bina yıkılınca dışarı) | ⏳ |
+| P0 | Araçlara binme/inme, yolcu taşıma | ✅ |
+| P0 | Siper, örtü, baskı, stres (sarsılmış/panik) | ✅ |
+| P0 | Zırh 4 yön × kinetik/HEAT, delme, kritik hasar | ✅ |
+| P0 | Görüş hattı + savaş sisi (birim bazlı), duman görüşü keser | ✅ |
+| P1 | Gizlilik: hareketsiz/çalılıkta görünmezlik, ateş edince açığa çıkma (BA optik/stealth) | 🟡 (gece/havada var) |
+| P1 | Keşif birimleri, dürbünlü gözcü, yüksek zemin görüş bonusu | ⏳ |
+| P1 | Topçu çağrısı / hava desteği (yetenek ağacı, puanla) | ⏳ |
+| P1 | Havadan ikmal + paraşütçüler | ⏳ |
+| P1 | Mayın döşeme/temizleme, istihkâm köprü kurma | 🟡 (tank tuzağı var) |
+| P2 | Kuşatma/teslim alma, esir değişimi | 🟡 |
 
-## ⏳ En son
-- Çok oyunculu (LAN + Steam), GodotSteam, başarımlar, mağaza görselleri
+## B. Birimler ve içerik
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Piyade sınıfları: tüfekçi, lider, makineli, tanksavar, sıhhiye, keskin nişancı, istihkâm, havan, drone, mürettebat | ✅ |
+| P0 | Tim şablonları: kışlada "TİM" sekmesi, kendi timini tasarla, hazır timler | ⏳ |
+| P0 | ABD ve Rusya için ayrı asker modelleri (üniforma, yelek, kask) | ✅ (v3 faset) |
+| P0 | Ulusa özel silahlar (M4/AK-12, M249/PKP, AT4/RPG, M2/Kord, tabanca) — Blender | ⏳ |
+| P1 | Araç listeleri: 50+ kara, 50+ hava (veri kataloğu: DEF + zırh + delme + maliyet) | ⏳ |
+| P1 | 14 helikopter tipi (jenerik adlar) | ⏳ |
+| P1 | Uçaklar: yakın hava desteği, keşif, kargo | ⏳ |
+| P2 | Almanya, Birleşik Krallık, Türkiye setleri | ⏳ |
+
+## C. Harita ve dünya
+| | Öğe | Durum |
+|---|---|---|
+| P0 | **Büyük harita** (≥ 1 km, MP'de ≥ 20 dk) — ızgara/yol bulma/arazi akışı ölçeklenecek | ⏳ |
+| P0 | Binalar Blender'da yeniden: kırsal ev, apartman, dükkân, ahır, cami/kilise, fabrika, benzinlik — iç mekân + kırılabilir parçalar | ⏳ |
+| P0 | Yapılar Blender'da: üs, ileri üs, kışla, fabrika, pist, hastane, MG yuvası, kule, siperler | ⏳ |
+| P0 | Harita öğeleri Blender'da: ağaç, çalı, çit, duvar, elektrik direği, köprü, araç enkazı, saman, kaya | 🟡 |
+| P1 | Yollar/şehir dokusu: kavşak, kaldırım, sokak lambası, tabela | 🟡 |
+| P1 | Biyomlar: ılıman, çöl, kış (+ sonbahar, şehir) | 🟡 |
+| P1 | Yıkım: bina parça parça çöker, enkaz siper olur, krater kalıcı | 🟡 |
+| P1 | Harita editörü + senaryo editörü | ✅ |
+| P2 | Prosedürel harita üretici seçenekleri | 🟡 |
+
+## D. Oyun modları ve ekonomi
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Klasik (üs yıkımı), Fetih, Savaş Hedefleri | ✅ |
+| P0 | Konuşlanma aşaması | ✅ |
+| P0 | Lojistik: kg stok, kamyon hattı, mühimmat, onarım, iade | ✅ |
+| P1 | Deste/kart sistemi (BA): maçtan önce birlik destesi kur | ⏳ |
+| P1 | Yetenek/destek ağacı (CoH komutan) | ⏳ |
+| P1 | Seferberlik (kampanya): bağlı görevler, birlik deneyimi taşınır | ⏳ |
+| P1 | Eğitim görevi | ⏳ |
+| P2 | Hayatta kalma / savunma dalgaları | ⏳ |
+
+## E. Yapay zekâ
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Üs kurma, üretim, saldırı dalgaları, bölge hedefleme | ✅ |
+| P0 | Zorluk seviyeleri | ✅ |
+| P1 | Kanat saldırısı (zırhın arkasına dolaşma), zayıf noktayı seçme | ⏳ |
+| P1 | Birim karşı-seçimi (tanka tanksavar, piyadeye makineli) | 🟡 |
+| P1 | Savunma hattı kurma, geri çekilip yeniden toplanma | 🟡 |
+
+## F. Görsel ve ses (polish)
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Patlama/atış efektleri (kalibre × yüzey matrisi, kalıcı duman, kıvılcım, şok tozu) | 🟡 |
+| P0 | Hava durumu + gece | ✅ |
+| P0 | Ölüm: ragdoll, kan, ceset kalıcılığı | ✅ |
+| P1 | Asker animasyonları: yürüyüş döngüsü, nişan, şarjör değiştirme, bomba atma, binaya girme | 🟡 (kodla poz) |
+| P1 | Araç fizikleri: süspansiyon, palet izi, çamur, devrilme | 🟡 |
+| P1 | Ses: silah başına ses, uzaklık/yankı, telsiz konuşmaları (TR/EN), müzik | 🟡 |
+| P2 | Ölüm kamerası / sinematik tekrar | ⏳ |
+
+## G. Arayüz ve kullanılabilirlik
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Kompakt alt panel, üretim, emir ikonları, mini harita | ✅ |
+| P0 | Ayarlar: grafik, ses, tuş atama, dil, arayüz ölçeği | 🟡 (tuş atama yok) |
+| P0 | Kayıt / yükleme (çatışma + senaryo) | ⏳ |
+| P0 | Duraklatma menüsü, maç sonu istatistik ekranı | 🟡 |
+| P1 | Birim kartları (zırh, delme, menzil grafiği) | 🟡 |
+| P1 | İpuçları, ilk oyun rehberi | ⏳ |
+| P1 | Erişilebilirlik: renk körü takım renkleri, yazı boyutu | ⏳ |
+| P1 | İngilizce + Türkçe tam çeviri | ✅ |
+
+## H. Teknik
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Performans: 300+ birimde 60 FPS (LOD, çoklu örnek, yol bulma bütçesi) | ⏳ |
+| P0 | Otomatik testler (sahneler) | ✅ |
+| P0 | Çökme raporu, log | ⏳ |
+| P1 | Çok oyunculu: LAN + Steam (GodotSteam), kilit adımlı veya sunucu yetkili | ⏳ |
+| P1 | Steam başarımları, bulut kayıt | ⏳ |
+| P2 | Mod desteği (birim kataloğu JSON, harita paylaşımı / Workshop) | ⏳ |
+
+## I. Steam yayını
+| | Öğe | Durum |
+|---|---|---|
+| P0 | Mağaza sayfası: kapsül görseller, 5+ ekran görüntüsü, fragman, açıklama TR/EN | ⏳ |
+| P0 | Steamworks: uygulama kimliği, depot, sürüm kanalları | ⏳ |
+| P0 | Lisans/telif: tüm varlıklar kendi üretimimiz veya CC0 (kaynak listesi) | 🟡 |
+| P1 | Erken erişim planı, yol haritası sayfası, Discord | ⏳ |
+
+---
+
+## Sıradaki adımlar (sıra)
+1. **Görsel polish (Blender):** binalar → üs yapıları → harita öğeleri (ağaç, çit, direk, köprü) — hepsi yeniden, faset/temiz stil, asker v3 ile uyumlu
+2. **Büyük harita:** ≥ 1 km arazi, ızgara/yol bulma ölçekleme, bölge başına yükleme
+3. **Binaya girme / garnizon**
+4. Formasyonlar + tim şablonları
+5. Ulus silahları (Blender) + animasyon polish
+6. Kayıt/yükleme, tuş atama, eğitim
+7. Araç kataloğu (50+50), helikopterler, uçaklar
+8. Çok oyunculu, Steam entegrasyonu, mağaza
