@@ -143,7 +143,7 @@ static func material(name: String, team: int) -> Material:
 			lay = [0.0, 0.0, 0.2, 1.0]
 		"canvas":
 			t = "canvas" if tex("canvas") != null else ""
-			tint = Color(1, 1, 1) if t != "" else Color(0.46, 0.43, 0.3)
+			tint = Color(0.6, 0.56, 0.42)
 			rough = 0.95
 			normal_tex = "hessian_230"
 			lay = [0.25, 0.0, 0.0, 0.5]
