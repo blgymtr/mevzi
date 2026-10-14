@@ -528,8 +528,8 @@ func _run_shots() -> void:
 			break
 	G.hud.set_tab("inf")
 	G.cam.jump_to(G.player.selected[0].position if not G.player.selected.is_empty() else G.hq_pos[0], true)
-	G.cam.size = 20.0
-	G.cam.target_size = 20.0
+	G.cam.size = 11.0
+	G.cam.target_size = 11.0
 	await _wait(0.8)
 	await _shot(kind + "_10_soldier")
 	G.player.clear_sel()

@@ -20,6 +20,7 @@ function body(m, blue) {
   const S = (mat, g, pos, o = {}) => m.add(mat, g, { pos, smooth: true, ...o });
   // ---------------- gövde + baş (kalça pivotu)
   m.group('torso', V(0, 0.92, 0));
+  m.ringScale = 1.1;
   m.rings('uniform', [
     [0.86, 0.15, 0.105], [0.93, 0.163, 0.112], [1.0, 0.158, 0.108], [1.07, 0.148, 0.1],
     [1.16, 0.162, 0.108, 0, -0.005], [1.26, 0.185, 0.118, 0, -0.01], [1.35, 0.198, 0.118, 0, -0.008],
@@ -36,7 +37,10 @@ function body(m, blue) {
     m.cyl('dark', 0.006, 0.006, 0.22, 3, V(0.13, 1.5, -0.13));
     for (const s of [-1, 1]) m.bevel('vest', 0.06, 0.04, 0.26, V(s * 0.12, 1.44, 0.0), 0.012, { tint: [0.85, 0.85, 0.82] });
     // hücum çantası
-    m.rings('pack', [[1.12, 0.12, 0.06, 0, 0.19], [1.2, 0.14, 0.075, 0, 0.2], [1.36, 0.13, 0.07, 0, 0.2], [1.42, 0.1, 0.05, 0, 0.19]], { seg: 12 });
+    m.rings('pack', [[1.05, 0.13, 0.07, 0, 0.2], [1.15, 0.155, 0.095, 0, 0.23], [1.38, 0.15, 0.09, 0, 0.23], [1.48, 0.11, 0.06, 0, 0.2]], { seg: 14 });
+    m.rings('pack', [[1.12, 0.06, 0.04, -0.15, 0.2], [1.3, 0.06, 0.04, -0.15, 0.2]], { seg: 10, tint: [0.88, 0.88, 0.85] });   // yan cep
+    m.rings('pack', [[1.12, 0.06, 0.04, 0.15, 0.2], [1.3, 0.06, 0.04, 0.15, 0.2]], { seg: 10, tint: [0.88, 0.88, 0.85] });
+    m.rings('pack', [[1.47, 0.12, 0.05, 0, 0.21], [1.52, 0.12, 0.05, 0, 0.21]], { seg: 12, tint: [0.75, 0.75, 0.7] });     // rulo mat
     m.cyl('dark', 0.035, 0.035, 0.26, 8, V(0.0, 1.47, 0.2), { rot: RZ(Math.PI / 2) });
   } else {
     // göğüs teçhizatı (yumuşak yelek) + yaka
@@ -59,7 +63,7 @@ function body(m, blue) {
   for (const s of [-1, 1]) S('skin', new THREE.SphereGeometry(0.022, 8, 6), V(s * 0.088, 1.65, 0.005), { scale: [0.5, 1.1, 0.9] });   // kulaklar
   if (blue) {
     // kesik kenarlı kask (yumuşak) + kılıf + NVG yuvası + karşı ağırlık + gözlük
-    S('helmet', new THREE.SphereGeometry(0.128, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), V(0, 1.665, 0.008), { scale: [1.0, 0.98, 1.08] });
+    S('helmet', new THREE.SphereGeometry(0.142, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.54), V(0, 1.662, 0.008), { scale: [1.0, 0.98, 1.08] });
     for (const s of [-1, 1]) m.bevel('dark', 0.02, 0.05, 0.11, V(s * 0.125, 1.69, 0.0), 0.008);
     m.bevel('dark', 0.07, 0.05, 0.035, V(0, 1.745, -0.12), 0.012);
     m.bevel('pack', 0.1, 0.06, 0.04, V(0, 1.7, 0.13), 0.015, { tint: [0.8, 0.8, 0.78] });
@@ -67,7 +71,7 @@ function body(m, blue) {
     m.box('team', 0.03, 0.012, 0.18, V(0, 1.787, 0.01));
   } else {
     // yuvarlak kask + gözlük bandı
-    S('helmet', new THREE.SphereGeometry(0.132, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), V(0, 1.655, 0.0), { scale: [1.02, 1.0, 1.06] });
+    S('helmet', new THREE.SphereGeometry(0.145, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), V(0, 1.652, 0.0), { scale: [1.02, 1.0, 1.06] });
     S('dark', new THREE.CylinderGeometry(0.136, 0.136, 0.022, 20, 1, true), V(0, 1.7, 0.0), { scale: [1.02, 1, 1.06] });
     m.bevel('dark', 0.14, 0.045, 0.04, V(0, 1.72, -0.12), 0.012);
     m.box('team', 0.2, 0.02, 0.03, V(0, 1.64, 0.13));
@@ -75,6 +79,7 @@ function body(m, blue) {
   }
   // ---------------- kol (omuz pivotu)
   m.group('arm', V(0, 1.42, 0));
+  m.ringScale = 1.22;
   m.rings('uniform', [[1.44, 0.056, 0.058], [1.36, 0.058, 0.06], [1.24, 0.05, 0.053], [1.14, 0.045, 0.047]], { seg: 12 });
   if (blue) m.rings('vest', [[1.42, 0.066, 0.068], [1.33, 0.066, 0.068]], { seg: 12, tint: [0.9, 0.9, 0.88] });
   m.group('fore', V(0, 1.13, 0));
@@ -83,9 +88,11 @@ function body(m, blue) {
   S(blue ? 'dark' : 'skin', new THREE.SphereGeometry(0.02, 6, 6), V(-0.028, 0.86, -0.04), { scale: [0.8, 1.6, 0.8] });   // başparmak
   // ---------------- bacak (kalça pivotu)
   m.group('thigh', V(0, 0.92, 0));
+  m.ringScale = 1.16;
   m.rings('uniform', [[0.95, 0.086, 0.09], [0.85, 0.084, 0.088], [0.72, 0.074, 0.078], [0.58, 0.062, 0.066], [0.5, 0.058, 0.062]], { seg: 14 });
   m.bevel('uniform', 0.055, 0.14, 0.11, V(0.085, 0.7, 0.0), 0.025, { tint: [0.9, 0.9, 0.88] });   // yan cep
   m.group('shin', V(0, 0.48, 0));
+  m.ringScale = 1.14;
   m.rings('uniform', [[0.5, 0.06, 0.063], [0.4, 0.061, 0.066, 0, 0.01], [0.28, 0.05, 0.053, 0, 0.005], [0.17, 0.045, 0.048]], { seg: 14 });
   m.rings('dark', [[0.5, 0.058, 0.04, 0, -0.04], [0.42, 0.058, 0.04, 0, -0.045]], { seg: 12 });          // dizlik
   // bot

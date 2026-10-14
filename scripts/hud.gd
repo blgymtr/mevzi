@@ -1651,15 +1651,50 @@ class Overlay extends Control:
 				var blink := 0.6 + 0.4 * sin(G.time * 6.0)
 				draw_rect(Rect2(s3.x - 6, s3.y - 2, 12, 4), Color(1, 0.2, 0.2, blink))
 				draw_rect(Rect2(s3.x - 2, s3.y - 6, 4, 12), Color(1, 0.2, 0.2, blink))
-			# konuşma balonu
+			# durum ikonları (baş üstünde koyu kutucuklar)
+			if u is Soldier and u.alive and cam.size < 60.0 and (own or vt < 0):
+				var icons: Array = []
+				if u.state in ["wounded", "dragged"]:
+					icons.append("medic")
+				elif u.suppression > 70.0:
+					icons.append("pinned")
+				elif G.time - u.sup_t < 2.0 or G.time - u.last_hit < 2.0:
+					icons.append("fire")
+				if u.role == "leader" and u.can_fight():
+					icons.append("radio")
+				if u.state == "build":
+					icons.append("build")
+				if not icons.is_empty():
+					var hs := cam.screen(p + Vector3(0, 2.15, 0))
+					for ii in icons.size():
+						_status_icon(Vector2(hs.x + (ii - (icons.size() - 1) * 0.5) * 24.0, hs.y - (34.0 if u.bubble != "" else 0.0)), icons[ii])
+			# konuşma balonu (yuvarlak, kenarlıklı, kuyruklu)
 			if u.bubble != "" and cam.size < 75.0:
 				var s4 := cam.screen(p + Vector3(0, 2.3, 0))
-				var tw := f.get_string_size(u.bubble, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
-				var rect := Rect2(s4.x - tw * 0.5 - 6, s4.y - 24, tw + 12, 19)
+				var fb: Font = hud.font_b
+				var txt: String = u.bubble.to_upper()
+				var tw := fb.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+				var rect := Rect2(s4.x - tw * 0.5 - 9, s4.y - 30, tw + 18, 21)
 				var a: float = clampf(u.bubble_t * 2.0, 0.0, 1.0)
-				draw_rect(rect, Color(0.97, 0.96, 0.92, 0.9 * a))
-				draw_colored_polygon(PackedVector2Array([Vector2(s4.x - 4, s4.y - 5), Vector2(s4.x + 4, s4.y - 5), Vector2(s4.x, s4.y + 1)]), Color(0.97, 0.96, 0.92, 0.9 * a))
-				draw_string(f, Vector2(rect.position.x + 6, rect.position.y + 15), u.bubble, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.1, 0.1, 0.1, a))
+				var enemy_side := not own and vt >= 0
+				var bg := Color(0.97, 0.95, 0.9, 0.94 * a)
+				var edge := Color(0.42, 0.36, 0.3, 0.85 * a)
+				var tc := Color(0.62, 0.16, 0.1, a) if (u is Soldier and (u.state == "wounded" or u.suppression > 60.0)) else Color(0.25, 0.22, 0.2, a)
+				if enemy_side:
+					tc = Color(0.55, 0.12, 0.1, a)
+				var sb := StyleBoxFlat.new()
+				sb.bg_color = bg
+				sb.border_color = edge
+				sb.set_border_width_all(1)
+				sb.set_corner_radius_all(10)
+				sb.shadow_color = Color(0, 0, 0, 0.25 * a)
+				sb.shadow_size = 3
+				sb.shadow_offset = Vector2(1, 2)
+				draw_style_box(sb, rect)
+				var tl := PackedVector2Array([Vector2(s4.x - 6, rect.end.y - 1), Vector2(s4.x + 3, rect.end.y - 1), Vector2(s4.x - 4, rect.end.y + 7)])
+				draw_colored_polygon(tl, bg)
+				draw_polyline(PackedVector2Array([tl[0], tl[2], tl[1]]), edge, 1.0)
+				draw_string(fb, Vector2(rect.position.x + 9, rect.position.y + 15), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, tc)
 		# kutu seçimi
 		if G.player and G.player.boxing:
 			var r := Rect2(G.player.box_start, G.player.box_now - G.player.box_start).abs()
@@ -1691,6 +1726,34 @@ class Overlay extends Control:
 				var why := PlayerCtl.can_place(G.player.place_type, cam.mouse_ground(m), G.player.place_rot, G.player_team)
 				txt += "  — " + I18n.s("%d ikmal") % B["cost"] + (("  ·  " + I18n.s(why)) if why != "" else "") + "   " + I18n.s("[R] döndür")
 			draw_string(f, m + Vector2(18, 30), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.95))
+
+	func _status_icon(c: Vector2, kind: String) -> void:
+		var r := Rect2(c - Vector2(10, 10), Vector2(20, 20))
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.22, 0.25, 0.28, 0.88)
+		sb.set_corner_radius_all(4)
+		sb.border_color = Color(1, 1, 1, 0.25)
+		sb.set_border_width_all(1)
+		draw_style_box(sb, r)
+		draw_colored_polygon(PackedVector2Array([c + Vector2(-4, 10), c + Vector2(4, 10), c + Vector2(0, 15)]), Color(0.22, 0.25, 0.28, 0.88))
+		var w := Color(0.92, 0.94, 0.95)
+		match kind:
+			"medic":
+				draw_rect(Rect2(c - Vector2(2, 6), Vector2(4, 12)), Color(1, 0.35, 0.3))
+				draw_rect(Rect2(c - Vector2(6, 2), Vector2(12, 4)), Color(1, 0.35, 0.3))
+			"pinned":
+				draw_polyline(PackedVector2Array([c + Vector2(-6, -1), c + Vector2(0, 5), c + Vector2(6, -1)]), w, 2.0)
+				draw_polyline(PackedVector2Array([c + Vector2(-6, -6), c + Vector2(0, 0), c + Vector2(6, -6)]), w, 2.0)
+			"fire":
+				draw_rect(Rect2(c - Vector2(1.5, 6), Vector2(3, 8)), Color(1, 0.75, 0.3))
+				draw_rect(Rect2(c + Vector2(-1.5, 4), Vector2(3, 3)), Color(1, 0.75, 0.3))
+			"radio":
+				draw_rect(Rect2(c - Vector2(5, 3), Vector2(10, 8)), Color(0, 0, 0, 0), false, 1.6)
+				draw_line(c + Vector2(-3, -3), c + Vector2(-3, -8), w, 1.4)
+				draw_rect(Rect2(c - Vector2(3, 1), Vector2(6, 3)), w)
+			"build":
+				draw_line(c + Vector2(-5, 5), c + Vector2(4, -4), w, 2.0)
+				draw_rect(Rect2(c + Vector2(1, -7), Vector2(6, 4)), w)
 
 	func _ellipse(p: Vector3, r: float, col: Color, w: float) -> void:
 		var pts := PackedVector2Array()

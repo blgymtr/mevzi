@@ -55,8 +55,8 @@ static func paint_tex(team: int) -> String:
 static func uniform_tex(team: int) -> String:
 	var b: String = G.map_kind
 	if team == 0:
-		return {"desert": "fab_desert", "green": "fab_multicam", "winter": "fab_snow"}.get(b, "fab_multicam")
-	return {"desert": "fab_khaki", "green": "fab_olive", "winter": "fab_snow"}.get(b, "fab_olive")
+		return {"desert": "fab_desert", "green": "fab_multicam", "winter": "fab_multicam"}.get(b, "fab_multicam")
+	return {"desert": "fab_khaki", "green": "fab_olive", "winter": "fab_olive"}.get(b, "fab_olive")
 
 static var _armor_shader: Shader
 
@@ -132,8 +132,6 @@ static func material(name: String, team: int) -> Material:
 		"pack":
 			t = "canvas"
 			tint = Color(0.48, 0.48, 0.36) if G.map_kind != "desert" else Color(0.7, 0.62, 0.46)
-			if G.map_kind == "winter":
-				tint = Color(0.82, 0.83, 0.82)
 			normal_tex = "hessian_230"
 			lay = [0.0, 0.0, 0.0, 0.5]
 		"boot":

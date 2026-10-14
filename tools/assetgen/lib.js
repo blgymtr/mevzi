@@ -114,10 +114,11 @@ export class Model {
   rings(mat, rings, o = {}) {
     const seg = o.seg ?? 14;
     const pts = [];
+    const k = o.k ?? this.ringScale ?? 1;
     for (const [y, rx, rz, cx = 0, cz = 0] of rings) {
       for (let i = 0; i < seg; i++) {
         const a = (i / seg) * Math.PI * 2;
-        pts.push([cx + Math.cos(a) * rx, y, cz + Math.sin(a) * rz]);
+        pts.push([cx * k + Math.cos(a) * rx * k, y, cz * k + Math.sin(a) * rz * k]);
       }
     }
     return this.hull(mat, pts, { smooth: true, ...o });

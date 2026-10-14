@@ -7,7 +7,7 @@ var cam: Camera3D
 var listener: AudioListener3D
 var size := 40.0
 var target_size := 40.0
-var min_size := 22.0
+var min_size := 10.0
 var max_size := 115.0
 var focus := Vector3(128, 0, 128)
 var target_focus := Vector3(128, 0, 128)
