@@ -35,6 +35,8 @@ var editor := false
 var scenario: Dictionary = {}     # boşsa normal çatışma
 var zone_t := [0.0, 0.0]
 var player_team := 0
+var sandbox := false       # sınırsız ikmal / birlik sınırı yok / geliştirici komutları
+var fog_off := false
 var spectate := false
 var difficulty := 1
 var supply := [600.0, 600.0]
@@ -162,7 +164,7 @@ func is_seen(u, by_team: int) -> bool:
 	return u.seen[by_team]
 
 func view_team() -> int:
-	return -1 if spectate else player_team
+	return -1 if (spectate or fog_off) else player_team
 
 func _update_cap() -> void:
 	cap_used = [0, 0]
@@ -175,6 +177,8 @@ func _update_cap() -> void:
 				cap_max[u.team] += u.cap_bonus
 		else:
 			cap_used[u.team] += u.cap_cost
+	if sandbox:
+		cap_max = [999, 999]
 
 # ------------------------------------------------------------ kayıt
 func add_unit(u) -> void:

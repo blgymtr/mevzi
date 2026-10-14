@@ -104,7 +104,7 @@ static func _art_meshes(team: int, rl: String) -> Dictionary:
 		M["extra"] = Art.skinned(model, "x_sniper", team)
 	elif rl == "mortar":
 		M["extra"] = Art.skinned(model, "x_mortar", team)
-	elif rl == "drone":
+	elif rl == "drone" or rl == "leader":
 		M["extra"] = Art.skinned(model, "x_radio", team)
 	return M
 

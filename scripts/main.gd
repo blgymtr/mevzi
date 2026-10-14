@@ -39,6 +39,8 @@ func _ready() -> void:
 		_run_orders_test()
 	elif shot_dir != "" and shot_scene == "behav":
 		_run_behav_test()
+	elif shot_dir != "" and shot_scene == "sandbox":
+		_run_sandbox_test()
 	elif shot_dir != "" and shot_scene == "editortest":
 		_run_editor_test()
 	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
@@ -342,6 +344,12 @@ func new_map(biome: String) -> void:
 
 func to_menu() -> void:
 	_close_editor()
+	if sandbox_ui and is_instance_valid(sandbox_ui):
+		sandbox_ui.queue_free()
+	sandbox_ui = null
+	G.sandbox = false
+	G.fog_off = false
+	Engine.time_scale = 1.0
 	G.spectate = true
 	build_world(MapGen.MAPS.keys()[randi() % MapGen.MAPS.size()], randi())
 	_spectate_ai()
@@ -373,15 +381,27 @@ func _do_restart() -> void:
 	if autoplay > 0.0:
 		Engine.time_scale = 4.0
 
-func start_game(kind: String, data := {}) -> void:
+var sandbox_ui: Sandbox = null
+
+func start_game(kind: String, data := {}, sandbox := false) -> void:
 	G.hud.hide_menu()
 	_close_editor()
 	G.spectate = false
 	G.player_team = 0
+	if sandbox_ui and is_instance_valid(sandbox_ui):
+		sandbox_ui.queue_free()
+	sandbox_ui = null
+	G.sandbox = sandbox
+	G.fog_off = false
 	build_world(kind, randi(), data)
+	if sandbox:
+		sandbox_ui = Sandbox.new()
+		add_child(sandbox_ui)
 	var ai_on: Array = [false, true]
 	if not G.scenario.is_empty():
 		ai_on = G.scenario.get("ai", [false, true])
+	if sandbox:
+		ai_on = [false, false]
 	for t in 2:
 		if ai_on[t] and t != G.player_team:
 			var a := AICmd.new(t)
@@ -590,6 +610,58 @@ func _run_autoplay() -> void:
 	get_tree().quit()
 
 # oyuncu akışı testi: üs kur, üret, ikmal, savunma hattı
+func _run_sandbox_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("desert_canal", {}, true)
+	var c: Vector3 = G.hq_pos[0] + (G.hq_pos[1] - G.hq_pos[0]).normalized() * 40.0
+	G.cam.jump_to(c, true)
+	G.cam.size = 40.0
+	G.cam.target_size = 40.0
+	var n0 := G.units.size()
+	sandbox_ui.place("p:tank", c)
+	sandbox_ui.place("p:rifle_squad", c + Vector3(-8, 0, 6))
+	sandbox_ui._set_team(1)
+	sandbox_ui.place("p:apc", c + Vector3(25, 0, -25))
+	sandbox_ui.place("s:leader", c + Vector3(-6, 0, 12))
+	sandbox_ui.place("b:mgnest", c + Vector3(12, 0, 14))
+	sandbox_ui.run("fog")
+	sandbox_ui.run("god")
+	await _wait(1.0)
+	var spawned := G.units.size() - n0
+	print("SBX spawned=%d supply=%d cap=%d fog_off=%s" % [spawned, int(G.supply[0]), G.cap_max[0], G.fog_off])
+	if spawned < 10 or G.supply[0] < 90000.0 or G.cap_max[0] < 999 or not G.fog_off:
+		fails += 1
+	sandbox_ui.place("fx:boom_l", c + Vector3(20, 0, -20))
+	await _wait(0.3)
+	await _shot("sandbox_01")
+	sandbox_ui.run("ai")
+	print("SBX ai=%d" % G.ais.size())
+	if G.ais.size() != 1:
+		fails += 1
+	sandbox_ui.run("ai")
+	sandbox_ui.run("speed 2")
+	sandbox_ui.run("clear")
+	await _wait(0.5)
+	var enemies := 0
+	for u in G.units:
+		if is_instance_valid(u) and u.alive and u.team == 1 and (u is Soldier or u is Vehicle):
+			enemies += 1
+	print("SBX after_clear enemies=%d speed=%.1f" % [enemies, Engine.time_scale])
+	if enemies > 0:
+		fails += 1
+	var led := false
+	for u in G.units:
+		if u is Soldier and u.team == 0 and u.role == "rifle" and u.led():
+			led = true
+	print("SBX leader_bonus=%s" % led)
+	if not led:
+		fails += 1
+	Engine.time_scale = 1.0
+	print("SANDBOX RESULT fails=%d" % fails)
+	get_tree().quit()
+
 func _run_behav_test() -> void:
 	# ragdoll, teslim/esir/istihbarat, sedye, yakın dövüş, irkilme
 	get_window().size = Vector2i(1920, 1080)

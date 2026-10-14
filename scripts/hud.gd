@@ -181,6 +181,8 @@ func mouse_over_ui() -> bool:
 			return true
 	if menu and menu.visible:
 		return true
+	if G.sandbox and G.main.sandbox_ui and is_instance_valid(G.main.sandbox_ui) and G.main.sandbox_ui.over_ui():
+		return true
 	return false
 
 func _label(parent: Control, t: String, size := 17, col := TXT, f: Font = null) -> Label:
@@ -534,16 +536,15 @@ func _info_soldier(s: Soldier) -> void:
 		w = 240
 	var v := _vbox_at(118, 0, w)
 	var sq_name: String = s.squad.name if s.squad else "-"
-	_label(v, "%s  ·  %s" % [I18n.s(s.role_title()), sq_name.to_upper()], 13, DIM, font_m)
+	_label(v, "%s  ·  %s" % [I18n.s("PİYADE"), sq_name.to_upper()], 13, DIM, font_m)
 	var nm := HBoxContainer.new()
 	nm.add_theme_constant_override("separation", 6)
 	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(nm)
-	var parts := s.sname.split(" ")
 	var l1 := _label(nm, "", 27, Color(0.85, 0.84, 0.8), font_m)
-	l1.text = parts[0].to_upper()
+	l1.text = I18n.s(Soldier.RANKS[s.rank])
 	var l2 := _label(nm, "", 27, Color(1, 1, 1), font_b)
-	l2.text = parts[1].to_upper() if parts.size() > 1 else ""
+	l2.text = I18n.s(Soldier.ROLE_TITLE.get(s.role, "Piyade")).to_upper()
 	var rk := RankBar.new()
 	rk.hud = self
 	rk.soldier = s
@@ -1096,7 +1097,8 @@ func intel(who: String, text: String, pos: Vector3) -> void:
 	v.add_theme_constant_override("separation", 0)
 	pc.add_child(v)
 	var h := _label(v, "", 12, Color(0.55, 0.75, 1.0), font_b)
-	h.text = "%s  ·  %s" % [I18n.s("İSTİHBARAT"), I18n.s("ESİR").to_upper() + " " + who.to_upper()]
+	h.text = "%s  ·  %s" % [I18n.s("İSTİHBARAT"), I18n.s("ESİR").to_upper()]
+	who = who
 	var l := _label(v, "", 16, TXT, font_m)
 	l.text = "“%s”" % text
 	alerts.add_child(pc)
@@ -1146,6 +1148,7 @@ func show_menu() -> void:
 	for id in MapGen.MAPS:
 		var mid: String = id
 		_menu_btn(vb, I18n.s(MapGen.MAPS[id]["title"]).to_upper(), func(): G.main.start_game(mid), I18n.s(MapGen.MAPS[id].get("desc", "")))
+	_menu_btn(vb, "SANDBOX", func(): _sandbox_menu())
 	_menu_btn(vb, "ÖZEL HARİTALAR", func(): _custom_list())
 	_menu_btn(vb, "HARİTA EDİTÖRÜ", func(): _editor_menu())
 	_menu_btn(vb, "AYARLAR", func(): _settings_menu())
@@ -1190,6 +1193,14 @@ func _sub_menu(title: String) -> VBoxContainer:
 	pc.add_child(v)
 	_label(v, title, 24, AMBER, font_b)
 	return v
+
+func _sandbox_menu() -> void:
+	var v := _sub_menu("SANDBOX")
+	_label(v, "Sınırsız ikmal, birlik sınırı yok, geliştirici komutları.", 14, DIM, font_m)
+	for id in MapGen.MAPS:
+		var mid: String = id
+		var b := _menu_btn(v, "", func(): G.main.start_game(mid, {}, true))
+		b.text = I18n.s(MapGen.MAPS[id]["title"]).to_upper()
 
 func _custom_list() -> void:
 	var v := _sub_menu("ÖZEL HARİTALAR")

@@ -9,6 +9,7 @@ const WPN := {
 	"engineer": {"range": 24.0, "dmg": 15.0, "rof": 0.08, "b0": 3, "b1": 6, "p0": 0.5, "p1": 1.1, "mag": 30, "ammo": 240, "acc": 0.42, "sup": 5.0, "snd": "rifle", "tr": 3, "reload": 2.0},
 	"mortar": {"range": 24.0, "dmg": 18.0, "rof": 0.2, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.5, "mag": 15, "ammo": 60, "acc": 0.35, "sup": 4.0, "snd": "pistol", "tr": 4, "reload": 2.0},
 	"drone": {"range": 24.0, "dmg": 18.0, "rof": 0.2, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.5, "mag": 15, "ammo": 60, "acc": 0.35, "sup": 4.0, "snd": "pistol", "tr": 4, "reload": 2.0},
+	"leader": {"range": 36.0, "dmg": 24.0, "rof": 0.13, "b0": 2, "b1": 4, "p0": 0.5, "p1": 1.2, "mag": 30, "ammo": 240, "acc": 0.52, "sup": 6.0, "snd": "rifle", "tr": 3, "reload": 2.2},
 	"medic": {"range": 28.0, "dmg": 20.0, "rof": 0.2, "b0": 1, "b1": 3, "p0": 0.7, "p1": 1.4, "mag": 30, "ammo": 150, "acc": 0.4, "sup": 5.0, "snd": "rifle", "tr": 4, "reload": 2.2},
 }
 const STAND := 0
@@ -96,11 +97,23 @@ func add_xp(v: int) -> void:
 		if team == G.player_team and not G.spectate and G.hud:
 			G.hud.promoted(self)
 
+# arayüzde kişi adı yok: rütbe + sınıf
 func display_name() -> String:
-	return "%s %s" % [RANK_S[rank], sname.get_slice(" ", 1)]
+	return "%s %s" % [I18n.s(RANK_S[rank]), I18n.s(ROLE_TITLE.get(role, "Piyade"))]
+
+const ROLE_TITLE := {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "medic": "Sıhhiye", "sniper": "Keskin Nişancı", "engineer": "İstihkâmcı", "mortar": "Havancı", "drone": "Drone Operatörü", "leader": "Ekip Lideri"}
 
 func role_title() -> String:
-	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE", "sniper": "KESKİN NİŞANCI", "engineer": "İSTİHKÂMCI", "mortar": "HAVANCI", "drone": "DRONE OPERATÖRÜ"}.get(role, "ER")
+	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE", "sniper": "KESKİN NİŞANCI", "engineer": "İSTİHKÂMCI", "mortar": "HAVANCI", "drone": "DRONE OPERATÖRÜ", "leader": "EKİP LİDERİ"}.get(role, "ER")
+
+# timde yakında canlı ekip lideri var mı (isabet ve toparlanma bonusu)
+func led() -> bool:
+	if squad == null or role == "leader":
+		return role == "leader"
+	for m in squad.members:
+		if is_instance_valid(m) and m.alive and m.role == "leader" and m.can_fight() and dist2(m) < 20.0:
+			return true
+	return false
 
 var accuracy_bonus := 0.0
 var mortar_rounds := 0
@@ -146,7 +159,7 @@ func setup(t: int, rl: String) -> void:
 	max_hp = 100.0
 	hp = 100.0
 	icon = "inf"
-	title = {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "medic": "Sıhhiye", "sniper": "Keskin Nişancı", "engineer": "İstihkâmcı", "mortar": "Havancı", "drone": "Drone Operatörü"}[rl]
+	title = ROLE_TITLE.get(rl, "Piyade")
 	if rl == "sniper":
 		sight = 78.0
 	elif rl == "mortar":
@@ -444,7 +457,7 @@ func _timers(dt: float) -> void:
 	cover_cd -= dt
 	popup_t -= dt
 	if G.time - sup_t > 1.2:
-		suppression = maxf(0.0, suppression - dt * 16.0)
+		suppression = maxf(0.0, suppression - dt * (22.0 if led() else 16.0))
 	if reload_t > 0.0:
 		reload_t -= dt
 		if reload_t <= 0.0:
@@ -1219,6 +1232,8 @@ func _area_fire(center := Vector3.INF, spread := 3.0) -> void:
 func _hit_chance(t: Unit, d: float) -> float:
 	var W := weapon()
 	var c: float = W["acc"] * (1.0 - pow(clampf(d / W["range"], 0.0, 1.0), 1.3) * 0.65)
+	if led():
+		c *= 1.12
 	if t is Soldier:
 		c *= [1.0, 0.72, 0.45][t.stance]
 		if t.vel.length() > 1.5:

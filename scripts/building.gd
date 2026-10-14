@@ -18,7 +18,7 @@ const BDEF := {
 }
 
 const PDEF := {
-	"rifle_squad": {"title": "Tüfek Timi", "cost": 180, "time": 14.0, "cap": 6, "units": ["rifle", "rifle", "rifle", "mg", "rifle", "rifle"], "icon": "inf"},
+	"rifle_squad": {"title": "Tüfek Timi", "cost": 180, "time": 14.0, "cap": 6, "units": ["leader", "rifle", "rifle", "mg", "rifle", "medic"], "icon": "inf"},
 	"mg_team": {"title": "Makineli Tim", "cost": 150, "time": 12.0, "cap": 3, "units": ["mg", "mg", "rifle"], "icon": "mg"},
 	"at_squad": {"title": "Tanksavar Timi", "cost": 220, "time": 16.0, "cap": 4, "units": ["at", "at", "at", "rifle"], "icon": "at"},
 	"medic_team": {"title": "Sıhhiye Timi", "cost": 90, "time": 9.0, "cap": 2, "units": ["medic", "medic"], "icon": "medic"},
