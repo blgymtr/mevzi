@@ -12,7 +12,7 @@ func _init(t: int, n: String) -> void:
 	team = t
 	if t >= 0:
 		_count[t] += 1
-		name = "Tim %d" % _count[t]
+		name = I18n.s("Tim %d") % _count[t]
 	else:
 		name = n
 	kind_name = n
@@ -62,7 +62,7 @@ func _assign_rescue(w: Soldier) -> void:
 			continue
 		if c.patient != null or c.state in ["throw", "drag", "heal", "rescue", "build"]:
 			continue
-		if c.suppression > 65.0:
+		if c.suppression > 65.0 or c.order == "hold" or c.retreating:
 			continue
 		var d: float = c.dist2(w)
 		var sc := d

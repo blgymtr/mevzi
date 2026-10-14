@@ -11,7 +11,7 @@ var shot_scene := ""
 var autoplay := 0.0
 var ambience: AudioStreamPlayer
 var ambience2: AudioStreamPlayer
-var cfg := {"volume": 0.8, "difficulty": 1}
+var cfg := {"volume": 0.8, "difficulty": 1, "lang": "", "fullscreen": true, "shadows": true, "edge_scroll": true}
 
 func _ready() -> void:
 	G.main = self
@@ -32,8 +32,11 @@ func _ready() -> void:
 			shot_scene = a.substr(8)
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
+	apply_video()
 	if shot_dir != "" and shot_scene == "scentest":
 		_run_scen_test()
+	elif shot_dir != "" and shot_scene == "orders":
+		_run_orders_test()
 	elif shot_dir != "" and shot_scene == "editortest":
 		_run_editor_test()
 	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
@@ -410,6 +413,27 @@ func _load_cfg() -> void:
 			cfg.merge(d, true)
 	Sfx.set_volume(float(cfg["volume"]))
 	G.difficulty = int(cfg["difficulty"])
+	var lg := String(cfg.get("lang", ""))
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--lang="):
+			lg = a.substr(7)
+	I18n.setup(lg if lg != "" else I18n.default_lang())
+
+func set_lang(l: String) -> void:
+	cfg["lang"] = l
+	I18n.setup(l)
+	save_cfg()
+
+func apply_video() -> void:
+	if shot_dir == "":
+		var fs: bool = cfg.get("fullscreen", true)
+		var want := DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN if fs else DisplayServer.WINDOW_MODE_MAXIMIZED
+		if DisplayServer.window_get_mode() != want:
+			DisplayServer.window_set_mode(want)
+	if sun:
+		sun.shadow_enabled = cfg.get("shadows", true)
+	if G.cam:
+		G.cam.edge_scroll = cfg.get("edge_scroll", true)
 
 func save_cfg() -> void:
 	cfg["volume"] = Sfx.volume
@@ -562,6 +586,96 @@ func _run_autoplay() -> void:
 	get_tree().quit()
 
 # oyuncu akışı testi: üs kur, üret, ikmal, savunma hattı
+func _run_orders_test() -> void:
+	# emir paneli: saldırı hareketi, ateş modu, duruş, el bombası, baskı, geri çekil, geri vites, sis
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var c := Vector3(128, 0, 128)
+	var blue := Squad.new(0, "T")
+	var red := Squad.new(1, "T")
+	G.squads.append(blue)
+	G.squads.append(red)
+	for i in 6:
+		spawn_soldier(0, ["rifle", "rifle", "mg", "rifle", "at", "medic"][i], G.grid.nearest_free(c + Vector3(-20 + i * 1.5, 0, 14), Grid.M_INF), blue)
+		spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(-18 + i * 1.5, 0, -22), Grid.M_INF), red)
+	var tank := spawn_vehicle(0, "tank", G.grid.nearest_free(c + Vector3(10, 0, 20), Grid.M_HEAVY), 0.0)
+	G.cam.jump_to(c, true)
+	G.cam.size = 46.0
+	G.cam.target_size = 46.0
+	G.player.clear_sel()
+	for m in blue.alive_members():
+		G.player.select(m)
+	await _wait(0.5)
+	G.player.exec_order("amove", c + Vector3(-15, 0, -30))
+	await _wait(6.0)
+	var engaged := 0
+	for m in blue.alive_members():
+		if m.order == "amove" and m.state != "move":
+			engaged += 1
+	print("ORD amove engaged=%d" % engaged)
+	if engaged == 0:
+		fails += 1
+	G.player.exec_order("fire", Vector3.INF)
+	var fm_ok := blue.alive_members().all(func(m): return m.fire_mode == 1)
+	G.player.exec_order("stance", Vector3.INF)
+	var st_ok := blue.alive_members().all(func(m): return m.stance_lock == Soldier.STAND)
+	G.player.exec_order("stance", Vector3.INF)
+	G.player.exec_order("stance", Vector3.INF)
+	G.player.exec_order("stance", Vector3.INF)
+	G.player.exec_order("fire", Vector3.INF)
+	G.player.exec_order("fire", Vector3.INF)
+	print("ORD fire_mode=%s stance=%s back=%d/%d" % [fm_ok, st_ok, blue.alive_members()[0].fire_mode, blue.alive_members()[0].stance_lock])
+	if not fm_ok or not st_ok or blue.alive_members()[0].fire_mode != 0 or blue.alive_members()[0].stance_lock != -1:
+		fails += 1
+	var g0 := 0
+	for m in blue.alive_members():
+		g0 += m.grenades
+	G.player.order_button("grenade")
+	var pend := G.player.pending_order
+	await _wait(0.3)
+	await _shot("orders_01_pending")
+	G.player.exec_order("grenade", red.alive_members()[0].position if not red.alive_members().is_empty() else c)
+	G.player.pending_order = ""
+	await _wait(5.0)
+	var g1 := 0
+	for m in blue.alive_members():
+		g1 += m.grenades
+	print("ORD grenade pending=%s %d->%d" % [pend, g0, g1])
+	if pend != "grenade" or g1 >= g0:
+		fails += 1
+	G.player.exec_order("suppress", c + Vector3(-14, 0, -22))
+	var sup_ok := blue.alive_members().any(func(m): return m.suppress_until > G.time)
+	await _wait(3.0)
+	await _shot("orders_02_suppress")
+	G.player.exec_order("retreat", Vector3.INF)
+	await _wait(0.5)
+	var ret_ok := blue.alive_members().any(func(m): return m.retreating and m.state == "move")
+	print("ORD suppress=%s retreat=%s" % [sup_ok, ret_ok])
+	if not sup_ok or not ret_ok:
+		fails += 1
+	G.player.clear_sel()
+	G.player.select(tank)
+	G.player.exec_order("reverse", tank.position + Vector3(0, 0, 25))
+	await _wait(3.0)
+	var rev_ok := tank.cur_speed < -0.2
+	var sm_ok := false
+	G.player.exec_order("smoke", Vector3.INF)
+	sm_ok = tank.smoke_charges == 1
+	G.player.exec_order("suppress", c + Vector3(-10, 0, -20))
+	var gr_ok := tank.ground_until > G.time
+	await _wait(2.0)
+	await _shot("orders_03_tank")
+	print("ORD reverse=%s (%.1f) smoke=%s ground=%s" % [rev_ok, tank.cur_speed, sm_ok, gr_ok])
+	if not rev_ok or not sm_ok or not gr_ok:
+		fails += 1
+	print("ORDERS RESULT fails=%d" % fails)
+	get_tree().quit()
+
 func _run_test() -> void:
 	Sfx.muted = true
 	var fails := 0

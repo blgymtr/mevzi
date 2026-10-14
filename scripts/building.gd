@@ -343,7 +343,7 @@ func complete() -> void:
 	if is_base() and G.logi:
 		G.logi.register_base(self)
 	if team == G.player_team and not G.spectate:
-		G.say("%s tamamlandı" % title, position, team)
+		G.say(I18n.s("%s tamamlandı") % I18n.s(title), position, team)
 		Sfx.play2d("ui_done", -4.0)
 
 func _make_line() -> void:
@@ -471,8 +471,8 @@ func _flip(t: int) -> void:
 	_apply_construct_look()
 	if G.logi:
 		G.logi.register_base(self)
-	G.say(("%s ele geçirildi!" % title) if t == G.player_team else ("%s kaybedildi!" % title), position, t)
-	G.say(("%s kaybedildi!" % title), position, old)
+	G.say((I18n.s("%s ele geçirildi!") % I18n.s(title)) if t == G.player_team else (I18n.s("%s kaybedildi!") % I18n.s(title)), position, t)
+	G.say((I18n.s("%s kaybedildi!") % I18n.s(title)), position, old)
 	Sfx.play2d("ui_alert", -2.0)
 	G.check_victory()
 
@@ -529,7 +529,7 @@ func _spawn(id: String) -> void:
 		var v: Vehicle = G.main.spawn_vehicle(team, P["vehicle"], sp, rot + PI)
 		v.cmd_move(rally)
 		if team == G.player_team and not G.spectate:
-			G.say("%s hazır" % P["title"], door, team)
+			G.say(I18n.s("%s hazır") % I18n.s(P["title"]), door, team)
 	else:
 		var sq := Squad.new(team, P["title"])
 		G.squads.append(sq)
@@ -539,7 +539,7 @@ func _spawn(id: String) -> void:
 			var off := Vector3((i % 3 - 1) * 1.5, 0, (i / 3) * 1.5)
 			s.cmd_move(rally + off)
 		if team == G.player_team and not G.spectate:
-			G.say("%s hazır" % P["title"], door, team)
+			G.say(I18n.s("%s hazır") % I18n.s(P["title"]), door, team)
 	if team == G.player_team and not G.spectate:
 		Sfx.play2d("ui_done", -6.0)
 
@@ -607,7 +607,7 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if src != null and is_instance_valid(src):
 		attacker = src
 	if team == G.player_team and randf() < 0.1 and not G.spectate:
-		G.say("%s saldırı altında!" % title, position, team)
+		G.say(I18n.s("%s saldırı altında!") % I18n.s(title), position, team)
 	if hp <= 0.0:
 		destroy(src)
 
@@ -635,5 +635,5 @@ func destroy(src) -> void:
 		G.blocks._add_rubble(position + Vector3(randf_range(-radius, radius), 0, randf_range(-radius, radius)) * 0.8, Vector3(0.6, 0.45, 0.5) * randf_range(0.7, 1.3), Color(0.8, 0.78, 0.72))
 	queue.clear()
 	if team == G.player_team and not G.spectate:
-		G.say("%s yok edildi!" % title, position, team)
+		G.say(I18n.s("%s yok edildi!") % I18n.s(title), position, team)
 	G.check_victory()

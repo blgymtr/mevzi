@@ -84,6 +84,17 @@ func _local_xf(n: Node3D) -> Transform3D:
 	return xf
 
 func _model(id: String, team: int) -> Node3D:
+	if id.begins_with("s:"):
+		# tek asker portresi
+		var sr := Node3D.new()
+		var sb := SoldierBody.new()
+		sb.rotation.y = PI * 0.15
+		sr.add_child(sb)
+		sb.build(team, id.substr(2), G.map_kind == "winter")
+		sb.animate(1.0, "aim", 0.0)
+		return sr
+	if id.begins_with("v:"):
+		return _vehicle_model(id.substr(2), team)
 	if Building.BDEF.has(id):
 		var b := Building.new()
 		b.setup(team, id, 0.0)

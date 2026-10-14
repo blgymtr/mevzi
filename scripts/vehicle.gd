@@ -68,6 +68,13 @@ var cargo: Array = []
 var operator = null
 var atgm_cd := 8.0
 var landing := false
+var fire_mode := 0          # 0 serbest, 1 karşılık, 2 ateşi kes
+var reverse := false
+var retreating := false
+var amove_dest := Vector3.INF
+var smoke_charges := 2
+var ground_pt := Vector3.ZERO
+var ground_until := 0.0
 const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2}
 
 func is_air() -> bool:
@@ -242,6 +249,10 @@ func cmd_move(p: Vector3, force := false) -> void:
 	order = "move"
 	force_move = force
 	forced_target = null
+	reverse = false
+	retreating = false
+	amove_dest = Vector3.INF
+	ground_until = 0.0
 	dest = G.on_ground(p)
 	landing = false
 	if is_air():
@@ -264,8 +275,74 @@ func cmd_attack(u: Unit) -> void:
 func cmd_stop() -> void:
 	order = ""
 	forced_target = null
+	reverse = false
+	retreating = false
+	amove_dest = Vector3.INF
+	ground_until = 0.0
 	path = PackedVector3Array()
 	dest = position
+
+func cmd_attack_move(p: Vector3) -> void:
+	cmd_move(p)
+	order = "amove"
+	amove_dest = dest
+
+func cmd_reverse(p: Vector3) -> void:
+	cmd_move(p)
+	reverse = not is_air()
+
+func cmd_hold() -> void:
+	cmd_stop()
+	order = "hold"
+
+func cmd_retreat() -> void:
+	var best: Building = null
+	var bd := 1e9
+	for u in G.units:
+		if is_instance_valid(u) and u is Building and u.team == team and u.alive and u.done and u.is_base():
+			var d := dist2(u)
+			if d < bd:
+				bd = d
+				best = u
+	if best == null:
+		return
+	var away := position - best.position
+	away.y = 0
+	cmd_move(best.position + (away.normalized() if away.length() > 0.1 else Vector3(1, 0, 0)) * (best.radius + 6.0), true)
+	order = "retreat"
+	retreating = true
+
+func has_smoke() -> bool:
+	return vtype in ["tank", "apc", "ifv", "aa"]
+
+func cmd_smoke() -> bool:
+	if not alive or not has_smoke() or smoke_charges <= 0:
+		return false
+	smoke_charges -= 1
+	var yaw := heading + turret_yaw
+	var fwd := Vector3(-sin(yaw), 0, -cos(yaw))
+	var side := Vector3(-fwd.z, 0, fwd.x)
+	for k in 5:
+		var p := position + fwd * 9.0 + side * (k - 2) * 3.4 - fwd * absf(k - 2) * 1.2
+		var pp := p
+		get_tree().create_timer(0.08 * k).timeout.connect(func():
+			G.fx.smoke_screen(pp, 22.0)
+			G.add_smoke(pp, 4.0, 23.0))
+	Sfx.play3d("smoke_pop", position, 2.0)
+	G.fx.muzzle(position + Vector3(0, 2.0, 0), fwd, false)
+	return true
+
+func can_ground_fire() -> bool:
+	return vtype in ["tank", "apc", "ifv", "technical", "arty"]
+
+func cmd_suppress(p: Vector3) -> void:
+	if not alive or not can_ground_fire():
+		return
+	ground_pt = G.on_ground(p)
+	ground_until = G.time + (24.0 if vtype == "arty" else 12.0)
+	if order != "retreat":
+		path = PackedVector3Array()
+		order = ""
 
 func follow_route(pts: PackedVector3Array) -> void:
 	path = pts
@@ -335,7 +412,7 @@ func _drive(dt: float) -> void:
 				if path_i >= path.size():
 					_arrive()
 				continue
-			var want := Soldier._yaw_of(d)
+			var want := Soldier._yaw_of(-d if reverse else d)
 			var diff := absf(angle_difference(heading, want))
 			var tr: float = D["turn"]
 			if armor < 2:
@@ -355,6 +432,10 @@ func _drive(dt: float) -> void:
 			if order == "attack" and target != null and target == forced_target:
 				target_speed = 0.0
 				path = PackedVector3Array()
+			elif order == "amove" and target != null and fire_mode != 2:
+				target_speed = 0.0
+			if reverse:
+				target_speed = -minf(target_speed, speed_max * 0.45)
 			break
 	cur_speed = move_toward(cur_speed, target_speed, D["accel"] * dt * (2.0 if target_speed < cur_speed else 1.0))
 	if absf(cur_speed) < 0.01:
@@ -362,7 +443,7 @@ func _drive(dt: float) -> void:
 	var f := forward()
 	var np := position + f * cur_speed * dt
 	# engel denetimi (ön nokta)
-	var front: Vector3 = np + f * (D["len"] * 0.45)
+	var front: Vector3 = np + f * signf(cur_speed) * (D["len"] * 0.45)
 	var hf := G.grid.height_at(front)
 	var kf := G.grid.kind_at(front)
 	var blocked := (hf >= 0.3 and kf != Grid.K_TREE and not (nav_mode == Grid.M_HEAVY and kf == Grid.K_WALL)) or kf == Grid.K_TRAP
@@ -421,13 +502,19 @@ func _drive(dt: float) -> void:
 func _arrive() -> void:
 	path = PackedVector3Array()
 	path_i = 0
-	if order == "move":
+	if order in ["move", "amove", "retreat"]:
 		order = ""
+	reverse = false
+	retreating = false
 	if vtype == "truck" and G.logi:
 		G.logi.truck_arrived(self)
 
 func _scan() -> void:
 	if vtype == "truck":
+		return
+	if retreating or fire_mode == 2 or (fire_mode == 1 and G.time - last_hit > 10.0):
+		target = null
+		coax_target = null
 		return
 	var rng_w := _range()
 	var eye := turret_world_pos() + Vector3(0, 0.4, 0)
@@ -500,6 +587,16 @@ func _scan() -> void:
 func _aim_fire(dt: float) -> void:
 	if turret == null:
 		return
+	if G.time < ground_until and fire_mode != 2:
+		var wl := wrapf(Soldier._yaw_of(ground_pt - position) - heading, -PI, PI)
+		turret_yaw = rotate_toward(turret_yaw, wl, D["tturn"] * dt)
+		turret.rotation.y = turret_yaw
+		if barrel:
+			recoil = move_toward(recoil, 0.0, dt * 1.4)
+			barrel.position = (M["barrel_pos"] as Vector3) + Vector3(0, 0, recoil * 0.6)
+		if absf(angle_difference(turret_yaw, wl)) < 0.1 and main_cd <= 0.0 and dist2_p(ground_pt) <= _range():
+			_fire_ground()
+		return
 	var t := target
 	var want_local := 0.0
 	if t != null and is_instance_valid(t) and t.alive:
@@ -535,6 +632,54 @@ func _aim_fire(dt: float) -> void:
 			"arty":
 				_fire_arty(t)
 	_coax(dt)
+
+func dist2_p(p: Vector3) -> float:
+	return Vector2(position.x - p.x, position.z - p.z).length()
+
+func _fire_ground() -> void:
+	# baskı / bombardıman: yere ateş
+	var mp := muzzle_world()
+	var p := ground_pt + Vector3(randf_range(-3.5, 3.5), 0.1, randf_range(-3.5, 3.5))
+	match vtype:
+		"tank":
+			main_cd = 6.5
+			G.bal.shell(mp, p, team, self, null, "he")
+			G.fx.cannon_blast(mp, (p - mp).normalized())
+			Sfx.play3d("tank_fire", mp, 5.0)
+			recoil = 1.0
+			rock_v += 2.5
+		"apc", "ifv":
+			if burst <= 0:
+				burst = randi_range(3, 5)
+			burst -= 1
+			main_cd = 0.26 if burst > 0 else randf_range(1.0, 1.8)
+			G.bal.shell(mp, p, team, self, null, "auto")
+			G.fx.muzzle(mp, (p - mp).normalized(), true)
+			Sfx.play3d("autocannon", mp, 0.0)
+			recoil = 0.4
+		"technical":
+			if burst <= 0:
+				burst = randi_range(6, 12)
+			burst -= 1
+			main_cd = 0.11 if burst > 0 else randf_range(0.6, 1.2)
+			shots += 1
+			G.fx.muzzle(mp, (p - mp).normalized(), true)
+			Sfx.play3d("hmg", mp, 1.0, 0.08, 0.03)
+			G.fx.impact(Vector3(p.x, 0.02, p.z), "dirt")
+			for o in G.near(p, 3.5):
+				if o is Soldier and o.team != team and o.alive:
+					o.add_suppression(12.0, position)
+			if shots % 2 == 0:
+				G.fx.tracer(mp, p, 260.0, Color(1.0, 0.55, 0.22), 0.09)
+		"arty":
+			main_cd = 9.0
+			G.bal.artillery(mp, p, team, self)
+			G.fx.cannon_blast(mp, (p - mp).normalized())
+			Sfx.play3d("tank_fire", mp, 6.0)
+			recoil = 1.0
+			rock_v += 3.0
+		_:
+			main_cd = 1.0
 
 func _fire_flak(t: Unit) -> void:
 	if burst <= 0:

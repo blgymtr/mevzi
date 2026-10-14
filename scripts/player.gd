@@ -15,6 +15,7 @@ var markers: Array = []     # [konum, zaman, renk]
 var _last_click := 0.0
 var _last_click_unit: Unit = null
 var team := 0
+var pending_order := ""      # hedef bekleyen emir (el bombası, baskı ateşi...)
 
 func _ready() -> void:
 	ghost = MeshInstance3D.new()
@@ -55,6 +56,11 @@ func _unhandled_input(e: InputEvent) -> void:
 				if place_type != "":
 					_place_click()
 					return
+				if pending_order != "":
+					exec_order(pending_order, G.cam.mouse_ground(mb.position))
+					if not mb.shift_pressed:
+						pending_order = ""
+					return
 				box_start = mb.position
 				box_now = mb.position
 				boxing = true
@@ -65,7 +71,10 @@ func _unhandled_input(e: InputEvent) -> void:
 			if place_type != "":
 				cancel_place()
 				return
-			_command(mb.position, mb.ctrl_pressed, mb.shift_pressed)
+			if pending_order != "":
+				pending_order = ""
+				return
+			_command(mb.position, mb.ctrl_pressed, mb.shift_pressed, mb.alt_pressed)
 	elif e is InputEventMouseMotion:
 		if boxing:
 			box_now = (e as InputEventMouseMotion).position
@@ -87,33 +96,25 @@ func _unhandled_input(e: InputEvent) -> void:
 					if same:
 						G.cam.jump_to(_centroid(g))
 			return
+		if Hud.ORDER_KEYS.has(code) and not k.ctrl_pressed and not (code == KEY_R and place_type != ""):
+			order_button(Hud.ORDER_KEYS[code])
+			return
 		match code:
 			KEY_ESCAPE:
-				if place_type != "":
+				if pending_order != "":
+					pending_order = ""
+				elif place_type != "":
 					cancel_place()
 				elif not selected.is_empty():
 					clear_sel()
 				else:
 					G.hud.toggle_pause()
-			KEY_X:
-				for u in selected:
-					if is_instance_valid(u):
-						u.cmd_stop()
-			KEY_U:
-				unload_selected()
-			KEY_H:
+			KEY_HOME, KEY_BACKSPACE:
 				for u in G.units:
 					if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
 						G.cam.jump_to(u.position)
 			KEY_R:
 				place_rot += PI * 0.5
-			KEY_DELETE:
-				for u in selected.duplicate():
-					if u is Building and not u.done and u.team == team:
-						G.supply[team] += int(u.full_cost() * 0.75)
-						u.alive = false
-						deselect(u)
-						u.queue_free()
 			KEY_F1, KEY_F2, KEY_F3:
 				Engine.time_scale = [1.0, 2.0, 3.0][code - KEY_F1]
 			KEY_PAUSE, KEY_P:
@@ -198,6 +199,110 @@ func unload_selected() -> void:
 		if is_instance_valid(u) and u is Vehicle and not u.cargo.is_empty():
 			u.unload()
 
+# ------------------------------------------------------------ emir paneli
+func order_button(id: String) -> void:
+	if selected.is_empty() or G.hud.order_state(id, selected) < 1:
+		Sfx.play2d("ui_error", -10.0)
+		return
+	var O: Dictionary = Hud.ORDERS[id]
+	var tgt: bool = O["tgt"]
+	if id == "smoke" and not selected.any(func(u): return is_instance_valid(u) and u is Soldier and u.smoke_nades > 0):
+		tgt = false
+	if tgt:
+		pending_order = "" if pending_order == id else id
+		Sfx.play2d("ui_click", -10.0)
+	else:
+		exec_order(id, Vector3.INF)
+
+func exec_order(id: String, gp: Vector3) -> void:
+	var mobile := selected.filter(func(u): return is_instance_valid(u) and u.alive and (u is Soldier or (u is Vehicle and not (u.vtype in ["truck", "fpv"]))))
+	var sol := mobile.filter(func(u): return u is Soldier)
+	var veh := mobile.filter(func(u): return u is Vehicle)
+	match id:
+		"move", "fast", "amove":
+			move_group(mobile, gp, id == "fast", "amove" if id == "amove" else "")
+			markers.append([gp, G.time, Color(1.0, 0.45, 0.3) if id == "amove" else Color(0.4, 1.0, 0.5)])
+			Sfx.play2d("ui_attack" if id == "amove" else "ui_move", -9.0)
+			_voice(mobile, ["Saldırıyoruz!", "İlerliyoruz!"] if id == "amove" else (["Koş!", "Hareket!"] if id == "fast" else ["Anlaşıldı!", "Tamam!"]))
+		"reverse":
+			move_group(veh.filter(func(v): return not v.is_air()), gp, false, "reverse")
+			markers.append([gp, G.time, Color(0.4, 0.8, 1.0)])
+			Sfx.play2d("ui_move", -9.0)
+		"stop":
+			for u in mobile:
+				u.cmd_stop()
+			Sfx.play2d("ui_click", -8.0)
+		"hold":
+			for u in mobile:
+				u.cmd_hold()
+			_voice(sol, ["Mevzi tut!"])
+			Sfx.play2d("ui_click", -8.0)
+		"retreat":
+			for u in mobile:
+				u.cmd_retreat()
+			_voice(sol, ["Geri çekil!"])
+			G.say("Geri çekiliyoruz!", Vector3.ZERO, team)
+			Sfx.play2d("ui_move", -8.0)
+		"fire":
+			var cur := 0
+			if not mobile.is_empty():
+				cur = mobile[0].fire_mode
+			var nx := (cur + 1) % 3
+			for u in mobile:
+				u.fire_mode = nx
+				if nx == 2:
+					u.target = null
+			_voice(sol, [["Serbest ateş!"], ["Sadece karşılık!"], ["Ateşi kes!"]][nx])
+			Sfx.play2d("ui_click", -8.0)
+		"stance":
+			var cur2 := -1
+			if not sol.is_empty():
+				cur2 = sol[0].stance_lock
+			var nx2 := cur2 + 1
+			if nx2 > Soldier.PRONE:
+				nx2 = -1
+			for u in sol:
+				u.stance_lock = nx2
+			Sfx.play2d("ui_click", -8.0)
+		"unload":
+			unload_selected()
+		"grenade", "smoke":
+			var sm := id == "smoke"
+			var best: Soldier = null
+			var bd := 1e9
+			for u in sol:
+				if not u.can_fight() or (sm and u.smoke_nades <= 0) or (not sm and u.grenades <= 0):
+					continue
+				var d := Vector2(u.position.x - gp.x, u.position.z - gp.z).length() if gp != Vector3.INF else 0.0
+				d += 30.0 if u.role == "mg" else 0.0
+				if d < bd:
+					bd = d
+					best = u
+			if best != null and gp != Vector3.INF:
+				best.cmd_throw(gp, sm)
+				markers.append([gp, G.time, Color(1.0, 0.74, 0.3)])
+			var popped := false
+			if sm:
+				for v in veh:
+					if v.cmd_smoke():
+						popped = true
+			if best == null and not popped:
+				G.say("Sis atar boş" if sm and not veh.is_empty() else ("Sis bombası yok" if sm else "El bombası yok"), Vector3.ZERO, team)
+				Sfx.play2d("ui_error", -6.0)
+		"suppress":
+			for u in mobile:
+				u.cmd_suppress(gp)
+			markers.append([gp, G.time, Color(1.0, 0.6, 0.2)])
+			_voice(sol, ["Bastırın!"])
+			Sfx.play2d("ui_attack", -8.0)
+		"demolish":
+			for u in selected.duplicate():
+				if u is Building and not u.done and u.team == team:
+					G.supply[team] += int(u.full_cost() * 0.75)
+					u.alive = false
+					deselect(u)
+					u.queue_free()
+
 func _select_same(u: Unit) -> void:
 	for o in G.units:
 		if is_instance_valid(o) and o.alive and o.team == team and o.kind == u.kind and G.cam.on_screen(o.position, 0.0):
@@ -217,7 +322,7 @@ func select_squad_of(s: Soldier) -> void:
 			select(m)
 
 # ------------------------------------------------------------ emirler
-func _command(sp: Vector2, force: bool, _queue: bool) -> void:
+func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 	var mobile := selected.filter(func(u): return is_instance_valid(u) and not (u is Building))
 	var gp := G.cam.mouse_ground(sp)
 	if mobile.is_empty():
@@ -259,7 +364,8 @@ func _command(sp: Vector2, force: bool, _queue: bool) -> void:
 		if best:
 			best.start_rescue(tu)
 			return
-	move_group(mobile, gp, force)
+	var rev := alt and mobile.any(func(u): return u is Vehicle)
+	move_group(mobile, gp, force, "reverse" if rev else "")
 	markers.append([gp, G.time, Color(0.4, 1.0, 0.5)])
 	Sfx.play2d("ui_move", -9.0)
 	_voice(mobile, ["Anlaşıldı!", "İlerliyoruz!", "Tamam!", "Hareket!"])
@@ -270,7 +376,15 @@ func _voice(units: Array, lines: Array) -> void:
 			u.say(lines[randi() % lines.size()], 1.6)
 			return
 
-func move_group(units: Array, gp: Vector3, force := false) -> void:
+func _send(u, p: Vector3, force: bool, mode: String) -> void:
+	if mode == "amove":
+		u.cmd_attack_move(p)
+	elif mode == "reverse" and u is Vehicle:
+		u.cmd_reverse(p)
+	else:
+		u.cmd_move(p, force)
+
+func move_group(units: Array, gp: Vector3, force := false, mode := "") -> void:
 	var c := _centroid(units)
 	var dir := gp - c
 	dir.y = 0
@@ -299,11 +413,11 @@ func move_group(units: Array, gp: Vector3, force := false) -> void:
 			var row := k / 3
 			var col := k % 3
 			var p := slot + side * (col - 1) * 1.7 - dir * row * 1.7
-			mem[k].cmd_move(G.grid.nearest_free(p, Grid.M_INF), force)
+			_send(mem[k], G.grid.nearest_free(p, Grid.M_INF), force, mode)
 	var nv := vehicles.size()
 	for i in nv:
 		var p := gp - dir * (6.0 if n > 0 else 0.0) + side * (i - (nv - 1) * 0.5) * 7.5
-		vehicles[i].cmd_move(p, force)
+		_send(vehicles[i], p, force, mode)
 
 func _centroid(units: Array) -> Vector3:
 	var c := Vector3.ZERO

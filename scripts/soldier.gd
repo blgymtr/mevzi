@@ -109,6 +109,13 @@ var my_drone = null
 var repair_target: Unit = null
 var vehicle_in: Vehicle = null
 var board_target: Vehicle = null
+var fire_mode := 0          # 0 serbest ateş, 1 sadece karşılık, 2 ateşi kes
+var stance_lock := -1       # -1 otomatik, yoksa STAND/CROUCH/PRONE
+var retreating := false
+var amove_dest := Vector3.INF
+var order_pt := Vector3.ZERO
+var suppress_pt := Vector3.ZERO
+var suppress_until := 0.0
 
 func setup(t: int, rl: String) -> void:
 	team = t
@@ -171,6 +178,9 @@ func cmd_move(p: Vector3, force := false) -> void:
 	order = "move"
 	force_move = force
 	forced_target = null
+	retreating = false
+	amove_dest = Vector3.INF
+	suppress_until = 0.0
 	dest = G.on_ground(p)
 	cover_type = 0
 	to_cover = false
@@ -203,9 +213,83 @@ func cmd_stop() -> void:
 	_release_patient()
 	order = ""
 	forced_target = null
+	retreating = false
+	amove_dest = Vector3.INF
+	suppress_until = 0.0
+	build_site = null
 	dest = position
 	path = PackedVector3Array()
-	state = "idle"
+	if state in ["move", "build", "rescue"]:
+		state = "idle"
+
+func cmd_attack_move(p: Vector3) -> void:
+	cmd_move(p)
+	if order == "move":
+		order = "amove"
+		amove_dest = dest
+
+func cmd_hold() -> void:
+	cmd_stop()
+	if alive and not incapacitated():
+		order = "hold"
+
+func cmd_retreat() -> void:
+	if not alive or incapacitated() or state == "aboard":
+		return
+	var b := nearest_base()
+	if b == null:
+		return
+	var away := position - b.position
+	away.y = 0
+	var p := b.position + (away.normalized() if away.length() > 0.1 else Vector3(1, 0, 0)) * (b.radius + 2.5)
+	p += Vector3(randf_range(-3, 3), 0, randf_range(-3, 3))
+	cmd_move(G.grid.nearest_free(G.on_ground(p), Grid.M_INF), true)
+	order = "retreat"
+	retreating = true
+	target = null
+	cover_type = 0
+
+func cmd_throw(p: Vector3, smoke: bool) -> bool:
+	if not can_fight() or state in ["throw", "drag", "heal"]:
+		return false
+	if (smoke and smoke_nades <= 0) or (not smoke and grenades <= 0):
+		return false
+	_release_patient()
+	build_site = null
+	order_pt = G.on_ground(p)
+	var d := Vector2(order_pt.x - position.x, order_pt.z - position.z).length()
+	if d <= 20.0:
+		order = ""
+		_start_throw(order_pt, smoke)
+	else:
+		order = "smoke" if smoke else "grenade"
+		var dir := (position - order_pt)
+		dir.y = 0
+		_set_path(G.grid.nearest_free(order_pt + dir.normalized() * 17.0, Grid.M_INF))
+		state = "move"
+		force_move = false
+	return true
+
+func cmd_suppress(p: Vector3) -> void:
+	if not can_fight():
+		return
+	if state == "move" and order != "retreat":
+		cmd_stop()
+	suppress_pt = G.on_ground(p)
+	suppress_until = G.time + 12.0
+	threat_pos = suppress_pt
+	threat_time = G.time
+
+func nearest_base() -> Building:
+	var best: Building = null
+	var bd := 1e9
+	for u in G.units:
+		if is_instance_valid(u) and u is Building and u.team == team and u.alive and u.done and u.is_base():
+			var d := dist2(u)
+			if d < bd:
+				bd = d
+				best = u
+	return best
 
 func cmd_board(v: Vehicle) -> void:
 	if not alive or incapacitated() or vehicle_in != null:
@@ -387,7 +471,21 @@ func _think() -> void:
 				elif path_i >= path.size() or randf() < 0.2:
 					_set_path(board_target.position)
 				return
-			if path_i >= path.size():
+			if order == "amove" and target != null and not to_cover and fire_mode != 2:
+				# saldırı hareketi: düşman görünce dur ve çatış
+				state = "idle"
+				dest = position
+				path = PackedVector3Array()
+			elif (order == "grenade" or order == "smoke") and Vector2(order_pt.x - position.x, order_pt.z - position.z).length() <= 19.0:
+				path = PackedVector3Array()
+				var sm := order == "smoke"
+				order = ""
+				if (sm and smoke_nades > 0) or (not sm and grenades > 0):
+					_start_throw(order_pt, sm)
+				else:
+					state = "idle"
+				return
+			elif path_i >= path.size():
 				_arrive()
 			elif not force_move and suppression > 80 and randf() < 0.3:
 				# ağır ateş altında yerde kal
@@ -405,12 +503,24 @@ func _arrive() -> void:
 	elif order == "build" and build_site != null and is_instance_valid(build_site):
 		state = "build"
 		return
-	if order == "move":
+	if order == "move" or order == "retreat" or order == "grenade" or order == "smoke":
+		if order == "retreat":
+			suppression = 0.0
 		order = ""
 		force_move = false
+		retreating = false
+	elif order == "amove" and (amove_dest == Vector3.INF or position.distance_to(amove_dest) < 3.0):
+		order = ""
+		amove_dest = Vector3.INF
 
 func _think_idle() -> void:
 	var recent := G.time - threat_time < 9.0
+	if order == "amove" and amove_dest != Vector3.INF and target == null and G.time - threat_time > 3.5 and G.time - last_hit > 3.0:
+		dest = amove_dest
+		cover_type = 0
+		_set_path(dest)
+		state = "move"
+		return
 	if recent and order != "hold" and cover_cd <= 0.0 and not force_move:
 		cover_cd = 2.5 + randf()
 		var prot := 0.0
@@ -434,7 +544,7 @@ func _think_idle() -> void:
 	if cover_type > 0 and position.distance_to(cover_pos) > 1.2 and state == "idle":
 		cover_type = 0
 	# hedefe yaklaş (saldırı emri)
-	if forced_target != null:
+	if forced_target != null and order != "hold":
 		if not is_instance_valid(forced_target) or not forced_target.alive:
 			forced_target = null
 			order = ""
@@ -511,7 +621,7 @@ func _think_drone() -> void:
 	say("DRONE HAVADA!")
 
 func _think_grenade() -> void:
-	if grenades <= 0 or gren_cd > 0.0 or state != "idle" or suppression > 75:
+	if grenades <= 0 or gren_cd > 0.0 or state != "idle" or suppression > 75 or fire_mode != 0:
 		return
 	var tp := Vector3.ZERO
 	var ok := false
@@ -547,7 +657,10 @@ func _start_throw(tp: Vector3, smoke: bool) -> void:
 	say("SİS!" if smoke else "EL BOMBASI!")
 
 func _scan() -> void:
-	if not can_fight():
+	if not can_fight() or retreating or fire_mode == 2:
+		target = null
+		return
+	if fire_mode == 1 and G.time - last_hit > 10.0 and G.time - sup_t > 8.0:
 		target = null
 		return
 	var W := weapon()
@@ -620,6 +733,9 @@ func _scan() -> void:
 			return
 
 func _stance() -> void:
+	if stance_lock >= 0 and state in ["idle", "move"] and not force_move:
+		stance = stance_lock
+		return
 	if state == "move":
 		stance = CROUCH if (suppression > 55 and not force_move) else STAND
 		if suppression > 85 and not force_move:
@@ -803,6 +919,12 @@ func _combat(_dt: float) -> void:
 	if reload_t > 0.0:
 		popped = false if cover_type == 1 else popped
 		return
+	if G.time < suppress_until and state == "idle" and fire_mode != 2 and role != "mortar":
+		# baskı ateşi emri: hedef görünmese de bölgeyi ateş altında tut
+		popped = true
+		if fire_cd <= 0.0 and ammo > 0:
+			_area_fire(suppress_pt, 4.0)
+		return
 	var t := target
 	var covering := G.time < covering_until
 	if t == null or not is_instance_valid(t) or not t.alive:
@@ -952,11 +1074,13 @@ func _shoot(t: Unit) -> void:
 	if shots % W["tr"] == 0:
 		G.fx.tracer(mp, impact, 240.0, Color(1.0, 0.62, 0.25) if team == 0 else Color(1.0, 0.45, 0.2))
 
-func _area_fire() -> void:
+func _area_fire(center := Vector3.INF, spread := 3.0) -> void:
 	# örtme ateşi: hedef görünmese de tehdit bölgesine
+	if center == Vector3.INF:
+		center = threat_pos
 	var W := weapon()
 	var mp := body.muzzle_pos()
-	var p := threat_pos + Vector3(randf_range(-3, 3), randf_range(0.2, 1.4), randf_range(-3, 3))
+	var p := center + Vector3(randf_range(-spread, spread), randf_range(0.2, 1.4), randf_range(-spread, spread))
 	if not G.grid.los(position + Vector3(0, eye_h(), 0), p, 0.75, 1.5):
 		fire_cd = 0.6
 		return
@@ -996,6 +1120,8 @@ func _hit_chance(t: Unit, d: float) -> float:
 func add_suppression(v: float, from: Vector3) -> void:
 	if not alive:
 		return
+	if retreating:
+		v *= 0.3
 	suppression = minf(100.0, suppression + v)
 	sup_t = G.time
 	if G.time - threat_time > 2.0 or target == null:
@@ -1018,6 +1144,8 @@ func take_damage(amount: float, src, _kind := "bullet") -> void:
 		if _kind != "bullet" or randf() < 0.6:
 			die(src)
 		return
+	if retreating:
+		amount *= 0.7
 	hp -= amount
 	suppression = minf(100.0, suppression + 18.0)
 	sup_t = G.time

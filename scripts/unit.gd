@@ -42,7 +42,7 @@ func set_selected(v: bool) -> void:
 	selected = v
 
 func say(t: String, dur := 2.2) -> void:
-	bubble = t
+	bubble = I18n.s(t)
 	bubble_t = dur
 
 func tick_bubble(dt: float) -> void:
