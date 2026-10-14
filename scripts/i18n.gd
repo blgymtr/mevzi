@@ -142,6 +142,7 @@ const EN := {
 	"komut: help": "command: help",
 	"MAVİ": "BLUE",
 	"KIZIL": "RED",
+	"KARA ARAÇLARI": "GROUND VEHICLES",
 	"` / F10: gizle · sol tık: yerleştir · sağ tık: iptal": "` / F10: hide · left click: place · right click: cancel",
 	"TOPÇU": "ARTILLERY",
 	"Sahra Topu": "Field Gun",

@@ -15,7 +15,7 @@ var instant := true
 var shown := true
 var _log: Array = []
 
-const ROLES := ["rifle", "mg", "at", "medic", "sniper", "engineer", "mortar", "drone", "leader"]
+var ROLES: Array = Soldier.WPN.keys()
 const FX := ["boom_s", "boom_m", "boom_l", "arty", "smoke"]
 
 func _ready() -> void:
@@ -61,19 +61,34 @@ func _ready() -> void:
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 2)
 	sc.add_child(list)
+	# listeler tanımlardan otomatik üretilir: yeni eklenen her birim burada görünür
 	_section("PİYADE TİMLERİ")
-	for id in ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"]:
-		_spawn_btn("p:" + id, I18n.s(Building.PDEF[id]["title"]))
+	for id in Building.PDEF:
+		if not Building.PDEF[id].has("vehicle"):
+			_spawn_btn("p:" + id, I18n.s(Building.PDEF[id]["title"]))
 	_section("TEK ASKER")
-	for r in ROLES:
+	for r in Soldier.WPN:
 		_spawn_btn("s:" + r, I18n.s(Soldier.ROLE_TITLE.get(r, r)))
-	_section("ARAÇLAR")
-	for id in ["technical", "apc", "ifv", "aa", "tank", "arty", "heli", "transport"]:
-		_spawn_btn("p:" + id, I18n.s(Building.PDEF[id]["title"]))
-	_spawn_btn("v:truck", I18n.s("İkmal Kamyonu"))
+	_section("KARA ARAÇLARI")
+	for vt in Vehicle.DEF:
+		if not (vt in Vehicle.TOWED or vt in Vehicle.INDIRECT) and not Vehicle.DEF[vt]["nav"] == -1 and not (vt in ["heli", "transport", "fpv"]):
+			_spawn_btn("v:" + vt, I18n.s(Vehicle.DEF[vt]["title"]))
+	_section("TOPÇU")
+	for vt in Vehicle.DEF:
+		if vt in Vehicle.TOWED or vt in Vehicle.INDIRECT:
+			_spawn_btn("v:" + vt, I18n.s(Vehicle.DEF[vt]["title"]))
+	_section("HAVA")
+	for vt in ["heli", "transport", "fpv"]:
+		if Vehicle.DEF.has(vt):
+			_spawn_btn("v:" + vt, I18n.s(Vehicle.DEF[vt]["title"]))
+	for vt in Vehicle.DEF:
+		if Vehicle.DEF[vt].get("air", false) and not (vt in ["heli", "transport", "fpv"]):
+			_spawn_btn("v:" + vt, I18n.s(Vehicle.DEF[vt]["title"]))
 	_section("YAPILAR (anında)")
-	for id in ["fob", "barracks", "factory", "helipad", "hospital", "mgnest", "tower", "trap"]:
-		_spawn_btn("b:" + id, I18n.s(Building.BDEF[id]["title"]))
+	for id in Building.BDEF:
+		if id != "hq" and not Building.BDEF[id].get("line", false):
+			_spawn_btn("b:" + id, I18n.s(Building.BDEF[id]["title"]))
+	_spawn_btn("b:hq", I18n.s(Building.BDEF["hq"]["title"]))
 	_section("EFEKTLER")
 	for f in FX:
 		_spawn_btn("fx:" + f, {"boom_s": "El bombası", "boom_m": "Tank mermisi", "boom_l": "Büyük patlama", "arty": "Topçu atışı", "smoke": "Sis perdesi"}[f])
