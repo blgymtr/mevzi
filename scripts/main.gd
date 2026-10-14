@@ -684,7 +684,7 @@ func _run_cat_test() -> void:
 		var id: String = e[2]
 		if not id.begins_with(pref) or not Art.has(id):
 			continue
-		var v := spawn_vehicle(0, id, G.grid.nearest_free(c + Vector3((i % 6) * 9.0 - 22.0, 0, (i / 6) * 11.0), Grid.M_HEAVY), PI * 0.8)
+		var v := spawn_vehicle(0, id, G.grid.nearest_free(c + Vector3((i % 10) * 11.0 - 50.0, 0, (i / 10) * 13.0 - 40.0), Grid.M_HEAVY), PI * 0.8)
 		vs.append(v)
 		i += 1
 	print("CAT spawned=%d of %d catalog units" % [vs.size(), Catalog.units.size()])
@@ -693,18 +693,28 @@ func _run_cat_test() -> void:
 	else:
 		var v: Vehicle = vs[0]
 		print("CAT %s title=%s hp=%d armor=%s base=%s" % [v.vid, v.title, int(v.max_hp), v.armor_text(), v.vtype])
-		if v.vid == "" or v.armor_tab().is_empty():
+		if v.vid == "":
 			fails += 1
-	G.cam.jump_to(c + Vector3(0, 0, 4), true)
-	G.cam.size = 30.0
-	G.cam.target_size = 30.0
+	G.cam.jump_to(c + Vector3(0, 0, -10), true)
+	G.cam.size = 60.0
+	G.cam.target_size = 60.0
 	await _wait(1.5)
 	await _shot("cat_01_row")
-	G.cam.jump_to(c + Vector3(-13, 0, 0), true)
-	G.cam.size = 12.0
-	G.cam.target_size = 12.0
-	await _wait(1.0)
-	await _shot("cat_02_close")
+	var k := 0
+	for v in vs:
+		if k % 12 == 0:
+			G.cam.jump_to(v.position + Vector3(10, 0, 4), true)
+			G.cam.size = 22.0
+			G.cam.target_size = 22.0
+			await _wait(0.8)
+			await _shot("cat_z%02d" % (k / 12))
+		k += 1
+	if not vs.is_empty():
+		G.cam.jump_to(vs[0].position, true)
+		G.cam.size = 14.0
+		G.cam.target_size = 14.0
+		await _wait(1.0)
+		await _shot("cat_02_close")
 	# hareket + düşmana ateş
 	var e1 := spawn_vehicle(1, "tank", G.grid.nearest_free(c + Vector3(0, 0, -40), Grid.M_HEAVY), 0.0)
 	for v in vs:

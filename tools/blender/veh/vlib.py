@@ -20,6 +20,10 @@ def reset(nat):
     for k in NODES:
         NODES[k] = []
     _M.clear()
+    WHEELS.clear()
+    for k in list(NODES.keys()):
+        if k not in ("body", "turret", "barrel"):
+            del NODES[k]
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 def node(n):
@@ -39,9 +43,15 @@ def mat(n):
         _M[full] = m
     return _M[full]
 
-def _fin(o, mname, bev=0.0, seg=1):
+def _fin(o, mname, bev=0.0, seg=2):
+    # dönüş ve ölçeği ağa işle: birleştirmede dönüş gövdeye taşınmasın (yan yatma hatası), pah her yönde eşit olsun
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
     if bev > 0:
-        b = o.modifiers.new("bev", 'BEVEL'); b.width = bev; b.segments = seg; b.limit_method = 'ANGLE'; b.angle_limit = math.radians(40)
+        b = o.modifiers.new("bev", 'BEVEL'); b.width = bev; b.segments = seg; b.limit_method = 'ANGLE'; b.angle_limit = math.radians(35)
+        b.harden_normals = False
     o.data.materials.clear()
     o.data.materials.append(mat(mname))
     NODES[CUR].append(o)
@@ -51,6 +61,10 @@ def box(loc, size, mname="paint", rot=(0, 0, 0), bev=0.02):
     bpy.ops.mesh.primitive_cube_add(location=loc, rotation=rot)
     o = bpy.context.active_object
     o.scale = (size[0] / 2, size[1] / 2, size[2] / 2)
+    # keskin kutu görünümünü kır: pah boyutun %18'i (en az verilen, en çok 6 cm)
+    m = min(size)
+    if bev > 0 or m > 0.06:
+        bev = min(0.06, max(bev, m * 0.18), m * 0.45)
     return _fin(o, mname, bev)
 
 def cyl(loc, r, depth, mname="metal", axis="Z", seg=16, r2=None, bev=0.0, rot=None):
@@ -176,20 +190,73 @@ def track_loop(x, w, y_front, y_rear, r_front, r_rear, z_bottom=0.0, z_top=None,
     o = bpy.data.objects.new("trk", me); bpy.context.collection.objects.link(o)
     return _fin(o, "track", 0.0)
 
+def _hull2d(pts):
+    pts = sorted(set(pts))
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lo, up = [], []
+    for p in pts:
+        while len(lo) >= 2 and cross(lo[-2], lo[-1], p) <= 0:
+            lo.pop()
+        lo.append(p)
+    for p in reversed(pts):
+        while len(up) >= 2 and cross(up[-2], up[-1], p) <= 0:
+            up.pop()
+        up.append(p)
+    return lo[:-1] + up[:-1]
+
+def track_hull(x, w, circles, link=0.17, th=0.03):
+    """Palet: tekerlek/avara/dişli çemberlerinin dışbükey zarfı boyunca tek tek baklalar."""
+    smp = []
+    for (cy, cz, r) in circles:
+        for k in range(36):
+            a = k * math.tau / 36
+            smp.append((round(cy + math.cos(a) * (r + th), 4), round(cz + math.sin(a) * (r + th), 4)))
+    poly = _hull2d(smp)
+    poly.append(poly[0])
+    segs = []
+    tot = 0.0
+    for a, b in zip(poly, poly[1:]):
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L > 1e-5:
+            segs.append((a, b, L)); tot += L
+    n = max(8, int(tot / link))
+    step = tot / n
+    me = bpy.data.meshes.new("trk"); bm = bmesh.new()
+    si = 0; acc = 0.0
+    for i in range(n):
+        t = i * step
+        while si < len(segs) - 1 and acc + segs[si][2] < t:
+            acc += segs[si][2]; si += 1
+        a, b, L = segs[si]
+        f = (t - acc) / L
+        y = a[0] + (b[0] - a[0]) * f; z = a[1] + (b[1] - a[1]) * f
+        ang = math.atan2(b[1] - a[1], b[0] - a[0])
+        M = Matrix.Translation((x, y, z)) @ Matrix.Rotation(ang, 4, 'X')
+        for (cx, cy, cz, sx, sy, sz) in ((0, 0, 0, w, link * 0.86, 0.05), (0, 0, 0.045, 0.06, link * 0.5, 0.06), (w * 0.3, 0, -0.03, w * 0.25, link * 0.5, 0.025), (-w * 0.3, 0, -0.03, w * 0.25, link * 0.5, 0.025)):
+            g = bmesh.ops.create_cube(bm, size=1.0)
+            for v in g["verts"]:
+                v.co = M @ Vector((v.co.x * sx + cx, v.co.y * sy + cy, v.co.z * sz + cz))
+    bm.to_mesh(me); bm.free()
+    o = bpy.data.objects.new("trk", me); bpy.context.collection.objects.link(o)
+    return _fin(o, "track", 0.0)
+
 def running_gear(xc, w, wheels_y, r, y_front, y_rear, r_idler, r_spr, z_top_run=None, rollers_y=(), sprocket_rear=True):
+    """y_front: avara (ön/arka fark etmez), y_rear: dişli. Avara ve dişli palet üst hattına hizalanır."""
+    zt = z_top_run if z_top_run else 2 * r + 0.12
+    zi = max(r_idler + 0.04, zt - r_idler - 0.03)
+    zs = max(r_spr + 0.04, zt - r_spr - 0.03)
     for s in (-1, 1):
         x = s * xc
         for y in wheels_y:
             road_wheel(x, y, r, r, w * 0.82, s)
-        zi = r_idler + 0.02
-        cyl((x, y_front, zi + 0.05), r_idler, w * 0.8, "paint", "X", seg=18)
-        cyl((x + s * w * 0.42, y_front, zi + 0.05), r_idler * 0.35, 0.04, "metal", "X", seg=8)
-        sprocket(x, y_rear, r_spr + 0.1, r_spr, w * 0.8, s)
-        zt = z_top_run if z_top_run else max(zi + 0.05 + r_idler, r_spr + 0.1 + r_spr)
+        cyl((x, y_front, zi), r_idler, w * 0.8, "paint", "X", seg=18)
+        cyl((x + s * w * 0.42, y_front, zi), r_idler * 0.35, 0.04, "metal", "X", seg=8)
+        sprocket(x, y_rear, zs, r_spr, w * 0.8, s)
         for y in rollers_y:
-            cyl((x, y, zt - 0.09), 0.08, w * 0.5, "metal", "X", seg=10)
-        track_loop(x, w, y_front, y_rear, r_idler + 0.02, r_spr + 0.02, 0.0, zt, zi + 0.05, r_spr + 0.1)
-        # süspansiyon kolları
+            cyl((x, y, zt - 0.06), 0.07, w * 0.5, "metal", "X", seg=10)
+        circles = [(y, r, r) for y in wheels_y] + [(y_front, zi, r_idler), (y_rear, zs, r_spr)]
+        track_hull(x, w, circles)
         for y in wheels_y:
             box((s * (xc - w * 0.55), y + 0.18, r + 0.06), (0.06, 0.4, 0.08), "metal", rot=(0.35, 0, 0), bev=0.0)
 
@@ -282,9 +349,18 @@ def export(path_glb, pivots, meta):
         j = bpy.context.active_object
         j.name = name
         j.data.name = name
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+        j.rotation_euler = (0, 0, 0)
         bpy.context.scene.cursor.location = pivots.get(name, (0, 0, 0))
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
-        bpy.ops.object.shade_flat()
+        # pahlar yumuşak, düz yüzeyler keskin: açıya göre yumuşatma
+        bpy.ops.object.shade_smooth()
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.mesh.select_mode(type='EDGE')
+        bpy.ops.mesh.edges_select_sharp(sharpness=math.radians(32))
+        bpy.ops.mesh.mark_sharp()
+        bpy.ops.object.mode_set(mode='OBJECT')
         # UV (dokular dünya izdüşümüyle de çalışır) + beyaz tepe rengi
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='SELECT')
@@ -301,3 +377,78 @@ def export(path_glb, pivots, meta):
         json.dump(js, f)
     tris = sum(len(p.vertices) - 2 for o in bpy.data.objects if o.type == 'MESH' for p in o.data.polygons)
     print("EXPORT", path_glb, "tris", tris)
+
+# ------------------------------------------------------------ gövde levhası ve tekerlek düğümleri
+def slab(yfb, yft, yrt, yrb, z0, z1, wb, wt, mname="paint", bev=0.03, wf=None):
+    """Altı yüzlü gövde: ön alt/üst y, arka üst/alt y, alt/üst z, alt/üst yarı genişlik. wf: ön üst yarı genişlik."""
+    wf = wt if wf is None else wf
+    pts = []
+    for s in (-1, 1):
+        pts += [(s * wb, yfb, z0), (s * wf, yft, z1), (s * wt, yrt, z1), (s * wb, yrb, z0)]
+    return hull_pts(pts, mname, bev)
+
+WHEELS = []
+
+def tyre(i, x, y, z, r, w, side, hub="paint"):
+    """Döner tekerlek: ayrı düğüm wheel_i (pivot = teker merkezi)."""
+    prev = CUR
+    node("wheel_%d" % i)
+    cyl((x, y, z), r, w, "rubber", "X", seg=20)
+    cyl((x, y, z), r * 1.0, w * 0.7, "rubber", "X", seg=10)            # diş sırtı (çokgen dış yüz)
+    cyl((x + side * w * 0.5, y, z), r * 0.6, 0.04, hub, "X", seg=12)
+    cyl((x + side * (w * 0.5 + 0.03), y, z), r * 0.25, 0.06, "metal", "X", seg=8)
+    for k in range(8):
+        a = k * math.tau / 8
+        cyl((x + side * (w * 0.5 + 0.03), y + math.cos(a) * r * 0.42, z + math.sin(a) * r * 0.42), 0.02, 0.04, "dark", "X", seg=6)
+    WHEELS.append(("wheel_%d" % i, (x, y, z)))
+    node(prev)
+
+def wheels_axles(ys, xw, r, w, hub="paint"):
+    n = 0
+    for y in ys:
+        for s in (-1, 1):
+            tyre(n, s * xw, y, r, r, w, s, hub)
+            n += 1
+    return n
+
+def wheel_pivots(pv):
+    for n, p in WHEELS:
+        pv[n] = p
+    return pv
+
+def gun(y0, z, L, r, mname="paint", brake=False, sleeve=0.0, x=0.0):
+    """Namlu (Y boyunca y0'dan L kadar)."""
+    cyl((x, y0 + L / 2, z), r, L, mname, "Y", seg=12, r2=r * 0.9)
+    if sleeve:
+        cyl((x, y0 + L * 0.45, z), r * 1.45, sleeve, mname, "Y", seg=12)
+    if brake:
+        box((x, y0 + L + 0.12, z), (r * 3.2, 0.32, r * 2.2), "dark", bev=0.015)
+        for s in (-1, 1):
+            box((x + s * r * 1.65, y0 + L + 0.12, z), (0.02, 0.2, r * 1.6), "dark", bev=0.0)
+
+def canister(x, y, z, L, r, pitch, mname="paint", seg=12):
+    """Füze kanisteri: Y ekseni etrafında pitch ile yükselen silindir (ileri bakar)."""
+    cyl((x, y, z), r, L, mname, rot=(math.pi / 2 - pitch, 0, 0), seg=seg)
+
+def podbox(x, y, z, sx, sy, sz, pitch=0.0, cells=(2, 3)):
+    """Roket/füze kutusu: ön yüzde hücre delikleri."""
+    box((x, y, z), (sx, sy, sz), "paint", rot=(pitch, 0, 0), bev=0.03)
+    nx, nz = cells
+    for i in range(nx):
+        for k in range(nz):
+            lx = (i - (nx - 1) / 2) * sx / nx * 0.9
+            lz = (k - (nz - 1) / 2) * sz / nz * 0.9
+            off = Vector((lx, sy / 2 + 0.005, lz))
+            off.rotate(Euler((pitch, 0, 0)))
+            box((x + off.x, y + off.y, z + off.z), (sx / nx * 0.7, 0.02, sz / nz * 0.7), "dark", rot=(pitch, 0, 0), bev=0.0)
+
+def cab(y, z0, w, L, h, glass=True):
+    """Kamyon kabini."""
+    slab(y + L / 2, y + L / 2 - 0.25, y - L / 2, y - L / 2, z0, z0 + h, w / 2, w / 2 - 0.08)
+    if glass:
+        box((0, y + L / 2 - 0.13, z0 + h * 0.72), (w * 0.86, 0.04, h * 0.32), "glass", rot=(-0.45, 0, 0), bev=0.0)
+        for s in (-1, 1):
+            box((s * (w / 2 - 0.02), y + L * 0.1, z0 + h * 0.72), (0.03, L * 0.5, h * 0.3), "glass", bev=0.0)
+
+def reset_wheels():
+    WHEELS.clear()

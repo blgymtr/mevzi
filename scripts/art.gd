@@ -376,4 +376,5 @@ static func vehicle_model(model: String, team: int) -> Dictionary:
 		out["muzzle"] = v3(md["muzzle"]) - bp
 	if md.has("gunner"):
 		out["gunner"] = v3(md["gunner"])
+	out["meta"] = md
 	return out

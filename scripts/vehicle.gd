@@ -1466,7 +1466,10 @@ func _heli(dt: float) -> void:
 	rotor.rotation.y += dt * 28.0
 	if rotor_blades:
 		rotor_blades.visible = false
-	trotor.rotation.x += dt * 40.0
+	if M.get("meta", {}).get("trotor_y", false):
+		trotor.rotation.y -= dt * 28.0
+	else:
+		trotor.rotation.x += dt * 40.0
 	if randf() < dt * 3.0:
 		G.fx.vehicle_dust(position + Vector3(randf_range(-4, 4), 0.2, randf_range(-4, 4)))
 	rocket_cd -= dt
