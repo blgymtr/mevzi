@@ -175,11 +175,13 @@ def spg_open(v):
     node("barrel")
     bz = tz + 0.85
     box((0, -1.0, bz), (0.9, 1.4, 0.7), "paint", bev=0.03)
-    if cal == 203:
+    if v.get("mortar"):
+        gun(-0.3, bz, 4.0, 0.2, "paint")
+    elif cal == 203:
         gun(-0.3, bz, 5.2, 0.17, "paint", sleeve=1.0)
     else:
         gun(-0.3, bz, 9.5, 0.11, "paint", sleeve=1.0)
-    L2 = 5.2 if cal == 203 else 9.5
+    L2 = 4.0 if v.get("mortar") else (5.2 if cal == 203 else 9.5)
     return {"body": (0, 0, 0), "turret": (0, -1.0, tz), "barrel": (0, -1.0, bz)}, {"muzzle": (0, -0.3 + L2, bz), "radius": 2.8}
 
 def mortar_tr(v):

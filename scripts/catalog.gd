@@ -16,6 +16,11 @@ const FAM_BASE := {
 	"heli_atk": "heli", "heli_slim": "heli", "heli_light": "heli",
 	"heli_utility": "transport", "heli_tandem": "transport", "heli_heavy": "transport", "tiltrotor": "transport",
 	"fpv": "fpv",
+	"mbt_ru": "tank", "mbt_t14": "tank", "apc_btr": "apc", "apc_mtlb": "apc", "ifv_bmp": "ifv", "ifv_bmd": "ifv", "ifv_heavy": "ifv",
+	"spg_ru": "arty", "mlrs_ru": "mlrs", "mlrs_tos": "mlrs", "missile_ru": "mlrs",
+	"sam_ru_long": "aa", "sam_ru_tr": "aa", "sam_ru_truck": "aa",
+	"heli_coax": "heli", "heli_hind": "heli", "heli_mi8": "transport",
+	"bmpt": "ifv", "spg_truck": "arty", "truck_cargo": "truck",
 }
 const CAT_TITLE := {"tank": "Tanklar", "apc": "ZPT", "ifv": "ZMA / PSA", "td": "Tanksavar Araçları", "spg": "Kundağı Motorlu Obüs",
 	"towed": "Çekili Topçu", "mlrs": "Roketatar / Füze", "mortar": "Havan", "aa": "Hava Savunma", "eng": "İstihkâm",

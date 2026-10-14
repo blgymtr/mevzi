@@ -312,6 +312,11 @@ def lv_jltv(v):
         a = math.pi * (0.1 + k * 0.2)
         box((math.cos(a) * 0.58, -0.3 + math.sin(a) * 0.58, zt + 0.42), (0.47, 0.05, 0.5), "paint", rot=(0, 0, a - math.pi / 2), bev=0.01)
     node("barrel")
+    if v.get("atgm"):
+        box((0, -0.3, zt + 0.6), (0.5, 0.5, 0.4), "paint", bev=0.03)
+        for s in (-1, 1):
+            canister(s * 0.32, 0.2, zt + 0.7, 1.4, 0.1, 0.08)
+        return wheel_pivots({"body": (0, 0, 0), "turret": tp, "barrel": (0, -0.3, zt + 0.6)}), {"muzzle": (0, 0.9, zt + 0.75), "radius": 2.0}
     mg(0, 0.1, zt + 0.45, 0.0, 1.0 if v.get("cmd") else 1.1, not v.get("cmd"))
     return wheel_pivots({"body": (0, 0, 0), "turret": tp, "barrel": (0, 0.1, zt + 0.45)}), {"muzzle": (0, 1.2, zt + 0.45), "gunner": (0, -0.3, zt - 0.85), "radius": 2.0}
 
