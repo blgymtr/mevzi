@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "hudtest":
+		_run_hud_test()
 	elif shot_dir != "" and shot_scene == "uavtest":
 		_run_uav_test()
 	elif shot_dir != "" and shot_scene == "posetest":
@@ -726,6 +728,25 @@ func _run_cat_test() -> void:
 	if e1.alive and e1.hp >= e1.max_hp:
 		fails += 1
 	print("CATTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_hud_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	start_game("green_valley")
+	G.supply[0] = 9999.0
+	var f := place_building(0, "factory", G.grid.nearest_free(G.hq_pos[0] + Vector3(20, 0, 10), Grid.M_HEAVY), 0.0)
+	f.complete()
+	await _wait(1.0)
+	G.hud.set_tab("armor")
+	await _wait(1.5)
+	await _shot("hud_01_armor")
+	G.hud.set_tab("air")
+	await _wait(1.5)
+	await _shot("hud_02_air")
+	var ok: bool = G.hud._producer("usa_mbt_s3") != null
+	print("HUD producer_for_catalog=%s" % ok)
+	print("HUDTEST RESULT fails=%d" % (0 if ok else 1))
 	get_tree().quit()
 
 func _run_uav_test() -> void:

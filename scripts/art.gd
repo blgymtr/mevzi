@@ -116,13 +116,14 @@ static func material(name: String, team: int) -> Material:
 	match name:
 		"paint":
 			t = paint_tex(team) if nat == "" else nation_paint(nat)
-			rough = 0.68
+			rough = 0.7
 			metal = 0.12
 			uvs = 0.6
-			lay = [0.4, 0.22, 0.7, 0.75]
+			# katalog araçları: belirgin akıntı, pas, mikro yüzey ve alt gövde çamuru
+			lay = [0.4, 0.22, 0.7, 0.75] if nat == "" else [0.7, 0.38, 0.95, 1.0]
 		"trim":
 			t = paint_tex(team) if nat == "" else nation_paint(nat)
-			tint = Color(0.72, 0.72, 0.72)
+			tint = Color(0.62, 0.62, 0.6)
 			uvs = 0.6
 			rough = 0.72
 			metal = 0.12

@@ -1782,30 +1782,97 @@ func destroy(src) -> void:
 	G.credit_kill(src, self)
 	if selected and G.player:
 		G.player.deselect(self)
-	G.explode(position + Vector3(0, 1.0, 0), 4.0, 60.0, "big", team, self)
-	G.fx.burn(position + Vector3(0, 1.3, 0), randf_range(25.0, 45.0), 1.2 if vtype == "tank" else 0.9)
-	G.fx.scorch(position, D["len"] * 1.1)
+	# imha biçimi: mühimmat infilakı / felaket / yanma / sadece etkisiz
+	var heavy := vtype in ["tank", "ifv", "arty", "aa"]
+	var r := randf()
+	var mode := "brew"
+	if heavy:
+		mode = "cookoff" if r < 0.35 else ("catastrophic" if r < 0.5 else ("brew" if r < 0.8 else "knocked"))
+	else:
+		mode = "catastrophic" if r < 0.25 else ("brew" if r < 0.75 else "knocked")
+	var cp := position + Vector3(0, 1.0, 0)
+	match mode:
+		"catastrophic":
+			G.explode(cp, 6.5, 90.0, "big", team, self)
+			G.fx.flash(cp, 16.0, 22.0, 0.25, Color(1.0, 0.7, 0.35))
+			G.fx.crater(position, D["len"] * 0.75)
+			_debris(8 if heavy else 5, 9.0)
+			G.fx.burn(position + Vector3(0, 1.0, 0), randf_range(40.0, 70.0), 1.5)
+			hull.rotation.z += randf_range(-0.25, 0.25)
+			hull.position.y -= 0.15
+		"cookoff":
+			G.explode(cp, 4.5, 70.0, "big", team, self)
+			G.fx.crater(position, D["len"] * 0.55)
+			_debris(4, 6.0)
+			G.fx.burn(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.6)
+			# ikincil infilaklar + kapaktan alev püskürmesi
+			for i in randi_range(3, 6):
+				var tw0 := create_tween()
+				tw0.tween_interval(randf_range(0.8, 6.0))
+				tw0.tween_callback(func():
+					var q := position + Vector3(randf_range(-1.0, 1.0), 1.8, randf_range(-1.0, 1.0))
+					G.fx.explosion(q, 0.7, "rpg")
+					G.fx.flash(q, 6.0, 8.0, 0.08)
+					Sfx.play3d("expl_small", q, 0.0)
+					for k in 6:
+						G.fx.emit(Fx.P_FIRE, q, Vector3(randf_range(-1, 1), randf_range(6, 11), randf_range(-1, 1)), randf_range(0.4, 0.8), 0.6, 1.6, -2.0, 0.6, Color(1.8, 0.9, 0.3, 1)))
+		"brew":
+			G.explode(cp, 3.0, 40.0, "big", team, self)
+			G.fx.burn(position + Vector3(0, 1.3, 0), randf_range(30.0, 55.0), 1.2 if heavy else 0.9)
+			_debris(2, 4.0)
+		_:
+			G.fx.explosion(cp, 0.8, "rpg")
+			Sfx.play3d("expl_med", cp, 0.0)
+			G.fx.burn(position + Vector3(0, 1.5, 0), randf_range(15.0, 25.0), 0.5)
+	G.fx.scorch(position, D["len"] * 1.2)
 	for mi in _meshes(self):
 		mi.material_override = Mats.burnt()
 	if gunner:
 		gunner.visible = false
 	if engine:
 		engine.stop()
-	if vtype == "tank" and turret and randf() < 0.45:
+	if turret and ((mode == "cookoff" and vtype in ["tank", "ifv", "arty", "aa"]) or mode == "catastrophic"):
 		# taret fırlar
 		var tw := create_tween()
 		var start := turret.position
 		var side := Vector3(randf_range(-2, 2), 0, randf_range(-2, 2))
-		tw.tween_property(turret, "position", start + Vector3(side.x * 0.5, 5.0, side.z * 0.5), 0.45).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+		var hgt := 9.0 if mode == "cookoff" else 5.0
+		tw.tween_property(turret, "position", start + Vector3(side.x * 0.5, hgt, side.z * 0.5), 0.5 if mode == "cookoff" else 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 		tw.parallel().tween_property(turret, "rotation", Vector3(randf_range(-1, 1), randf_range(-3, 3), randf_range(-1, 1)), 0.9)
 		tw.tween_property(turret, "position", start + Vector3(side.x, -0.6, side.z), 0.45).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
 	G.grid.set_static_rect(position, Vector2(D["len"] * 0.45, D["len"] * 0.85), heading, 1.3, Grid.K_WRECK)
 	if vtype == "truck" and G.logi:
 		G.logi.truck_lost(self)
 	# mürettebat kaçar
-	if vtype in ["tank", "apc"] and randf() < 0.5:
-		for i in randi_range(1, 2):
+	if vtype in ["tank", "apc", "ifv"] and (mode == "knocked" or (mode == "brew" and randf() < 0.5)):
+		for i in randi_range(1, 3):
 			G.main.spawn_soldier(team, "rifle", position + Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5)), null, 50.0)
+
+# parçalar etrafa saçılır ve sahnede kalır (çevrenin parçası)
+func _debris(n: int, force: float) -> void:
+	var src_meshes := _meshes(self)
+	for i in n:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(randf_range(0.3, 1.1), randf_range(0.08, 0.3), randf_range(0.3, 1.2))
+		mi.mesh = bm
+		mi.material_override = Mats.burnt()
+		G.main.world.add_child(mi)
+		var p0 := position + Vector3(randf_range(-1, 1), 1.4, randf_range(-1, 1))
+		mi.position = p0
+		var dir := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+		var land := G.on_ground(p0 + dir * randf_range(force * 0.4, force))
+		land.y = G.terrain.ground_h(land) + bm.size.y * 0.5 if G.terrain else 0.1
+		var top := p0.lerp(land, 0.5) + Vector3(0, randf_range(2.0, force * 0.6), 0)
+		var tw := mi.create_tween()
+		var dur := randf_range(0.7, 1.2)
+		tw.tween_method(func(k: float):
+			mi.position = p0.lerp(top, k).lerp(top.lerp(land, k), k)
+			mi.rotation += Vector3(0.2, 0.15, 0.1), 0.0, 1.0, dur)
+		tw.tween_callback(func():
+			G.fx.emit(Fx.P_SMOKE, land, Vector3(0, 0.6, 0), 1.5, 0.4, 1.2, -0.1, 1.0, Color(0.2, 0.2, 0.2, 0.5)))
+		if i == 0 and src_meshes.size() > 0:
+			G.fx.burn(land + Vector3(0, 0.2, 0), randf_range(8.0, 16.0), 0.35)
 
 func _meshes(n: Node) -> Array:
 	var out: Array = []

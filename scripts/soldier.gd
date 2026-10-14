@@ -37,6 +37,9 @@ var threat_pos := Vector3.ZERO
 var threat_time := -99.0
 var cover_type := 0
 var cover_pos := Vector3.ZERO
+var cover_veh: Vehicle = null    # araç arkası siper (araç ilerlerse birlikte ilerler)
+var blind_t := 0.0               # kör ateş (silahı siperin üstünden/yanından uzatır)
+var blind_side := false
 var cover_cd := 0.0
 var to_cover := false
 var suppression := 0.0
@@ -490,6 +493,7 @@ func _timers(dt: float) -> void:
 	drone_cd -= dt
 	cover_cd -= dt
 	popup_t -= dt
+	blind_t -= dt
 	if G.time - sup_t > 1.2:
 		suppression = maxf(0.0, suppression - dt * (22.0 if led() else 16.0))
 	if stress > 0.0 and G.time - stress_t > 3.0:
@@ -648,6 +652,36 @@ func _arrive() -> void:
 	elif order == "resupply" or order == "loot":
 		order = ""
 
+var cover_slot := 0.0
+
+func _vehicle_cover_seek() -> bool:
+	var best: Vehicle = null
+	var bd := 11.0
+	for u in G.near(position, 11.0):
+		if u is Vehicle and (u.alive and u.team == team or u.wreck) and not u.is_air() and u.radius > 1.4:
+			var d := position.distance_to(u.position)
+			# aracın tehdide göre arkasında başka kimse çok yoksa
+			if d < bd:
+				bd = d
+				best = u
+	if best == null:
+		return false
+	var grid_c := G.grid.cover_factor(position, 1.0, threat_pos)
+	if grid_c > 0.6:
+		return false
+	cover_veh = best
+	cover_type = 3
+	cover_slot = randf_range(-1.0, 1.0) * best.radius * 0.5
+	var away := best.position - threat_pos
+	away.y = 0.0
+	cover_pos = G.grid.nearest_free(best.position + away.normalized() * (best.radius + 0.9) + Vector3(-away.z, 0, away.x).normalized() * cover_slot, Grid.M_INF, 4)
+	to_cover = true
+	_set_path(cover_pos)
+	state = "move"
+	if randf() < 0.2:
+		say("ARACIN ARKASINA!")
+	return true
+
 func _think_idle() -> void:
 	var recent := G.time - threat_time < 9.0
 	if order == "amove" and amove_dest != Vector3.INF and target == null and G.time - threat_time > 3.5 and G.time - last_hit > 3.0:
@@ -661,6 +695,10 @@ func _think_idle() -> void:
 		var prot := 0.0
 		if cover_type > 0:
 			prot = G.grid.cover_factor(position, 1.0, threat_pos)
+		if cover_type == 3:
+			prot = 1.0 if cover_veh != null and is_instance_valid(cover_veh) and (cover_veh.alive or cover_veh.wreck) else 0.0
+		if (cover_type == 0 or prot < 0.5) and _vehicle_cover_seek():
+			return
 		if cover_type == 0 or prot < 0.5:
 			var claimed: Array = squad.claimed(self) if squad else []
 			var c: Dictionary = G.grid.find_cover(dest, threat_pos, 6.5, claimed, position)
@@ -676,6 +714,17 @@ func _think_idle() -> void:
 					return
 			else:
 				cover_type = 0
+	if cover_type == 3 and cover_veh != null and is_instance_valid(cover_veh):
+		# araçla birlikte ilerle: siper noktası aracın tehdide göre arkası
+		var away := cover_veh.position - threat_pos
+		away.y = 0.0
+		var cp := cover_veh.position + away.normalized() * (cover_veh.radius + 0.9) + Vector3(-away.z, 0, away.x).normalized() * cover_slot
+		if cp.distance_to(cover_pos) > 1.0:
+			cover_pos = G.grid.nearest_free(cp, Grid.M_INF, 4)
+			if state == "idle":
+				_set_path(cover_pos)
+				state = "move"
+		return
 	if cover_type > 0 and position.distance_to(cover_pos) > 1.2 and state == "idle":
 		cover_type = 0
 	# hedefe yaklaş (saldırı emri)
@@ -1159,6 +1208,7 @@ func _combat(_dt: float) -> void:
 			popped = false
 			popup_t = randf_range(0.8, 2.0)
 		if not popped:
+			_blind_fire(t, false)
 			return
 	elif cover_type == 2 and state == "idle":
 		if lean == Vector3.ZERO:
@@ -1167,6 +1217,17 @@ func _combat(_dt: float) -> void:
 			lean = Vector3(-d.z, 0, d.x).normalized() * 0.55
 		popped = suppression < 85.0
 		if not popped:
+			_blind_fire(t, true)
+			return
+	elif cover_type == 3 and state == "idle" and cover_veh != null and is_instance_valid(cover_veh):
+		# araç arkası: yandan uzanıp ateş et, ağır ateşte kör ateş
+		if lean == Vector3.ZERO:
+			var d2 := (t.position - position)
+			d2.y = 0
+			lean = Vector3(-d2.z, 0, d2.x).normalized() * 0.6
+		popped = suppression < 75.0
+		if not popped:
+			_blind_fire(t, true)
 			return
 	else:
 		popped = true
@@ -1186,6 +1247,22 @@ func _combat(_dt: float) -> void:
 		rof *= 4.0
 	fire_cd = rof if burst_left > 0 else randf_range(W["p0"], W["p1"]) * (0.7 if covering else 1.0)
 	fire_cd *= [1.0, 1.35, 2.0][stress_lv]
+
+func _blind_fire(t: Unit, side: bool) -> void:
+	if fire_cd > 0.0 or stress_lv == 2 or ammo <= 0 or role in ["at", "atgm", "mortar", "sniper", "medic"]:
+		return
+	if suppression < 45.0 and not side:
+		return
+	blind_t = 0.6
+	blind_side = side
+	var W := weapon()
+	if burst_left <= 0:
+		burst_left = randi_range(W["b0"], W["b1"] + 2)
+	_shoot(t)
+	burst_left -= 1
+	fire_cd = (W["rof"] if burst_left > 0 else randf_range(W["p0"], W["p1"]) * 1.3)
+	if randf() < 0.03:
+		say(["KÖR ATEŞ!", "KAFANI KALDIRMA!", "ÖRTÜ ATEŞİ!"][randi() % 3])
 
 func _mortar_fire() -> void:
 	if mortar_cd > 0.0 or mortar_rounds <= 0:
@@ -1308,7 +1385,7 @@ func _hit_chance(t: Unit, d: float) -> float:
 		c *= [1.0, 0.72, 0.45][t.stance]
 		if t.vel.length() > 1.5:
 			c *= 0.75
-		var cov := G.grid.cover_factor(t.position, t.torso_h(), position)
+		var cov := maxf(G.grid.cover_factor(t.position, t.torso_h(), position), t.vehicle_cover(position))
 		c *= 1.0 - cov * 0.78
 	else:
 		c = clampf(c * 2.0, 0.0, 0.95)
@@ -1316,10 +1393,24 @@ func _hit_chance(t: Unit, d: float) -> float:
 		c *= 0.5
 	c *= 1.0 - suppression / 170.0
 	c *= [1.0, 0.78, 0.5][stress_lv]
+	if blind_t > 0.0:
+		c *= 0.28
 	if cold > 50.0:
 		c *= 0.8
 	c *= 1.0 + accuracy_bonus
 	return clampf(c, 0.02, 0.95)
+
+# araç arkası siper: atıcı ile aramızda bir araç varsa koruma
+func vehicle_cover(from: Vector3) -> float:
+	if cover_veh == null or not is_instance_valid(cover_veh) or not cover_veh.alive and not cover_veh.wreck:
+		return 0.0
+	var a := from - position
+	a.y = 0
+	var b := cover_veh.position - position
+	b.y = 0
+	if b.length() > cover_veh.radius + 2.2 or a.length() < 0.1:
+		return 0.0
+	return 0.85 if a.normalized().dot(b.normalized()) > 0.55 else 0.0
 
 func add_stress(v: float) -> void:
 	if not alive or incapacitated() or state in ["prisoner", "surrender", "hospital", "aboard"]:
@@ -1724,6 +1815,8 @@ func _pose() -> String:
 			return "build"
 		"surrender":
 			return "surrender"
+	if blind_t > 0.0 and state == "idle":
+		return "blind_side" if blind_side else "blind"
 	var aiming := target != null and is_instance_valid(target) and (popped or burst_left > 0) and can_fight()
 	match stance:
 		STAND:

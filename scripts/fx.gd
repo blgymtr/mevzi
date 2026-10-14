@@ -347,9 +347,18 @@ func impact(p: Vector3, kind := "dirt") -> void:
 		"blood":
 			emit(P_SMOKE, p, Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(0.3, 0.8), rng.randf_range(-0.4, 0.4)), 0.35, 0.15, 0.4, 3.0, 2.0, Color(0.45, 0.06, 0.04, 0.7))
 
-func rocket_trail(p: Vector3) -> void:
-	emit(P_SMOKE, p, _rv(0.25), rng.randf_range(1.5, 2.6), 0.25, 1.4, -0.15, 1.0, Color(0.86, 0.85, 0.83, 0.55))
-	emit(P_FIRE, p, Vector3.ZERO, 0.05, 0.25, 0.15, 0.0, 1.0, Color(1.4, 1.1, 0.7, 1))
+func rocket_trail(p: Vector3, dir := Vector3.ZERO) -> void:
+	# ince, uzun duman izi + motor alevi (parlak çekirdek, turuncu kuyruk)
+	emit(P_SMOKE, p, _rv(0.15), rng.randf_range(1.8, 3.0), 0.12, 0.9, -0.1, 1.2, Color(0.88, 0.87, 0.85, 0.5))
+	emit(P_FIRE, p, -dir * 4.0, 0.08, 0.32, 0.08, 0.0, 1.0, Color(2.2, 1.6, 0.9, 1))
+	emit(P_FIRE, p - dir * 0.3, -dir * 6.0 + _rv(0.6), 0.12, 0.22, 0.05, 0.0, 1.0, Color(1.8, 0.7, 0.15, 1))
+
+func backblast(p: Vector3, dir: Vector3) -> void:
+	flash(p, 5.0, 6.0, 0.07, Color(1.0, 0.7, 0.35))
+	for i in 10:
+		emit(P_SMOKE, p, -dir * rng.randf_range(4.0, 9.0) + _rv(1.5), rng.randf_range(1.2, 2.2), 0.4, 2.0, -0.1, 2.5, Color(0.82, 0.8, 0.76, 0.55))
+	for i in 5:
+		emit(P_FIRE, p, -dir * rng.randf_range(6.0, 10.0) + _rv(1.0), 0.15, 0.5, 0.2, 0.0, 2.0, Color(1.8, 0.9, 0.3, 1))
 
 func exhaust(p: Vector3, strength := 1.0) -> void:
 	var g := 0.3

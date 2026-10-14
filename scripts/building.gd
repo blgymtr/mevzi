@@ -18,7 +18,7 @@ const BDEF := {
 	"trap": {"title": "Tank Tuzağı", "hp": 100.0, "size": Vector2(2, 2), "cost": 30, "time": 6.0, "cap": 0, "sight": 10.0, "prod": [], "desc": "Araçları durdurur."},
 }
 
-const PDEF := {
+static var PDEF := {
 	"rifle_squad": {"title": "Tüfek Timi", "cost": 180, "time": 14.0, "cap": 6, "units": ["leader", "rifle", "rifle", "mg", "rifle", "medic"], "icon": "inf"},
 	"mg_team": {"title": "Makineli Tim", "cost": 150, "time": 12.0, "cap": 3, "units": ["mg", "mg", "rifle"], "icon": "mg"},
 	"at_squad": {"title": "Tanksavar Timi", "cost": 220, "time": 16.0, "cap": 4, "units": ["at", "at", "at", "rifle"], "icon": "at"},
@@ -92,6 +92,28 @@ func setup(t: int, bt: String, r := 0.0) -> void:
 	rally = position + Vector3(0, 0, size.y * 0.5 + 5.0).rotated(Vector3.UP, rot)
 	_build_model()
 	_apply_construct_look()
+
+# katalog birimlerini üretim tablosuna ekle (fabrika: kara, pist: hava)
+static func add_catalog() -> void:
+	for id in Catalog.units:
+		var u: Dictionary = Catalog.units[id]
+		var base: String = Catalog.FAM_BASE.get(u["fam"], "")
+		if base == "" or PDEF.has(id):
+			continue
+		var air := base in ["heli", "transport", "uav", "uav_armed", "loiter"]
+		var cost := float(u.get("cost", 200))
+		PDEF[id] = {"title": u["name"], "cost": int(cost), "time": clampf(cost / 22.0, 8.0, 45.0),
+			"cap": 1 if base in ["loiter", "fpv"] else (2 if base in ["technical", "uav", "truck"] else (4 if base in ["tank", "arty", "mlrs", "heli"] else 3)),
+			"vehicle": id, "icon": Vehicle.DEF.get(base, {}).get("icon", "tank"), "nation": u["nation"], "cat": u["cat"],
+			"producer": "helipad" if air else "factory"}
+
+func can_produce(id: String) -> bool:
+	if B["prod"].has(id):
+		return true
+	var P: Dictionary = PDEF.get(id, {})
+	if not P.has("producer") or P["producer"] != btype:
+		return false
+	return team >= 0 and team < G.nation.size() and P["nation"] == G.nation[team]
 
 func is_base() -> bool:
 	return btype == "hq" or btype == "fob"
@@ -636,6 +658,8 @@ func _production(dt: float) -> void:
 
 func enqueue(id: String) -> bool:
 	var P: Dictionary = PDEF[id]
+	if not can_produce(id):
+		return false
 	if not done or queue.size() >= 6 or G.supply[team] < P["cost"]:
 		return false
 	G.supply[team] -= P["cost"]
@@ -653,7 +677,8 @@ func _spawn(id: String) -> void:
 	var door := position + Vector3(0, 0, size.y * 0.5 + 2.0).rotated(Vector3.UP, rot)
 	door = G.grid.nearest_free(door, Grid.M_INF)
 	if P.has("vehicle"):
-		var sp := position if P["vehicle"] in ["heli", "transport"] else G.grid.nearest_free(door + Vector3(0, 0, 2).rotated(Vector3.UP, rot), Grid.M_HEAVY)
+		var vbase: String = Catalog.base(P["vehicle"]) if Catalog.has(P["vehicle"]) else P["vehicle"]
+		var sp := position if vbase in ["heli", "transport", "uav", "uav_armed", "loiter"] else G.grid.nearest_free(door + Vector3(0, 0, 2).rotated(Vector3.UP, rot), Grid.M_HEAVY)
 		var v: Vehicle = G.main.spawn_vehicle(team, P["vehicle"], sp, rot + PI)
 		v.cmd_move(rally)
 		if team == G.player_team and not G.spectate:

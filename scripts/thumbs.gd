@@ -19,7 +19,7 @@ func get_thumb(id: String, team: int) -> Texture2D:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.5, 0.4, 0.28) if G.map_kind == "desert" else (Color(0.5, 0.53, 0.57) if G.map_kind == "winter" else Color(0.33, 0.36, 0.24))
+	env.background_color = Color(0.2, 0.19, 0.16) if G.map_kind == "desert" else (Color(0.24, 0.26, 0.28) if G.map_kind == "winter" else Color(0.16, 0.18, 0.14))
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.8, 0.75, 0.68)
 	env.ambient_light_energy = 0.45
@@ -126,7 +126,7 @@ func _model(id: String, team: int) -> Node3D:
 
 func _vehicle_model(vt: String, team: int) -> Node3D:
 	var root := Node3D.new()
-	var M := Art.vehicle(vt, team)
+	var M := Art.vehicle_model(vt, team) if Catalog.has(vt) and Art.has(vt) else Art.vehicle(Catalog.base(vt) if Catalog.has(vt) else vt, team)
 	if M.is_empty():
 		return root
 	for hm in M["hulls"]:

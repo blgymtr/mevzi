@@ -48,11 +48,11 @@ bm.to_mesh(me)
 body = bpy.data.objects.new("body", me)
 bpy.context.collection.objects.link(body)
 sk = body.modifiers.new("skin", 'SKIN')
-R = {"hip": (0.16, 0.115), "waist": (0.148, 0.1), "chest": (0.172, 0.112), "upper": (0.176, 0.105), "neck": (0.058, 0.058), "head": (0.082, 0.092)}
+R = {"hip": (0.175, 0.128), "waist": (0.162, 0.112), "chest": (0.19, 0.125), "upper": (0.194, 0.118), "neck": (0.064, 0.064), "head": (0.082, 0.092)}
 for n in "rl":
     # bol kesim pantolon/kol (referanstaki gibi kalın uzuvlar)
-    R.update({"sh" + n: (0.07, 0.072), "sa" + n: (0.072, 0.074), "el" + n: (0.058, 0.06), "wr" + n: (0.046, 0.046),
-              "hp" + n: (0.11, 0.115), "th" + n: (0.105, 0.11), "kn" + n: (0.082, 0.085), "cf" + n: (0.08, 0.084), "an" + n: (0.072, 0.074)})
+    R.update({"sh" + n: (0.084, 0.086), "sa" + n: (0.086, 0.088), "el" + n: (0.07, 0.072), "wr" + n: (0.054, 0.054),
+              "hp" + n: (0.132, 0.138), "th" + n: (0.13, 0.135), "kn" + n: (0.1, 0.104), "cf" + n: (0.098, 0.102), "an" + n: (0.084, 0.086)})
 sv = me.skin_vertices[0].data
 for name, vert in V.items():
     sv[vert.index].radius = R[name]
@@ -172,19 +172,19 @@ G.append(cyl((0, 0, 1.5), 0.072, 0.06, "dark", seg=10, r2=0.062))
 
 # ---------------- plaka taşıyıcı
 vest_w = 0.36 if USA else 0.38
-G.append(skin_tube([(0, 0, 1.06), (0, 0.008, 1.24), (0, 0.004, 1.4)], [(0.19, 0.14), (0.198, 0.146), (0.18, 0.12)], "vest", sub=0))
-G.append(box((0, 0.135, 1.27), (vest_w * 0.82, 0.04, 0.3), "vest", bev=0.012))        # ön plaka
-G.append(box((0, -0.135, 1.27), (vest_w * 0.82, 0.04, 0.32), "pack", bev=0.012))      # arka panel
+G.append(skin_tube([(0, 0, 1.06), (0, 0.008, 1.24), (0, 0.004, 1.4)], [(0.208, 0.155), (0.216, 0.16), (0.198, 0.134)], "vest", sub=0))
+G.append(box((0, 0.15, 1.27), (vest_w * 0.88, 0.04, 0.3), "vest", bev=0.012))        # ön plaka
+G.append(box((0, -0.15, 1.27), (vest_w * 0.88, 0.04, 0.32), "pack", bev=0.012))      # arka panel
 # omuz askıları (çakal)
 for s in (-1, 1):
     G.append(box((s * 0.115, 0.0, 1.43), (0.06, 0.3, 0.025), "pack", bev=0.006))
     G.append(box((s * 0.12, 0.11, 1.33), (0.05, 0.02, 0.18), "pack"))
 # alt sıra şarjör cepleri (3 uzun) + üst idari cepler (2)
 for x in (-0.1, 0.0, 0.1):
-    G.append(box((x, 0.168, 1.155), (0.07, 0.045, 0.12), "vest", bev=0.008))
-    G.append(box((x, 0.192, 1.205), (0.072, 0.012, 0.03), "dark"))                     # kapak
+    G.append(box((x, 0.183, 1.155), (0.07, 0.045, 0.12), "vest", bev=0.008))
+    G.append(box((x, 0.207, 1.205), (0.072, 0.012, 0.03), "dark"))                     # kapak
 for x in (-0.07, 0.07):
-    G.append(box((x, 0.165, 1.33), (0.08, 0.035, 0.07), "vest", bev=0.008))
+    G.append(box((x, 0.18, 1.33), (0.08, 0.035, 0.07), "vest", bev=0.008))
 G.append(box((0.1, 0.162, 1.42), (0.03, 0.025, 0.07), "dark", bev=0.005))              # telsiz
 if not USA:
     # Ratnik: yaka koruması ve omuz pedi
@@ -192,7 +192,7 @@ if not USA:
     t = bpy.context.active_object; t.data.materials.append(mat("vest")); G.append(t)
 
 # ---------------- sırt çantası (çakal) + alt cep + yan cep
-G.append(box((0, -0.245, 1.24), (0.29, 0.15, 0.34), "pack", bev=0.02))
+G.append(box((0, -0.26, 1.24), (0.3, 0.15, 0.34), "pack", bev=0.02))
 G.append(box((0, -0.255, 1.4), (0.27, 0.13, 0.05), "pack", bev=0.01))               # kapak
 G.append(box((0, -0.27, 1.05), (0.25, 0.12, 0.13), "pack", bev=0.015))              # alt cep
 G.append(box((0, -0.325, 1.27), (0.16, 0.03, 0.14), "pack", bev=0.01))              # ön cep
@@ -201,18 +201,18 @@ for s in (-1, 1):
     G.append(box((s * 0.07, -0.324, 1.25), (0.02, 0.01, 0.34), "dark"))             # kayışlar
 
 # ---------------- kemer
-GEAR["pelvis"].append(skin_tube([(0, 0, 0.95), (0, 0, 1.0)], [(0.165, 0.118), (0.165, 0.118)], "dark", sub=0))
-GEAR["pelvis"].append(box((0, 0.122, 0.975), (0.05, 0.012, 0.035), "gun"))           # toka
+GEAR["pelvis"].append(skin_tube([(0, 0, 0.95), (0, 0, 1.0)], [(0.18, 0.13), (0.18, 0.13)], "dark", sub=0))
+GEAR["pelvis"].append(box((0, 0.134, 0.975), (0.05, 0.012, 0.035), "gun"))           # toka
 GEAR["pelvis"].append(box((0.16, -0.03, 0.95), (0.04, 0.06, 0.08), "pack", bev=0.01))  # bel cebi
 GEAR["pelvis"].append(box((-0.16, 0.02, 0.95), (0.035, 0.05, 0.07), "vest", bev=0.01))
 
 # ---------------- kollar: omuz cebi + bayrak, dirseklik, bileklik, parmaksız eldiven
 for s, n in ((-1, "r"), (1, "l")):
     rot = (0, -s * A, 0)
-    GEAR["arm_" + n].append(box(armpt(s, 0.12, 0.0, 0.07), (0.016, 0.075, 0.09), "pack", rot=rot, bev=0.005))
-    GEAR["arm_" + n].append(box(armpt(s, 0.1, 0.0, 0.075), (0.008, 0.055, 0.035), "team", rot=rot))
-    GEAR["fore_" + n].append(box(armpt(s, UA + 0.02, -0.045, 0.0), (0.085, 0.04, 0.085), "dark", rot=rot, bev=0.012))   # dirseklik (arka)
-    GEAR["fore_" + n].append(ring(armpt(s, UA + FA - 0.03), 0.05, 0.05, 0.03, "dark", seg=8))
+    GEAR["arm_" + n].append(box(armpt(s, 0.12, 0.0, 0.086), (0.016, 0.075, 0.09), "pack", rot=rot, bev=0.005))
+    GEAR["arm_" + n].append(box(armpt(s, 0.1, 0.0, 0.092), (0.008, 0.055, 0.035), "team", rot=rot))
+    GEAR["fore_" + n].append(box(armpt(s, UA + 0.02, -0.055, 0.0), (0.1, 0.045, 0.1), "dark", rot=rot, bev=0.012))   # dirseklik (arka)
+    GEAR["fore_" + n].append(ring(armpt(s, UA + FA - 0.03), 0.058, 0.058, 0.03, "dark", seg=8))
     # el: avuç (eldiven) + parmak ucu (ten)
     GEAR["fore_" + n].append(box(armpt(s, UA + FA + 0.045, 0.0, 0.0), (0.062, 0.035, 0.075), "glove", rot=rot, bev=0.008))
     GEAR["fore_" + n].append(box(armpt(s, UA + FA + 0.105, 0.005, 0.0), (0.056, 0.03, 0.05), "skin", rot=rot, bev=0.006))
@@ -221,16 +221,16 @@ for s, n in ((-1, "r"), (1, "l")):
 # ---------------- bacaklar: kargo cebi, dizlik + kayış, paça kayışı, bot
 for s, n in ((-1, "r"), (1, "l")):
     x = s * 0.1
-    GEAR["leg_" + n].append(box((x + s * 0.09, 0.03, 0.7), (0.04, 0.11, 0.15), "uniform", bev=0.01))
-    GEAR["leg_" + n].append(box((x + s * 0.112, 0.03, 0.765), (0.006, 0.11, 0.025), "dark"))
-    GEAR["knee_" + n].append(box((x, 0.072, 0.47), (0.11, 0.05, 0.12), "dark", bev=0.015))
-    GEAR["knee_" + n].append(ring((x, 0.0, 0.47), 0.088, 0.088, 0.025, "dark", seg=10))
-    GEAR["knee_" + n].append(ring((x, 0.0, 0.25), 0.083, 0.086, 0.02, "dark", seg=10))
+    GEAR["leg_" + n].append(box((x + s * 0.115, 0.03, 0.7), (0.045, 0.12, 0.16), "uniform", bev=0.01))
+    GEAR["leg_" + n].append(box((x + s * 0.14, 0.03, 0.775), (0.006, 0.12, 0.025), "dark"))
+    GEAR["knee_" + n].append(box((x, 0.09, 0.47), (0.12, 0.05, 0.13), "dark", bev=0.015))
+    GEAR["knee_" + n].append(ring((x, 0.0, 0.47), 0.105, 0.108, 0.025, "dark", seg=10))
+    GEAR["knee_" + n].append(ring((x, 0.0, 0.25), 0.1, 0.104, 0.02, "dark", seg=10))
     # bot: konç + gövde + burun + taban
-    GEAR["knee_" + n].append(cyl((x, 0.0, 0.16), 0.074, 0.12, "boot", seg=10, r2=0.07))
-    GEAR["knee_" + n].append(box((x, 0.045, 0.06), (0.12, 0.2, 0.09), "boot", bev=0.02))
-    GEAR["knee_" + n].append(box((x, 0.12, 0.045), (0.11, 0.07, 0.06), "boot", bev=0.02))
-    GEAR["knee_" + n].append(box((x, 0.05, 0.008), (0.125, 0.25, 0.022), "dark", bev=0.004))
+    GEAR["knee_" + n].append(cyl((x, 0.0, 0.16), 0.088, 0.12, "boot", seg=10, r2=0.084))
+    GEAR["knee_" + n].append(box((x, 0.045, 0.06), (0.14, 0.22, 0.1), "boot", bev=0.02))
+    GEAR["knee_" + n].append(box((x, 0.13, 0.045), (0.13, 0.08, 0.065), "boot", bev=0.02))
+    GEAR["knee_" + n].append(box((x, 0.055, 0.008), (0.145, 0.27, 0.022), "dark", bev=0.004))
     GEAR["knee_" + n].append(box((x, 0.02, 0.13), (0.08, 0.1, 0.012), "dark"))     # bağcık bandı
 
 # teçhizatı uygula, gövdeye kat, kemiğine tam ağırlık

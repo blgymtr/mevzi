@@ -830,26 +830,45 @@ func _build_prod() -> void:
 		b.set_meta("tab", key)
 		b.pressed.connect(func(): set_tab(key))
 		tabs.add_child(b)
+	var sc := ScrollContainer.new()
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	v.add_child(sc)
 	cards = GridContainer.new()
 	cards.columns = 4
 	cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cards.add_theme_constant_override("h_separation", 5)
-	cards.add_theme_constant_override("v_separation", 5)
-	v.add_child(cards)
+	cards.add_theme_constant_override("h_separation", 4)
+	cards.add_theme_constant_override("v_separation", 4)
+	sc.add_child(cards)
 
 func set_tab(t: String) -> void:
 	tab = t
 	_tab_sig = ""
 	Sfx.play2d("ui_click", -10.0)
 
+const TAB_CATS := {"armor": ["tank", "ifv", "apc", "td", "mrap", "light", "eng"], "art": ["spg", "towed", "mlrs", "mortar", "aa", "coastal"], "air": ["heli_atk", "heli_tr", "uav", "loiter"]}
+
 func _tab_items() -> Array:
+	Catalog.load_all()
+	if TAB_CATS.has(tab):
+		var nat: String = G.nation[G.player_team] if G.player_team < G.nation.size() else "usa"
+		var out: Array = []
+		for c in TAB_CATS[tab]:
+			for e in Catalog.order:
+				if e[0] == nat and e[1] == c and Building.PDEF.has(e[2]):
+					out.append(e[2])
+		if not out.is_empty():
+			if tab == "art":
+				out.append_array(["fieldgun", "hmortar"])
+			return out
 	match tab:
 		"base":
 			return ["fob", "barracks", "factory", "helipad", "hospital"]
 		"def":
 			return ["sandbags", "concrete", "trench", "wire", "trap", "mgnest", "tower", "coastal"]
 		"inf":
-			return ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"]
+			return ["rifle_squad", "mg_team", "at_squad", "atgm_team", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"]
 		"armor":
 			return ["technical", "apc", "ifv", "aa", "tank"]
 		"art":
@@ -864,7 +883,7 @@ func _producer(id: String) -> Building:
 	for u in G.units:
 		if not is_instance_valid(u) or not (u is Building) or u.team != G.player_team or not u.alive or not u.done:
 			continue
-		if not u.B["prod"].has(id):
+		if not u.can_produce(id):
 			continue
 		var sel: bool = G.player.selected.has(u)
 		var q: int = u.queue.size() - (10 if sel else 0)
@@ -885,7 +904,17 @@ func _card(id: String) -> Control:
 	var is_b: bool = Building.BDEF.has(id)
 	var D: Dictionary = Building.BDEF[id] if is_b else Building.PDEF[id]
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(102, 70)
+	btn.custom_minimum_size = Vector2(100, 74)
+	var cs := StyleBoxFlat.new()
+	cs.bg_color = Color(0.09, 0.1, 0.09, 0.95)
+	cs.border_color = Color(1, 1, 1, 0.08)
+	cs.set_border_width_all(1)
+	cs.set_corner_radius_all(3)
+	btn.add_theme_stylebox_override("normal", cs)
+	var ch := cs.duplicate()
+	ch.border_color = Color(0.95, 0.75, 0.3, 0.8)
+	btn.add_theme_stylebox_override("hover", ch)
+	btn.add_theme_stylebox_override("pressed", ch)
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.clip_contents = true
 	btn.focus_mode = Control.FOCUS_NONE
@@ -901,7 +930,7 @@ func _card(id: String) -> Control:
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(tr)
 	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.62)
+	shade.color = Color(0, 0, 0, 0.72)
 	shade.anchor_top = 1.0
 	shade.anchor_bottom = 1.0
 	shade.anchor_right = 1.0
@@ -916,7 +945,8 @@ func _card(id: String) -> Control:
 	nm.text = I18n.s(D["title"]).to_upper()
 	nm.clip_text = true
 	nm.add_theme_font_override("font", font_b)
-	nm.add_theme_font_size_override("font_size", 12)
+	nm.add_theme_font_size_override("font_size", 11)
+	nm.add_theme_color_override("font_color", Color(0.93, 0.92, 0.86))
 	nm.anchor_top = 1.0
 	nm.anchor_bottom = 1.0
 	nm.anchor_right = 1.0
@@ -1865,23 +1895,48 @@ class Overlay extends Control:
 class Radar extends Control:
 	var hud: Hud
 	var R := 100.0
+	var tex: ImageTexture = null
+	var tex_for := 0
 
-	func _center() -> Vector2:
-		R = minf(size.x, size.y) * 0.5 - 4.0
-		return size * 0.5
+	func _rect() -> Rect2:
+		var s := minf(size.x, size.y) - 8.0
+		return Rect2((size - Vector2(s, s)) * 0.5, Vector2(s, s))
 
 	func w2r(p: Vector3) -> Vector2:
-		var rx := p.x - G.MAP * 0.5
-		var rz := p.z - G.MAP * 0.5
-		var k := R / (G.MAP * 0.5 * sqrt(2.0))
-		return _center() + Vector2((rx - rz) / sqrt(2.0), (rx + rz) / sqrt(2.0)) * k
+		var r := _rect()
+		return r.position + Vector2(p.x / G.MAP, p.z / G.MAP) * r.size
 
 	func r2w(s: Vector2) -> Vector3:
-		var k := R / (G.MAP * 0.5 * sqrt(2.0))
-		var d := (s - _center()) / k
-		var rx := (d.x + d.y) / sqrt(2.0)
-		var rz := (d.y - d.x) / sqrt(2.0)
-		return Vector3(clampf(rx + G.MAP * 0.5, 0, G.MAP), 0, clampf(rz + G.MAP * 0.5, 0, G.MAP))
+		var r := _rect()
+		var k := (s - r.position) / r.size
+		return Vector3(clampf(k.x, 0, 1) * G.MAP, 0, clampf(k.y, 0, 1) * G.MAP)
+
+	# arazi görüntüsü: zemin tonu + tepe gölgesi, su, ağaçlık, yapılar, yollar
+	func _build_tex() -> void:
+		var n := 192
+		var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+		var base := Color(0.62, 0.53, 0.36) if G.map_kind == "desert" else (Color(0.78, 0.8, 0.82) if G.map_kind == "winter" else Color(0.34, 0.39, 0.24))
+		var cs := G.MAP / n
+		for z in n:
+			for x in n:
+				var p := Vector3((x + 0.5) * cs, 0, (z + 0.5) * cs)
+				var col := base
+				var h0 := G.terrain.ground_h(p)
+				var hx := G.terrain.ground_h(p + Vector3(cs, 0, 0))
+				var hz := G.terrain.ground_h(p + Vector3(0, 0, cs))
+				col = col.lightened(clampf((h0 - hx + h0 - hz) * 1.6, -0.3, 0.3)) if (h0 - hx + h0 - hz) > 0 else col.darkened(clampf(-(h0 - hx + h0 - hz) * 1.6, 0.0, 0.3))
+				var gi := G.grid.idx(p)
+				if G.grid.water[gi] >= 1 and G.grid.bridge[gi] == 0:
+					col = Color(0.12, 0.22, 0.28)
+				elif G.grid.kind[gi] == Grid.K_TREE:
+					col = col.darkened(0.35).lerp(Color(0.1, 0.18, 0.08), 0.4)
+				elif G.grid.h[gi] >= 0.3:
+					col = Color(0.58, 0.55, 0.5)
+				elif G.grid.h[gi] > 0.05:
+					col = col.lightened(0.15)
+				img.set_pixel(x, z, col)
+		tex = ImageTexture.create_from_image(img)
+		tex_for = G.terrain.get_instance_id()
 
 	func _gui_input(e: InputEvent) -> void:
 		if e is InputEventMouseButton:
@@ -1905,16 +1960,22 @@ class Radar extends Control:
 			return
 		var f: Font = hud.font
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.035, 0.034, 0.9))
-		var dia := PackedVector2Array([w2r(Vector3(0, 0, 0)), w2r(Vector3(G.MAP, 0, 0)), w2r(Vector3(G.MAP, 0, G.MAP)), w2r(Vector3(0, 0, G.MAP))])
-		var gcol := Color(0.27, 0.24, 0.17) if G.map_kind == "desert" else (Color(0.36, 0.38, 0.4) if G.map_kind == "winter" else Color(0.19, 0.23, 0.15))
-		draw_colored_polygon(dia, gcol)
-		for i in range(1, 8):
-			var t := G.MAP * i / 8.0
-			draw_line(w2r(Vector3(t, 0, 0)), w2r(Vector3(t, 0, G.MAP)), Color(1, 1, 1, 0.05), 1.0)
-			draw_line(w2r(Vector3(0, 0, t)), w2r(Vector3(G.MAP, 0, t)), Color(1, 1, 1, 0.05), 1.0)
-		var dl := dia.duplicate()
-		dl.append(dia[0])
-		draw_polyline(dl, Color(1, 1, 1, 0.18), 1.0)
+		if G.terrain and (tex == null or tex_for != G.terrain.get_instance_id()):
+			_build_tex()
+		var rr := _rect()
+		if tex:
+			draw_texture_rect(tex, rr, false, Color(0.92, 0.92, 0.92))
+		for i in range(1, 4):
+			var t := G.MAP * i / 4.0
+			draw_line(w2r(Vector3(t, 0, 0)), w2r(Vector3(t, 0, G.MAP)), Color(0, 0, 0, 0.18), 1.0)
+			draw_line(w2r(Vector3(0, 0, t)), w2r(Vector3(G.MAP, 0, t)), Color(0, 0, 0, 0.18), 1.0)
+		draw_rect(rr, Color(1, 1, 1, 0.25), false, 1.0)
+		# hedef bölgeler
+		if G.modes != null and is_instance_valid(G.modes):
+			for z in G.modes.zones:
+				var zc: Color = G.TEAM_COL[z["owner"]] if z["owner"] >= 0 else Color(0.9, 0.9, 0.85)
+				draw_arc(w2r(z["p"]), 6.0, 0, TAU, 16, zc, 1.5)
+				draw_string(hud.font_b, w2r(z["p"]) + Vector2(-4, 4), z["name"], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, zc)
 		# yollar
 		if G.logi:
 			for t in 2:
@@ -1937,9 +1998,13 @@ class Radar extends Control:
 				if u.is_base():
 					draw_rect(Rect2(p - Vector2(s, s), Vector2(s, s) * 2.0), col, false, 1.0)
 			elif u is Vehicle:
-				draw_colored_polygon(PackedVector2Array([p + Vector2(0, -3.5), p + Vector2(3.5, 0), p + Vector2(0, 3.5), p + Vector2(-3.5, 0)]), col.lightened(0.15))
+				if u.is_air():
+					draw_colored_polygon(PackedVector2Array([p + Vector2(0, -4), p + Vector2(3.5, 3), p + Vector2(-3.5, 3)]), col.lightened(0.2))
+				else:
+					draw_rect(Rect2(p - Vector2(2.6, 2.6), Vector2(5.2, 5.2)), Color(0, 0, 0, 0.7))
+					draw_rect(Rect2(p - Vector2(2, 2), Vector2(4, 4)), col.lightened(0.15))
 			else:
-				draw_rect(Rect2(p - Vector2(1.1, 1.1), Vector2(2.2, 2.2)), col)
+				draw_circle(p, 1.6, col.lightened(0.1))
 		# kamera görüş alanı
 		var vp := get_viewport_rect().size
 		var q := PackedVector2Array()

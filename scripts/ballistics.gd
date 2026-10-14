@@ -63,8 +63,9 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -
 	var L := d.length()
 	var err := L * 0.035
 	p.aim = to + Vector3(randf_range(-err, err), randf_range(-0.25, 0.25), randf_range(-err, err))
-	p.vel = (p.aim - from).normalized() * 48.0
-	p.life = 70.0 / 48.0
+	p.vel = (p.aim - from).normalized() * 78.0
+	p.life = 80.0 / 78.0
+	G.fx.backblast(from, p.vel.normalized())
 	if guided:
 		p.aim = to
 		var up := Vector3(0, 0.6 if kind == "topatk" else 0.05, 0)
@@ -238,15 +239,16 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 	var np := p.pos + (p.vel + wob) * dt
 	p.trail -= dt
 	if p.trail <= 0.0:
-		p.trail = 0.025
-		G.fx.rocket_trail(p.pos)
+		p.trail = 0.012
+		G.fx.rocket_trail(p.pos, p.vel.normalized())
 	var tgt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
 	if tgt != null and tgt.alive and not (tgt is Soldier):
 		if np.distance_to(tgt.aim_point()) < tgt.radius * (1.1 if p.kind in ["atgm", "topatk"] else 0.85):
 			if tgt is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
 			tgt.take_damage(330.0 if p.kind == "topatk" else (310.0 if p.kind == "atgm" else 270.0), p.src, p.kind)
-			G.fx.explosion(np, 1.1, "rpg")
-			Sfx.play3d("expl_med", np, 2.0)
+			G.fx.explosion(np, 1.3, "rpg")
+			G.fx.flash(np, 9.0, 9.0, 0.12, Color(1.0, 0.75, 0.4))
+			Sfx.play3d("expl_med", np, 3.0)
 			G.fx.impact(np, "metal")
 			for s in G.near(np, 4.0):
 				if s is Soldier and s.alive:

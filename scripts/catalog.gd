@@ -56,6 +56,7 @@ static func load_all() -> void:
 			u["nation"] = nat
 			units[u["id"]] = u
 			order.append([nat, u["cat"], u["id"]])
+	Building.add_catalog()
 
 static func has(id: String) -> bool:
 	load_all()

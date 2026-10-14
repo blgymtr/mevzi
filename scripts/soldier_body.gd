@@ -404,6 +404,31 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["alx"] = 1.4
 			T["flx"] = 1.1
 			wpn = 2
+		"blind", "blind_side":
+			# kör ateş: çömelik, silah başın üstünden (duvar) veya yandan (köşe) uzatılmış
+			T["py"] = 0.58
+			T["lrx"] = 1.45
+			T["krx"] = -1.5
+			T["llx"] = -0.05
+			T["klx"] = -1.62
+			T["srx"] = 0.35
+			if pose == "blind":
+				T["arx"] = 2.55
+				T["arz"] = 0.15
+				T["frx"] = 0.35
+				T["alx"] = 2.45
+				T["alz"] = -0.2
+				T["flx"] = 0.35
+				wpn = 8
+			else:
+				T["sry"] = 0.5
+				T["arx"] = 1.5
+				T["arz"] = 0.9
+				T["frx"] = 0.1
+				T["alx"] = 1.4
+				T["alz"] = 0.4
+				T["flx"] = 0.2
+				wpn = 9
 		"crouch", "crouch_aim":
 			T["py"] = 0.6
 			T["prx"] = 0.0
@@ -577,6 +602,10 @@ func _weapon_xf(w: int) -> Transform3D:
 			return Transform3D(Basis(Vector3.UP, 1.2) * Basis(Vector3.RIGHT, PI * 0.5), Vector3(0.5, 0.25, 0.3))
 		7:
 			return Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(-0.1, 0.3, 0.15))
+		8:
+			return Transform3D(Basis(Vector3.RIGHT, 0.15), Vector3(-0.05, 0.98, -0.3))
+		9:
+			return Transform3D(Basis(Vector3.UP, 0.6), Vector3(-0.55, 0.5, -0.35))
 	return Transform3D()
 
 func muzzle_pos() -> Vector3:

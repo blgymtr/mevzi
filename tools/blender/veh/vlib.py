@@ -63,7 +63,7 @@ def box(loc, size, mname="paint", rot=(0, 0, 0), bev=0.02):
     o.scale = (size[0] / 2, size[1] / 2, size[2] / 2)
     # sert yüzey: ince, tek kademeli pah (yuvarlak hap görünümü yok)
     m = min(size)
-    bev = min(bev, 0.015, m * 0.2) if bev > 0 else 0.0
+    bev = min(bev, 0.008, m * 0.15) if bev > 0 else 0.0
     return _fin(o, mname, bev)
 
 def cyl(loc, r, depth, mname="metal", axis="Z", seg=16, r2=None, bev=0.0, rot=None):
@@ -353,11 +353,12 @@ def export(path_glb, pivots, meta):
         bpy.context.scene.cursor.location = pivots.get(name, (0, 0, 0))
         bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
         # pahlar yumuşak, düz yüzeyler keskin: açıya göre yumuşatma
+        # keskin sert yüzey: düz gölgeleme (her yüz net), yalnızca çok segmentli silindirler yumuşak
         bpy.ops.object.shade_smooth()
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.mesh.select_mode(type='EDGE')
-        bpy.ops.mesh.edges_select_sharp(sharpness=math.radians(32))
+        bpy.ops.mesh.edges_select_sharp(sharpness=math.radians(14))
         bpy.ops.mesh.mark_sharp()
         bpy.ops.object.mode_set(mode='OBJECT')
         # UV (dokular dünya izdüşümüyle de çalışır) + beyaz tepe rengi
