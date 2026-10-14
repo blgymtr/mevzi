@@ -45,6 +45,8 @@ func _ready() -> void:
 		_run_art_test()
 	elif shot_dir != "" and shot_scene == "vehtest":
 		_run_veh_test()
+	elif shot_dir != "" and shot_scene.begins_with("cattest"):
+		_run_cat_test()
 	elif shot_dir != "" and shot_scene == "posetest":
 		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
@@ -666,6 +668,52 @@ func _run_crash_test() -> void:
 	await _wait(2.0)
 	await _shot("crash_end")
 	print("CRASH done alive=%s,%s" % [h1.alive, h2.alive])
+	get_tree().quit()
+
+func _run_cat_test() -> void:
+	# katalog: modeli olan birimler yan yana, katalog zırhı/canı uygulanıyor mu, hareket ve atış
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	var pref := shot_scene.substr(8) if shot_scene.length() > 8 else "usa_"
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.55), Grid.M_HEAVY)
+	var vs: Array = []
+	var i := 0
+	for e in Catalog.order:
+		var id: String = e[2]
+		if not id.begins_with(pref) or not Art.has(id):
+			continue
+		var v := spawn_vehicle(0, id, G.grid.nearest_free(c + Vector3((i % 6) * 9.0 - 22.0, 0, (i / 6) * 11.0), Grid.M_HEAVY), PI * 0.8)
+		vs.append(v)
+		i += 1
+	print("CAT spawned=%d of %d catalog units" % [vs.size(), Catalog.units.size()])
+	if vs.is_empty():
+		fails += 1
+	else:
+		var v: Vehicle = vs[0]
+		print("CAT %s title=%s hp=%d armor=%s base=%s" % [v.vid, v.title, int(v.max_hp), v.armor_text(), v.vtype])
+		if v.vid == "" or v.armor_tab().is_empty():
+			fails += 1
+	G.cam.jump_to(c + Vector3(0, 0, 4), true)
+	G.cam.size = 30.0
+	G.cam.target_size = 30.0
+	await _wait(1.5)
+	await _shot("cat_01_row")
+	G.cam.jump_to(c + Vector3(-13, 0, 0), true)
+	G.cam.size = 12.0
+	G.cam.target_size = 12.0
+	await _wait(1.0)
+	await _shot("cat_02_close")
+	# hareket + düşmana ateş
+	var e1 := spawn_vehicle(1, "tank", G.grid.nearest_free(c + Vector3(0, 0, -40), Grid.M_HEAVY), 0.0)
+	for v in vs:
+		v.cmd_attack(e1)
+	await _wait(12.0)
+	print("CAT enemy hp=%d/%d" % [int(e1.hp), int(e1.max_hp)])
+	if e1.alive and e1.hp >= e1.max_hp:
+		fails += 1
+	print("CATTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_pose_test() -> void:

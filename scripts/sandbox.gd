@@ -62,6 +62,7 @@ func _ready() -> void:
 	list.add_theme_constant_override("separation", 2)
 	sc.add_child(list)
 	# listeler tanımlardan otomatik üretilir: yeni eklenen her birim burada görünür
+	Catalog.load_all()
 	_section("PİYADE TİMLERİ")
 	for id in Building.PDEF:
 		if not Building.PDEF[id].has("vehicle"):
@@ -84,6 +85,15 @@ func _ready() -> void:
 	for vt in Vehicle.DEF:
 		if Vehicle.DEF[vt].get("air", false) and not (vt in ["heli", "transport", "fpv"]):
 			_spawn_btn("v:" + vt, I18n.s(Vehicle.DEF[vt]["title"]))
+	# ulus katalogları (data/catalog/*.json): her birim otomatik
+	var last := ""
+	for e in Catalog.order:
+		var hdr: String = Catalog.NATION_TITLE.get(e[0], e[0]) + " — " + I18n.s(Catalog.CAT_TITLE.get(e[1], e[1]))
+		if hdr != last:
+			_section(hdr)
+			last = hdr
+		var cu: Dictionary = Catalog.units[e[2]]
+		_spawn_btn("v:" + e[2], I18n.s(cu["name"]) + ("  ◆" if Art.has(e[2]) else ""))
 	_section("YAPILAR (anında)")
 	for id in Building.BDEF:
 		if id != "hq" and not Building.BDEF[id].get("line", false):

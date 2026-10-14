@@ -31,6 +31,8 @@ var wheels: Array = []
 var gunner: SoldierBody
 var M: Dictionary
 var armor := 0
+var vid := ""            # katalog kimliği (boşsa taban araç)
+var cat: Dictionary = {}
 # 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
 const ARMOR := {
 	"tank": [[22, 8, 5, 3], [26, 11, 5, 3]],
@@ -189,9 +191,18 @@ static var _disc_mat: ShaderMaterial
 
 func setup(t: int, vt: String) -> void:
 	team = t
+	if Catalog.has(vt):
+		vid = vt
+		cat = Catalog.get_unit(vt)
+		vt = Catalog.base(vt)
 	vtype = vt
 	kind = vt
 	D = DEF[vt]
+	if vid != "":
+		D = D.duplicate()
+		D["title"] = cat.get("name", D["title"])
+		D["hp"] = float(cat.get("hp", D["hp"]))
+		D["speed"] = float(cat.get("speed", D["speed"]))
 	title = D["title"]
 	max_hp = D["hp"]
 	hp = max_hp
@@ -204,7 +215,7 @@ func setup(t: int, vt: String) -> void:
 	icon = D["icon"]
 	crew_max = CREWED.get(vt, 0)
 	crew_n = crew_max
-	M = Art.vehicle(vt, t)
+	M = Art.vehicle_model(vid, t) if vid != "" and Art.has(vid) else Art.vehicle(vt, t)
 	if M.is_empty():
 		M = VehicleModels.get_model(vt, t, G.map_kind == "winter")
 	hull = Node3D.new()
@@ -1322,8 +1333,13 @@ func armor_side(from: Vector3, k: String) -> int:
 		return 2
 	return 1
 
+func armor_tab() -> Array:
+	if cat.has("armor"):
+		return cat["armor"]
+	return ARMOR.get(vtype, [])
+
 func armor_value(kind: int, side: int) -> int:
-	var a: Array = ARMOR.get(vtype, [])
+	var a: Array = armor_tab()
 	if a.is_empty():
 		return 0
 	return a[kind][side]
@@ -1352,7 +1368,7 @@ func pen_mult(k: String, from: Vector3) -> float:
 	return maxf(0.0, 1.0 + diff * 0.3) * 0.45
 
 func armor_text() -> String:
-	var a: Array = ARMOR.get(vtype, [])
+	var a: Array = armor_tab()
 	if a.is_empty():
 		return "-"
 	return "%d/%d/%d/%d · HEAT %d/%d/%d/%d" % [a[0][0], a[0][1], a[0][2], a[0][3], a[1][0], a[1][1], a[1][2], a[1][3]]

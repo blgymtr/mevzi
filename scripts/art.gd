@@ -52,6 +52,20 @@ static func paint_tex(team: int) -> String:
 		return {"desert": "camo_desert", "green": "camo_wood", "winter": "camo_snow"}.get(b, "camo_wood")
 	return {"desert": "paint_sand", "green": "paint_olive", "winter": "camo_snow"}.get(b, "paint_olive")
 
+# ulus boya şemaları (biyoma göre)
+static func nation_paint(nat: String) -> String:
+	var b: String = G.map_kind
+	if b == "winter":
+		return "camo_snow"
+	match nat:
+		"usa", "gbr":
+			return "paint_sand" if b == "desert" else "camo_wood"
+		"rus":
+			return "paint_sand" if b == "desert" else "paint_olive"
+		"chn":
+			return "camo_desert" if b == "desert" else "camo_wood"
+	return paint_tex(0)
+
 static func uniform_tex(team: int) -> String:
 	var b: String = G.map_kind
 	if b == "winter":
@@ -93,15 +107,21 @@ static func material(name: String, team: int) -> Material:
 	var lay := [0.0, 0.0, 0.3, 0.3]
 	var normal_tex := ""
 	var shaded := true
+	# katalog modelleri: "paint_usa", "trim_rus" → ulusun boya şeması
+	var nat := ""
+	for nn in ["usa", "rus", "chn", "gbr"]:
+		if name.ends_with("_" + nn):
+			nat = nn
+			name = name.substr(0, name.length() - nn.length() - 1)
 	match name:
 		"paint":
-			t = paint_tex(team)
+			t = paint_tex(team) if nat == "" else nation_paint(nat)
 			rough = 0.68
 			metal = 0.12
 			uvs = 0.6
 			lay = [0.4, 0.22, 0.7, 0.75]
 		"trim":
-			t = paint_tex(team)
+			t = paint_tex(team) if nat == "" else nation_paint(nat)
 			tint = Color(0.72, 0.72, 0.72)
 			uvs = 0.6
 			rough = 0.72
@@ -122,7 +142,8 @@ static func material(name: String, team: int) -> Material:
 			rough = 0.95
 			lay = [0.0, 0.0, 0.2, 1.0]
 		"canvas":
-			t = "canvas"
+			t = "canvas" if tex("canvas") != null else ""
+			tint = Color(1, 1, 1) if t != "" else Color(0.46, 0.43, 0.3)
 			rough = 0.95
 			normal_tex = "hessian_230"
 			lay = [0.25, 0.0, 0.0, 0.5]
@@ -320,6 +341,9 @@ static func clear_cache() -> void:
 # ------------------------------------------------------------ araç
 static func vehicle(vtype: String, team: int) -> Dictionary:
 	var model := "%s_%s" % [vtype, "blue" if team == 0 else "red"]
+	return vehicle_model(model, team)
+
+static func vehicle_model(model: String, team: int) -> Dictionary:
 	if not has(model):
 		return {}
 	var nd := nodes(model)

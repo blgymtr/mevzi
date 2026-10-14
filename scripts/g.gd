@@ -263,6 +263,8 @@ func credit_kill(src, victim) -> void:
 # birim değeri (imha puanı / iade için)
 func unit_value(u) -> float:
 	if u is Vehicle:
+		if u.vid != "":
+			return float(u.cat.get("cost", 100))
 		return float(Building.PDEF.get(u.vtype, {}).get("cost", 100))
 	if u is Building:
 		return float(Building.BDEF.get(u.btype, {}).get("cost", 100))
