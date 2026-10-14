@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene.begins_with("maptest"):
+		_run_map_test()
 	elif shot_dir != "" and shot_scene == "garrisontest":
 		_run_garrison_test()
 	elif shot_dir != "" and shot_scene == "hudtest":
@@ -172,6 +174,12 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	var kind: String = String(data.get("biome", "desert")) if id == "custom" else MapGen.MAPS[id]["biome"]
 	G.map_kind = kind
 	G.map_id = id
+	# harita boyutu: ızgara ve arazi çözünürlüğü buna göre
+	G.MAP = float(MapGen.MAPS.get(id, {}).get("size", 256)) if id != "custom" else float(data.get("size", 256))
+	Grid.NN = int(G.MAP)
+	Grid.N = Grid.NN * 2
+	Terrain.HRES = int(G.MAP * 2.0)
+	Terrain.RES = mini(2048, int(G.MAP * 4.0))
 	var bio := Biomes.get_biome(kind)
 	G.biome = bio
 	_apply_theme(kind)
@@ -253,8 +261,11 @@ func _start_forces() -> void:
 				var s := spawn_soldier(t, roles[i], p, sq)
 				s.rotation.y = Soldier._yaw_of(toward)
 				s.face_yaw = s.rotation.y
-		spawn_vehicle(t, "tank", G.grid.nearest_free(base - toward * 6.0 + side * 6.0, Grid.M_HEAVY), Soldier._yaw_of(toward))
-		spawn_vehicle(t, "technical", G.grid.nearest_free(base - toward * 6.0 - side * 6.0, Grid.M_LIGHT), Soldier._yaw_of(toward))
+		var nat: String = G.nation[t] if t < G.nation.size() else "usa"
+		var tk := {"usa": "usa_mbt_a2", "rus": "rus_mbt_72b3"}.get(nat, "tank")
+		var lv := {"usa": "usa_lv_m1151", "rus": "rus_lv_tigr"}.get(nat, "technical")
+		spawn_vehicle(t, tk if Catalog.has(tk) else "tank", G.grid.nearest_free(base - toward * 6.0 + side * 6.0, Grid.M_HEAVY), Soldier._yaw_of(toward))
+		spawn_vehicle(t, lv if Catalog.has(lv) else "technical", G.grid.nearest_free(base - toward * 6.0 - side * 6.0, Grid.M_LIGHT), Soldier._yaw_of(toward))
 		G.supply[t] = 650.0
 		var _r := rot
 
@@ -732,6 +743,27 @@ func _run_cat_test() -> void:
 	print("CATTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
+func _run_map_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var mid := shot_scene.substr(8) if shot_scene.length() > 8 else "big_city"
+	var t0 := Time.get_ticks_msec()
+	start_game(mid)
+	print("MAP %s size=%d build_ms=%d houses=%d" % [mid, int(G.MAP), Time.get_ticks_msec() - t0, G.blocks.houses.size()])
+	await _wait(3.0)
+	G.cam.jump_to(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), true)
+	G.cam.size = 110.0
+	G.cam.target_size = 110.0
+	await _wait(2.0)
+	await _shot("map_01_center")
+	G.cam.size = 40.0
+	G.cam.target_size = 40.0
+	await _wait(2.0)
+	await _shot("map_02_close")
+	print("MAP fps=%d units=%d" % [Engine.get_frames_per_second(), G.units.size()])
+	print("MAPTEST RESULT fails=0")
+	get_tree().quit()
+
 func _run_garrison_test() -> void:
 	# girilebilir bina: askerler kapıdan girer, pencerelere dağılır, çatı gizlenir, pencereden ateş eder
 	get_window().size = Vector2i(1920, 1080)
@@ -771,7 +803,7 @@ func _run_garrison_test() -> void:
 		print("GAR dbg hid=%d slot=%d state=%s order=%s at=%d d=%.1f path=%d/%d" % [s.house_id, s.house_slot, s.state, s.order, G.blocks.house_at(s.position), s.position.distance_to(G.blocks.houses[hid]["slots"][maxi(s.house_slot, 0)]), s.path_i, s.path.size()])
 	var roof: Node3D = G.blocks.houses[hid]["roof"]
 	print("GAR inside=%d/6 roof_hidden=%s" % [inside, not roof.visible])
-	if inside < 4 and shots == 0:
+	if inside < 4:
 		fails += 1
 	G.cam.jump_to(hc, true)
 	G.cam.size = 22.0

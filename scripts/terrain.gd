@@ -2,8 +2,8 @@ class_name Terrain extends Node3D
 # Arazi: fotoğraf dokulu karışım, yükseklik (nehir yatağı), su yüzeyi ve boyanabilir harita
 # (R yol, G iz, B yanık, A yama).
 
-const RES := 1024
-const HRES := 512
+static var RES := 1024
+static var HRES := 512
 const WATER_Y := -0.6
 
 var mi: MeshInstance3D

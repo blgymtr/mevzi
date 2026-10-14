@@ -18,6 +18,7 @@ const MAPS := {
 	"desert_canal": {"title": "Çöl Kanalı", "biome": "desert", "desc": "Turkuaz bir sulama kanalı iki orduyu ayırıyor. Üç köprüyü tutan kazanır."},
 	"green_valley": {"title": "Yeşil Vadi", "biome": "green", "desc": "Kıvrılan nehir, toprak yollar ve tek taş köprü. Ağaçlıklar pusu için ideal."},
 	"winter_village": {"title": "Karlı Köy", "biome": "winter", "desc": "Karla kaplı köy, tuğla duvarlar ve kazılmış siperler."},
+	"big_city": {"title": "Büyük Şehir", "biome": "green", "size": 512, "desc": "512 m: nehirle bölünmüş şehir, sokak sokak girilebilir binalar, sanayi bölgesi ve dış mahalleler."},
 	"desert_town": {"title": "Çöl Kasabası", "biome": "desert", "desc": "Düz çatılı beyaz evler ve yıkıntılarla dolu kasabada sokak sokak savaş."},
 }
 
@@ -45,6 +46,8 @@ func build(id: String, seed_v: int) -> void:
 			_green_valley()
 		"winter_village":
 			_winter()
+		"big_city":
+			_city()
 		_:
 			_desert()
 	T.make_water()
@@ -792,6 +795,111 @@ func _town(c: Vector3, radius: float, n: int, flat := true) -> void:
 			if road_dist(p) > maxf(cw, cd) * 0.5 + 1.5:
 				compound(p, cw, cd, rng.randi_range(3, 5), rng.randi() % 4)
 				reserve(p, maxf(cw, cd) * 0.6)
+
+# ------------------------------------------------------------ Büyük Şehir (512 m)
+func _city() -> void:
+	var S := G.MAP
+	var R := Rect2(6, 6, S - 12, S - 12)
+	G.hq_pos = [Vector3(S - 48, 0, S - 48), Vector3(48, 0, 48)]
+	reserve(G.hq_pos[0], 28)
+	reserve(G.hq_pos[1], 28)
+	# nehir şehri ikiye böler
+	var riv := river([Vector3(-10, 0, S * 0.62), Vector3(S * 0.2, 0, S * 0.56), Vector3(S * 0.42, 0, S * 0.5), Vector3(S * 0.6, 0, S * 0.44), Vector3(S * 0.8, 0, S * 0.36), Vector3(S + 10, 0, S * 0.3)], 15.0, 1.9)
+	# ana bulvar (karargâhtan karargâha) + çevre yolları
+	road([Vector3(S - 6, 0, S - 6), Vector3(S - 48, 0, S - 48), Vector3(S * 0.72, 0, S * 0.7), Vector3(S * 0.5, 0, S * 0.5), Vector3(S * 0.3, 0, S * 0.3), Vector3(48, 0, 48), Vector3(6, 0, 6)], 7.0)
+	road([Vector3(6, 0, S * 0.3), Vector3(S * 0.3, 0, S * 0.28), Vector3(S * 0.55, 0, S * 0.18), Vector3(S - 6, 0, S * 0.12)], 5.5)
+	road([Vector3(S * 0.1, 0, S - 6), Vector3(S * 0.4, 0, S * 0.78), Vector3(S * 0.75, 0, S * 0.72), Vector3(S - 6, 0, S * 0.7)], 5.5)
+	# şehir merkezi sokak ızgarası
+	var c0 := S * 0.5 - 120.0
+	var step := 40.0
+	for i in 7:
+		var x := c0 + i * step
+		road([Vector3(x, 0, c0 - 10), Vector3(x, 0, c0 + 6 * step + 10)], 5.0)
+		road([Vector3(c0 - 10, 0, x), Vector3(c0 + 6 * step + 10, 0, x)], 5.0)
+	auto_bridges()
+	p_reeds_along(riv, 7.0)
+	for i in 140:
+		patch(Vector3(rng.randf_range(0, S), 0, rng.randf_range(0, S)), rng.randf_range(5, 16), rng.randf_range(0.4, 0.9))
+	G.fob_sites = []
+	for k in 14:
+		var a := float(k) / 14.0 * TAU
+		var fp := Vector3(S * 0.5 + cos(a) * S * 0.3, 0, S * 0.5 + sin(a) * S * 0.3)
+		G.fob_sites.append(fp)
+		reserve(fp, 10.0)
+	# bloklar: her blokta 2-4 girilebilir bina, merkezde düz çatı, kenarda kırma çatı
+	var houses := 0
+	for bx in 6:
+		for bz in 6:
+			var bc := Vector3(c0 + (bx + 0.5) * step, 0, c0 + (bz + 0.5) * step)
+			if T.has_water and T.ground_h(bc) < -0.2:
+				continue
+			var centre := absf(bx - 2.5) < 1.6 and absf(bz - 2.5) < 1.6
+			var n := rng.randi_range(2, 4)
+			for k in n:
+				var w := rng.randf_range(6.0, 10.0)
+				var d := rng.randf_range(5.5, 8.0)
+				var r := maxf(w, d) * 0.72
+				var p := rand_free(r, 30, Rect2(bc.x - step * 0.5 + 4, bc.z - step * 0.5 + 4, step - 8, step - 8), 2.0)
+				if p.x < 0:
+					continue
+				var rot := rng.randf() < 0.5
+				if centre and rng.randf() < 0.75:
+					house_flat(p, w, d, rng.randi_range(6, 8), rot)
+				else:
+					house_pitched(p, w, d, rot, WHITE.darkened(rng.randf_range(0.0, 0.12)), Color(0.5, 0.2, 0.14).lerp(Color(0.35, 0.33, 0.3), rng.randf()), false)
+				reserve(p, r + 1.0)
+				houses += 1
+			# bahçe duvarı / çalılar
+			for k in 3:
+				var q := rand_free(0.8, 10, Rect2(bc.x - step * 0.5 + 3, bc.z - step * 0.5 + 3, step - 6, step - 6), 1.5)
+				if q.x > 0:
+					p_bush(q, rng.randf() < 0.3)
+	# dış mahalleler: köyler + çiftlik yıkıntıları
+	for tc in [Vector3(S * 0.18, 0, S * 0.78), Vector3(S * 0.82, 0, S * 0.22), Vector3(S * 0.15, 0, S * 0.15 + 70), Vector3(S * 0.85, 0, S * 0.85 - 70)]:
+		_town(tc, 26, 7, false)
+	# sanayi bölgesi: büyük duvarlı avlular
+	for k in 5:
+		var ip := rand_free(10.0, 40, Rect2(S * 0.62, S * 0.05, S * 0.3, S * 0.2), 3.0)
+		if ip.x > 0:
+			compound(ip, rng.randf_range(16, 24), rng.randf_range(14, 20), 5, rng.randi() % 4, Color(0.7, 0.68, 0.64))
+			house_flat(ip, rng.randf_range(8, 11), rng.randf_range(6, 8), 8, rng.randf() < 0.5, Color(0.76, 0.74, 0.7))
+			reserve(ip, 14.0)
+	for i in 50:
+		var p := rand_free(3.0, 30, R, 3.0)
+		if p.x > 0:
+			_brick_ruin(p, Color(0.78, 0.5, 0.36))
+			reserve(p, 4.0)
+	# parklar / ağaçlıklar
+	for g in 40:
+		var c := rand_free(6.0, 40, R, 2.0)
+		if c.x < 0:
+			continue
+		for i in rng.randi_range(5, 12):
+			var p := c + Vector3(rng.randf_range(-11, 11), 0, rng.randf_range(-11, 11))
+			if free_at(p, 0.7, 1.5):
+				p_tree(p)
+		for i in rng.randi_range(6, 12):
+			var p := c + Vector3(rng.randf_range(-13, 13), 0, rng.randf_range(-13, 13))
+			if free_at(p, 0.6, 1.0):
+				p_bush(p, rng.randf() < 0.3)
+	for i in 300:
+		var p := rand_free(0.8, 20, R, 2.0)
+		if p.x > 0:
+			var r2 := rng.randf()
+			if r2 < 0.35:
+				p_tree(p)
+			elif r2 < 0.8:
+				p_bush(p)
+			else:
+				p_rock(p, rng.randf_range(0.6, 1.3))
+	_poles_along(roads[0], 18.0, 6.0)
+	for i in 30:
+		var p := rand_free(2.2, 30, R, 0.0)
+		if p.x > 0 and road_dist(p) < 8.0:
+			p_car(p, rng.randf() * TAU)
+	_tracks(30, 0.25)
+	p_grass_field(42000, Color(0.42, 0.55, 0.24), Rect2(2, 2, S - 4, S - 4), 0.5)
+	print("CITY houses=%d" % houses)
 
 # ------------------------------------------------------------ Çöl Kanalı
 func _desert_canal() -> void:

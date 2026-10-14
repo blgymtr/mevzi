@@ -2,8 +2,8 @@ class_name Grid extends RefCounted
 # Engel yükseklik ızgarası (0.5 m), yol bulma (1 m, üç hareket sınıfı) ve görüş hattı.
 
 const CS := 0.5
-const N := 512
-const NN := 256
+static var N := 512
+static var NN := 256
 enum { K_NONE, K_WALL, K_HOUSE, K_WRECK, K_TRAP, K_WIRE, K_TREE, K_BUILDING }
 enum { M_INF, M_LIGHT, M_HEAVY }
 

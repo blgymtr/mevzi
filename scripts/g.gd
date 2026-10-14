@@ -3,7 +3,7 @@ extends Node
 
 signal alert(text: String, pos: Vector3, team: int)
 
-const MAP := 256.0
+var MAP := 256.0          # harita kenarı (m); haritaya göre değişir
 const TEAM_COL := [Color(0.32, 0.66, 1.0), Color(1.0, 0.3, 0.22)]
 const TEAM_NAME := ["MÜTTEFİKLER", "MİHVER"]
 # uluslar (ileride: Alman, Rus, ABD, İngiliz, Türk); şimdilik ABD (Müttefik) - Rusya (Mihver)
