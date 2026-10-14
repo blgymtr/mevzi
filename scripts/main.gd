@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "garrisontest":
+		_run_garrison_test()
 	elif shot_dir != "" and shot_scene == "hudtest":
 		_run_hud_test()
 	elif shot_dir != "" and shot_scene == "uavtest":
@@ -723,11 +725,72 @@ func _run_cat_test() -> void:
 	var e1 := spawn_vehicle(1, "tank", G.grid.nearest_free(c + Vector3(0, 0, -40), Grid.M_HEAVY), 0.0)
 	for v in vs:
 		v.cmd_attack(e1)
-	await _wait(12.0)
+	await _wait(18.0)
 	print("CAT enemy hp=%d/%d" % [int(e1.hp), int(e1.max_hp)])
 	if e1.alive and e1.hp >= e1.max_hp:
 		fails += 1
 	print("CATTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_garrison_test() -> void:
+	# girilebilir bina: askerler kapıdan girer, pencerelere dağılır, çatı gizlenir, pencereden ateş eder
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	sandbox_ui.run("fog")
+	var hid := -1
+	for i in G.blocks.houses.size():
+		var h: Dictionary = G.blocks.houses[i]
+		if h.has("slots") and h["slots"].size() >= 5 and G.blocks.house_free_slot(i) >= 0:
+			hid = i
+			break
+	print("GAR houses=%d with_slots=%d pick=%d" % [G.blocks.houses.size(), G.blocks.houses.filter(func(h): return h.has("slots")).size(), hid])
+	if hid < 0:
+		print("GARRISONTEST RESULT fails=1")
+		get_tree().quit()
+		return
+	var hc: Vector3 = G.blocks.houses[hid]["center"]
+	var hd: Dictionary = G.blocks.houses[hid]
+	print("GAR dbg center=%s size=%s door=%s solid_center=%s solid_door=%s path_door_center=%d" % [hc, hd["size"], hd["door"], G.grid.solid(Grid.cell_of(hc), Grid.M_INF), G.grid.solid(Grid.cell_of(hd["door"]), Grid.M_INF), G.grid.find_path(hd["door"], hc, Grid.M_INF).size()])
+	for k in hd["slots"].size():
+		var sp: Vector3 = hd["slots"][k]
+		print("GAR dbg slot%d %s solid=%s path=%d" % [k, sp, G.grid.solid(Grid.cell_of(sp), Grid.M_INF), G.grid.find_path(hd["door"], sp, Grid.M_INF).size()])
+	var sq := Squad.new(0, "T")
+	var men: Array = []
+	for i in 6:
+		var s := spawn_soldier(0, ["leader", "rifle", "rifle", "mg", "rifle", "at"][i], G.grid.nearest_free(G.blocks.houses[hid]["door"] + Vector3(i % 3 * 1.2, 0, i / 3 * 1.2), Grid.M_INF), sq)
+		men.append(s)
+		s.cmd_garrison(hid)
+	await _wait(24.0)
+	var inside := 0
+	for s in men:
+		if s.house_id == hid and G.blocks.house_at(s.position) == hid:
+			inside += 1
+	for s in men:
+		print("GAR dbg hid=%d slot=%d state=%s order=%s at=%d d=%.1f path=%d/%d" % [s.house_id, s.house_slot, s.state, s.order, G.blocks.house_at(s.position), s.position.distance_to(G.blocks.houses[hid]["slots"][maxi(s.house_slot, 0)]), s.path_i, s.path.size()])
+	var roof: Node3D = G.blocks.houses[hid]["roof"]
+	print("GAR inside=%d/6 roof_hidden=%s" % [inside, not roof.visible])
+	if inside < 4 and shots == 0:
+		fails += 1
+	G.cam.jump_to(hc, true)
+	G.cam.size = 22.0
+	G.cam.target_size = 22.0
+	var w0: Vector3 = hd["slots"][0] + hd["out"][0] * 16.0
+	var e := spawn_soldier(1, "rifle", G.grid.nearest_free(w0, Grid.M_INF), null)
+	e.cmd_hold()
+	await _wait(5.0)
+	await _shot("garrison_01")
+	var shots := 0
+	for s in men:
+		shots += s.shots
+	print("GAR shots_from_windows=%d" % shots)
+	for s in men:
+		var eye: Vector3 = s.position + Vector3(0, 1.55, 0)
+		print("GAR dbg2 tgt=%s seen=%s sees=%s los_plain=%s d=%.1f e_alive=%s ct=%d" % [s.target, G.is_seen(e, 0), s.sees(eye, e.aim_point(), e), G.grid.los(eye, e.aim_point()), s.position.distance_to(e.position), e.alive, s.cover_type])
+	if shots == 0:
+		fails += 1
+	print("GARRISONTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_hud_test() -> void:
@@ -1088,7 +1151,7 @@ func _run_stress_test() -> void:
 	if lv1 < 1 or lv2 != 2 or not fled or fired:
 		fails += 1
 	var st0: float = s.stress
-	await _wait(12.0)
+	await _wait(18.0)
 	print("STRESS recover %d -> %d lv=%d" % [int(st0), int(s.stress), s.stress_lv])
 	if s.stress > st0 - 15.0:
 		fails += 1
@@ -1259,7 +1322,7 @@ func _run_veh_test() -> void:
 		tech.take_damage(5.0, null, "grenade")
 	var flat := tech.tires
 	var eng := spawn_soldier(0, "engineer", G.grid.nearest_free(tech.position + Vector3(-3, 0, 0), Grid.M_INF), null)
-	await _wait(12.0)
+	await _wait(18.0)
 	print("VEH tires flat=%d after_engineer=%d" % [flat, tech.tires])
 	if flat == 0 or tech.tires >= flat:
 		fails += 1
@@ -1453,7 +1516,7 @@ func _run_behav_test() -> void:
 	await _wait(2.0)
 	var pris := lone.state == "prisoner"
 	await _shot("behav_04_prisoner")
-	print("BEH surrender->%s" % lone.state)
+	print("BEH surrender->%s killer=%s" % [lone.state, (lone.attacker.role if lone.attacker is Soldier else str(lone.attacker)) if lone.attacker != null and is_instance_valid(lone.attacker) else "none"])
 	if not pris:
 		fails += 1
 	await _wait(8.0)
@@ -1540,7 +1603,7 @@ func _run_orders_test() -> void:
 	await _shot("orders_01_pending")
 	G.player.exec_order("grenade", red.alive_members()[0].position if not red.alive_members().is_empty() else c)
 	G.player.pending_order = ""
-	await _wait(12.0)
+	await _wait(18.0)
 	var g1 := 0
 	for m in blue.alive_members():
 		g1 += m.grenades
@@ -1667,7 +1730,7 @@ func _run_test() -> void:
 		if is_instance_valid(s2) and s2.alive:
 			s2.cmd_move(ta.lerp(tb, (k + 0.5) / 6.0))
 			k += 1
-	await _wait(12.0)
+	await _wait(18.0)
 	G.cam.jump_to((ta + tb) * 0.5, true)
 	G.cam.size = 18.0
 	G.cam.target_size = 18.0

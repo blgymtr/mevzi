@@ -37,6 +37,8 @@ var threat_pos := Vector3.ZERO
 var threat_time := -99.0
 var cover_type := 0
 var cover_pos := Vector3.ZERO
+var house_id := -1                # girilen bina (Blocks.houses)
+var house_slot := -1
 var cover_veh: Vehicle = null    # araç arkası siper (araç ilerlerse birlikte ilerler)
 var blind_t := 0.0               # kör ateş (silahı siperin üstünden/yanından uzatır)
 var blind_side := false
@@ -229,6 +231,7 @@ func aim_point() -> Vector3:
 func cmd_move(p: Vector3, force := false) -> void:
 	if not alive or incapacitated() or state == "fly":
 		return
+	_leave_house()
 	_release_patient()
 	build_site = null
 	order = "move"
@@ -292,6 +295,7 @@ func cmd_hold() -> void:
 func cmd_retreat() -> void:
 	if not alive or incapacitated() or state == "aboard":
 		return
+	_leave_house()
 	var b := nearest_base()
 	if b == null:
 		return
@@ -327,6 +331,41 @@ func _refund_check() -> void:
 		if squad:
 			squad.members.erase(self)
 		queue_free()
+
+# görüş hattı: pencere başındaki asker (ve ona bakan) pencere hücresinden görür
+func sees(from: Vector3, p: Vector3, tgt = null) -> bool:
+	var sa := 2.3 if house_id >= 0 else 0.75
+	var sb := 2.3 if tgt != null and tgt is Soldier and tgt.house_id >= 0 else 0.3
+	return G.grid.los(from, p, sa, sb)
+
+func cmd_garrison(hid: int) -> bool:
+	if not can_fight() or state == "aboard":
+		return false
+	var other := G.blocks.house_team(hid)
+	if other >= 0 and other != team:
+		return false
+	var k := G.blocks.house_free_slot(hid)
+	if k < 0:
+		return false
+	var sp: Vector3 = G.blocks.houses[hid]["slots"][k]
+	sp = G.grid.nearest_free(sp, Grid.M_INF, 3)
+	if G.blocks.house_at(sp) != hid:
+		return false
+	cmd_move(sp, false)
+	house_id = hid
+	house_slot = k
+	G.blocks.houses[hid]["occ"][k] = self
+	order = "garrison"
+	cover_pos = sp
+	return true
+
+func _leave_house() -> void:
+	if house_id >= 0 and house_id < G.blocks.houses.size():
+		var occ: Dictionary = G.blocks.houses[house_id].get("occ", {})
+		if occ.get(house_slot, null) == self:
+			occ.erase(house_slot)
+	house_id = -1
+	house_slot = -1
 
 func cmd_throw(p: Vector3, smoke: bool) -> bool:
 	if not can_fight() or state in ["throw", "drag", "heal"]:
@@ -640,6 +679,14 @@ func _arrive() -> void:
 	if order == "refund":
 		_refund_check()
 		return
+	if order == "garrison":
+		order = "hold" if house_id >= 0 else ""
+		if house_id >= 0:
+			cover_type = 1
+			cover_pos = position
+			var outv: Vector3 = G.blocks.houses[house_id]["out"][house_slot]
+			face_yaw = _yaw_of(outv)
+		return
 	if order == "move" or order == "retreat" or order == "grenade" or order == "smoke" or order == "panic":
 		if order == "retreat":
 			suppression = 0.0
@@ -697,8 +744,25 @@ func _think_idle() -> void:
 			prot = G.grid.cover_factor(position, 1.0, threat_pos)
 		if cover_type == 3:
 			prot = 1.0 if cover_veh != null and is_instance_valid(cover_veh) and (cover_veh.alive or cover_veh.wreck) else 0.0
+		if house_id >= 0 and order == "hold":
+			return
 		if (cover_type == 0 or prot < 0.5) and _vehicle_cover_seek():
 			return
+		if (cover_type == 0 or prot < 0.5) and G.player != null and (team != G.player_team or G.spectate) and randf() < 0.5:
+			var hb := -1
+			var hbd := 16.0
+			for i in G.blocks.houses.size():
+				var hh: Dictionary = G.blocks.houses[i]
+				if hh["collapsed"] or not hh.has("slots") or hh["slots"].is_empty():
+					continue
+				var dd: float = position.distance_to(hh["center"])
+				if dd < hbd and G.blocks.house_free_slot(i) >= 0 and G.blocks.house_team(i) in [-1, team]:
+					hbd = dd
+					hb = i
+			if hb >= 0 and cmd_garrison(hb):
+				if randf() < 0.3:
+					say("BİNAYA GİR!")
+				return
 		if cover_type == 0 or prot < 0.5:
 			var claimed: Array = squad.claimed(self) if squad else []
 			var c: Dictionary = G.grid.find_cover(dest, threat_pos, 6.5, claimed, position)
@@ -863,7 +927,7 @@ func _scan() -> void:
 		eye += lean
 	# mevcut hedefi koru
 	if target != null and is_instance_valid(target) and target.hostile() and dist2(target) < rng_w * 1.1 and G.is_seen(target, team):
-		if not (target is Soldier and target.incapacitated()) and G.grid.los(eye, target.aim_point()):
+		if not (target is Soldier and target.incapacitated()) and sees(eye, target.aim_point(), target):
 			threat_pos = target.position
 			threat_time = G.time
 			return
@@ -912,7 +976,7 @@ func _scan() -> void:
 			break
 		var e: Unit = c[1]
 		var ap: Vector3 = e.aim_point()
-		var ok := G.grid.los(eye, ap)
+		var ok := sees(eye, ap, e)
 		if not ok and cover_type == 2:
 			# diğer köşeden dene
 			var alt := position + Vector3(0, 1.55, 0) - lean
@@ -1249,7 +1313,7 @@ func _combat(_dt: float) -> void:
 	fire_cd *= [1.0, 1.35, 2.0][stress_lv]
 
 func _blind_fire(t: Unit, side: bool) -> void:
-	if fire_cd > 0.0 or stress_lv == 2 or ammo <= 0 or role in ["at", "atgm", "mortar", "sniper", "medic"]:
+	if fire_cd > 0.0 or stress_lv == 2 or ammo <= 0 or role in ["at", "atgm", "mortar", "sniper", "medic"] or not is_instance_valid(t) or not t.hostile() or (t is Soldier and t.incapacitated()):
 		return
 	if suppression < 45.0 and not side:
 		return
@@ -1386,6 +1450,8 @@ func _hit_chance(t: Unit, d: float) -> float:
 		if t.vel.length() > 1.5:
 			c *= 0.75
 		var cov := maxf(G.grid.cover_factor(t.position, t.torso_h(), position), t.vehicle_cover(position))
+		if t.house_id >= 0 and t.state == "idle":
+			cov = 0.72 if not t.popped else 0.55
 		c *= 1.0 - cov * 0.78
 	else:
 		c = clampf(c * 2.0, 0.0, 0.95)
@@ -1584,6 +1650,7 @@ func die(src, keep_fly := false) -> void:
 			rv = away.normalized() * randf_range(1.2, 2.8) + Vector3(0, randf_range(0.4, 1.4), 0)
 	state = "dead"
 	keep_fly = keep_fly
+	_leave_house()
 	for f in G.friends_near(position, 10.0, team):
 		if f is Soldier and f != self:
 			f.add_stress(10.0)
@@ -1855,7 +1922,7 @@ func _pistol() -> void:
 		if not (e is Soldier) or not e.can_fight() or not G.is_seen(e, team):
 			continue
 		var d := dist2(e)
-		if d < bd and G.grid.los(eye, e.aim_point()):
+		if d < bd and sees(eye, e.aim_point(), e):
 			bd = d
 			best = e
 	if best == null:

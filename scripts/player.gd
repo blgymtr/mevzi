@@ -358,6 +358,22 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 			markers.append([tu.position, G.time, Color(0.4, 0.8, 1.0)])
 			_voice(inf, ["Biniyoruz!", "Araca!"])
 			return
+	# binaya sağ tık: askerler girer, pencerelere dağılır
+	var hid := G.blocks.house_at(gp) if G.blocks else -1
+	if hid >= 0 and (tu == null or not (tu is Vehicle)):
+		var inf2 := mobile.filter(func(u): return u is Soldier and u.can_fight())
+		if not inf2.is_empty():
+			var n := 0
+			for u in inf2:
+				if u.cmd_garrison(hid):
+					n += 1
+			if n > 0:
+				markers.append([G.blocks.houses[hid]["center"], G.time, Color(0.4, 0.9, 0.5)])
+				_voice(inf2, ["Binaya giriyoruz!"])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("Bina dolu", gp, team)
+			return
 	if tu != null and tu is Building and tu.team == team and not tu.done:
 		for u in mobile:
 			if u is Soldier:

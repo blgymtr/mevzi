@@ -113,6 +113,58 @@ func new_wall(house := -1, owner: Object = null) -> int:
 	walls.append({"blocks": [], "house": house, "owner": owner})
 	return walls.size() - 1
 
+# nokta hangi binanın içinde (yoksa -1)
+func house_at(p: Vector3) -> int:
+	for i in houses.size():
+		var h: Dictionary = houses[i]
+		if h["collapsed"] or not h.has("slots") or h["slots"].is_empty():
+			continue
+		var c: Vector3 = h["center"]
+		var sz: Vector2 = h["size"]
+		if absf(p.x - c.x) < sz.x * 0.5 + 0.3 and absf(p.z - c.z) < sz.y * 0.5 + 0.3:
+			return i
+	return -1
+
+func house_free_slot(hid: int) -> int:
+	var h: Dictionary = houses[hid]
+	if not h.has("ok"):
+		# girilebilir mi: kapıdan içeri yol var mı
+		h["ok"] = h.get("door", Vector3.INF) != Vector3.INF and G.grid.find_path(h["door"], h["center"], Grid.M_INF).size() > 0
+	if not h["ok"] or h["collapsed"]:
+		return -1
+	var occ: Dictionary = h["occ"]
+	for k in h["slots"].size():
+		var o = occ.get(k, null)
+		if o == null or not is_instance_valid(o) or not o.alive or o.house_id != hid:
+			return k
+	return -1
+
+func house_team(hid: int) -> int:
+	for o in houses[hid]["occ"].values():
+		if o != null and is_instance_valid(o) and o.alive and o.house_id == hid:
+			return o.team
+	return -1
+
+var _cut_t := 0.0
+func _roof_cut(dt: float) -> void:
+	_cut_t -= dt
+	if _cut_t > 0.0 or not G.running:
+		return
+	_cut_t = 0.3
+	# içinde görüş tarafından asker olan binanın çatısını gizle (içerisi görünsün)
+	var vt := G.view_team()
+	for h in houses:
+		if h["collapsed"] or not h.has("occ"):
+			continue
+		var show := true
+		for o in h["occ"].values():
+			if o != null and is_instance_valid(o) and o.alive and o.house_id >= 0 and (vt < 0 or o.team == vt):
+				show = false
+				break
+		var roof: Node3D = h["roof"]
+		if roof and is_instance_valid(roof):
+			roof.visible = show
+
 func new_house(center: Vector3, size: Vector2, top: float, roof: Node3D) -> int:
 	houses.append({"total": 0, "alive": 0, "roof": roof, "collapsed": false, "center": center, "size": size, "top": top})
 	return houses.size() - 1
@@ -292,6 +344,8 @@ func commit_runtime(from_id: int) -> MultiMeshInstance3D:
 	G.grid.refresh(cells)
 	return last
 
+const LINTEL := 1.85
+
 func _register_cells(id: int, cells: Array) -> void:
 	if bsolid[id] == 0 or balive[id] == 0:
 		return
@@ -314,7 +368,8 @@ func _register_cells(id: int, cells: Array) -> void:
 			cell_blocks[ci].append(id)
 		else:
 			cell_blocks[ci] = PackedInt32Array([id])
-		if top > G.grid.hb[ci]:
+		# lento / pencere üstü: tabanı insan boyundan yüksek blok yerdeki geçişi kapatmaz (kapı, pencere)
+		if top > G.grid.hb[ci] and p.y - s.y * 0.5 < LINTEL:
 			G.grid.hb[ci] = top
 		if G.grid.kind[ci] < bkind[id] or G.grid.kind[ci] == Grid.K_NONE:
 			G.grid.kind[ci] = bkind[id]
@@ -434,7 +489,7 @@ func _destroy_many(ids: Array, center: Vector3, power: float) -> void:
 		var mx := 0.0
 		if cell_blocks.has(ci):
 			for o in cell_blocks[ci]:
-				if balive[o] == 1:
+				if balive[o] == 1 and bpos[o].y - bsize[o].y * 0.5 < LINTEL:
 					mx = maxf(mx, bpos[o].y + bsize[o].y * 0.5)
 		G.grid.hb[ci] = mx
 		changed.append(ci)
@@ -505,6 +560,7 @@ func _add_rubble(p: Vector3, s: Vector3, col: Color, xf := Transform3D()) -> voi
 	rubble.visible_instance_count = mini(rubble_n, RUBBLE_CAP)
 
 func _process(_dt: float) -> void:
+	_roof_cut(_dt)
 	var i := debris.size() - 1
 	while i >= 0:
 		var d: Array = debris[i]
@@ -540,3 +596,9 @@ func _check_house(hh: int) -> void:
 			_spawn_debris(id, p + Vector3(0, 2, 0), 0.4)
 		G.fx.dust_burst(c + Vector3(0, 1.5, 0), maxf(sz.x, sz.y) * 0.5)
 		Sfx.play3d("collapse", c, 2.0)
+		# içerideki askerler enkaz altında kalır
+		if h.has("occ"):
+			for o in h["occ"].values():
+				if o != null and is_instance_valid(o) and o.alive and o.house_id == hh:
+					o.house_id = -1
+					o.take_damage(randf_range(55.0, 95.0), null, "blast")

@@ -942,12 +942,12 @@ func _scan() -> void:
 		if n > 4:
 			break
 		var e: Unit = cc[1]
-		if (vtype in INDIRECT) or (e is Vehicle and e.is_air()) or G.grid.los(eye, e.aim_point(), D["len"] * 0.5, 0.5):
+		if (vtype in INDIRECT) or (e is Vehicle and e.is_air()) or G.grid.los(eye, e.aim_point(), D["len"] * 0.5, 1.6 if e is Soldier and e.house_id >= 0 else 0.5):
 			best = e
 			break
 	target = best
 	coax_target = null
-	if vtype == "tank" and best_inf != null and G.grid.los(eye, best_inf.aim_point(), 3.0, 0.5):
+	if vtype == "tank" and best_inf != null and G.grid.los(eye, best_inf.aim_point(), 3.0, 1.6 if best_inf.house_id >= 0 else 0.5):
 		coax_target = best_inf
 
 func _aim_fire(dt: float) -> void:

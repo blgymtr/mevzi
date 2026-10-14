@@ -163,6 +163,27 @@ func reserve(p: Vector3, r: float) -> void:
 	keep.append([p, r])
 
 # ------------------------------------------------------------ yapılar
+# girilebilir bina: pencere boşlukları atış yuvası, kapı boşluğu giriş
+func _house_slots(hid: int, a: Vector3, b: Vector3, gaps: Array, c: Vector3) -> void:
+	var h: Dictionary = B.houses[hid]
+	if not h.has("slots"):
+		h["slots"] = []
+		h["out"] = []
+		h["occ"] = {}
+		h["door"] = Vector3.INF
+	var dir := (b - a).normalized()
+	for g in gaps:
+		var sc: float = (float(g[0]) + float(g[1])) * 0.5
+		var p := a + dir * sc
+		var inward := c - p
+		inward.y = 0.0
+		inward = inward.normalized()
+		if int(g[2]) == 0:
+			h["door"] = p - inward * 1.4
+		else:
+			h["slots"].append(p + inward * 1.05)
+			h["out"].append(-inward)
+
 func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, col := WHITE) -> void:
 	if rot90:
 		var t := w
@@ -195,10 +216,11 @@ func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, co
 		for i in nwin:
 			var s := (i + 0.5) * (L / nwin)
 			if i == door_at:
-				gaps.append([s - 0.6, s + 0.6, 0, 4, true])
+				gaps.append([s - 0.9, s + 0.9, 0, 4, true])
 			else:
 				gaps.append([s - 0.55, s + 0.55, 2, 3, true, rng.randf() < 0.5])
 		B.wall_line(a, b, rows, col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.012, "type": Blocks.T_CONCRETE})
+		_house_slots(hid, a, b, gaps, c)
 		deco.append([a - c, b - c, gaps, si])
 	# düz çatı + korkuluk + çatı eşyaları
 	var mb := MB.new()
@@ -353,10 +375,11 @@ func _x_house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Col
 		for i in nwin:
 			var s := (i + 0.5) * (L / nwin)
 			if si == door_side and i == 0:
-				gaps.append([s - 0.55, s + 0.55, 0, 4, true])
+				gaps.append([s - 0.9, s + 0.9, 0, 4, true])
 			else:
 				gaps.append([s - 0.5, s + 0.5, 2, 3, true, true])
 		B.wall_line(a, b, rows, wall_col, Grid.K_HOUSE, {"len": 0.5, "h": BH, "t": t2, "gaps": gaps, "house": hid, "jit": 0.025, "type": Blocks.T_CONCRETE})
+		_house_slots(hid, a, b, gaps, c)
 		deco.append([a - c, b - c, gaps, si])
 	roof.mesh = _facade(deco, top, t2, wall_col, true, pitched_roof(w, d, top, roof_col, wall_col, snow))
 	roof.position = Vector3(c.x, 0, c.z)
