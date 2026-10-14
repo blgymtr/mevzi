@@ -45,6 +45,8 @@ func _ready() -> void:
 		_run_art_test()
 	elif shot_dir != "" and shot_scene == "vehtest":
 		_run_veh_test()
+	elif shot_dir != "" and shot_scene == "logitest":
+		_run_logi_test()
 	elif shot_dir != "" and shot_scene == "modetest":
 		_run_mode_test()
 	elif shot_dir != "" and shot_scene == "stresstest":
@@ -412,6 +414,10 @@ func start_game(kind: String, data := {}, sandbox := false) -> void:
 	if sandbox:
 		sandbox_ui = Sandbox.new()
 		add_child(sandbox_ui)
+	if not sandbox and G.scenario.is_empty() and shot_dir == "":
+		G.deploy_t = G.DEPLOY_TIME
+	if sandbox:
+		pass
 	elif G.scenario.is_empty() and G.mode != "bases":
 		G.modes = Modes.new()
 		add_child(G.modes)
@@ -649,6 +655,76 @@ func _run_crash_test() -> void:
 	await _wait(2.0)
 	await _shot("crash_end")
 	print("CRASH done alive=%s,%s" % [h1.alive, h2.alive])
+	get_tree().quit()
+
+func _run_logi_test() -> void:
+	# kg stok: ileri üs mühimmatı stoktan verir, araç onarımı, üsse dönüş iadesi, konuşlanma aşaması
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var hq: Vector3 = G.hq_pos[0]
+	var mid: Vector3 = hq.lerp(G.hq_pos[1], 0.35)
+	var fob := place_building(0, "fob", G.grid.nearest_free(mid, Grid.M_HEAVY), 0.0)
+	fob.complete()
+	var st0: float = fob.stock
+	var s := spawn_soldier(0, "at", G.grid.nearest_free(fob.position + Vector3(fob.radius + 2.0, 0, 0), Grid.M_INF), null)
+	s.ammo = 0
+	s.mag = 0
+	s.rockets = 0
+	s.cmd_hold()
+	await _wait(4.0)
+	print("LOGI ammo=%d rockets=%d stock %d -> %d" % [s.ammo, s.rockets, int(st0), int(fob.stock)])
+	if s.ammo <= 0 or fob.stock >= st0:
+		fails += 1
+	fob.stock = 0.0
+	var a0: int = s.ammo
+	s.ammo = 0
+	await _wait(3.0)
+	print("LOGI empty stock ammo=%d" % s.ammo)
+	if s.ammo > 0:
+		fails += 1
+	a0 = a0
+	# araç onarımı (karargâh: sınırsız)
+	var tk := spawn_vehicle(0, "tank", G.grid.nearest_free(hq + Vector3(14, 0, 0), Grid.M_HEAVY), 0.0)
+	tk.hp = tk.max_hp * 0.5
+	tk.add_crit("opt", 1)
+	await _wait(9.0)
+	print("LOGI repair hp=%d/%d crit_opt=%d" % [int(tk.hp), int(tk.max_hp), tk.crit["opt"]])
+	if tk.hp <= tk.max_hp * 0.5:
+		fails += 1
+	# iade
+	var sup0: float = G.supply[0]
+	var r := spawn_soldier(0, "rifle", G.grid.nearest_free(hq + Vector3(30, 0, 20), Grid.M_INF), null)
+	r.cost_share = 30.0
+	r.cmd_refund()
+	var ifv := spawn_vehicle(0, "ifv", G.grid.nearest_free(hq + Vector3(-30, 0, 25), Grid.M_HEAVY), 0.0)
+	ifv.cmd_refund()
+	await _wait(16.0)
+	var gone := not is_instance_valid(r) or not r.alive
+	var vgone := not is_instance_valid(ifv) or not ifv.alive
+	print("LOGI refund soldier_gone=%s ifv_gone=%s supply +%d" % [gone, vgone, int(G.supply[0] - sup0)])
+	if not gone or not vgone or G.supply[0] - sup0 < 100.0:
+		fails += 1
+	# konuşlanma: ateş yok
+	G.deploy_t = 8.0
+	var b1 := spawn_soldier(0, "rifle", G.grid.nearest_free(mid + Vector3(0, 0, 10), Grid.M_INF), null)
+	var e1 := spawn_soldier(1, "rifle", G.grid.nearest_free(mid + Vector3(12, 0, 10), Grid.M_INF), null)
+	b1.cmd_hold()
+	e1.cmd_hold()
+	await _wait(4.0)
+	G.cam.jump_to(mid, true)
+	await _shot("logi_01_deploy")
+	var quiet: bool = b1.shots == 0 and e1.shots == 0
+	await _wait(8.0)
+	var fought: bool = b1.shots > 0 or e1.shots > 0
+	print("LOGI deploy quiet=%s fought_after=%s" % [quiet, fought])
+	if not quiet or not fought:
+		fails += 1
+	print("LOGITEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_mode_test() -> void:

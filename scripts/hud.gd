@@ -27,14 +27,15 @@ const ORDERS := {
 	"fire": {"t": "Ateş Modu", "k": "V", "tgt": false, "d": "Serbest ateş / Sadece karşılık / Ateşi kes"},
 	"stance": {"t": "Duruş", "k": "C", "tgt": false, "d": "Otomatik / Ayakta / Çömel / Yat"},
 	"unload": {"t": "İndir", "k": "U", "tgt": false, "d": "Yolcuları indir."},
+	"refund": {"t": "Üsse Dön (İade)", "k": "J", "tgt": false, "d": "Birlik en yakın üsse döner ve sahadan çekilir; kalan değerinin %80'i iade edilir."},
 	"abandon": {"t": "Terk Et", "k": "K", "tgt": false, "d": "Mürettebat aracı terk eder; araç 6 sn sonra kendini imha eder."},
 	"grenade": {"t": "El Bombası", "k": "G", "tgt": true, "d": "Seçilen noktaya el bombası at."},
 	"smoke": {"t": "Sis", "k": "Z", "tgt": true, "d": "Sis bombası at / sis atarları ateşle."},
 	"suppress": {"t": "Baskı Ateşi", "k": "B", "tgt": true, "d": "Bir bölgeyi 12 sn boyunca ateş altında tut."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "grenade", "smoke", "suppress", "abandon", "demolish"]
-const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_DELETE: "demolish"}
+const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "grenade", "smoke", "suppress", "refund", "abandon", "demolish"]
+const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
 const STANCE_TXT := ["OTO", "AYAKTA", "ÇÖMEL", "YAT"]
 const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "medic": "medic_team", "sniper": "sniper_team", "engineer": "engineer_squad", "mortar": "mortar_team", "drone": "drone_team"}
@@ -334,6 +335,9 @@ func order_state(id: String, sel: Array) -> int:
 		match id:
 			"move", "fast", "amove", "stop", "hold", "retreat", "fire":
 				if sol or veh:
+					return 1
+			"refund":
+				if sol or (veh and not u.is_air()):
 					return 1
 			"reverse":
 				if veh and not u.is_air():
@@ -722,6 +726,8 @@ func _update_info() -> void:
 			q = "%s: %s %%%d%s" % [I18n.s("ÜRETİM"), I18n.s(P["title"]).to_upper(), int(it["t"] / P["time"] * 100), ("  ·  " + I18n.s("BİRLİK SINIRI")) if it.get("blocked", false) else ""]
 		else:
 			q = "%s %%%d" % [I18n.s("SAĞLAM"), int(u.hp / u.max_hp * 100)]
+		if u.btype == "fob" and u.done:
+			q += "  ·  %s %d / %d kg" % [I18n.s("STOK"), int(u.stock), int(Building.STOCK_MAX)]
 		status.text = q
 		var qsig := ""
 		for it in u.queue:
@@ -1018,6 +1024,22 @@ func _update_cards() -> void:
 			qn.text = str(n) if n > 0 else ""
 
 # ------------------------------------------------------------ döngü
+var _dep_lbl: Label = null
+func _deploy_banner() -> void:
+	if G.deploy_t <= 0.0:
+		if _dep_lbl:
+			_dep_lbl.visible = false
+		return
+	if _dep_lbl == null:
+		_dep_lbl = _label(root, "", 22, AMBER, font_b)
+		_dep_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_dep_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+		_dep_lbl.add_theme_constant_override("shadow_offset_y", 2)
+	_dep_lbl.visible = true
+	_dep_lbl.size = Vector2(900, 30)
+	_dep_lbl.position = Vector2(root.size.x * 0.5 - 450, 128)
+	_dep_lbl.text = "%s  %d   ·   %s" % [I18n.s("KONUŞLANMA"), int(ceil(G.deploy_t)), I18n.s("birlik yerleştir, üretim hızlı · Enter: hazır")]
+
 func _process(dt: float) -> void:
 	_sweep += dt * 1.6
 	var t := G.player_team
@@ -1030,6 +1052,7 @@ func _process(dt: float) -> void:
 	if running:
 		_layout()
 		supply_lbl.text = str(int(G.supply[t]))
+		_deploy_banner()
 		var links := 0
 		if G.logi:
 			for tr in G.logi.trucks[t]:
@@ -1514,6 +1537,10 @@ class CmdIcon extends Control:
 				draw_line(c + Vector2(-9, 10), c + Vector2(9, 10), col, w)
 				draw_line(c + Vector2(-4, 10), c + Vector2(-4, -10), col, w)
 				draw_colored_polygon(PackedVector2Array([c + Vector2(-4, -10), c + Vector2(9, -6), c + Vector2(-4, -2)]), col)
+			"refund":
+				draw_rect(Rect2(c + Vector2(-9, -2), Vector2(18, 11)), col, false, w)
+				draw_polyline(PackedVector2Array([c + Vector2(-9, -2), c + Vector2(0, -11), c + Vector2(9, -2)]), col, w)
+				draw_string(ThemeDB.fallback_font, c + Vector2(-4, 8), "$", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
 			"retreat":
 				draw_polyline(PackedVector2Array([c + Vector2(9, -8), c + Vector2(-3, -8), c + Vector2(-3, 8)]), col, w)
 				draw_colored_polygon(PackedVector2Array([c + Vector2(-9, 2), c + Vector2(3, 2), c + Vector2(-3, 10)]), col)

@@ -59,6 +59,9 @@ var capture_team := -1
 var a := Vector3.ZERO      # hat yapıları için uçlar
 var b := Vector3.ZERO
 var supplied_t := -999.0
+# ikmal stoğu (kg): ileri üs mühimmat/onarımı buradan verir, kamyonlar doldurur. Karargâh sınırsız.
+const STOCK_MAX := 1500.0
+var stock := 400.0
 var gun_cd := 0.0
 var gun_burst := 0
 var gun_target: Unit = null
@@ -91,6 +94,33 @@ func setup(t: int, bt: String, r := 0.0) -> void:
 
 func is_base() -> bool:
 	return btype == "hq" or btype == "fob"
+
+# stoktan kg çek; yetmezse false
+func draw_stock(kg: float) -> bool:
+	if btype == "hq" or G.sandbox:
+		return true
+	if stock < kg:
+		return false
+	stock -= kg
+	return true
+
+# üs yakınındaki araçları onar (stoktan): gövde, palet, teker, kritik
+func _service_vehicles() -> void:
+	for u in G.friends_near(position, radius + 10.0, team):
+		if not (u is Vehicle) or u.is_air() or u.vtype == "fpv" or not u.alive:
+			continue
+		if G.time - u.last_hit < 6.0:
+			continue
+		var need: bool = u.hp < u.max_hp or u.tracks_broken > 0.0 or u.tires > 0 or u.has_crit()
+		if not need or not draw_stock(3.0):
+			continue
+		u.hp = minf(u.max_hp, u.hp + u.max_hp * 0.02)
+		u.tracks_broken = maxf(0.0, u.tracks_broken - 4.0)
+		if u.tires > 0 and randf() < 0.2:
+			u.tires -= 1
+		for ck in u.crit:
+			if u.crit[ck] > 0:
+				u.crit_t[ck] -= 6.0
 
 func is_line() -> bool:
 	return B.get("line", false)
@@ -467,6 +497,8 @@ func _process(dt: float) -> void:
 func _think() -> void:
 	if btype == "fob" or btype == "hq":
 		_capture(0.5)
+		if done:
+			_service_vehicles()
 	if btype == "hospital":
 		for u in G.friends_near(position, 12.0, team):
 			if u is Soldier and u.can_fight() and u.hp < u.max_hp:
@@ -596,7 +628,7 @@ func _production(dt: float) -> void:
 		item["blocked"] = true
 		return
 	item["blocked"] = false
-	item["t"] += dt
+	item["t"] += dt * (6.0 if G.deploy_t > 0.0 else 1.0)
 	if item["t"] >= P["time"]:
 		queue.pop_front()
 		_spawn(item["id"])

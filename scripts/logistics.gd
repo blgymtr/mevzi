@@ -4,6 +4,7 @@ class_name Logistics extends Node
 
 const DELIVERY := 160.0
 const HQ_TRICKLE := 3.2
+const STOCK_DELIVERY := 450.0   # kg / sefer
 
 var nodes := [[], []]      # {b: Building, parent: Building, route: PackedVector3Array}
 var trucks := [[], []]
@@ -132,9 +133,10 @@ func truck_arrived(tr: Vehicle) -> void:
 		var b = j["to"]
 		if b != null and is_instance_valid(b) and b.alive and b.team == tr.team:
 			G.supply[tr.team] += DELIVERY
+			b.stock = minf(Building.STOCK_MAX, b.stock + STOCK_DELIVERY)
 			b.supplied_t = G.time
 			if tr.team == G.player_team and not G.spectate:
-				G.say(I18n.s("+%d ikmal") % int(DELIVERY), b.position, tr.team)
+				G.say(I18n.s("+%d ikmal") % int(DELIVERY) + "  ·  +%d kg" % int(STOCK_DELIVERY), b.position, tr.team)
 		j["state"] = "back"
 		var r := route_to(b) if (b != null and is_instance_valid(b)) else PackedVector3Array()
 		r.reverse()

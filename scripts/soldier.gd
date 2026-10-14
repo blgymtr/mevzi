@@ -299,6 +299,29 @@ func cmd_retreat() -> void:
 	target = null
 	cover_type = 0
 
+# üsse dön ve iade: karargâha varınca birim sahadan çekilir, değeri (sağlıkla orantılı) iade edilir
+func cmd_refund() -> void:
+	cmd_retreat()
+	if order == "retreat":
+		order = "refund"
+		refund_b = nearest_base()
+
+var refund_b: Building = null
+
+func _refund_check() -> void:
+	if order != "refund" or refund_b == null or not is_instance_valid(refund_b):
+		return
+	if dist2(refund_b) < refund_b.radius + 6.0:
+		var v := G.unit_value(self) * clampf(hp / max_hp, 0.0, 1.0) * 0.8
+		G.supply[team] += v
+		if team == G.player_team and not G.spectate:
+			G.say(I18n.s("İade +%d") % int(v), position, team)
+		alive = false
+		G.remove_unit(self)
+		if squad:
+			squad.members.erase(self)
+		queue_free()
+
 func cmd_throw(p: Vector3, smoke: bool) -> bool:
 	if not can_fight() or state in ["throw", "drag", "heal"]:
 		return false
@@ -490,13 +513,17 @@ func _resupply() -> void:
 		return
 	for u in G.near(position, 16.0):
 		if u is Building and u.team == team and u.done and u.is_base():
-			ammo = mini(W["ammo"], ammo + 50)
-			if role == "at":
+			# kg: 50 mermi 2 kg, roket 6 kg, 4 havan mermisi 8 kg, el bombası 1 kg
+			if ammo < W["ammo"] and u.draw_stock(2.0):
+				ammo = mini(W["ammo"], ammo + 50)
+			if role == "at" and rockets < 4 and u.draw_stock(6.0):
 				rockets = mini(4, rockets + 1)
-			if role == "mortar":
+			if role == "mortar" and mortar_rounds < 24 and u.draw_stock(8.0):
 				mortar_rounds = mini(24, mortar_rounds + 4)
-			if role != "medic":
+			if role != "medic" and grenades < 2 and u.draw_stock(1.0):
 				grenades = mini(2, grenades + 1)
+			if u.stock < 1.0 and u.btype == "fob" and randf() < 0.05:
+				say("İKMAL YOK!")
 			return
 		if u is Soldier and not u.alive and u.loot > 0 and u.dist2(self) < 1.8:
 			var take := mini(u.loot, W["ammo"] - ammo)
@@ -601,6 +628,9 @@ func _arrive() -> void:
 			return
 	elif order == "build" and build_site != null and is_instance_valid(build_site):
 		state = "build"
+		return
+	if order == "refund":
+		_refund_check()
 		return
 	if order == "move" or order == "retreat" or order == "grenade" or order == "smoke" or order == "panic":
 		if order == "retreat":
@@ -1062,7 +1092,7 @@ func _throw(_dt: float) -> void:
 
 # ------------------------------------------------------------ ateş
 func _combat(_dt: float) -> void:
-	if not can_fight() or state in ["throw", "drag", "heal", "build", "dazed", "rescue", "melee"] or flinch_t > 0.0 or bearer:
+	if G.deploy_t > 0.0 or not can_fight() or state in ["throw", "drag", "heal", "build", "dazed", "rescue", "melee"] or flinch_t > 0.0 or bearer:
 		popped = false
 		return
 	if role == "mortar" and state == "idle":

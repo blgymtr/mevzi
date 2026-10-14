@@ -384,6 +384,32 @@ func cmd_retreat() -> void:
 	order = "retreat"
 	retreating = true
 
+func cmd_refund() -> void:
+	if is_air():
+		return
+	cmd_retreat()
+	if order == "retreat":
+		order = "refund"
+
+func _refund_check() -> void:
+	if order != "refund":
+		return
+	for u in G.friends_near(position, 22.0, team):
+		if u is Building and u.is_base() and u.done and position.distance_to(u.position) < u.radius + 9.0:
+			var v := G.unit_value(self) * clampf(hp / max_hp, 0.0, 1.0) * 0.8
+			for c in cargo:
+				if is_instance_valid(c):
+					v += G.unit_value(c) * 0.8
+					c.queue_free()
+			cargo.clear()
+			G.supply[team] += v
+			if team == G.player_team and not G.spectate:
+				G.say(I18n.s("İade +%d") % int(v), position, team)
+			alive = false
+			G.remove_unit(self)
+			queue_free()
+			return
+
 func has_smoke() -> bool:
 	return vtype in ["tank", "apc", "ifv", "aa"]
 
@@ -482,6 +508,7 @@ func _process(dt: float) -> void:
 			path = G.grid.find_path(position, dest, nav_mode)
 			path_i = 0
 		_scan()
+		_refund_check()
 	atgm_cd -= dt
 	if vtype == "fpv":
 		_fpv(dt)
@@ -888,7 +915,7 @@ func _scan() -> void:
 		coax_target = best_inf
 
 func _aim_fire(dt: float) -> void:
-	if turret == null:
+	if turret == null or G.deploy_t > 0.0:
 		return
 	if G.time < ground_until and fire_mode != 2:
 		var wl := wrapf(Soldier._yaw_of(ground_pt - position) - heading, -PI, PI)

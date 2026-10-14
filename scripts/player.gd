@@ -109,6 +109,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					clear_sel()
 				else:
 					G.hud.toggle_pause()
+			KEY_ENTER, KEY_KP_ENTER:
+				if G.deploy_t > 0.0:
+					G.deploy_t = 0.01
 			KEY_HOME, KEY_BACKSPACE:
 				for u in G.units:
 					if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
@@ -298,6 +301,11 @@ func exec_order(id: String, gp: Vector3) -> void:
 		"abandon":
 			for v in veh:
 				v.cmd_abandon()
+		"refund":
+			for u in mobile:
+				u.cmd_refund()
+			_voice(sol, ["Üsse dönüyoruz!"])
+			Sfx.play2d("ui_move", -8.0)
 		"demolish":
 			for u in selected.duplicate():
 				if u is Building and not u.done and u.team == team:

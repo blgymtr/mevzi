@@ -24,6 +24,8 @@ var player: PlayerCtl
 var logi: Logistics
 var mode := "bases"        # bases | conquest | wargoals
 var modes: Modes = null
+var deploy_t := 0.0        # konuşlanma aşaması (sn): ateş yok, üretim hızlı
+const DEPLOY_TIME := 45.0
 var cam: CamRig
 var ais: Array = []
 
@@ -75,6 +77,7 @@ func reset() -> void:
 	cap_used = [0, 0]
 	game_over = false
 	winner = -1
+	deploy_t = 0.0
 	stats = {"kills": [0, 0], "lost": [0, 0], "built": [0, 0], "pows": [0, 0]}
 	reveal = [0.0, 0.0]
 	zone_t = [0.0, 0.0]
@@ -84,6 +87,12 @@ func reset() -> void:
 
 func step(dt: float) -> void:
 	time += dt
+	if deploy_t > 0.0:
+		deploy_t -= dt
+		if deploy_t <= 0.0:
+			deploy_t = 0.0
+			say(I18n.s("KONUŞLANMA BİTTİ — ÇATIŞMA BAŞLADI"), hq_pos[player_team], player_team)
+			Sfx.play2d("ui_alert", -2.0)
 	RenderingServer.global_shader_parameter_set("game_time", time)
 	_rebuild_hash()
 	var i := smokes.size() - 1
