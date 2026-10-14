@@ -88,10 +88,12 @@ func _mi(parent: Node3D, m: Mesh) -> MeshInstance3D:
 static func _art_meshes(team: int, rl: String) -> Dictionary:
 	var model := "soldier_blue" if team == 0 else "soldier_red"
 	var wpn: String = {"mg": "mg", "at": "rpg", "sniper": "sniper", "engineer": "smg", "crew": "smg", "mortar": "mortar", "drone": "tablet"}.get(rl, "rifle")
+	# gövde parçaları Blender'dan (varsa), silahlar three.js üreticisinden
+	var bm := model + "_body" if Art.has(model + "_body") else model
 	var M := {
-		"torso": Art.skinned(model, "torso", team), "head": null,
-		"upper": Art.skinned(model, "arm", team), "fore": Art.skinned(model, "fore", team),
-		"thigh": Art.skinned(model, "thigh", team), "shin": Art.skinned(model, "shin", team),
+		"torso": Art.skinned(bm, "torso", team), "head": null,
+		"upper": Art.skinned(bm, "arm", team), "fore": Art.skinned(bm, "fore", team),
+		"thigh": Art.skinned(bm, "thigh", team), "shin": Art.skinned(bm, "shin", team),
 		"weapon": Art.skinned(model, wpn, team), "extra": null,
 	}
 	if rl == "medic":
