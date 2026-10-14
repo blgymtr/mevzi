@@ -57,6 +57,7 @@ func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String) -> 
 func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -> void:
 	var p := Proj.new()
 	p.kind = kind
+	var guided := kind == "atgm" or kind == "topatk"
 	p.pos = from
 	var d := to - from
 	var L := d.length()
@@ -64,6 +65,11 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -
 	p.aim = to + Vector3(randf_range(-err, err), randf_range(-0.25, 0.25), randf_range(-err, err))
 	p.vel = (p.aim - from).normalized() * 48.0
 	p.life = 70.0 / 48.0
+	if guided:
+		p.aim = to
+		var up := Vector3(0, 0.6 if kind == "topatk" else 0.05, 0)
+		p.vel = ((to - from).normalized() + up).normalized() * 34.0
+		p.life = 6.0
 	p.team = team
 	p.src = src
 	p.target = target
@@ -143,7 +149,7 @@ func _process(dt: float) -> void:
 		match p.kind:
 			"ap", "he", "auto":
 				done = _step_shell(p, dt)
-			"rpg", "atgm":
+			"rpg", "atgm", "topatk":
 				done = _step_rocket(p, dt)
 			"grenade":
 				done = _step_grenade(p, dt)
@@ -216,6 +222,19 @@ func _shell_hit(p: Proj, at: Vector3, direct: Unit) -> void:
 func _step_rocket(p: Proj, dt: float) -> bool:
 	p.t += dt
 	var wob := Vector3(sin(p.t * 23.0), cos(p.t * 19.0), sin(p.t * 17.0)) * 0.6
+	if p.kind == "atgm" or p.kind == "topatk":
+		wob *= 0.15
+		var gt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
+		if gt != null and gt.alive:
+			var aimp := gt.aim_point()
+			var dd := Vector2(aimp.x - p.pos.x, aimp.z - p.pos.z).length()
+			if p.kind == "topatk" and dd > 14.0 and p.pos.y < 10.0:
+				aimp.y += clampf(dd * 0.4, 0.0, 14.0)
+			var spd := p.vel.length()
+			if p.pos.distance_to(gt.aim_point()) < 14.0:
+				p.vel = (gt.aim_point() - p.pos).normalized() * spd     # son evre: doğrudan
+			else:
+				p.vel = p.vel.lerp((aimp - p.pos).normalized() * spd, clampf(dt * 6.0, 0.0, 1.0))
 	var np := p.pos + (p.vel + wob) * dt
 	p.trail -= dt
 	if p.trail <= 0.0:
@@ -223,9 +242,9 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 		G.fx.rocket_trail(p.pos)
 	var tgt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
 	if tgt != null and tgt.alive and not (tgt is Soldier):
-		if np.distance_to(tgt.aim_point()) < tgt.radius * 0.85:
+		if np.distance_to(tgt.aim_point()) < tgt.radius * (1.1 if p.kind in ["atgm", "topatk"] else 0.85):
 			if tgt is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
-			tgt.take_damage(310.0 if p.kind == "atgm" else 270.0, p.src, p.kind)
+			tgt.take_damage(330.0 if p.kind == "topatk" else (310.0 if p.kind == "atgm" else 270.0), p.src, p.kind)
 			G.fx.explosion(np, 1.1, "rpg")
 			Sfx.play3d("expl_med", np, 2.0)
 			G.fx.impact(np, "metal")
@@ -239,7 +258,8 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 		return true
 	p.pos = np
 	p.node.position = np
-	p.node.look_at(np + p.vel, Vector3.UP)
+	if p.vel.length() > 0.01:
+		p.node.look_at(np + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
 	if p.t >= p.life:
 		G.explode(Vector3(p.pos.x, maxf(p.pos.y, 0.0), p.pos.z), 3.0, 95.0, "rpg", p.team, p.src)
 		return true

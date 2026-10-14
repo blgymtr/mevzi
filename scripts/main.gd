@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "uavtest":
+		_run_uav_test()
 	elif shot_dir != "" and shot_scene == "posetest":
 		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
@@ -726,6 +728,65 @@ func _run_cat_test() -> void:
 	print("CATTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
+func _run_uav_test() -> void:
+	# İHA (keşif/silahlı/kamikaze) + güdümlü tanksavar (ABD üstten saldırı, Rusya doğrudan)
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	sandbox_ui.run("fog")
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var t1 := spawn_vehicle(1, "rus_mbt_72b3", G.grid.nearest_free(c + Vector3(20, 0, 0), Grid.M_HEAVY), 0.0)
+	var t2 := spawn_vehicle(1, "rus_ifv_bmp3", G.grid.nearest_free(c + Vector3(25, 0, 12), Grid.M_HEAVY), 0.0)
+	var t3 := spawn_vehicle(0, "usa_mbt_s3", G.grid.nearest_free(c + Vector3(-20, 0, 25), Grid.M_HEAVY), 0.0)
+	for v in [t1, t2, t3]:
+		v.fire_mode = 2
+		v.cmd_hold()
+	var uav := spawn_vehicle(0, "usa_uav_mq9", c + Vector3(-30, 0, 0), 0.0)
+	uav.cmd_move(c + Vector3(10, 0, 5))
+	await _wait(14.0)
+	G.cam.jump_to(c + Vector3(10, 0, 5), true)
+	G.cam.target_size = 45.0
+	await _shot("uav_01_armed")
+	var h1 := t1.max_hp - t1.hp + t2.max_hp - t2.hp
+	print("UAV armed missiles_left=%d dmg_to_enemies=%d" % [uav.missiles, int(h1)])
+	if uav.missiles >= 4 or h1 <= 0:
+		fails += 1
+	# kamikaze (Rus) amerikan tankına
+	var hp3: float = t3.hp
+	var lm := spawn_vehicle(1, "rus_lm_lancet3", c + Vector3(-10, 0, -20), 0.0)
+	await _wait(9.0)
+	print("UAV loiter alive=%s us_tank_dmg=%d" % [is_instance_valid(lm) and lm.alive, int(hp3 - t3.hp)])
+	if hp3 - t3.hp <= 0:
+		fails += 1
+	# güdümlü tanksavar timleri
+	for v in [t1, t2]:
+		if is_instance_valid(v):
+			v.queue_free()
+			G.units.erase(v)
+	var tt := spawn_vehicle(1, "rus_mbt_90m", G.grid.nearest_free(c + Vector3(0, 0, -40), Grid.M_HEAVY), 0.0)
+	tt.fire_mode = 2
+	tt.cmd_hold()
+	var hpt: float = tt.hp
+	for i in 2:
+		var a := spawn_soldier(0, "atgm", G.grid.nearest_free(c + Vector3(i * 2.0, 0, 15), Grid.M_INF), null)
+		a.cmd_hold()
+	var hp_us: float = t3.hp
+	var r := spawn_soldier(1, "atgm", G.grid.nearest_free(t3.position + Vector3(10, 0, -45), Grid.M_INF), null)
+	r.cmd_hold()
+	await _wait(3.5)
+	G.cam.jump_to(c + Vector3(0, 0, -10), true)
+	await _shot("uav_02_atgm")
+	await _wait(14.0)
+	print("UAV atgm us_vs_t90 dmg=%d  rus_vs_abrams dmg=%d side=%s" % [int(hpt - tt.hp), int(hp_us - t3.hp), tt.SIDE_NAME[maxi(tt.last_side, 0)]])
+	if hpt - tt.hp <= 0:
+		fails += 1
+	# keşif İHA görüşü
+	var rq := spawn_vehicle(0, "usa_uav_rq7", c, 0.0)
+	print("UAV recon sight=%d air=%s" % [int(rq.sight), rq.is_air()])
+	print("UAVTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
 func _run_pose_test() -> void:
 	# iskeletli asker: tüm pozlar yan yana (ABD üst sıra, Rusya alt sıra), yakın çekim
 	get_window().size = Vector2i(1920, 1080)
@@ -738,33 +799,37 @@ func _run_pose_test() -> void:
 	await get_tree().process_frame
 	var c := Vector3(170, 0, 170)
 	G.props.clear_area(c, 30.0)
-	var poses := [["stand", 0.0], ["walk", 1.6], ["run", 4.0], ["aim", 0.0], ["crouch", 0.0], ["crouch_aim", 0.0], ["prone", 0.0], ["crawl", 0.6], ["vault", 0.0], ["slide", 0.0], ["carry", 1.5], ["wounded", 0.0]]
+	var poses := [["stand", 0.0, 0.0], ["walk", 1.6, 0.0], ["run", 4.0, 0.0], ["aim", 0.0, 0.0], ["aim", 2.0, 0.0], ["aim", 2.0, 1.57], ["aim", 2.0, 3.14], ["crouch_aim", 0.0, 0.0], ["prone", 0.0, 0.0], ["crawl", 0.6, 0.0], ["vault", 0.0, 0.0], ["wounded", 0.0, 0.0]]
 	var bodies: Array = []
 	for t in 2:
 		for i in poses.size():
 			var s := spawn_soldier(t, ["rifle", "mg", "at", "rifle"][i % 4], c + Vector3(-11 + i * 2.0, 0, t * 3.2), null)
 			s.position = c + Vector3(-11 + i * 2.0, 0, t * 3.2)
-			s.rotation.y = PI * 1.3
+			s.rotation.y = PI * 1.3 + PI * 0.5
 			s.set_process(false)
 			bodies.append([s, poses[i]])
 	G.running = false
 	G.cam.input_enabled = false
 	for k in 40:
 		for b in bodies:
+			b[0].body.move_yaw = b[1][2]
 			b[0].body.animate(0.033, b[1][0], b[1][1], 0.5)
 		await get_tree().process_frame
 	G.cam.jump_to(c + Vector3(0, 0, 1.6), true)
 	G.cam.size = 13.0
 	G.cam.target_size = 13.0
 	await _wait(0.8)
-	for b in bodies:
-		b[0].body.animate(0.0, b[1][0], b[1][1], 0.5)
 	await _shot("pose_all")
-	G.cam.jump_to(c + Vector3(-6, 0, 1.6), true)
+	G.cam.jump_to(c + Vector3(-2, 0, 0.5), true)
 	G.cam.size = 5.0
 	G.cam.target_size = 5.0
-	await _wait(0.8)
-	await _shot("pose_close")
+	for f in 3:
+		for k in 8:
+			for b in bodies:
+				b[0].body.move_yaw = b[1][2]
+				b[0].body.animate(0.033, b[1][0], b[1][1], 0.5)
+			await get_tree().process_frame
+		await _shot("pose_close_%d" % f)
 	print("POSETEST DONE")
 	get_tree().quit()
 

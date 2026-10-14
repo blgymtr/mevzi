@@ -14,7 +14,7 @@ def tracked(L, W, n, r, xc, tw, zt, nose=1.0, rear=0.15, glacis_z=None, sprocket
     zg = glacis_z if glacis_z is not None else zt - 0.45
     # alt gövde + üst gövde (yandan profil)
     poly_extrude_x([(L / 2, zg), (L / 2 - 0.35, 0.38), (-L / 2 + 0.2, 0.38), (-L / 2, 0.6), (-L / 2, zt)], -(xc - tw / 2 - 0.02), xc - tw / 2 - 0.02, "paint")
-    poly_extrude_x([(L / 2 - nose, zt), (L / 2 + 0.05, zg), (L / 2 + 0.05, r * 2 + 0.25), (-L / 2, r * 2 + 0.25), (-L / 2, zt)], -W / 2, W / 2, "paint", bev=0.03)
+    poly_extrude_x([(L / 2 - nose, zt), (L / 2 + 0.05, zg), (L / 2 + 0.05, r * 2 + 0.25), (-L / 2, r * 2 + 0.25), (-L / 2, zt)], -W / 2, W / 2, "paint", bev=0.02)
     for s in (-1, 1):
         light(s * (W / 2 - 0.3), L / 2 - 0.1, zg + 0.05)
         box((s * (W / 2 - 0.2), -L / 2 - 0.02, zt - 0.3), (0.14, 0.04, 0.1), "red", bev=0.0)
@@ -56,12 +56,12 @@ def _bradley_hull(L=6.55, W=3.28, zt=2.0, era=False):
             era_grid(s * (W / 2 + 0.1), 0, -2.6, 2.4, 0.75, 1.55, s, nx=2, ny=10, depth=0.12)
             era_grid(s * (W / 2 - 0.15), 0, -2.0, 1.8, zt - 0.3, zt - 0.05, s, nx=1, ny=6, depth=0.1)
     for s in (-1, 1):
-        box((s * 1.4, -2.8, zt + 0.15), (0.5, 0.6, 0.3), "canvas", bev=0.05)
+        box((s * 1.4, -2.8, zt + 0.15), (0.5, 0.6, 0.3), "canvas", bev=0.02)
     return zt
 
 def apc_tr(v):
     zt = _bradley_hull(zt=2.15)
-    box((0, -0.8, zt + 0.12), (2.6, 3.8, 0.24), "paint", bev=0.03)                             # yükseltilmiş tavan
+    box((0, -0.8, zt + 0.12), (2.6, 3.8, 0.24), "paint", bev=0.02)                             # yükseltilmiş tavan
     hatch(0.7, -2.2, zt + 0.24, 0.3)
     node("turret")
     tp = (0.4, 0.4, zt + 0.24)
@@ -81,7 +81,7 @@ def ifv_tr(v):
     if v.get("scout") or True:
         box((-0.5, -0.4, tz + 0.95), (0.35, 0.35, 0.3), "paint", bev=0.02)                     # komutan bağımsız görüş
     hatch(-0.45, -0.7, tz + 0.75, 0.26); hatch(0.45, -0.75, tz + 0.75, 0.26)
-    box((-1.2, -0.1, tz + 0.55), (0.42, 1.4, 0.5), "paint", bev=0.03)                          # TOW kutusu
+    box((-1.2, -0.1, tz + 0.55), (0.42, 1.4, 0.5), "paint", bev=0.02)                          # TOW kutusu
     for s in (-1, 1):
         box((-1.2 + s * 0.1, 0.61, tz + 0.55), (0.16, 0.02, 0.36), "dark", bev=0.0)
     for s in (-1, 1):
@@ -119,7 +119,7 @@ def td_box(v):
     zt = 1.85
     cyl((0.45, -0.6, zt + 0.25), 0.18, 0.5, "metal", seg=8)
     node("barrel")
-    box((0.45, -0.5, zt + 0.7), (1.0, 0.55, 0.5), "paint", bev=0.03)
+    box((0.45, -0.5, zt + 0.7), (1.0, 0.55, 0.5), "paint", bev=0.02)
     for s in (-1, 1):
         box((0.45 + s * 0.28, -0.22, zt + 0.7), (0.3, 0.02, 0.36), "dark", bev=0.0)
     pv["barrel"] = (0.45, -0.5, zt + 0.7)
@@ -131,7 +131,7 @@ def td_ontos(v):
     tracked(L, W, 4, 0.3, 1.05, 0.38, zt, nose=0.7)
     node("turret")
     tp = (0, 0.1, zt)
-    box((0, 0.0, zt + 0.15), (0.8, 0.8, 0.3), "paint", bev=0.03)
+    box((0, 0.0, zt + 0.15), (0.8, 0.8, 0.3), "paint", bev=0.02)
     node("barrel")
     for s in (-1, 1):
         for k in range(3):
@@ -148,17 +148,17 @@ def spg(v):
     node("turret")
     ty = -0.6 if not old else -1.3
     tz = zt
-    slab(1.4, 1.3, -1.9, -1.95, tz, tz + 1.15, 1.45, 1.35, "paint", bev=0.04)                   # büyük kutu taret
+    slab(1.4, 1.3, -1.9, -1.95, tz, tz + 1.15, 1.45, 1.35, "paint", bev=0.02)                   # büyük kutu taret
     box((0, -1.97, tz + 0.65), (2.0, 0.06, 0.9), "paint", bev=0.02)                              # arka kapak
     cyl((0.85, -0.3, tz + 1.25), 0.36, 0.2, "paint", seg=12)
     mg(0.85, 0.0, tz + 1.45, 0.0, 1.1, True)
     hatch(-0.7, -0.5, tz + 1.15, 0.28)
     for s in (-1, 1):
-        box((s * 1.5, -0.6, tz + 0.55), (0.1, 1.8, 0.7), "canvas", bev=0.05)
+        box((s * 1.5, -0.6, tz + 0.55), (0.1, 1.8, 0.7), "canvas", bev=0.02)
         box((s * 1.45, 1.35, tz + 0.5), (0.25, 0.25, 0.35), "paint", bev=0.02)
     node("barrel")
     bz = tz + 0.65
-    box((0, 1.45, bz), (0.6, 0.4, 0.55), "paint", bev=0.03)
+    box((0, 1.45, bz), (0.6, 0.4, 0.55), "paint", bev=0.02)
     gun(1.6, bz, 5.6 if not old else 3.2, 0.1, "paint", brake=True, sleeve=0.6)
     return {"body": (0, 0, 0), "turret": (0, ty, tz), "barrel": (0, 1.4, bz)}, {"muzzle": (0, 7.3 if not old else 4.9, bz), "radius": 2.9}
 
@@ -168,13 +168,13 @@ def spg_open(v):
     tracked(L, W, 5, 0.38, 1.3, 0.46, zt, nose=0.9, sprocket_front=True)
     box((0, -L / 2 - 0.4, 0.55), (2.6, 0.25, 0.9), "paint", rot=(0.6, 0, 0), bev=0.02)         # geri tepme pençesi
     for s in (-1, 1):
-        box((s * 0.95, -1.6, zt + 0.35), (0.6, 0.6, 0.7), "paint", bev=0.03)                    # mürettebat koltukları
+        box((s * 0.95, -1.6, zt + 0.35), (0.6, 0.6, 0.7), "paint", bev=0.02)                    # mürettebat koltukları
     node("turret")
     tz = zt
-    box((0, -1.0, tz + 0.25), (1.6, 1.6, 0.5), "paint", bev=0.03)
+    box((0, -1.0, tz + 0.25), (1.6, 1.6, 0.5), "paint", bev=0.02)
     node("barrel")
     bz = tz + 0.85
-    box((0, -1.0, bz), (0.9, 1.4, 0.7), "paint", bev=0.03)
+    box((0, -1.0, bz), (0.9, 1.4, 0.7), "paint", bev=0.02)
     if v.get("mortar"):
         gun(-0.3, bz, 4.0, 0.2, "paint")
     elif cal == 203:
@@ -187,7 +187,7 @@ def spg_open(v):
 def mortar_tr(v):
     if v.get("ampv"):
         zt = _bradley_hull(zt=2.15)
-        box((0, -0.3, zt + 0.12), (2.6, 3.4, 0.24), "paint", bev=0.03)
+        box((0, -0.3, zt + 0.12), (2.6, 3.4, 0.24), "paint", bev=0.02)
     else:
         L, W, zt = 4.9, 2.7, 1.85
         tracked(L, W, 5, 0.3, 1.1, 0.4, zt, nose=0.9)
@@ -211,14 +211,14 @@ def mlrs_t(v):
     L, W, zt = 6.9, 2.97, 1.35
     tracked(L, W, 6, 0.32, 1.25, 0.53, zt, nose=0.6, sprocket_front=True, rollers=(1.4, -1.4))
     armored = v.get("armored_cab", False)
-    slab(L / 2 + 0.02, L / 2 - 0.5, L / 2 - 1.9, L / 2 - 1.9, zt, zt + 1.1, W / 2, W / 2 - 0.08, "paint", bev=0.04)
+    slab(L / 2 + 0.02, L / 2 - 0.5, L / 2 - 1.9, L / 2 - 1.9, zt, zt + 1.1, W / 2, W / 2 - 0.08, "paint", bev=0.02)
     box((0, L / 2 - 0.2, zt + 0.75), (2.4, 0.04, 0.45 if not armored else 0.25), "glass", rot=(-0.6, 0, 0), bev=0.0)
     if armored:
         for s in (-1, 1):
             era_grid(s * (W / 2 + 0.05), 0, L / 2 - 1.8, L / 2 - 0.2, zt + 0.1, zt + 0.9, s, nx=2, ny=4, depth=0.1)
     node("turret")
     tp = (0, -1.3, zt)
-    box((0, -1.3, zt + 0.2), (2.6, 3.4, 0.4), "paint", bev=0.03)
+    box((0, -1.3, zt + 0.2), (2.6, 3.4, 0.4), "paint", bev=0.02)
     node("barrel")
     for s in (-1, 1):
         podbox(s * 0.64, -1.3, zt + 0.95, 1.15, 4.0, 0.95, 0.0, (2, 3))
@@ -230,7 +230,7 @@ def _abrams_hull():
     wy = [2.62 - i * 0.88 for i in range(7)]
     running_gear(1.47, 0.64, wy, 0.32, 3.3, -3.42, 0.3, 0.33, z_top_run=0.98, rollers_y=(1.6, -0.6))
     poly_extrude_x([(3.9, 0.95), (3.62, 0.42), (-3.6, 0.42), (-3.92, 0.6), (-3.95, 0.98)], -1.08, 1.08, "paint")
-    poly_extrude_x([(3.25, 1.38), (3.98, 1.02), (3.98, 0.95), (-3.95, 0.95), (-3.95, 1.36), (-3.2, 1.4)], -1.83, 1.83, "paint", bev=0.03)
+    poly_extrude_x([(3.25, 1.38), (3.98, 1.02), (3.98, 0.95), (-3.95, 0.95), (-3.95, 1.36), (-3.2, 1.4)], -1.83, 1.83, "paint", bev=0.02)
     for s in (-1, 1):
         for (y, L) in ((2.75, 1.1), (1.6, 1.15), (0.42, 1.15), (-0.76, 1.15), (-1.94, 1.15), (-3.05, 0.95)):
             box((s * 1.87, y, 0.86), (0.08, L - 0.03, 0.62), "paint", bev=0.02)
@@ -240,18 +240,18 @@ def _abrams_hull():
 def eng_breach(v):
     zt = _abrams_hull()
     # ön saban (mayın kazıcı)
-    box((0, 4.55, 0.4), (3.9, 0.5, 0.7), "paint", rot=(0.5, 0, 0), bev=0.03)
+    box((0, 4.55, 0.4), (3.9, 0.5, 0.7), "paint", rot=(0.5, 0, 0), bev=0.02)
     for k in range(9):
         box((-1.8 + k * 0.45, 4.85, 0.15), (0.12, 0.35, 0.3), "metal", rot=(0.9, 0, 0), bev=0.0)
     for s in (-1, 1):
         box((s * 1.6, 3.95, 0.8), (0.15, 1.2, 0.2), "metal", rot=(-0.4, 0, 0), bev=0.0)
     node("turret")
     tz = zt
-    slab(1.8, 1.5, -1.6, -1.7, tz, tz + 0.75, 1.5, 1.35, "paint", bev=0.04)
+    slab(1.8, 1.5, -1.6, -1.7, tz, tz + 0.75, 1.5, 1.35, "paint", bev=0.02)
     rws(0.6, 0.0, tz + 0.75, False, True)
     node("barrel")
     for s in (-1, 1):
-        box((s * 0.8, -0.8, tz + 1.05), (0.8, 1.8, 0.55), "paint", rot=(0.4, 0, 0), bev=0.03)   # hat açma roket kutuları
+        box((s * 0.8, -0.8, tz + 1.05), (0.8, 1.8, 0.55), "paint", rot=(0.4, 0, 0), bev=0.02)   # hat açma roket kutuları
     return {"body": (0, 0, 0), "turret": (0, 0.2, tz), "barrel": (0, -0.8, tz + 1.0)}, {"muzzle": (0, 0.4, tz + 1.4), "radius": 3.0}
 
 def eng_dozer(v):
@@ -260,11 +260,11 @@ def eng_dozer(v):
         # zırhlı buldozer: yüksek kabin, geniş bıçak, arkada sökücü
         L, W, zt = 5.0, 3.2, 1.5
         tracked(L, W, 6, 0.32, 1.25, 0.6, zt, nose=0.3)
-        slab(0.6, 0.5, -1.4, -1.5, zt, zt + 1.6, 1.0, 0.9, "paint", bev=0.04)
+        slab(0.6, 0.5, -1.4, -1.5, zt, zt + 1.6, 1.0, 0.9, "paint", bev=0.02)
         for s in (-1, 1):
             box((s * 0.92, -0.45, zt + 1.05), (0.03, 1.4, 0.5), "glass", bev=0.0)
         box((0, 0.55, zt + 1.05), (1.6, 0.04, 0.5), "glass", bev=0.0)
-        box((0, 3.3, 0.9), (4.0, 0.25, 1.6), "paint", rot=(-0.15, 0, 0), bev=0.04)
+        box((0, 3.3, 0.9), (4.0, 0.25, 1.6), "paint", rot=(-0.15, 0, 0), bev=0.02)
         for s in (-1, 1):
             box((s * 1.4, 2.4, 0.8), (0.2, 1.8, 0.25), "metal", bev=0.0)
         box((0, -3.0, 0.6), (0.2, 0.9, 1.0), "metal", rot=(0.3, 0, 0), bev=0.0)
@@ -272,7 +272,7 @@ def eng_dozer(v):
     else:
         L, W, zt = 6.2, 3.2, 1.2
         tracked(L, W, 4, 0.36, 1.3, 0.46, zt, nose=0.5)
-        box((0, 3.4, 0.7), (3.4, 0.22, 1.0), "paint", rot=(-0.2, 0, 0), bev=0.04)
+        box((0, 3.4, 0.7), (3.4, 0.22, 1.0), "paint", rot=(-0.2, 0, 0), bev=0.02)
         slab(-0.8, -1.0, -2.6, -2.7, zt, zt + 0.7, 0.8, 0.7, "paint")
         zr = zt + 0.7
     node("turret")
@@ -285,11 +285,11 @@ def eng_dozer(v):
 def eng_bridge(v):
     zt = _abrams_hull()
     # katlanmış köprü (üstte iki makas parça) + atma kolu
-    box((0, 0.2, zt + 0.55), (3.9, 6.6, 0.35), "paint", bev=0.04)
-    box((0, 0.2, zt + 0.95), (3.9, 6.6, 0.35), "paint", bev=0.04)
+    box((0, 0.2, zt + 0.55), (3.9, 6.6, 0.35), "paint", bev=0.02)
+    box((0, 0.2, zt + 0.95), (3.9, 6.6, 0.35), "paint", bev=0.02)
     for s in (-1, 1):
         box((s * 1.6, 0.2, zt + 0.75), (0.25, 6.4, 0.2), "dark", bev=0.0)
-    box((0, 3.6, zt + 0.2), (1.2, 0.6, 0.5), "metal", bev=0.03)
+    box((0, 3.6, zt + 0.2), (1.2, 0.6, 0.5), "metal", bev=0.02)
     node("turret")
     tp = (0.9, -2.8, zt + 1.15)
     cyl((0.9, -2.8, zt + 1.2), 0.12, 0.1, "dark", seg=8)
@@ -300,12 +300,12 @@ def eng_bridge(v):
 def eng_recovery(v):
     L, W, zt = 8.3, 3.4, 2.4
     tracked(L, W, 6, 0.34, 1.4, 0.6, zt, nose=1.4, glacis_z=1.3, rollers=(1.6, -0.2, -2.0))
-    box((0, L / 2 + 0.25, 0.5), (3.3, 0.22, 0.9), "paint", rot=(-0.2, 0, 0), bev=0.03)          # ön bıçak
+    box((0, L / 2 + 0.25, 0.5), (3.3, 0.22, 0.9), "paint", rot=(-0.2, 0, 0), bev=0.02)          # ön bıçak
     # A çerçeve vinç (yatık)
     for s in (-1, 1):
         box((s * 1.0, 1.5, zt + 0.2), (0.2, 4.2, 0.2), "metal", rot=(0.0, 0, s * 0.18), bev=0.0)
     box((0, 3.55, zt + 0.25), (0.4, 0.5, 0.35), "metal", bev=0.02)
-    box((0, -3.0, zt + 0.3), (2.6, 1.6, 0.6), "canvas", bev=0.06)
+    box((0, -3.0, zt + 0.3), (2.6, 1.6, 0.6), "canvas", bev=0.02)
     node("turret")
     tp = (-0.9, 0.3, zt)
     cyl((-0.9, 0.3, zt + 0.15), 0.4, 0.3, "paint", seg=12)

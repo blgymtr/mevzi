@@ -1214,49 +1214,49 @@
    "cat": "uav",
    "id": "rus_uav_orlan10",
    "ref": "Orlan 10",
-   "name": "Orlan-10",
-   "fam": "pending",
-   "cost": 0
+   "name": "Taktik Keşif İHA (doğu)",
+   "fam": "uav_tac",
+   "cost": 160
   },
   {
    "cat": "uav",
    "id": "rus_uav_orlan30",
    "ref": "Orlan 30",
-   "name": "Orlan-30",
-   "fam": "pending",
-   "cost": 0
+   "name": "Taktik Keşif İHA II (doğu)",
+   "fam": "uav_tac",
+   "cost": 200
   },
   {
    "cat": "uav",
    "id": "rus_uav_zala42116e",
    "ref": "ZALA 421 16E",
-   "name": "ZALA-421-16E",
-   "fam": "pending",
-   "cost": 0
+   "name": "Hafif Keşif İHA (doğu)",
+   "fam": "uav_hand",
+   "cost": 80
   },
   {
    "cat": "uav",
    "id": "rus_uav_eleron3",
    "ref": "Eleron 3",
-   "name": "Eleron-3",
-   "fam": "pending",
-   "cost": 0
+   "name": "El Atımlı Keşif İHA (doğu)",
+   "fam": "uav_hand",
+   "cost": 60
   },
   {
    "cat": "uav",
    "id": "rus_uav_forpostr",
    "ref": "Forpost R",
-   "name": "Forpost-R",
-   "fam": "pending",
-   "cost": 0
+   "name": "Silahlı İHA (doğu)",
+   "fam": "uav_male",
+   "cost": 400
   },
   {
    "cat": "uav",
    "id": "rus_uav_orion",
    "ref": "Orion",
-   "name": "Orion",
-   "fam": "pending",
-   "cost": 0
+   "name": "Silahlı İHA II (doğu)",
+   "fam": "uav_male",
+   "cost": 460
   },
   {
    "cat": "robot",
@@ -1407,40 +1407,46 @@
    "id": "rus_lm_lancet3",
    "ref": "Lancet-3",
    "name": "Dolanan Mühimmat (doğu)",
-   "fam": "pending",
-   "cost": 0
+   "fam": "lm_wing",
+   "cost": 120
   },
   {
    "cat": "loiter",
    "id": "rus_lm_lancet3m",
    "ref": "Lancet-3M",
    "name": "Ağır Kamikaze İHA",
-   "fam": "pending",
-   "cost": 0
+   "fam": "lm_wing",
+   "cost": 150,
+   "v": {
+    "big": true
+   }
   },
   {
    "cat": "loiter",
    "id": "rus_lm_kub",
    "ref": "ZALA Kub-BLA",
    "name": "Dolanan Mühimmat (doğu)",
-   "fam": "pending",
-   "cost": 0
+   "fam": "lm_wing",
+   "cost": 100
   },
   {
    "cat": "loiter",
    "id": "rus_lm_geran2",
    "ref": "Geran-2",
    "name": "Ağır Kamikaze İHA",
-   "fam": "pending",
-   "cost": 0
+   "fam": "lm_delta",
+   "cost": 200,
+   "v": {
+    "big": true
+   }
   },
   {
    "cat": "loiter",
    "id": "rus_lm_molniya2",
    "ref": "Molniya-2",
    "name": "Dolanan Mühimmat (doğu)",
-   "fam": "pending",
-   "cost": 0
+   "fam": "lm_wing",
+   "cost": 70
   },
   {
    "cat": "loiter",

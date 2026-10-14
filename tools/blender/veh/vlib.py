@@ -43,14 +43,14 @@ def mat(n):
         _M[full] = m
     return _M[full]
 
-def _fin(o, mname, bev=0.0, seg=2):
+def _fin(o, mname, bev=0.0, seg=1):
     # dönüş ve ölçeği ağa işle: birleştirmede dönüş gövdeye taşınmasın (yan yatma hatası), pah her yönde eşit olsun
     bpy.ops.object.select_all(action='DESELECT')
     o.select_set(True)
     bpy.context.view_layer.objects.active = o
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
     if bev > 0:
-        b = o.modifiers.new("bev", 'BEVEL'); b.width = bev; b.segments = seg; b.limit_method = 'ANGLE'; b.angle_limit = math.radians(35)
+        b = o.modifiers.new("bev", 'BEVEL'); b.width = bev; b.segments = seg; b.limit_method = 'ANGLE'; b.angle_limit = math.radians(30)
         b.harden_normals = False
     o.data.materials.clear()
     o.data.materials.append(mat(mname))
@@ -61,10 +61,9 @@ def box(loc, size, mname="paint", rot=(0, 0, 0), bev=0.02):
     bpy.ops.mesh.primitive_cube_add(location=loc, rotation=rot)
     o = bpy.context.active_object
     o.scale = (size[0] / 2, size[1] / 2, size[2] / 2)
-    # keskin kutu görünümünü kır: pah boyutun %18'i (en az verilen, en çok 6 cm)
+    # sert yüzey: ince, tek kademeli pah (yuvarlak hap görünümü yok)
     m = min(size)
-    if bev > 0 or m > 0.06:
-        bev = min(0.06, max(bev, m * 0.18), m * 0.45)
+    bev = min(bev, 0.015, m * 0.2) if bev > 0 else 0.0
     return _fin(o, mname, bev)
 
 def cyl(loc, r, depth, mname="metal", axis="Z", seg=16, r2=None, bev=0.0, rot=None):

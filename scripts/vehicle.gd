@@ -10,6 +10,9 @@ const DEF := {
 	"aa": {"title": "Uçaksavar", "hp": 480.0, "armor": 1, "speed": 7.5, "accel": 2.8, "turn": 0.9, "radius": 2.6, "len": 6.6, "nav": Grid.M_HEAVY, "sight": 70.0, "cap": 3, "tturn": 2.4, "icon": "aa"},
 	"arty": {"title": "Kundağı Motorlu Obüs", "hp": 420.0, "armor": 1, "speed": 6.0, "accel": 2.2, "turn": 0.7, "radius": 2.8, "len": 7.0, "nav": Grid.M_HEAVY, "sight": 34.0, "cap": 4, "tturn": 0.6, "icon": "arty"},
 	"transport": {"title": "Nakliye Helikopteri", "hp": 520.0, "armor": 1, "speed": 20.0, "accel": 6.0, "turn": 1.3, "radius": 4.0, "len": 12.0, "nav": Grid.M_LIGHT, "sight": 50.0, "cap": 3, "tturn": 0.0, "icon": "heli"},
+	"uav": {"title": "Keşif İHA", "hp": 120.0, "armor": 0, "speed": 14.0, "accel": 4.0, "turn": 0.8, "radius": 2.6, "len": 6.0, "nav": Grid.M_LIGHT, "sight": 85.0, "cap": 0, "tturn": 0.0, "icon": "fpv", "air": true},
+	"uav_armed": {"title": "Silahlı İHA", "hp": 180.0, "armor": 0, "speed": 15.0, "accel": 4.0, "turn": 0.7, "radius": 3.0, "len": 8.0, "nav": Grid.M_LIGHT, "sight": 80.0, "cap": 0, "tturn": 0.0, "icon": "fpv", "air": true},
+	"loiter": {"title": "Kamikaze İHA", "hp": 30.0, "armor": 0, "speed": 24.0, "accel": 14.0, "turn": 3.0, "radius": 0.8, "len": 1.5, "nav": Grid.M_LIGHT, "sight": 50.0, "cap": 0, "tturn": 0.0, "icon": "fpv", "air": true},
 	"fpv": {"title": "FPV Drone", "hp": 22.0, "armor": 0, "speed": 21.0, "accel": 16.0, "turn": 4.0, "radius": 0.6, "len": 0.5, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 0, "tturn": 0.0, "icon": "fpv"},
 	"fieldgun": {"title": "Sahra Topu", "hp": 360.0, "armor": 0, "speed": 1.6, "accel": 1.5, "turn": 0.6, "radius": 1.6, "len": 4.0, "nav": Grid.M_LIGHT, "sight": 40.0, "cap": 3, "tturn": 0.7, "icon": "arty"},
 	"howitzer": {"title": "Çekili Obüs", "hp": 380.0, "armor": 0, "speed": 1.1, "accel": 1.0, "turn": 0.45, "radius": 2.0, "len": 5.0, "nav": Grid.M_LIGHT, "sight": 30.0, "cap": 3, "tturn": 0.45, "icon": "arty"},
@@ -100,6 +103,10 @@ var rock := 0.0
 var rock_v := 0.0
 var burn_t := 0.0
 const ALT := 9.0
+const UAV_ALT := 24.0
+var uav_ang := 0.0
+var missiles := 0
+var missile_cd := 0.0
 var rotor: Node3D
 var trotor: Node3D
 var hvel := Vector3.ZERO
@@ -136,7 +143,10 @@ var mlrs_t := 0.0
 const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2}
 
 func is_air() -> bool:
-	return vtype in ["heli", "transport", "fpv"]
+	return vtype in ["heli", "transport", "fpv", "uav", "uav_armed", "loiter"]
+
+func is_drone() -> bool:
+	return vtype in ["fpv", "uav", "uav_armed", "loiter"]
 
 func capacity() -> int:
 	return CAPACITY.get(vtype, 0)
@@ -271,6 +281,14 @@ func setup(t: int, vt: String) -> void:
 	if vt == "fpv":
 		hull.position.y = 2.2
 		Sfx.loop3d("drone", self, -6.0)
+	if vt in ["uav", "uav_armed"]:
+		hull.position.y = UAV_ALT
+		uav_ang = randf() * TAU
+		missiles = 4 if vt == "uav_armed" else 0
+		Sfx.loop3d("drone", self, -14.0)
+	if vt == "loiter":
+		hull.position.y = 18.0
+		Sfx.loop3d("drone", self, -8.0)
 	if vt in ["heli", "transport"]:
 		hull.position.y = ALT
 		rotor = Node3D.new()
@@ -306,7 +324,7 @@ func setup(t: int, vt: String) -> void:
 	dest = position
 	_last_pos = position
 	think_t = randf() * 0.5
-	if vt != "fpv" and not (vt in TOWED):
+	if not is_drone() and not (vt in TOWED):
 		engine = Sfx.loop3d("heli" if vt in ["heli", "transport"] else ("engine_tank" if vt in ["tank", "apc", "ifv", "aa", "arty"] else "engine_truck"), self, -8.0 if vt in ["heli", "transport"] else -10.0)
 
 func forward() -> Vector3:
@@ -521,6 +539,12 @@ func _process(dt: float) -> void:
 		_scan()
 		_refund_check()
 	atgm_cd -= dt
+	if vtype in ["uav", "uav_armed"]:
+		_uav(dt)
+		return
+	if vtype == "loiter":
+		_fpv(dt)
+		return
 	if vtype == "fpv":
 		_fpv(dt)
 		return
@@ -1261,7 +1285,7 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if not alive:
 		return
 	var m := 1.0
-	if vtype == "fpv":
+	if vtype in ["fpv", "loiter"]:
 		hp -= amount
 		if hp <= 0.0:
 			destroy(null)
@@ -1510,6 +1534,59 @@ func _heli(dt: float) -> void:
 		_hitscan_from(gp, t, 28.0, 0.38, 12.0)
 		Sfx.play3d("hmg", gp, 2.0, 0.08, 0.03)
 
+# İHA: emir noktası çevresinde yüksekte daire çizer; silahlı olan araçlara üstten füze atar
+func _uav(dt: float) -> void:
+	if G.weather != null and G.weather.no_air():
+		hull.position.y = move_toward(hull.position.y, 6.0, dt * 3.0)
+	else:
+		hull.position.y = move_toward(hull.position.y, UAV_ALT, dt * 4.0)
+	var R := 26.0
+	var c := dest
+	var to_c := c - position
+	to_c.y = 0.0
+	var want: Vector3
+	if to_c.length() > R + 6.0:
+		want = to_c.normalized() * speed_max
+	else:
+		uav_ang += dt * speed_max / R
+		var goal := c + Vector3(cos(uav_ang), 0, sin(uav_ang)) * R
+		want = (goal - position)
+		want.y = 0.0
+		want = want.normalized() * speed_max
+	hvel = hvel.move_toward(want, D["accel"] * dt)
+	position += hvel * dt
+	position.x = clampf(position.x, 2.0, G.MAP - 2.0)
+	position.z = clampf(position.z, 2.0, G.MAP - 2.0)
+	cur_speed = hvel.length()
+	if hvel.length() > 0.5:
+		heading = rotate_toward(heading, Soldier._yaw_of(hvel), D["turn"] * 2.0 * dt)
+	hull.rotation = Vector3(0.0, heading, -0.28)
+	if vtype != "uav_armed":
+		return
+	missile_cd -= dt
+	if missiles <= 0 or missile_cd > 0.0:
+		return
+	var best: Vehicle = null
+	var bd := 1e9
+	for e in G.enemies_near(position, 75.0, team):
+		if e is Vehicle and e.alive and not e.is_air() and G.is_seen(e, team):
+			var d: float = dist2(e) - e.max_hp * 0.02
+			if forced_target == e:
+				d -= 999.0
+			if d < bd:
+				bd = d
+				best = e
+	if best == null:
+		return
+	missiles -= 1
+	missile_cd = 9.0
+	var mp := position + Vector3(0, hull.position.y - 0.4, 0)
+	G.bal.rocket(mp, best.aim_point(), team, self, best, "topatk")
+	Sfx.play3d("rpg", mp, -2.0)
+	say("FÜZE ATILDI")
+	if missiles <= 0:
+		say("MÜHİMMAT BİTTİ — ÜSSE DÖN", 3.0)
+
 func _fpv(dt: float) -> void:
 	if G.weather != null and G.weather.no_air():
 		hull.position.y = move_toward(hull.position.y, 0.2, dt * 3.0)
@@ -1518,11 +1595,14 @@ func _fpv(dt: float) -> void:
 	if t == null or not is_instance_valid(t) or not t.alive:
 		# yeni hedef: yakındaki düşman
 		t = null
-		var bd := 60.0
-		for e in G.enemies_near(position, 60.0, team):
-			if e.alive and not (e is Building) and not (e is Vehicle and e.is_air()) and dist2(e) < bd:
-				bd = dist2(e)
-				t = e
+		var lm := vtype == "loiter"
+		var bd := 95.0 if lm else 60.0
+		for e in G.enemies_near(position, bd, team):
+			if e.alive and not (e is Building) and not (e is Vehicle and e.is_air()):
+				var sc := dist2(e) - (40.0 if lm and e is Vehicle else 0.0)
+				if sc < bd:
+					bd = sc
+					t = e
 		forced_target = t
 		if t == null:
 			hp -= dt * 2.0
@@ -1534,20 +1614,23 @@ func _fpv(dt: float) -> void:
 	var flat := Vector3(to.x, 0, to.z)
 	var dist := flat.length()
 	var want := flat.normalized() * speed_max
+	if vtype == "loiter":
+		# dalış: yakınken yavaşla, irtifayı hızla düşür
+		want *= clampf(dist / 10.0, 0.35, 1.0)
 	hvel = hvel.move_toward(want, D["accel"] * dt)
 	position += hvel * dt
 	heading = Soldier._yaw_of(hvel) if hvel.length() > 0.5 else heading
 	hull.rotation = Vector3(-0.35, heading, sin(G.time * 9.0) * 0.08)
 	# alçal ve dal
-	var alt := clampf(dist * 0.25, tp.y, 9.0)
-	hull.position.y = move_toward(hull.position.y, alt, dt * 6.0)
+	var alt := clampf(dist * 0.25, tp.y, 9.0) if vtype == "fpv" else clampf(dist * 0.6, tp.y, 18.0)
+	hull.position.y = move_toward(hull.position.y, alt, dt * (6.0 if vtype == "fpv" else 16.0))
 	cur_speed = hvel.length()
 	if dist < 14.0 and randf() < dt * 4.0:
 		for s in G.enemies_near(position, 10.0, team):
 			if s is Soldier:
 				s.on_drone(position)
 				break
-	if dist < 1.2 and absf(to.y) < 1.8:
+	if (dist < 1.2 and absf(to.y) < 1.8) or (vtype == "loiter" and dist < 2.4 and to.y > -2.6):
 		destroy(t)
 
 func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> void:
@@ -1653,14 +1736,29 @@ func _heli_crash() -> void:
 func destroy(src) -> void:
 	if not alive:
 		return
-	if vtype == "fpv":
+	if vtype in ["fpv", "loiter"]:
 		alive = false
 		var p := position + Vector3(0, hull.position.y, 0)
-		G.explode(p, 2.6, 150.0, "rpg", team, operator if operator != null and is_instance_valid(operator) else self)
-		for v in G.near(p, 3.0):
+		var big := vtype == "loiter"
+		G.explode(p, 3.4 if big else 2.6, 180.0 if big else 150.0, "rpg", team, operator if operator != null and is_instance_valid(operator) else self)
+		for v in G.near(p, 3.5):
 			if v is Vehicle and v != self and v.alive and v.team != team:
-				v.take_damage(240.0, self, "rpg")
+				v.take_damage(330.0 if big else 240.0, self, "topatk" if big else "rpg")
 		queue_free()
+		return
+	if vtype in ["uav", "uav_armed"]:
+		alive = false
+		G.credit_kill(src, self)
+		var p2 := position + Vector3(0, hull.position.y, 0)
+		G.fx.explosion(p2, 1.0, "big")
+		Sfx.play3d("expl_med", p2, 2.0)
+		# enkaz düşer
+		var tw := create_tween()
+		tw.tween_property(hull, "position:y", 0.3, 2.2).set_ease(Tween.EASE_IN)
+		tw.parallel().tween_property(hull, "rotation:z", 1.4, 2.2)
+		tw.tween_callback(func():
+			G.explode(position + Vector3(0, 0.3, 0), 2.5, 40.0, "grenade", -1, null)
+			queue_free())
 		return
 	_cargo_lost()
 	if vtype in ["heli", "transport"]:

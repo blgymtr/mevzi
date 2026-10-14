@@ -10,7 +10,7 @@ def mbt(v):
     # ---------------- alt gövde (paletler arası)
     poly_extrude_x([(3.9, 0.95), (3.62, 0.42), (-3.6, 0.42), (-3.92, 0.6), (-3.95, 0.98)], -1.08, 1.08, "paint")
     # üst gövde / sponsonlar: yandan profil (y,z) X boyunca
-    poly_extrude_x([(3.25, 1.38), (3.98, 1.02), (3.98, 0.95), (-3.95, 0.95), (-3.95, 1.36), (-3.2, 1.4)], -1.83, 1.83, "paint", bev=0.03)
+    poly_extrude_x([(3.25, 1.38), (3.98, 1.02), (3.98, 0.95), (-3.95, 0.95), (-3.95, 1.36), (-3.2, 1.4)], -1.83, 1.83, "paint", bev=0.02)
     # yan etekler: paneller + cıvatalar + ön eğik panel
     for s in (-1, 1):
         X = s * 1.87
@@ -51,9 +51,9 @@ def mbt(v):
         for (x, y) in plan:
             pts.append((s * x, y + 0.25, tz))
             pts.append((s * x * 0.94, y * 0.97 + 0.25, tz + th))
-    hull_pts(pts, "paint", bev=0.035)
+    hull_pts(pts, "paint", bev=0.02)
     # kalkan (mantle): V'nin ucunda, gövdeye gömülü
-    box((0, 2.42 + 0.25, tz + th * 0.48), (0.7, 0.3, th * 0.7), "paint", bev=0.03)
+    box((0, 2.42 + 0.25, tz + th * 0.48), (0.7, 0.3, th * 0.7), "paint", bev=0.02)
     # yanak birleşim çizgisi (zırh modülü kapağı)
     for s in (-1, 1):
         box((s * 1.1, 1.2 + 0.25, tz + th + 0.005), (0.9, 1.2, 0.02), "paint", rot=(0, 0, s * 0.25), bev=0.0)
@@ -75,7 +75,7 @@ def mbt(v):
         box((-0.95, 0.38 + 0.25, tz + th + 0.38), (0.6, 0.03, 0.42), "glass", rot=(0, 0, 0.25), bev=0.0)   # yükleyici kalkanı
     if v.get("citv"):
         cyl((-0.85, 1.0 + 0.25, tz + th + 0.22), 0.07, 0.44, "paint", seg=8)
-        box((-0.85, 1.0 + 0.25, tz + th + 0.5), (0.34, 0.36, 0.3), "paint", bev=0.03)
+        box((-0.85, 1.0 + 0.25, tz + th + 0.5), (0.34, 0.36, 0.3), "paint", bev=0.02)
         box((-0.85, 1.19 + 0.25, tz + th + 0.5), (0.24, 0.02, 0.16), "glass", bev=0.0)
     # sis atarlar
     for s in (-1, 1):
@@ -93,7 +93,7 @@ def mbt(v):
         bag(-0.7, -2.6 + 0.25, tz + th + 0.13, 1.0, 0.55, 0.3)
         bag(1.4, -2.3 + 0.25, tz + th + 0.12, 0.35, 0.8, 0.28)
         if v.get("apu"):
-            box((-1.3, -2.75 + 0.25, tz + th * 0.5), (0.6, 0.45, 0.55), "paint", bev=0.03)
+            box((-1.3, -2.75 + 0.25, tz + th * 0.5), (0.6, 0.45, 0.55), "paint", bev=0.02)
     if v.get("aps"):
         for s in (-1, 1):
             aps(s * (W + 0.06), 0.2 + 0.25, tz + th * 0.55, s)
@@ -115,7 +115,7 @@ def lt(v):
     wy = [2.15 - i * 0.84 for i in range(6)]
     running_gear(1.32, 0.55, wy, 0.3, 2.8, -2.95, 0.28, 0.3, z_top_run=0.92, rollers_y=(1.3, -0.4, -1.9))
     poly_extrude_x([(3.35, 0.92), (3.05, 0.42), (-3.1, 0.42), (-3.4, 0.62), (-3.42, 0.95)], -0.95, 0.95, "paint")
-    poly_extrude_x([(2.65, 1.42), (3.42, 1.02), (3.42, 0.92), (-3.4, 0.92), (-3.4, 1.4), (-2.9, 1.44)], -1.68, 1.68, "paint", bev=0.03)
+    poly_extrude_x([(2.65, 1.42), (3.42, 1.02), (3.42, 0.92), (-3.4, 0.92), (-3.4, 1.4), (-2.9, 1.44)], -1.68, 1.68, "paint", bev=0.02)
     for s in (-1, 1):
         X = s * 1.7
         for (y, L) in ((2.3, 1.1), (1.15, 1.15), (0.0, 1.15), (-1.15, 1.15), (-2.35, 1.1)):
@@ -133,8 +133,8 @@ def lt(v):
     for s in (-1, 1):
         for (x, y) in ((0.55, 2.0), (1.5, 1.35), (1.55, -1.1), (1.35, -1.9)):
             pts.append((s * x, y, tz)); pts.append((s * x * 0.9, y * 0.95, tz + th))
-    hull_pts(pts, "paint", bev=0.035)
-    box((0, 2.05, tz + th * 0.5), (0.8, 0.3, th * 0.75), "paint", bev=0.03)
+    hull_pts(pts, "paint", bev=0.02)
+    box((0, 2.05, tz + th * 0.5), (0.8, 0.3, th * 0.75), "paint", bev=0.02)
     box((0.7, 1.2, tz + th + 0.12), (0.45, 0.5, 0.24), "paint", bev=0.025)
     rws(-0.5, -0.2, tz + th, True, True)
     hatch(0.55, -0.4, tz + th, 0.3)

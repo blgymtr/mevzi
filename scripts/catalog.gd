@@ -21,10 +21,12 @@ const FAM_BASE := {
 	"sam_ru_long": "aa", "sam_ru_tr": "aa", "sam_ru_truck": "aa",
 	"heli_coax": "heli", "heli_hind": "heli", "heli_mi8": "transport",
 	"bmpt": "ifv", "spg_truck": "arty", "truck_cargo": "truck",
+	"uav_male": "uav_armed", "uav_hale": "uav", "uav_tac": "uav", "uav_hand": "uav", "uav_vtol": "uav",
+	"lm_tube": "loiter", "lm_wing": "loiter", "lm_delta": "loiter",
 }
 const CAT_TITLE := {"tank": "Tanklar", "apc": "ZPT", "ifv": "ZMA / PSA", "td": "Tanksavar Araçları", "spg": "Kundağı Motorlu Obüs",
 	"towed": "Çekili Topçu", "mlrs": "Roketatar / Füze", "mortar": "Havan", "aa": "Hava Savunma", "eng": "İstihkâm",
-	"mrap": "MRAP", "light": "Hafif Araçlar", "heli_atk": "Taarruz Helikopteri", "heli_tr": "Nakliye Helikopteri", "coastal": "Kıyı / Deniz Piyadesi"}
+	"mrap": "MRAP", "light": "Hafif Araçlar", "heli_atk": "Taarruz Helikopteri", "heli_tr": "Nakliye Helikopteri", "coastal": "Kıyı / Deniz Piyadesi", "uav": "İHA", "loiter": "Kamikaze İHA"}
 const NATION_TITLE := {"usa": "ABD", "rus": "RUSYA", "chn": "ÇİN", "gbr": "İNGİLTERE"}
 
 static var units := {}        # id -> birim sözlüğü (+ "nation")

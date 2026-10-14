@@ -38,7 +38,7 @@ const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat
 const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
 const STANCE_TXT := ["OTO", "AYAKTA", "ÇÖMEL", "YAT"]
-const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "medic": "medic_team", "sniper": "sniper_team", "engineer": "engineer_squad", "mortar": "mortar_team", "drone": "drone_team"}
+const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "atgm": "atgm_team", "medic": "medic_team", "sniper": "sniper_team", "engineer": "engineer_squad", "mortar": "mortar_team", "drone": "drone_team"}
 
 var font: Font
 var font_b: Font

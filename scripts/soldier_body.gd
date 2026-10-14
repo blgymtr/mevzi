@@ -18,9 +18,10 @@ var weapon: MeshInstance3D
 var head: MeshInstance3D
 
 # eklem durumları (anlık)
-var j := {"py": HIP, "prx": 0.0, "prz": 0.0, "srx": 0.0, "sry": 0.0, "arx": 0.0, "arz": 0.0, "frx": 0.0, "alx": 0.0, "alz": 0.0, "flx": 0.0, "lrx": 0.0, "krx": 0.0, "llx": 0.0, "klx": 0.0, "lrz": 0.0, "llz": 0.0}
+var j := {"py": HIP, "prx": 0.0, "prz": 0.0, "srx": 0.0, "sry": 0.0, "arx": 0.0, "arz": 0.0, "frx": 0.0, "alx": 0.0, "alz": 0.0, "flx": 0.0, "lrx": 0.0, "krx": 0.0, "llx": 0.0, "klx": 0.0, "lrz": 0.0, "llz": 0.0, "pry": 0.0}
 var wp_cur := Transform3D()
 var phase := 0.0
+var move_yaw := 0.0     # hareket yönünün gövdeye göre açısı (kalça bu yöne döner, gövde hedefte kalır)
 var rng := RandomNumberGenerator.new()
 var role := "rifle"
 var dead_pose := {}
@@ -149,7 +150,7 @@ func _mi(parent: Node3D, m: Mesh) -> MeshInstance3D:
 
 static func _art_meshes(team: int, rl: String) -> Dictionary:
 	var model := "soldier_blue" if team == 0 else "soldier_red"
-	var wpn: String = {"mg": "mg", "at": "rpg", "sniper": "sniper", "engineer": "smg", "crew": "smg", "mortar": "mortar", "drone": "tablet"}.get(rl, "rifle")
+	var wpn: String = {"mg": "mg", "at": "rpg", "atgm": "rpg", "sniper": "sniper", "engineer": "smg", "crew": "smg", "mortar": "mortar", "drone": "tablet"}.get(rl, "rifle")
 	# gövde parçaları Blender'dan (varsa), silahlar three.js üreticisinden
 	var bm := model + "_body" if Art.has(model + "_body") else model
 	var M := {
@@ -160,7 +161,7 @@ static func _art_meshes(team: int, rl: String) -> Dictionary:
 	}
 	if rl == "medic":
 		M["extra"] = Art.skinned(model, "x_medic", team)
-	elif rl == "at":
+	elif rl in ["at", "atgm"]:
 		M["extra"] = Art.skinned(model, "x_at", team)
 	elif rl == "engineer":
 		M["extra"] = Art.skinned(model, "x_eng", team)
@@ -194,7 +195,7 @@ static func _make_meshes(team: int, rl: String, winter: bool) -> Dictionary:
 		mb.box(Vector3(0, 0.36, 0.145), Vector3(0.16, 0.16, 0.02), Color(0.95, 0.95, 0.95))
 		mb.box(Vector3(0, 0.36, 0.156), Vector3(0.1, 0.03, 0.01), Color(0.8, 0.1, 0.1))
 		mb.box(Vector3(0, 0.36, 0.156), Vector3(0.03, 0.1, 0.01), Color(0.8, 0.1, 0.1))
-	if rl == "at":
+	if rl in ["at", "atgm"]:
 		mb.cyl(Vector3(0.1, 0.05, 0.16), 0.055, 0.055, 0.7, 6, Color(0.3, 0.32, 0.22), Basis(Vector3.FORWARD, 0.5))
 	M["torso"] = mb.commit(Mats.vc())
 	mb = MB.new()
@@ -228,7 +229,7 @@ static func _make_meshes(team: int, rl: String, winter: bool) -> Dictionary:
 			mb.box(Vector3(0, 0, -0.3), Vector3(0.08, 0.1, 0.95), gun)
 			mb.box(Vector3(0, -0.07, -0.05), Vector3(0.1, 0.12, 0.14), Color(0.25, 0.27, 0.18))
 			mb.cyl(Vector3(0, 0, -0.78), 0.02, 0.02, 0.25, 4, gun, Basis(Vector3.RIGHT, -PI * 0.5))
-		"at":
+		"at", "atgm":
 			mb.cyl(Vector3(0, 0, 0.35), 0.05, 0.05, 1.0, 7, Color(0.28, 0.3, 0.2), Basis(Vector3.RIGHT, -PI * 0.5))
 			mb.cyl(Vector3(0, 0, -0.65), 0.07, 0.0, 0.25, 7, Color(0.3, 0.32, 0.24), Basis(Vector3.RIGHT, -PI * 0.5))
 			mb.box(Vector3(0, -0.08, 0.0), Vector3(0.04, 0.12, 0.05), gun)
@@ -265,8 +266,18 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["alz"] = -0.3
 			T["flx"] = 0.9
 			wpn = 2
+			if pose == "aim" and moving:
+				var sw3 := clampf(speed / 2.2, 0.0, 1.0)
+				T["py"] = HIP - 0.07 - absf(s) * 0.015 * sw3
+				T["lrx"] = 0.3 + s * 0.42 * sw3
+				T["llx"] = 0.3 - s * 0.42 * sw3
+				T["krx"] = -0.5 - maxf(0.0, -c) * 0.55 * sw3
+				T["klx"] = -0.5 - maxf(0.0, c) * 0.55 * sw3
+				T["prx"] = -0.22
+				T["srx"] = 0.28
 			if pose == "aim":
-				T["srx"] = 0.06
+				if not moving:
+					T["srx"] = 0.06
 				T["arx"] = 1.35
 				T["arz"] = 0.25
 				T["frx"] = 0.25
@@ -509,6 +520,19 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["krx"] = -0.6
 			T["klx"] = -0.9
 			wpn = 6
+	if moving and pose in ["aim", "stand", "walk", "run", "crouch", "crouch_aim"]:
+		var a := move_yaw
+		var back := absf(a) > 1.9
+		if back:
+			a = wrapf(a - PI, -PI, PI)
+			for lk in ["lrx", "llx"]:
+				if T.has(lk):
+					T[lk] = -T[lk] + (0.6 if pose == "aim" else 0.0)
+		var py_ := clampf(a, -1.2, 1.2)
+		T["pry"] = py_
+		T["sry"] = float(T.get("sry", 0.0)) - py_
+	else:
+		T["pry"] = 0.0
 	var rate := clampf(dt * (14.0 if pose != "fly" else 30.0), 0.0, 1.0)
 	for k in T:
 		j[k] = lerpf(j[k], T[k], rate)
@@ -516,7 +540,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		if not T.has(k):
 			j[k] = lerpf(j[k], 0.0, rate)
 	pelvis.position.y = j["py"]
-	pelvis.rotation = Vector3(j["prx"], 0, j["prz"])
+	pelvis.rotation = Vector3(j["prx"], j["pry"], j["prz"])
 	spine.rotation = Vector3(j["srx"], j["sry"], 0)
 	arm_r.rotation = Vector3(j["arx"], 0, j["arz"])
 	fore_r.rotation = Vector3(j["frx"], 0, 0)
@@ -536,11 +560,11 @@ func _weapon_xf(w: int) -> Transform3D:
 		0:
 			return Transform3D(Basis(Vector3.RIGHT, 0.6), Vector3(-0.16, 0.26, -0.16))
 		1:
-			if role == "at":
+			if role in ["at", "atgm"]:
 				return Transform3D(Basis(), Vector3(-0.14, 0.55, -0.1))
 			return Transform3D(Basis(), Vector3(-0.1, 0.46, -0.22))
 		2:
-			if role == "at":
+			if role in ["at", "atgm"]:
 				return Transform3D(Basis(Vector3.FORWARD, 0.8) * Basis(Vector3.RIGHT, -1.2), Vector3(0.0, 0.3, 0.2))
 			return Transform3D(Basis(Vector3.UP, 0.35) * Basis(Vector3.RIGHT, -0.35) * Basis(Vector3.FORWARD, 0.7), Vector3(-0.02, 0.3, -0.2))
 		3:

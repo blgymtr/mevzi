@@ -4,6 +4,7 @@ class_name Soldier extends Unit
 const WPN := {
 	"rifle": {"range": 34.0, "dmg": 24.0, "rof": 0.13, "b0": 2, "b1": 4, "p0": 0.45, "p1": 1.2, "mag": 30, "ammo": 270, "acc": 0.5, "sup": 6.0, "snd": "rifle", "tr": 3, "reload": 2.2},
 	"mg": {"range": 44.0, "dmg": 20.0, "rof": 0.085, "b0": 6, "b1": 14, "p0": 0.6, "p1": 1.4, "mag": 100, "ammo": 600, "acc": 0.36, "sup": 11.0, "snd": "mg", "tr": 2, "reload": 4.5},
+	"atgm": {"range": 70.0, "dmg": 16.0, "rof": 0.3, "b0": 1, "b1": 2, "p0": 0.9, "p1": 1.7, "mag": 20, "ammo": 100, "acc": 0.32, "sup": 4.0, "snd": "pistol", "tr": 4, "reload": 2.0},
 	"at": {"range": 28.0, "dmg": 18.0, "rof": 0.28, "b0": 1, "b1": 2, "p0": 0.8, "p1": 1.6, "mag": 20, "ammo": 120, "acc": 0.4, "sup": 5.0, "snd": "pistol", "tr": 4, "reload": 2.0},
 	"sniper": {"range": 72.0, "dmg": 110.0, "rof": 0.1, "b0": 1, "b1": 1, "p0": 3.2, "p1": 4.6, "mag": 5, "ammo": 60, "acc": 0.85, "sup": 16.0, "snd": "sniper", "tr": 1, "reload": 3.0},
 	"engineer": {"range": 24.0, "dmg": 15.0, "rof": 0.08, "b0": 3, "b1": 6, "p0": 0.5, "p1": 1.1, "mag": 30, "ammo": 240, "acc": 0.42, "sup": 5.0, "snd": "rifle", "tr": 3, "reload": 2.0},
@@ -110,10 +111,10 @@ func add_xp(v: int) -> void:
 func display_name() -> String:
 	return "%s %s" % [I18n.s(RANK_S[rank]), I18n.s(ROLE_TITLE.get(role, "Piyade"))]
 
-const ROLE_TITLE := {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "medic": "Sıhhiye", "sniper": "Keskin Nişancı", "engineer": "İstihkâmcı", "mortar": "Havancı", "drone": "Drone Operatörü", "leader": "Ekip Lideri", "crew": "Mürettebat"}
+const ROLE_TITLE := {"rifle": "Piyade", "mg": "Makineli Tüfekçi", "at": "Tanksavar", "atgm": "Füze Tanksavarcı", "medic": "Sıhhiye", "sniper": "Keskin Nişancı", "engineer": "İstihkâmcı", "mortar": "Havancı", "drone": "Drone Operatörü", "leader": "Ekip Lideri", "crew": "Mürettebat"}
 
 func role_title() -> String:
-	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "medic": "SIHHİYE", "sniper": "KESKİN NİŞANCI", "engineer": "İSTİHKÂMCI", "mortar": "HAVANCI", "drone": "DRONE OPERATÖRÜ", "leader": "EKİP LİDERİ", "crew": "MÜRETTEBAT"}.get(role, "ER")
+	return {"rifle": "TÜFEKÇİ", "mg": "MAKİNELİ", "at": "TANKSAVAR", "atgm": "FÜZECİ", "medic": "SIHHİYE", "sniper": "KESKİN NİŞANCI", "engineer": "İSTİHKÂMCI", "mortar": "HAVANCI", "drone": "DRONE OPERATÖRÜ", "leader": "EKİP LİDERİ", "crew": "MÜRETTEBAT"}.get(role, "ER")
 
 # timde yakında canlı ekip lideri var mı (isabet ve toparlanma bonusu)
 func led() -> bool:
@@ -176,7 +177,7 @@ func setup(t: int, rl: String) -> void:
 	var W: Dictionary = WPN[rl]
 	ammo = W["ammo"]
 	mag = W["mag"]
-	rockets = 4 if rl == "at" else 0
+	rockets = 4 if rl == "at" else (3 if rl == "atgm" else 0)
 	grenades = 2 if not (rl in ["medic", "sniper", "drone"]) else 0
 	smoke_nades = 1 if rl in ["rifle", "medic"] else 0
 	if team == 1:
@@ -461,6 +462,7 @@ func _process(dt: float) -> void:
 	if state == "dragged" or (state == "wounded" and downs <= 1):
 		_pistol()
 	var sp := vel.length()
+	body.move_yaw = angle_difference(rotation.y, _yaw_of(vel)) if sp > 0.3 else 0.0
 	body.pistol = G.time - pistol_t < 0.8
 	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else 0.0)))
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
@@ -511,15 +513,15 @@ func _timers(dt: float) -> void:
 
 func _resupply() -> void:
 	var W := weapon()
-	if ammo >= W["ammo"] and (role != "at" or rockets >= 4) and grenades >= 2 and (role != "mortar" or mortar_rounds >= 24):
+	if ammo >= W["ammo"] and (not (role in ["at", "atgm"]) or rockets >= 3) and grenades >= 2 and (role != "mortar" or mortar_rounds >= 24):
 		return
 	for u in G.near(position, 16.0):
 		if u is Building and u.team == team and u.done and u.is_base():
 			# kg: 50 mermi 2 kg, roket 6 kg, 4 havan mermisi 8 kg, el bombası 1 kg
 			if ammo < W["ammo"] and u.draw_stock(2.0):
 				ammo = mini(W["ammo"], ammo + 50)
-			if role == "at" and rockets < 4 and u.draw_stock(6.0):
-				rockets = mini(4, rockets + 1)
+			if role in ["at", "atgm"] and rockets < (4 if role == "at" else 3) and u.draw_stock(6.0 if role == "at" else 12.0):
+				rockets = mini(4 if role == "at" else 3, rockets + 1)
 			if role == "mortar" and mortar_rounds < 24 and u.draw_stock(8.0):
 				mortar_rounds = mini(24, mortar_rounds + 4)
 			if role != "medic" and grenades < 2 and u.draw_stock(1.0):
@@ -831,7 +833,7 @@ func _scan() -> void:
 		elif e is Vehicle:
 			if not e.alive:
 				continue
-			if role == "at" and rockets > 0:
+			if role in ["at", "atgm"] and rockets > 0:
 				sc -= 40.0
 			elif e.vtype == "fpv":
 				sc -= 30.0 if d < 30.0 else 0.0
@@ -842,7 +844,7 @@ func _scan() -> void:
 		elif e is Building:
 			if not e.alive:
 				continue
-			sc += 30.0 if not (role == "at" and rockets > 0) else -10.0
+			sc += 30.0 if not (role in ["at", "atgm"] and rockets > 0) else -10.0
 		if d > rng_w * (1.25 if (role == "at" and not (e is Soldier)) else 1.0):
 			if d < rng_w + 12.0:
 				threat_pos = e.position
@@ -915,6 +917,8 @@ func _movement(dt: float) -> void:
 	match state:
 		"move", "rescue":
 			spd = RUN_SPEED
+			if target != null and is_instance_valid(target) and (popped or burst_left > 0) and not force_move and state == "move":
+				spd = 2.0
 			if stance == CROUCH:
 				spd = 1.9
 			elif stance == PRONE:
@@ -1125,17 +1129,20 @@ func _combat(_dt: float) -> void:
 	if role == "mortar":
 		return
 	# tanksavar roket
-	if role == "at" and rockets > 0 and (t is Vehicle or t is Building):
+	if role in ["at", "atgm"] and rockets > 0 and (t is Vehicle or t is Building):
 		if state == "move":
 			return
 		rocket_aim += _dt
 		popped = true
-		if rocket_aim > 1.3 and fire_cd <= 0.0:
+		var gm := role == "atgm"
+		if rocket_aim > (2.2 if gm else 1.3) and fire_cd <= 0.0:
 			rocket_aim = 0.0
 			rockets -= 1
-			fire_cd = 4.5
+			fire_cd = 9.0 if gm else 4.5
 			var mp := body.muzzle_pos()
-			G.bal.rocket(mp, t.aim_point(), team, self, t)
+			# ABD/İngiltere: ateşle-unut üstten saldırı; Rusya/Çin: lazer güdümlü doğrudan
+			var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+			G.bal.rocket(mp, t.aim_point(), team, self, t, ("topatk" if nat in ["usa", "gbr"] else "atgm") if gm else "rpg")
 			Sfx.play3d("rpg", position, 2.0)
 			G.fx.muzzle(mp, (t.aim_point() - mp).normalized(), true)
 			for i in 4:

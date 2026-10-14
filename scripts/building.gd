@@ -4,7 +4,7 @@ class_name Building extends Unit
 const BDEF := {
 	"hq": {"title": "Karargâh", "hp": 3200.0, "size": Vector2(17, 13), "cost": 0, "time": 1.0, "cap": 40, "sight": 46.0, "prod": ["rifle_squad", "medic_team"], "desc": "Ana üs. Kaybedilirse ve ileri üs kalmazsa savaş biter."},
 	"fob": {"title": "İleri Üs", "hp": 1800.0, "size": Vector2(10, 10), "cost": 300, "time": 40.0, "cap": 12, "sight": 40.0, "prod": ["rifle_squad", "medic_team"], "desc": "Birlik sınırını artırır, mühimmat verir, yol ve ikmal kamyonu getirir. Ele geçirilebilir."},
-	"barracks": {"title": "Kışla", "hp": 1200.0, "size": Vector2(9, 6), "cost": 250, "time": 30.0, "cap": 0, "sight": 30.0, "prod": ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team"], "desc": "Tüm piyade timlerini eğitir."},
+	"barracks": {"title": "Kışla", "hp": 1200.0, "size": Vector2(9, 6), "cost": 250, "time": 30.0, "cap": 0, "sight": 30.0, "prod": ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team", "atgm_team"], "desc": "Tüm piyade timlerini eğitir."},
 	"factory": {"title": "Araç Fabrikası", "hp": 1600.0, "size": Vector2(12, 9), "cost": 400, "time": 45.0, "cap": 0, "sight": 30.0, "prod": ["technical", "apc", "ifv", "aa", "tank", "arty", "fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun", "mlrs"], "desc": "Zırhlı araçlar ve topçu üretir."},
 	"helipad": {"title": "Helikopter Pisti", "hp": 900.0, "size": Vector2(11, 11), "cost": 450, "time": 40.0, "cap": 0, "sight": 32.0, "prod": ["heli", "transport"], "desc": "Saldırı helikopteri üretir."},
 	"hospital": {"title": "Sahra Hastanesi", "hp": 700.0, "size": Vector2(7, 6), "cost": 180, "time": 22.0, "cap": 0, "sight": 28.0, "prod": [], "desc": "Sedyeciler 45 m içindeki yaralıları toplar; yakındakiler iyileşir."},
@@ -26,6 +26,7 @@ const PDEF := {
 	"sniper_team": {"title": "Keskin Nişancı", "cost": 200, "time": 14.0, "cap": 2, "units": ["sniper", "sniper"], "icon": "inf"},
 	"engineer_squad": {"title": "İstihkâm Timi", "cost": 160, "time": 12.0, "cap": 4, "units": ["engineer", "engineer", "engineer", "engineer"], "icon": "inf"},
 	"mortar_team": {"title": "Havan Timi", "cost": 210, "time": 15.0, "cap": 3, "units": ["mortar", "mortar", "rifle"], "icon": "inf"},
+	"atgm_team": {"title": "Güdümlü Tanksavar Timi", "cost": 260, "time": 16.0, "cap": 3, "units": ["atgm", "atgm", "rifle"], "icon": "at"},
 	"drone_team": {"title": "Drone Ekibi", "cost": 190, "time": 14.0, "cap": 2, "units": ["drone", "drone"], "icon": "inf"},
 	"ifv": {"title": "Piyade Savaş Aracı", "cost": 480, "time": 24.0, "cap": 3, "vehicle": "ifv", "icon": "apc"},
 	"aa": {"title": "Uçaksavar", "cost": 420, "time": 22.0, "cap": 3, "vehicle": "aa", "icon": "aa"},

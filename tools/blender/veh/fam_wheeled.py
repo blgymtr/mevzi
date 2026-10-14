@@ -19,7 +19,7 @@ def chassis8(v):
     zt = zb + (1.25 if not amph else 1.35)
     # alt V gövde + üst kutu + eğik burun + çamurluk kemerleri
     slab(L / 2 - 0.9, L / 2 - 0.1, -L / 2 + 0.2, -L / 2 + 0.4, zb - 0.35, zb + 0.15, 0.55, W / 2 - 0.45, "paint")
-    slab(L / 2 - 0.05 if not amph else L / 2 + 0.25, L / 2 - 1.05, -L / 2, -L / 2, zb + 0.1, zt, W / 2 - 0.02, W / 2 - 0.12, "paint", bev=0.04, wf=W / 2 - 0.35)
+    slab(L / 2 - 0.05 if not amph else L / 2 + 0.25, L / 2 - 1.05, -L / 2, -L / 2, zb + 0.1, zt, W / 2 - 0.02, W / 2 - 0.12, "paint", bev=0.02, wf=W / 2 - 0.35)
     if amph:
         slab(L / 2 + 0.3, L / 2 - 0.2, L / 2 - 0.3, L / 2 + 0.05, zb - 0.1, zb + 0.35, 0.6, W / 2 - 0.1, "paint")   # tekne burnu
     for s in (-1, 1):
@@ -40,7 +40,7 @@ def chassis8(v):
     antenna(1.0, -L / 2 + 0.5, zt, 1.6 if not v.get("cmd") else 2.4)
     if v.get("cmd"):
         antenna(0.0, -L / 2 + 0.8, zt, 2.6)
-        box((0, -1.2, zt + 0.15), (1.2, 1.3, 0.3), "paint", bev=0.03)
+        box((0, -1.2, zt + 0.15), (1.2, 1.3, 0.3), "paint", bev=0.02)
     return L, W, zt
 
 def apc_8x8(v):
@@ -84,7 +84,7 @@ def td_8x8(v):
     tz = zt
     if v.get("lav"):
         cyl((0, -0.3, tz + 0.2), 0.7, 0.4, "paint", seg=12, bev=0.02)
-        box((0, -0.3, tz + 0.65), (0.6, 0.8, 0.5), "paint", bev=0.03)
+        box((0, -0.3, tz + 0.65), (0.6, 0.8, 0.5), "paint", bev=0.02)
         node("barrel")
         for s in (-1, 1):
             canister(s * 0.42, 0.1, tz + 0.75, 1.3, 0.11, 0.06)
@@ -93,7 +93,7 @@ def td_8x8(v):
         cyl((0.2, -0.6, tz + 0.15), 0.45, 0.3, "paint", seg=12)
         cyl((0.2, -0.6, tz + 0.6), 0.12, 0.6, "metal", seg=8)                 # yükseltme direği
         node("barrel")
-        box((0.2, -0.45, tz + 1.05), (0.7, 0.9, 0.5), "paint", bev=0.03)      # ikiz füze kutusu + sensör
+        box((0.2, -0.45, tz + 1.05), (0.7, 0.9, 0.5), "paint", bev=0.02)      # ikiz füze kutusu + sensör
         for s in (-1, 1):
             box((0.2 + s * 0.2, 0.02, tz + 1.05), (0.24, 0.02, 0.36), "dark", bev=0.0)
         box((0.68, -0.3, tz + 1.05), (0.22, 0.4, 0.3), "paint", bev=0.02)
@@ -133,7 +133,7 @@ def aa_8x8(v):
     node("turret")
     tz = zt
     cyl((0, -0.4, tz + 0.18), 0.65, 0.36, "paint", seg=12, bev=0.02)
-    box((0, -0.4, tz + 0.6), (0.9, 0.95, 0.5), "paint", bev=0.03)
+    box((0, -0.4, tz + 0.6), (0.9, 0.95, 0.5), "paint", bev=0.02)
     box((0.3, 0.05, tz + 0.95), (0.3, 0.3, 0.22), "paint", bev=0.02)                # sensör kafası
     box((0.3, 0.21, tz + 0.95), (0.2, 0.02, 0.14), "glass", bev=0.0)
     node("barrel")
@@ -152,7 +152,7 @@ def apc_4x4(v):
     wheels_axles([1.55, -1.55], 1.02, 0.55, 0.38)
     zb = 0.55
     slab(2.6, 2.3, -2.5, -2.6, zb - 0.25, zb + 0.35, 0.4, 1.12, "paint")                  # V taban
-    slab(2.75, 1.7, -2.6, -2.6, zb + 0.3, zb + 1.45, 1.18, 1.05, "paint", bev=0.04, wf=0.95)
+    slab(2.75, 1.7, -2.6, -2.6, zb + 0.3, zb + 1.45, 1.18, 1.05, "paint", bev=0.02, wf=0.95)
     for s in (-1, 1):
         box((s * 1.2, 1.55, zb + 0.5), (0.2, 1.2, 0.1), "paint", bev=0.02)
         box((s * 1.2, -1.55, zb + 0.5), (0.2, 1.2, 0.1), "paint", bev=0.02)
@@ -177,7 +177,7 @@ def mrap4(v):
     slab(2.9, 2.6, -2.9, -3.0, zb - 0.3, zb + 0.4, 0.35, 1.15, "paint")
     h = 1.75 if tall else 1.5
     slab(3.05, 1.6, -3.0, -3.0, zb + 0.35, zb + 1.0, 1.2, 1.2, "paint", wf=1.15)            # motor kaputu + gövde alt
-    slab(1.65, 1.2, -3.0, -3.0, zb + 0.95, zb + h + 0.2, 1.25, 1.15 if not boxy else 1.22, "paint", bev=0.04)
+    slab(1.65, 1.2, -3.0, -3.0, zb + 0.95, zb + h + 0.2, 1.25, 1.15 if not boxy else 1.22, "paint", bev=0.02)
     box((0, 1.45, zb + h - 0.15), (2.0, 0.04, 0.55), "glass", rot=(-0.35, 0, 0), bev=0.0)
     for s in (-1, 1):
         for y in (0.7, -0.4):
@@ -209,7 +209,7 @@ def mrap6(v):
         slab(0.9, 0.9, -3.4, -3.4, zb + 0.35, zb + 1.7, 1.2, 1.2, "paint")
     else:
         slab(3.3, 2.0, -3.4, -3.4, zb + 0.35, zb + 1.0, 1.2, 1.2, "paint", wf=1.12)
-        slab(2.05, 1.6, -3.4, -3.4, zb + 0.95, zb + 2.0, 1.25, 1.15, "paint", bev=0.04)
+        slab(2.05, 1.6, -3.4, -3.4, zb + 0.95, zb + 2.0, 1.25, 1.15, "paint", bev=0.02)
         box((0, 1.85, zb + 1.65), (2.0, 0.04, 0.55), "glass", rot=(-0.35, 0, 0), bev=0.0)
         for s in (-1, 1):
             for y in (1.0, -0.2, -1.4):
@@ -234,9 +234,9 @@ def mrap6(v):
 def _hmmwv_body(tall=False):
     wheels_axles([1.65, -1.65], 0.92, 0.46, 0.34, "dark")
     zb = 0.5
-    slab(2.4, 2.2, -2.4, -2.4, zb, zb + 0.5, 1.08, 1.08, "paint", bev=0.03)
-    slab(2.45, 0.9, -2.4, -2.4, zb + 0.45, zb + 0.75, 1.08, 1.0, "paint", bev=0.03, wf=0.95)    # kaput
-    slab(0.95, 0.65, -2.4, -2.4, zb + 0.7, zb + 1.35 + (0.15 if tall else 0), 1.05, 1.0, "paint", bev=0.03)
+    slab(2.4, 2.2, -2.4, -2.4, zb, zb + 0.5, 1.08, 1.08, "paint", bev=0.02)
+    slab(2.45, 0.9, -2.4, -2.4, zb + 0.45, zb + 0.75, 1.08, 1.0, "paint", bev=0.02, wf=0.95)    # kaput
+    slab(0.95, 0.65, -2.4, -2.4, zb + 0.7, zb + 1.35 + (0.15 if tall else 0), 1.05, 1.0, "paint", bev=0.02)
     box((0, 0.75, zb + 1.1), (1.8, 0.04, 0.4), "glass", rot=(-0.3, 0, 0), bev=0.0)
     for s in (-1, 1):
         box((s * 1.06, 0.1, zb + 1.08), (0.03, 0.7, 0.35), "glass", bev=0.0)
@@ -252,7 +252,7 @@ def lv_hmmwv(v):
     if v.get("cmd"):
         for x in (-0.8, 0.8):
             antenna(x, -2.1, zt - 0.4, 2.4)
-        box((0, -1.5, zt + 0.12), (1.6, 1.4, 0.25), "canvas", bev=0.05)
+        box((0, -1.5, zt + 0.12), (1.6, 1.4, 0.25), "canvas", bev=0.02)
     node("turret")
     tp = (0, -0.4, zt)
     cyl((0, -0.4, zt + 0.08), 0.5, 0.16, "paint", seg=12)
@@ -281,7 +281,7 @@ def lv_sam(v):
     node("turret")
     tp = (0, -1.2, zt - 0.2)
     cyl((0, -1.2, zt), 0.6, 0.3, "paint", seg=12)
-    box((0, -1.2, zt + 0.5), (0.8, 0.8, 0.75), "paint", bev=0.03)
+    box((0, -1.2, zt + 0.5), (0.8, 0.8, 0.75), "paint", bev=0.02)
     box((0, -0.79, zt + 0.6), (0.5, 0.02, 0.4), "glass", bev=0.0)
     node("barrel")
     for s in (-1, 1):
@@ -293,7 +293,7 @@ def lv_jltv(v):
     zb = 0.62
     slab(2.6, 2.4, -2.6, -2.7, zb - 0.15, zb + 0.4, 0.4, 1.1, "paint")
     slab(2.75, 1.0, -2.65, -2.65, zb + 0.35, zb + 0.95, 1.12, 1.08, "paint", wf=1.0)
-    slab(1.05, 0.7, -1.4, -1.5, zb + 0.9, zb + 1.65, 1.15, 1.02, "paint", bev=0.04)
+    slab(1.05, 0.7, -1.4, -1.5, zb + 0.9, zb + 1.65, 1.15, 1.02, "paint", bev=0.02)
     box((0, 0.88, zb + 1.35), (1.9, 0.04, 0.45), "glass", rot=(-0.4, 0, 0), bev=0.0)
     for s in (-1, 1):
         box((s * 1.13, 0.2, zb + 1.3), (0.03, 0.6, 0.4), "glass", bev=0.0)
@@ -301,7 +301,7 @@ def lv_jltv(v):
         light(s * 0.8, 2.77, zb + 0.7)
         box((s * 1.1, 1.8, zb + 0.45), (0.28, 1.2, 0.08), "paint", bev=0.01)
         box((s * 1.1, -1.6, zb + 0.45), (0.28, 1.2, 0.08), "paint", bev=0.01)
-    box((0, -2.1, zb + 0.75), (2.1, 1.1, 0.35), "paint", bev=0.03)                            # arka bölme
+    box((0, -2.1, zb + 0.75), (2.1, 1.1, 0.35), "paint", bev=0.02)                            # arka bölme
     zt = zb + 1.65
     if v.get("cmd"):
         antenna(-0.8, -2.3, zb + 0.95, 2.4); antenna(0.8, -2.3, zb + 0.95, 2.4)
@@ -313,7 +313,7 @@ def lv_jltv(v):
         box((math.cos(a) * 0.58, -0.3 + math.sin(a) * 0.58, zt + 0.42), (0.47, 0.05, 0.5), "paint", rot=(0, 0, a - math.pi / 2), bev=0.01)
     node("barrel")
     if v.get("atgm"):
-        box((0, -0.3, zt + 0.6), (0.5, 0.5, 0.4), "paint", bev=0.03)
+        box((0, -0.3, zt + 0.6), (0.5, 0.5, 0.4), "paint", bev=0.02)
         for s in (-1, 1):
             canister(s * 0.32, 0.2, zt + 0.7, 1.4, 0.1, 0.08)
         return wheel_pivots({"body": (0, 0, 0), "turret": tp, "barrel": (0, -0.3, zt + 0.6)}), {"muzzle": (0, 0.9, zt + 0.75), "radius": 2.0}
@@ -335,7 +335,7 @@ def lv_isv(v):
     box((0, -1.9, zb + 1.65), (1.9, 0.06, 0.06), "dark", bev=0.0)
     for y in (0.6, -0.4, -1.4):
         for s in (-1, 1):
-            box((s * 0.45, y, zb + 0.6), (0.5, 0.5, 0.15), "canvas", bev=0.04)
+            box((s * 0.45, y, zb + 0.6), (0.5, 0.5, 0.15), "canvas", bev=0.02)
     zt = zb + 1.7
     node("turret")
     tp = (0, -0.3, zt)
@@ -349,7 +349,7 @@ def eng_detect(v):
     wheels_axles([1.9, -1.9], 1.15, 0.68, 0.45)
     zb = 0.85
     slab(2.4, 2.2, -2.4, -2.5, zb, zb + 0.5, 0.5, 0.65, "paint")
-    slab(0.9, 0.7, -0.6, -0.7, zb + 0.45, zb + 1.9, 0.55, 0.5, "paint", bev=0.04)
+    slab(0.9, 0.7, -0.6, -0.7, zb + 0.45, zb + 1.9, 0.55, 0.5, "paint", bev=0.02)
     box((0, 0.8, zb + 1.5), (0.9, 0.04, 0.5), "glass", rot=(-0.2, 0, 0), bev=0.0)
     box((0, 0.0, 0.25), (2.4, 1.0, 0.12), "dark", bev=0.02)                                  # yere gömülü radar
     node("turret")
@@ -398,7 +398,7 @@ def missile_launcher(v):
         box((0, -0.8, zd + 0.1), (1.6, 1.8, 0.2), "paint", bev=0.02)
         node("barrel")
         for s in (-1, 1):
-            box((s * 0.4, -0.8, zd + 0.45), (0.6, 3.2, 0.5), "paint", rot=(0.12, 0, 0), bev=0.03)
+            box((s * 0.4, -0.8, zd + 0.45), (0.6, 3.2, 0.5), "paint", rot=(0.12, 0, 0), bev=0.02)
         return wheel_pivots({"body": (0, 0, 0), "turret": tp, "barrel": (0, -2.0, zd + 0.3)}), {"muzzle": (0, 0.8, zd + 0.6), "radius": 2.0}
     zd = _truck6()
     node("turret")
@@ -411,9 +411,9 @@ def missile_launcher(v):
             cyl((s * 0.55, 1.37, zd + 0.95), 0.5, 0.12, "dark", "Y", seg=16)
     elif v.get("twin"):
         for s in (-1, 1):
-            box((s * 0.5, -1.4, zd + 0.7), (0.6, 4.0, 0.6), "paint", rot=(0.15, 0, 0), bev=0.03)
+            box((s * 0.5, -1.4, zd + 0.7), (0.6, 4.0, 0.6), "paint", rot=(0.15, 0, 0), bev=0.02)
     else:
-        box((0, -1.4, zd + 1.0), (1.6, 4.6, 1.5), "paint", bev=0.04)                         # dikey hücreli kutu
+        box((0, -1.4, zd + 1.0), (1.6, 4.6, 1.5), "paint", bev=0.02)                         # dikey hücreli kutu
         for i in range(2):
             for k in range(2):
                 box(((i - 0.5) * 0.7, 0.92, zd + 0.65 + k * 0.7), (0.5, 0.02, 0.5), "dark", bev=0.0)
@@ -427,7 +427,7 @@ def sam_long(v):
     node("barrel")
     for i in range(2):
         for k in range(2):
-            box(((i - 0.5) * 0.85, -1.2, zd + 0.9 + k * 0.85), (0.8, 5.0, 0.8), "paint", rot=(0.55, 0, 0), bev=0.04)
+            box(((i - 0.5) * 0.85, -1.2, zd + 0.9 + k * 0.85), (0.8, 5.0, 0.8), "paint", rot=(0.55, 0, 0), bev=0.02)
     return wheel_pivots({"body": (0, 0, 0), "turret": tp, "barrel": (0, -2.6, zd + 0.4)}), {"muzzle": (0, 0.8, zd + 2.6), "radius": 2.5}
 
 def sam_mid(v):
@@ -446,7 +446,7 @@ def ciws(v):
     node("turret")
     tp = (0, -1.4, zd)
     cyl((0, -1.4, zd + 0.3), 0.75, 0.6, "paint", seg=14)
-    box((0, -1.65, zd + 1.0), (0.9, 0.8, 0.9), "paint", bev=0.05)
+    box((0, -1.65, zd + 1.0), (0.9, 0.8, 0.9), "paint", bev=0.02)
     node("barrel")
     cyl((0, -1.2, zd + 1.9), 0.5, 1.2, "mark", seg=16)                                      # radar kubbesi
     bpy_s = 0
