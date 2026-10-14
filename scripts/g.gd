@@ -44,7 +44,8 @@ var game_over := false
 var winner := -1
 var rng := RandomNumberGenerator.new()
 var smokes: Array = []      # [Vector3 merkez, yarıçap, bitiş zamanı]
-var stats := {"kills": [0, 0], "lost": [0, 0], "built": [0, 0]}
+var stats := {"kills": [0, 0], "lost": [0, 0], "built": [0, 0], "pows": [0, 0]}
+var reveal := [0.0, 0.0]      # istihbarat: bu zamana kadar düşman yapıları görünür
 var fob_sites: Array = []   # harita üzerindeki ileri üs noktaları
 var hq_pos := [Vector3.ZERO, Vector3.ZERO]
 
@@ -67,7 +68,8 @@ func reset() -> void:
 	cap_used = [0, 0]
 	game_over = false
 	winner = -1
-	stats = {"kills": [0, 0], "lost": [0, 0], "built": [0, 0]}
+	stats = {"kills": [0, 0], "lost": [0, 0], "built": [0, 0], "pows": [0, 0]}
+	reveal = [0.0, 0.0]
 	zone_t = [0.0, 0.0]
 	fob_sites.clear()
 	_hash.clear()
@@ -124,7 +126,7 @@ func near(p: Vector3, r: float) -> Array:
 func enemies_near(p: Vector3, r: float, team: int, need_alive := true) -> Array:
 	var out: Array = []
 	for u in near(p, r):
-		if u.team != team and u.team >= 0 and (not need_alive or u.alive):
+		if u.team != team and u.team >= 0 and (not need_alive or u.hostile()):
 			out.append(u)
 	return out
 
@@ -144,8 +146,10 @@ func _update_visibility() -> void:
 			if u.team == t or u.team < 0:
 				u.seen[t] = true
 				continue
-			var s := false
+			var s: bool = u is Building and time < reveal[t]
 			for f in near(u.position, 85.0):
+				if s:
+					break
 				if f.team == t and f.alive and f.position.distance_to(u.position) <= f.sight:
 					s = true
 					break

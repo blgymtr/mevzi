@@ -24,6 +24,7 @@ var phase := 0.0
 var rng := RandomNumberGenerator.new()
 var role := "rifle"
 var dead_pose := {}
+var pistol := false
 
 func build(team: int, rl: String, winter: bool) -> void:
 	role = rl
@@ -59,6 +60,17 @@ func build(team: int, rl: String, winter: bool) -> void:
 	if M.has("extra") and M["extra"] != null:
 		_mi(spine, M["extra"])
 	phase = rng.randf() * TAU
+	for n in [spine, arm_r, arm_l, fore_r, fore_l, leg_r, leg_l, knee_r, knee_l]:
+		rest[n] = n.position
+
+var rest := {}
+
+# ragdoll sonrası iskeleti kurulum konumlarına döndür
+func reset_rig() -> void:
+	pelvis.transform = Transform3D(Basis(), Vector3(0, HIP, 0))
+	for n in rest:
+		n.transform = Transform3D(Basis(), rest[n])
+	wp_cur = Transform3D()
 
 func _pivot(parent: Node3D, p: Vector3) -> Node3D:
 	var n := Node3D.new()
@@ -173,7 +185,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	var s := sin(phase)
 	var c := cos(phase)
 	match pose:
-		"stand", "aim", "run", "walk", "throw", "dragging", "surrender", "build", "dazed":
+		"stand", "aim", "run", "walk", "throw", "dragging", "surrender", "build", "dazed", "carry", "melee":
 			var sw := clampf(speed / 3.5, 0.0, 1.0)
 			T["py"] = HIP - absf(s) * 0.04 * sw - (0.05 if pose == "dragging" else 0.0)
 			T["prx"] = 0.0
@@ -235,6 +247,30 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["frx"] = 0.4
 				T["alx"] = 0.8
 				wpn = 4
+			elif pose == "carry":
+				# sedye: kollar aşağıda önde, tutamakları kavrar
+				T["srx"] = 0.1
+				T["arx"] = 0.35
+				T["alx"] = 0.35
+				T["arz"] = 0.12
+				T["alz"] = -0.12
+				T["frx"] = 0.45
+				T["flx"] = 0.45
+				wpn = 4
+			elif pose == "melee":
+				# dipçik darbesi: geri çek, ileri savur
+				var k2 := clampf(extra, 0.0, 1.0)
+				var sw2 := sin(k2 * PI)
+				T["srx"] = lerpf(-0.2, 0.45, k2)
+				T["sry"] = lerpf(0.6, -0.5, k2)
+				T["arx"] = 1.4 + sw2 * 0.6
+				T["alx"] = 1.6 + sw2 * 0.4
+				T["frx"] = 0.6
+				T["flx"] = 0.3
+				T["lrx"] = 0.45
+				T["llx"] = -0.35
+				T["krx"] = -0.3
+				wpn = 1
 			elif pose == "dazed":
 				T["prz"] = sin(G.time * 3.0) * 0.18
 				T["srx"] = 0.3
@@ -245,6 +281,54 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["arx"] = 0.45
 				T["frx"] = 1.0
 				wpn = 2
+		"flinch":
+			# patlama yakınında: çömel, kollar başı korur
+			T["py"] = 0.56
+			T["prx"] = 0.0
+			T["srx"] = 0.7
+			T["lrx"] = 1.5
+			T["krx"] = -1.6
+			T["llx"] = 0.2
+			T["klx"] = -1.7
+			T["arx"] = 2.6
+			T["arz"] = 0.6
+			T["frx"] = 2.0
+			T["alx"] = 2.6
+			T["alz"] = -0.6
+			T["flx"] = 2.0
+			wpn = 4
+		"vault":
+			# alçak duvarın üstünden: bir el destek, bacaklar toplanmış
+			T["py"] = 0.7
+			T["prx"] = 0.2
+			T["srx"] = 0.45
+			T["lrx"] = 1.3
+			T["krx"] = -1.8
+			T["llx"] = 0.9
+			T["klx"] = -1.2
+			T["lrz"] = 0.3
+			T["arx"] = 0.9
+			T["arz"] = 0.2
+			T["frx"] = 0.2
+			T["alx"] = 0.5
+			T["flx"] = 0.9
+			wpn = 2
+		"slide":
+			# siper arkasına kayma: yana yatık, ayaklar önde
+			T["py"] = 0.3
+			T["prx"] = 0.95
+			T["prz"] = 0.25
+			T["srx"] = -0.35
+			T["lrx"] = 1.2
+			T["krx"] = -0.25
+			T["llx"] = 0.9
+			T["klx"] = -1.1
+			T["arx"] = 0.4
+			T["arz"] = 0.9
+			T["frx"] = 0.3
+			T["alx"] = 1.4
+			T["flx"] = 1.1
+			wpn = 2
 		"crouch", "crouch_aim":
 			T["py"] = 0.6
 			T["prx"] = 0.0
@@ -324,6 +408,18 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["srx"] = 0.15
 				T["prz"] = sin(G.time * 1.3) * 0.15
 				wpn = 6
+			elif pose == "dragged" and pistol:
+				# sürüklenirken tabancayla ateş: sağ kol tehdide uzanır
+				T["arx"] = 0.85
+				T["arz"] = 0.05
+				T["frx"] = 0.0
+				T["alx"] = 2.9
+				T["alz"] = -0.15
+				T["flx"] = 0.1
+				T["srx"] = -0.25
+				T["lrx"] = 0.25
+				T["krx"] = -0.5
+				wpn = 7
 			elif pose == "dragged":
 				T["arx"] = 2.9
 				T["alx"] = 2.9

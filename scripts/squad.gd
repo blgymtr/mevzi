@@ -62,7 +62,7 @@ func _assign_rescue(w: Soldier) -> void:
 			continue
 		if c.patient != null or c.state in ["throw", "drag", "heal", "rescue", "build"]:
 			continue
-		if c.suppression > 65.0 or c.order == "hold" or c.retreating:
+		if c.suppression > 65.0 or c.order == "hold" or c.retreating or c.bearer:
 			continue
 		var d: float = c.dist2(w)
 		var sc := d

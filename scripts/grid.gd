@@ -15,6 +15,7 @@ var trench := PackedByteArray()
 var water := PackedByteArray()
 var bridge := PackedByteArray()
 var base_l := PackedByteArray()
+var vault := PackedByteArray()      # piyadenin üstünden atlayabildiği alçak engel hücreleri
 var base_h := PackedByteArray()
 var nav: Array = []
 var _dirty := {}
@@ -28,6 +29,7 @@ func _init() -> void:
 	water.resize(N * N)
 	bridge.resize(N * N)
 	base_l.resize(NN * NN)
+	vault.resize(NN * NN)
 	base_h.resize(NN * NN)
 	for i in 3:
 		var a := AStarGrid2D.new()
@@ -174,8 +176,10 @@ func _update_base(c: Vector2i) -> void:
 		hard_h = true
 		wall_h = false
 	var inf: AStarGrid2D = nav[M_INF]
-	inf.set_point_solid(c, mx >= 0.45 or wet)
-	inf.set_point_weight_scale(c, 5.0 if wire else 1.0)
+	var vlt := mx >= 0.45 and mx < 1.15 and not wet
+	inf.set_point_solid(c, (mx >= 0.45 and not vlt) or wet)
+	inf.set_point_weight_scale(c, 5.0 if wire else (6.0 if vlt else 1.0))
+	vault[c.y * NN + c.x] = 1 if vlt else 0
 	base_l[c.y * NN + c.x] = 1 if hard_l else 0
 	base_h[c.y * NN + c.x] = 1 if hard_h else (2 if wall_h else 0)
 
@@ -213,9 +217,15 @@ func solid(c: Vector2i, mode: int) -> bool:
 		return true
 	return nav[mode].is_point_solid(c)
 
+# hedef olarak durulamayan hücre (katı ya da atlanacak alçak engel)
+func _occupied(c: Vector2i, mode: int) -> bool:
+	if solid(c, mode):
+		return true
+	return mode == M_INF and vault[c.y * NN + c.x] == 1
+
 func nearest_free(p: Vector3, mode: int, maxr := 8) -> Vector3:
 	var c := cell_of(p)
-	if not solid(c, mode):
+	if not _occupied(c, mode):
 		return p
 	for r in range(1, maxr + 1):
 		var best := Vector2i(-1, -1)
@@ -225,7 +235,7 @@ func nearest_free(p: Vector3, mode: int, maxr := 8) -> Vector3:
 				if absi(dx) != r and absi(dz) != r:
 					continue
 				var q := c + Vector2i(dx, dz)
-				if not solid(q, mode):
+				if not _occupied(q, mode):
 					var d := Vector2(q.x + 0.5 - p.x, q.y + 0.5 - p.z).length_squared()
 					if d < bd:
 						bd = d

@@ -58,6 +58,8 @@ var gunner: SoldierBody
 var gun_pivot: Node3D
 var think_t := 0.0
 var bearers: Array = []
+var job: Stretcher = null
+var inside: Array = []          # hastanedeki askerler: [asker, kalan süre]
 var _work_flash := 0.0
 
 func setup(t: int, bt: String, r := 0.0) -> void:
@@ -418,6 +420,8 @@ func _process(dt: float) -> void:
 	tick_bubble(dt)
 	if not done:
 		return
+	if btype == "hospital":
+		_hospital(dt)
 	think_t -= dt
 	if think_t <= 0.0:
 		think_t = 0.5
@@ -476,6 +480,58 @@ func _flip(t: int) -> void:
 	Sfx.play2d("ui_alert", -2.0)
 	G.check_victory()
 
+func door_pos() -> Vector3:
+	return position + Vector3(0, 0, size.y * 0.5 + 2.0).rotated(Vector3.UP, rot)
+
+func admit(p: Soldier) -> void:
+	if p == null or not is_instance_valid(p):
+		return
+	p.enter_hospital(self)
+	inside.append([p, 16.0 if p.alive else 26.0])
+
+func _hospital(dt: float) -> void:
+	if job != null and not job.update(dt):
+		job = null
+	var i := inside.size() - 1
+	while i >= 0:
+		var e: Array = inside[i]
+		if not is_instance_valid(e[0]):
+			inside.remove_at(i)
+		else:
+			e[1] -= dt
+			if e[1] <= 0.0:
+				e[0].leave_hospital(door_pos() + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1, 1)))
+				inside.remove_at(i)
+		i -= 1
+
+func _assign_stretcher() -> void:
+	if job != null or bearers.size() < 2:
+		return
+	for b in bearers:
+		if not b.can_fight() or b.state == "stretcher" or b.job != null:
+			return
+	var best: Soldier = null
+	var bs := 1e9
+	for u in G.units:
+		if not is_instance_valid(u) or not (u is Soldier) or u.team != team or u.bearer:
+			continue
+		var d: float = u.dist2(self)
+		if d > 62.0:
+			continue
+		var sc := d
+		if u.alive:
+			if u.state != "wounded" or u.rescuer != null:
+				continue
+			sc -= 30.0
+		else:
+			if u.carried or G.time - u.died_at < 1.5 or G.time - u.died_at > 120.0 or u.state == "hospital" or u.loot < 0:
+				continue
+		if sc < bs:
+			bs = sc
+			best = u
+	if best != null:
+		job = Stretcher.new(self, bearers[0], bearers[1], best)
+
 func _bearers() -> void:
 	# sahra hastanesi: iki sıhhiye eri (sedyeci) bulundurur; yaralıları onlar sürükleyip tedavi eder
 	bearers = bearers.filter(func(x): return is_instance_valid(x) and x.alive)
@@ -487,9 +543,14 @@ func _bearers() -> void:
 		for i in 2 - bearers.size():
 			var s: Soldier = G.main.spawn_soldier(team, "medic", door + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)), sq)
 			s.cap_cost = 0
+			s.bearer = true
+			s.fire_mode = 2
+			s.grenades = 0
+			s.smoke_nades = 0
 			bearers.append(s)
+	_assign_stretcher()
 	for b in bearers:
-		if b.state == "idle" and b.dist2(self) > 14.0 and b.patient == null:
+		if b.state == "idle" and b.dist2(self) > 14.0 and b.patient == null and b.job == null:
 			b.cmd_move(position + Vector3(randf_range(-4, 4), 0, size.y * 0.5 + 3.0).rotated(Vector3.UP, rot))
 
 func _production(dt: float) -> void:
@@ -612,6 +673,10 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 		destroy(src)
 
 func destroy(src) -> void:
+	for e in inside:
+		if is_instance_valid(e[0]):
+			e[0].vanish()
+	inside.clear()
 	if not alive:
 		return
 	alive = false

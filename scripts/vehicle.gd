@@ -518,7 +518,7 @@ func _scan() -> void:
 		return
 	var rng_w := _range()
 	var eye := turret_world_pos() + Vector3(0, 0.4, 0)
-	if forced_target != null and (not is_instance_valid(forced_target) or not forced_target.alive):
+	if forced_target != null and (not is_instance_valid(forced_target) or not forced_target.hostile()):
 		forced_target = null
 		if order == "attack":
 			order = ""
@@ -861,6 +861,22 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 			m = [1.0, 0.5, 0.12][armor]
 		"auto":
 			m = [1.0, 0.7, 0.15][armor]
+	# ön zırhtan sekme (eğik açı): tanksavar roketi ve tank mermisi
+	if (k == "ap" or k == "rpg") and armor == 2 and src != null and is_instance_valid(src):
+		var to_src: Vector3 = src.position - position
+		to_src.y = 0
+		if to_src.length() > 0.1:
+			var front := forward().dot(to_src.normalized())
+			var chance := 0.35 if front > 0.55 else (0.12 if front > -0.2 else 0.0)
+			if randf() < chance:
+				Sfx.play3d("ricochet", position, 2.0)
+				G.fx.impact(aim_point(), "metal")
+				G.fx.flash(aim_point(), 3.0, 4.0, 0.08, Color(1.0, 0.85, 0.5))
+				say("SEKTİ!")
+				last_hit = G.time
+				if src is Unit:
+					attacker = src
+				return
 	var dmg := amount * m
 	if dmg <= 0.0:
 		return
@@ -877,7 +893,7 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 func _heli(dt: float) -> void:
 	var goal := dest
 	var t := target
-	if forced_target != null and is_instance_valid(forced_target) and forced_target.alive:
+	if forced_target != null and is_instance_valid(forced_target) and forced_target.hostile():
 		var off := position - forced_target.position
 		off.y = 0
 		goal = forced_target.position + off.normalized() * 32.0

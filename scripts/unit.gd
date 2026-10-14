@@ -29,6 +29,9 @@ func apply_visibility() -> void:
 	var v := G.view_team()
 	visible = (not alive) or v < 0 or seen[v]
 
+func hostile() -> bool:
+	return alive
+
 func is_enemy(u) -> bool:
 	return u != null and is_instance_valid(u) and u.team != team and u.team >= 0 and team >= 0
 

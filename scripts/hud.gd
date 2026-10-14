@@ -1078,6 +1078,38 @@ func _on_alert(text: String, pos: Vector3, team: int) -> void:
 				break
 		f.free()
 
+# esirden gelen istihbarat: sohbet balonu tarzı
+func intel(who: String, text: String, pos: Vector3) -> void:
+	if G.spectate:
+		return
+	var pc := PanelContainer.new()
+	var sb := _sb(Color(0.03, 0.04, 0.05, 0.9), Color(0.45, 0.7, 1.0, 0.35))
+	sb.border_width_left = 3
+	sb.border_color = Color(0.45, 0.7, 1.0)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 14
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 5
+	pc.add_theme_stylebox_override("panel", sb)
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	pc.add_child(v)
+	var h := _label(v, "", 12, Color(0.55, 0.75, 1.0), font_b)
+	h.text = "%s  ·  %s" % [I18n.s("İSTİHBARAT"), I18n.s("ESİR").to_upper() + " " + who.to_upper()]
+	var l := _label(v, "", 16, TXT, font_m)
+	l.text = "“%s”" % text
+	alerts.add_child(pc)
+	_toast.append([pc, 10.0, pos])
+	Sfx.play2d("ui_alert", -8.0)
+	while alerts.get_child_count() > 6:
+		var f := alerts.get_child(0)
+		for e in _toast:
+			if e[0] == f:
+				_toast.erase(e)
+				break
+		f.free()
+
 # ------------------------------------------------------------ menüler
 func show_menu() -> void:
 	if menu:

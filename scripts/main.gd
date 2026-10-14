@@ -37,6 +37,8 @@ func _ready() -> void:
 		_run_scen_test()
 	elif shot_dir != "" and shot_scene == "orders":
 		_run_orders_test()
+	elif shot_dir != "" and shot_scene == "behav":
+		_run_behav_test()
 	elif shot_dir != "" and shot_scene == "editortest":
 		_run_editor_test()
 	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
@@ -586,6 +588,105 @@ func _run_autoplay() -> void:
 	get_tree().quit()
 
 # oyuncu akışı testi: üs kur, üret, ikmal, savunma hattı
+func _run_behav_test() -> void:
+	# ragdoll, teslim/esir/istihbarat, sedye, yakın dövüş, irkilme
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var c: Vector3 = G.hq_pos[0] + (G.hq_pos[1] - G.hq_pos[0]).normalized() * 30.0
+	c = G.grid.nearest_free(c, Grid.M_INF)
+	G.cam.jump_to(c, true)
+	G.cam.size = 26.0
+	G.cam.target_size = 26.0
+	# 1) ragdoll: patlama ile ölen askerler
+	var victims: Array = []
+	for i in 4:
+		var v := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-6 + i * 1.2, 0, -6), Grid.M_INF), null)
+		v.fire_mode = 2
+		victims.append(v)
+	await _wait(0.5)
+	G.explode(c + Vector3(-4.5, 0, -6.5), 4.5, 300.0, "shell", 1, null)
+	await _wait(0.35)
+	await _shot("behav_01_ragdoll_fly")
+	await _wait(2.5)
+	await _shot("behav_02_ragdoll_rest")
+	var dead := victims.filter(func(v): return is_instance_valid(v) and not v.alive and v.rag != null).size()
+	print("BEH ragdoll dead_with_rag=%d" % dead)
+	if dead == 0:
+		fails += 1
+	# 2) sahra hastanesi + sedye
+	var hosp := place_building(0, "hospital", G.grid.nearest_free(c + Vector3(10, 0, 8), Grid.M_HEAVY), 0.0)
+	hosp.progress = 1.0
+	hosp.add_work(999.0)
+	var wsq := Squad.new(0, "T")
+	G.squads.append(wsq)
+	var w := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-2, 0, 4), Grid.M_INF), wsq)
+	await _wait(0.3)
+	w.die(null)
+	var w_state0 := w.state
+	var job_seen := false
+	var carried_seen := false
+	for k in 60:
+		await _wait(1.0)
+		if hosp.job != null:
+			job_seen = true
+			if hosp.job.stage == "carry":
+				carried_seen = true
+				if k % 6 == 0:
+					await _shot("behav_03_stretcher_%02d" % k)
+		if k < 6:
+			print("BEH dbg k=%d done=%s bearers=%d w=%s rescuer=%s" % [k, hosp.done, hosp.bearers.size(), w.state, w.rescuer])
+		if is_instance_valid(w) and w.state == "hospital":
+			break
+	var in_hosp := is_instance_valid(w) and w.state == "hospital"
+	print("BEH stretcher state0=%s job=%s carried=%s in_hospital=%s" % [w_state0, job_seen, carried_seen, in_hosp])
+	if not in_hosp:
+		fails += 1
+	# 3) teslim olma ve esir
+	var lone := spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(4, 0, -2), Grid.M_INF), null)
+	var cap := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(1, 0, 1), Grid.M_INF), null)
+	cap.fire_mode = 2
+	await _wait(0.3)
+	lone.surrender()
+	await _wait(2.0)
+	var pris := lone.state == "prisoner"
+	await _shot("behav_04_prisoner")
+	print("BEH surrender->%s" % lone.state)
+	if not pris:
+		fails += 1
+	await _wait(8.0)
+	await _shot("behav_05_intel")
+	# 4) yakın dövüş
+	var m1 := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-8, 0, 6), Grid.M_INF), null)
+	var m2 := spawn_soldier(1, "rifle", m1.position + Vector3(1.0, 0, 0.3), null)
+	var hp0 := m2.hp
+	var melee_seen := false
+	for k in 12:
+		await _wait(0.25)
+		if m1.state == "melee" or m2.state == "melee":
+			melee_seen = true
+	print("BEH melee=%s hp %d->%d" % [melee_seen, int(hp0), int(m2.hp) if is_instance_valid(m2) else -1])
+	if not melee_seen:
+		fails += 1
+	# 5) irkilme
+	var f1 := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(0, 0, 10), Grid.M_INF), null)
+	await _wait(0.3)
+	G.explode(f1.position + Vector3(6.5, 0, 0), 4.0, 50.0, "grenade", 1, null)
+	await _wait(0.1)
+	print("BEH flinch=%s" % (f1.flinch_t > 0.0))
+	if not f1.flinch_t > 0.0:
+		fails += 1
+	await _shot("behav_06_flinch")
+	# hastaneden çıkış
+	await _wait(18.0)
+	print("BEH after_hospital state=%s alive=%s limp=%s" % [w.state if is_instance_valid(w) else "-", is_instance_valid(w) and w.alive, is_instance_valid(w) and w.limp_t > 0])
+	print("BEHAV RESULT fails=%d" % fails)
+	get_tree().quit()
+
 func _run_orders_test() -> void:
 	# emir paneli: saldırı hareketi, ateş modu, duruş, el bombası, baskı, geri çekil, geri vites, sis
 	get_window().size = Vector2i(1920, 1080)
