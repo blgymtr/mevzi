@@ -83,9 +83,10 @@ export function texture(path, size, fn) {
 
 // Bir model: malzeme adı → parça listesi. Her parça: geometri + dünya dönüşümü + uv kipi + renk çarpanı.
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export class Model {
-  constructor(name) { this.name = name; this.parts = []; this.node = 'body'; this.pivots = { body: [0, 0, 0] }; }
+  constructor(name) { this.name = name; this.parts = []; this.node = 'body'; this.pivots = { body: [0, 0, 0] }; this.smooth = false; }
 
   // Bundan sonra eklenen parçalar ayrı bir düğüme (eklem) gider; pivot düğümün dönme noktası.
   group(name, pivot = [0, 0, 0]) { this.node = name; this.pivots[name] = pivot; return this; }
@@ -96,7 +97,7 @@ export class Model {
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(...(o.rot ?? [0, 0, 0]), 'YXZ'));
     m.compose(new THREE.Vector3(...(o.pos ?? [0, 0, 0])), q, new THREE.Vector3(...(o.scale ?? [1, 1, 1])));
     if (o.matrix) m.premultiply(o.matrix);
-    this.parts.push({ mat, geo, m, uv: o.uv ?? 'box', uvScale: o.uvScale ?? 0.5, tint: o.tint ?? [1, 1, 1], ao: o.ao ?? true, node: this.node });
+    this.parts.push({ mat, geo, m, uv: o.uv ?? 'box', uvScale: o.uvScale ?? 0.5, tint: o.tint ?? [1, 1, 1], ao: o.ao ?? true, node: this.node, smooth: o.smooth ?? this.smooth });
     return this;
   }
 
@@ -107,6 +108,19 @@ export class Model {
   // dışbükey gövde: verilen noktaların konveks zarfı (eğimli zırh, kama taret vb.)
   hull(mat, pts, o = {}) {
     return this.add(mat, new ConvexGeometry(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2]))), o);
+  }
+
+  // halkalardan organik gövde: rings = [[y, rx, rz, cx=0, cz=0], ...] (elips kesitler), yumuşak normaller
+  rings(mat, rings, o = {}) {
+    const seg = o.seg ?? 14;
+    const pts = [];
+    for (const [y, rx, rz, cx = 0, cz = 0] of rings) {
+      for (let i = 0; i < seg; i++) {
+        const a = (i / seg) * Math.PI * 2;
+        pts.push([cx + Math.cos(a) * rx, y, cz + Math.sin(a) * rz]);
+      }
+    }
+    return this.hull(mat, pts, { smooth: true, ...o });
   }
 
   // pahlı kutu: kenarları b kadar kırılmış kutu
@@ -296,11 +310,23 @@ export class Model {
   write(path) {
     const nodes = new Map();   // düğüm → (malzeme → geometriler)
     for (const part of this.parts) {
-      let g = part.geo.index ? part.geo.toNonIndexed() : part.geo.clone();
-      g.applyMatrix4(part.m);
+      let g;
       const pv = this.pivots[part.node] ?? [0, 0, 0];
-      if (!g.attributes.uv || part.uv === 'box') boxUV(g, part.uvScale);
-      g.computeVertexNormals();
+      if (part.smooth) {
+        // yumuşak gölgelendirme: köşeleri birleştir, ortak normal hesapla
+        g = part.geo.clone();
+        g.applyMatrix4(part.m);
+        for (const a of Object.keys(g.attributes)) if (a !== 'position') g.deleteAttribute(a);
+        g = mergeVertices(g, 1e-4);
+        g.computeVertexNormals();
+        g = g.toNonIndexed();
+        boxUV(g, part.uvScale);
+      } else {
+        g = part.geo.index ? part.geo.toNonIndexed() : part.geo.clone();
+        g.applyMatrix4(part.m);
+        if (!g.attributes.uv || part.uv === 'box') boxUV(g, part.uvScale);
+        g.computeVertexNormals();
+      }
       // tepe noktası rengi: parça tonu × zemine yakın hafif karartma (ortam gölgesi)
       const n = g.attributes.position.count;
       const col = new Float32Array(n * 3);

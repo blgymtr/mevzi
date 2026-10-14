@@ -45,6 +45,8 @@ func _ready() -> void:
 		_run_art_test()
 	elif shot_dir != "" and shot_scene == "vehtest":
 		_run_veh_test()
+	elif shot_dir != "" and shot_scene == "crash":
+		_run_crash_test()
 	elif shot_dir != "" and shot_scene == "editortest":
 		_run_editor_test()
 	elif shot_dir != "" and shot_scene.begins_with("roundtrip"):
@@ -614,6 +616,28 @@ func _run_autoplay() -> void:
 	get_tree().quit()
 
 # oyuncu akışı testi: üs kur, üret, ikmal, savunma hattı
+func _run_crash_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	start_game("desert_canal", {}, true)
+	sandbox_ui.run("fog")
+	var c: Vector3 = G.hq_pos[0] + (G.hq_pos[1] - G.hq_pos[0]).normalized() * 30.0
+	var h1 := spawn_vehicle(0, "heli", c, 0.0)
+	var h2 := spawn_vehicle(1, "transport", c + Vector3(14, 0, -6), 1.0)
+	G.cam.jump_to(c + Vector3(6, 0, -2), true)
+	G.cam.size = 30.0
+	G.cam.target_size = 30.0
+	await _wait(2.0)
+	h1.destroy(null)
+	h2.destroy(null)
+	for k in 6:
+		await _wait(0.35)
+		await _shot("crash_%02d" % k)
+	await _wait(2.0)
+	await _shot("crash_end")
+	print("CRASH done alive=%s,%s" % [h1.alive, h2.alive])
+	get_tree().quit()
+
 func _run_veh_test() -> void:
 	# köprü geçişi, suya düşmeme, palet/teker/nişancı/sürücü hasarı, terk etme
 	get_window().size = Vector2i(1920, 1080)

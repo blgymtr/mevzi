@@ -149,6 +149,7 @@ func _cargo_lost() -> void:
 				s.take_damage(60.0, null, "blast")
 	cargo.clear()
 var rotor_blades: MeshInstance3D
+var rotor_disc: MeshInstance3D
 static var _disc_mat: ShaderMaterial
 
 func setup(t: int, vt: String) -> void:
@@ -243,6 +244,7 @@ func setup(t: int, vt: String) -> void:
 		disc.mesh = cm
 		disc.position.y = 0.3
 		disc.material_override = _rotor_disc_mat()
+		rotor_disc = disc
 		disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		rotor.add_child(disc)
 		trotor = Node3D.new()
@@ -1375,22 +1377,61 @@ void fragment() {
 	return _disc_mat
 
 func _heli_crash() -> void:
+	# kontrolsüz düşüş: kuyruk rotoru gider, gövde kendi ekseninde döner, pal yavaşlar;
+	# bulanık disk kaybolur, gerçek pallar görünür; yere çarpınca pallar kırılıp savrulur
+	if rotor_disc:
+		rotor_disc.visible = false
+	if rotor_blades:
+		rotor_blades.visible = true
 	var tw := create_tween()
-	var spin := randf_range(6.0, 10.0)
+	var dur := clampf(hull.position.y / 6.0, 1.2, 2.6)
+	var spin := randf_range(5.0, 9.0) * dur
 	var start_y := hull.position.y
 	var h0 := heading
+	var drift := hvel * 0.6
+	var tilt := randf_range(0.35, 0.7) * (1.0 if randf() < 0.5 else -1.0)
+	var last := [0.0]
 	tw.tween_method(func(k: float):
-		hull.position.y = lerpf(start_y, 0.6, k * k)
-		hull.rotation.y = h0 + k * spin
-		hull.rotation.z = k * 0.6
-		position += hvel * 0.016 * (1.0 - k)
-		if randf() < 0.5:
-			G.fx.emit(Fx.P_SMOKE, hull.global_position, Vector3(0, 1, 0), 3.0, 1.0, 3.0, -0.2, 0.5, Color(0.1, 0.1, 0.1, 0.8)), 0.0, 1.0, 1.8)
+		var dk: float = k - last[0]
+		last[0] = k
+		hull.position.y = lerpf(start_y, 0.5, k * k)
+		hull.rotation.y = h0 + spin * (k * k * 0.6 + k * 0.4)
+		hull.rotation.z = tilt * k
+		hull.rotation.x = -0.25 * k
+		position += drift * dk * dur
+		if rotor:
+			rotor.rotation.y += (1.0 - k * 0.7) * 1.1
+		if trotor:
+			trotor.rotation.x += (1.0 - k) * 0.6
+		if randf() < 0.7:
+			G.fx.emit(Fx.P_SMOKE, hull.global_position + Vector3(0, 0.6, 0), Vector3(randf_range(-0.4, 0.4), 1.5, randf_range(-0.4, 0.4)), randf_range(2.5, 4.0), 0.8, 3.2, -0.25, 0.6, Color(0.08, 0.08, 0.08, 0.85))
+		if randf() < 0.35:
+			G.fx.emit(Fx.P_FIRE, hull.global_position + Vector3(0, 0.9, 0), Vector3(0, 1.0, 0), 0.5, 0.6, 1.3, -0.5, 1.0, Color(1.0, 0.55, 0.2, 1.0)), 0.0, 1.0, dur)
 	tw.tween_callback(func():
 		G.explode(position + Vector3(0, 0.8, 0), 4.5, 90.0, "big", team, self)
-		G.fx.burn(position + Vector3(0, 0.8, 0), 30.0, 1.0)
+		G.fx.burn(position + Vector3(0, 0.8, 0), 35.0, 1.2)
+		G.cam.shake(0.4, position)
+		# pallar kırılır: dönen göbek gizlenir, kırık pal parçaları savrulur
 		if rotor:
 			rotor.visible = false
+			for i in 4:
+				var a := randf() * TAU
+				var piece := MeshInstance3D.new()
+				var bm := BoxMesh.new()
+				bm.size = Vector3(randf_range(1.5, 3.0), 0.04, 0.35)
+				piece.mesh = bm
+				piece.material_override = Mats.burnt()
+				G.world.add_child(piece)
+				piece.global_position = position + Vector3(0, 1.6, 0)
+				piece.rotation.y = a
+				var to := position + Vector3(cos(a), 0, sin(a)) * randf_range(4.0, 9.0)
+				var pt := piece.create_tween()
+				pt.set_parallel(true)
+				pt.tween_property(piece, "global_position", Vector3(to.x, 0.05, to.z), 0.7).set_ease(Tween.EASE_OUT)
+				pt.tween_property(piece, "rotation:y", a + randf_range(4.0, 9.0), 0.7)
+		if trotor:
+			trotor.visible = false
+		hull.rotation.x = 0.0
 		G.grid.set_static_rect(position, Vector2(3.0, 9.0), h0, 1.2, Grid.K_WRECK))
 
 func destroy(src) -> void:
@@ -1417,7 +1458,8 @@ func destroy(src) -> void:
 		G.fx.explosion(aim_point(), 1.2, "big")
 		Sfx.play3d("expl_med", aim_point(), 4.0)
 		for mi in _meshes(self):
-			mi.material_override = Mats.burnt()
+			if mi != rotor_disc and mi != rotor_blades:
+				mi.material_override = Mats.burnt()
 		_heli_crash()
 		return
 	alive = false

@@ -15,87 +15,82 @@ function limb(m, mat, r0, r1, L, y, o = {}) {
   m.add(mat, new THREE.CylinderGeometry(r0, r1, L, 8), { pos: V(o.x ?? 0, y, o.z ?? 0), scale: [1, 1, o.flat ?? 0.92], rot: o.rot });
 }
 
+// organik gövde: elips halkalardan yumuşak gölgeli parçalar
 function body(m, blue) {
+  const S = (mat, g, pos, o = {}) => m.add(mat, g, { pos, smooth: true, ...o });
   // ---------------- gövde + baş (kalça pivotu)
   m.group('torso', V(0, 0.92, 0));
-  // kalça / bel
-  m.hull('uniform', [
-    [-0.16, 0.9, -0.1], [0.16, 0.9, -0.1], [-0.16, 0.9, 0.1], [0.16, 0.9, 0.1],
-    [-0.15, 1.04, -0.1], [0.15, 1.04, -0.1], [-0.15, 1.04, 0.09], [0.15, 1.04, 0.09],
+  m.rings('uniform', [
+    [0.86, 0.15, 0.105], [0.93, 0.163, 0.112], [1.0, 0.158, 0.108], [1.07, 0.148, 0.1],
+    [1.16, 0.162, 0.108, 0, -0.005], [1.26, 0.185, 0.118, 0, -0.01], [1.35, 0.198, 0.118, 0, -0.008],
+    [1.42, 0.19, 0.105], [1.47, 0.14, 0.085], [1.5, 0.07, 0.062],
   ]);
-  // göğüs kafesi (omuzda geniş)
-  m.hull('uniform', [
-    [-0.15, 1.0, -0.09], [0.15, 1.0, -0.09], [-0.15, 1.0, 0.09], [0.15, 1.0, 0.09],
-    [-0.19, 1.3, -0.11], [0.19, 1.3, -0.11], [-0.19, 1.3, 0.1], [0.19, 1.3, 0.1],
-    [-0.2, 1.43, -0.07], [0.2, 1.43, -0.07], [-0.2, 1.43, 0.08], [0.2, 1.43, 0.08],
-    [-0.08, 1.5, -0.04], [0.08, 1.5, -0.04], [-0.08, 1.5, 0.05], [0.08, 1.5, 0.05],
-  ]);
-  for (const s of [-1, 1]) m.add('uniform', new THREE.SphereGeometry(0.075, 8, 6), { pos: V(s * 0.19, 1.41, 0.0) });
+  // omuz yuvarlakları
+  for (const s of [-1, 1]) S('uniform', new THREE.SphereGeometry(0.075, 14, 10), V(s * 0.19, 1.405, 0.0), { scale: [1, 0.9, 1] });
   if (blue) {
-    // plaka taşıyıcı: ön/arka plaka, kemerband, şarjör cepleri, telsiz, ilk yardım
-    m.bevel('vest', 0.34, 0.34, 0.07, V(0, 1.26, -0.125), 0.025);
-    m.bevel('vest', 0.33, 0.34, 0.07, V(0, 1.27, 0.12), 0.025);
-    m.bevel('vest', 0.38, 0.13, 0.25, V(0, 1.12, 0.0), 0.03);
-    for (const x of [-0.105, 0, 0.105]) m.bevel('vest', 0.09, 0.13, 0.06, V(x, 1.15, -0.18), 0.015, { tint: [0.92, 0.92, 0.9] });
-    m.bevel('vest', 0.1, 0.08, 0.05, V(-0.1, 1.33, -0.17), 0.012, { tint: [0.88, 0.88, 0.86] });
-    m.bevel('dark', 0.06, 0.13, 0.05, V(0.12, 1.36, -0.16), 0.01);
-    m.cyl('dark', 0.006, 0.006, 0.2, 3, V(0.13, 1.5, -0.15));
-    for (const s of [-1, 1]) m.box('vest', 0.06, 0.04, 0.24, V(s * 0.12, 1.44, 0.0), { tint: [0.85, 0.85, 0.82] });   // omuz askısı
+    // plaka taşıyıcı: ön/arka plaka (yuvarlatılmış), kemerband, şarjör cepleri, telsiz
+    m.rings('vest', [[1.13, 0.17, 0.125, 0, -0.005], [1.2, 0.185, 0.132, 0, -0.01], [1.36, 0.19, 0.13, 0, -0.01], [1.42, 0.16, 0.11]], { seg: 16 });
+    for (const x of [-0.105, 0, 0.105]) m.bevel('vest', 0.085, 0.13, 0.055, V(x, 1.17, -0.15), 0.02, { tint: [0.92, 0.92, 0.9] });
+    m.bevel('vest', 0.1, 0.08, 0.05, V(-0.1, 1.33, -0.145), 0.015, { tint: [0.88, 0.88, 0.86] });
+    m.bevel('dark', 0.06, 0.13, 0.05, V(0.12, 1.34, -0.14), 0.012);
+    m.cyl('dark', 0.006, 0.006, 0.22, 3, V(0.13, 1.5, -0.13));
+    for (const s of [-1, 1]) m.bevel('vest', 0.06, 0.04, 0.26, V(s * 0.12, 1.44, 0.0), 0.012, { tint: [0.85, 0.85, 0.82] });
     // hücum çantası
-    m.bevel('pack', 0.28, 0.34, 0.14, V(0, 1.26, 0.22), 0.04);
-    m.bevel('pack', 0.22, 0.12, 0.08, V(0, 1.18, 0.3), 0.025, { tint: [0.85, 0.85, 0.85] });
-    m.cyl('dark', 0.035, 0.035, 0.26, 6, V(0.0, 1.46, 0.22), { rot: RZ(Math.PI / 2) });
+    m.rings('pack', [[1.12, 0.12, 0.06, 0, 0.19], [1.2, 0.14, 0.075, 0, 0.2], [1.36, 0.13, 0.07, 0, 0.2], [1.42, 0.1, 0.05, 0, 0.19]], { seg: 12 });
+    m.cyl('dark', 0.035, 0.035, 0.26, 8, V(0.0, 1.47, 0.2), { rot: RZ(Math.PI / 2) });
   } else {
-    // ağır yelek + yaka + göğüs teçhizatı
-    m.hull('vest', [
-      [-0.2, 1.06, -0.15], [0.2, 1.06, -0.15], [-0.2, 1.06, 0.14], [0.2, 1.06, 0.14],
-      [-0.21, 1.4, -0.13], [0.21, 1.4, -0.13], [-0.21, 1.4, 0.13], [0.21, 1.4, 0.13],
-    ]);
-    m.add('vest', new THREE.TorusGeometry(0.1, 0.035, 5, 10, Math.PI * 1.4), { pos: V(0, 1.47, 0.0), rot: [Math.PI / 2, 0, -Math.PI * 0.2], tint: [0.9, 0.9, 0.88] });
-    for (const x of [-0.12, -0.04, 0.04, 0.12]) m.bevel('vest', 0.075, 0.14, 0.06, V(x, 1.2, -0.18), 0.015, { tint: [0.85, 0.85, 0.82] });
-    m.bevel('dark', 0.08, 0.1, 0.05, V(-0.1, 1.35, -0.17), 0.012);
-    m.bevel('pack', 0.26, 0.3, 0.13, V(0, 1.22, 0.21), 0.04);
+    // göğüs teçhizatı (yumuşak yelek) + yaka
+    m.rings('vest', [[1.08, 0.172, 0.128], [1.2, 0.188, 0.135, 0, -0.008], [1.36, 0.195, 0.128], [1.43, 0.165, 0.11]], { seg: 16 });
+    m.add('vest', new THREE.TorusGeometry(0.095, 0.03, 8, 16, Math.PI * 1.4), { pos: V(0, 1.47, 0.0), rot: [Math.PI / 2, 0, -Math.PI * 0.2], tint: [0.9, 0.9, 0.88], smooth: true });
+    for (const x of [-0.12, -0.04, 0.04, 0.12]) m.bevel('vest', 0.075, 0.14, 0.055, V(x, 1.2, -0.16), 0.02, { tint: [0.85, 0.85, 0.82] });
+    m.bevel('dark', 0.08, 0.1, 0.05, V(-0.1, 1.34, -0.15), 0.012);
+    m.rings('pack', [[1.1, 0.11, 0.055, 0, 0.17], [1.2, 0.13, 0.07, 0, 0.18], [1.33, 0.12, 0.065, 0, 0.18]], { seg: 12 });
   }
-  m.box('dark', 0.36, 0.045, 0.23, V(0, 0.98, 0.0));                                    // kemer
-  m.bevel('pack', 0.08, 0.09, 0.06, V(-0.15, 0.98, -0.05), 0.012, { tint: [0.8, 0.8, 0.78] });   // bel çantası
-  m.box('team', 0.075, 0.06, 0.15, V(-0.2, 1.36, 0.0));                                  // omuz bandı
+  // kemer + bel çantası + omuz bandı
+  m.rings('dark', [[0.95, 0.168, 0.116], [0.99, 0.168, 0.116]], { seg: 16 });
+  m.bevel('pack', 0.08, 0.09, 0.06, V(-0.15, 0.97, -0.07), 0.015, { tint: [0.8, 0.8, 0.78] });
+  m.bevel('pack', 0.07, 0.1, 0.07, V(0.16, 0.96, 0.04), 0.015, { tint: [0.78, 0.78, 0.76] });
+  S('team', new THREE.CylinderGeometry(0.064, 0.064, 0.05, 14, 1, true), V(-0.2, 1.34, 0.0));
   // boyun + baş
-  m.cyl('skin', 0.048, 0.055, 0.1, 7, V(0, 1.54, 0.0));
-  m.add('skin', new THREE.IcosahedronGeometry(0.1, 2), { pos: V(0, 1.655, -0.005), scale: [0.9, 1.08, 0.98] });
-  m.box('skin', 0.03, 0.04, 0.03, V(0, 1.64, -0.1));                                     // burun
+  m.rings('skin', [[1.49, 0.05, 0.05], [1.57, 0.047, 0.05]], { seg: 12 });
+  S('skin', new THREE.SphereGeometry(0.1, 18, 14), V(0, 1.655, -0.005), { scale: [0.88, 1.06, 0.98] });
+  S('skin', new THREE.SphereGeometry(0.06, 12, 8), V(0, 1.6, -0.045), { scale: [1.15, 0.8, 1.0] });        // çene
+  S('skin', new THREE.SphereGeometry(0.018, 8, 6), V(0, 1.645, -0.1), { scale: [0.9, 1.3, 1.1] });         // burun
+  for (const s of [-1, 1]) S('skin', new THREE.SphereGeometry(0.022, 8, 6), V(s * 0.088, 1.65, 0.005), { scale: [0.5, 1.1, 0.9] });   // kulaklar
   if (blue) {
-    // kesik kenarlı kask + kılıf + gece görüş yuvası + karşı ağırlık
-    m.add('helmet', new THREE.SphereGeometry(0.128, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.52), { pos: V(0, 1.665, 0.008), scale: [1.0, 0.98, 1.08] });
-    for (const s of [-1, 1]) m.bevel('dark', 0.02, 0.05, 0.11, V(s * 0.125, 1.69, 0.0), 0.008);        // yan ray
-    m.bevel('dark', 0.07, 0.05, 0.035, V(0, 1.745, -0.12), 0.01);
-    m.bevel('pack', 0.1, 0.06, 0.04, V(0, 1.7, 0.13), 0.012, { tint: [0.8, 0.8, 0.78] });
-    m.box('dark', 0.16, 0.04, 0.025, V(0, 1.665, -0.095));                              // gözlük
-    m.box('team', 0.03, 0.012, 0.18, V(0, 1.785, 0.01));                                // kask şeridi
+    // kesik kenarlı kask (yumuşak) + kılıf + NVG yuvası + karşı ağırlık + gözlük
+    S('helmet', new THREE.SphereGeometry(0.128, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), V(0, 1.665, 0.008), { scale: [1.0, 0.98, 1.08] });
+    for (const s of [-1, 1]) m.bevel('dark', 0.02, 0.05, 0.11, V(s * 0.125, 1.69, 0.0), 0.008);
+    m.bevel('dark', 0.07, 0.05, 0.035, V(0, 1.745, -0.12), 0.012);
+    m.bevel('pack', 0.1, 0.06, 0.04, V(0, 1.7, 0.13), 0.015, { tint: [0.8, 0.8, 0.78] });
+    S('dark', new THREE.CylinderGeometry(0.1, 0.1, 0.035, 18, 1, true, -Math.PI * 0.35, Math.PI * 0.7), V(0, 1.665, 0.0), { rot: [0, Math.PI, 0] });   // gözlük
+    m.box('team', 0.03, 0.012, 0.18, V(0, 1.787, 0.01));
   } else {
     // yuvarlak kask + gözlük bandı
-    m.add('helmet', new THREE.SphereGeometry(0.132, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.56), { pos: V(0, 1.655, 0.0), scale: [1.02, 1.0, 1.06] });
-    m.add('dark', new THREE.CylinderGeometry(0.135, 0.135, 0.022, 12, 1, true), { pos: V(0, 1.7, 0.0), scale: [1.02, 1, 1.06] });
-    m.bevel('dark', 0.14, 0.045, 0.04, V(0, 1.72, -0.12), 0.01);
-    m.box('team', 0.2, 0.02, 0.03, V(0, 1.64, 0.13));                                   // ense bandı
-    m.box('uniform', 0.15, 0.06, 0.03, V(0, 1.58, -0.09), { tint: [0.85, 0.85, 0.8] });  // boyunluk
+    S('helmet', new THREE.SphereGeometry(0.132, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), V(0, 1.655, 0.0), { scale: [1.02, 1.0, 1.06] });
+    S('dark', new THREE.CylinderGeometry(0.136, 0.136, 0.022, 20, 1, true), V(0, 1.7, 0.0), { scale: [1.02, 1, 1.06] });
+    m.bevel('dark', 0.14, 0.045, 0.04, V(0, 1.72, -0.12), 0.012);
+    m.box('team', 0.2, 0.02, 0.03, V(0, 1.64, 0.13));
+    S('uniform', new THREE.TorusGeometry(0.06, 0.022, 8, 14), V(0, 1.565, 0), { rot: RX(Math.PI / 2), tint: [0.85, 0.85, 0.8] });   // boyunluk
   }
   // ---------------- kol (omuz pivotu)
   m.group('arm', V(0, 1.42, 0));
-  limb(m, 'uniform', 0.056, 0.047, 0.3, 1.27);
-  if (blue) m.bevel('vest', 0.1, 0.1, 0.11, V(0, 1.34, 0.0), 0.03, { tint: [0.9, 0.9, 0.88] });   // omuz pedi
+  m.rings('uniform', [[1.44, 0.056, 0.058], [1.36, 0.058, 0.06], [1.24, 0.05, 0.053], [1.14, 0.045, 0.047]], { seg: 12 });
+  if (blue) m.rings('vest', [[1.42, 0.066, 0.068], [1.33, 0.066, 0.068]], { seg: 12, tint: [0.9, 0.9, 0.88] });
   m.group('fore', V(0, 1.13, 0));
-  limb(m, 'uniform', 0.047, 0.04, 0.25, 1.0);
-  m.add('dark', new THREE.SphereGeometry(0.05, 7, 5), { pos: V(0, 1.12, 0.005), scale: [1, 0.8, 1] });    // dirsek
-  m.bevel(blue ? 'dark' : 'skin', 0.075, 0.1, 0.085, V(0, 0.84, -0.01), 0.02);            // el
+  m.rings('uniform', [[1.15, 0.046, 0.048], [1.06, 0.045, 0.048], [0.96, 0.038, 0.04], [0.9, 0.034, 0.036]], { seg: 12 });
+  S(blue ? 'dark' : 'skin', new THREE.SphereGeometry(0.046, 10, 8), V(0, 0.85, -0.008), { scale: [0.8, 1.15, 0.95] });   // el
+  S(blue ? 'dark' : 'skin', new THREE.SphereGeometry(0.02, 6, 6), V(-0.028, 0.86, -0.04), { scale: [0.8, 1.6, 0.8] });   // başparmak
   // ---------------- bacak (kalça pivotu)
   m.group('thigh', V(0, 0.92, 0));
-  limb(m, 'uniform', 0.085, 0.065, 0.46, 0.7);
-  m.bevel('uniform', 0.06, 0.13, 0.11, V(0.085, 0.68, 0.0), 0.02, { tint: [0.9, 0.9, 0.88] });   // yan cep
+  m.rings('uniform', [[0.95, 0.086, 0.09], [0.85, 0.084, 0.088], [0.72, 0.074, 0.078], [0.58, 0.062, 0.066], [0.5, 0.058, 0.062]], { seg: 14 });
+  m.bevel('uniform', 0.055, 0.14, 0.11, V(0.085, 0.7, 0.0), 0.025, { tint: [0.9, 0.9, 0.88] });   // yan cep
   m.group('shin', V(0, 0.48, 0));
-  limb(m, 'uniform', 0.064, 0.05, 0.38, 0.29);
-  m.bevel('dark', 0.1, 0.1, 0.06, V(0, 0.45, -0.055), 0.025);                             // dizlik
-  m.bevel('boot', 0.11, 0.13, 0.27, V(0, 0.07, -0.04), 0.03);
-  m.box('dark', 0.12, 0.03, 0.28, V(0, 0.015, -0.04));                                    // taban
+  m.rings('uniform', [[0.5, 0.06, 0.063], [0.4, 0.061, 0.066, 0, 0.01], [0.28, 0.05, 0.053, 0, 0.005], [0.17, 0.045, 0.048]], { seg: 14 });
+  m.rings('dark', [[0.5, 0.058, 0.04, 0, -0.04], [0.42, 0.058, 0.04, 0, -0.045]], { seg: 12 });          // dizlik
+  // bot
+  m.rings('boot', [[0.2, 0.05, 0.055], [0.1, 0.055, 0.075, 0, -0.025], [0.04, 0.055, 0.13, 0, -0.045], [0.0, 0.055, 0.135, 0, -0.045]], { seg: 14 });
+  m.rings('dark', [[0.0, 0.058, 0.138, 0, -0.045], [0.025, 0.058, 0.138, 0, -0.045]], { seg: 14 });     // taban
 }
 
 function weapons(m, blue) {
