@@ -45,6 +45,8 @@ func _ready() -> void:
 		_run_roundtrip()
 	elif shot_dir != "" and shot_scene.begins_with("gallery"):
 		_run_gallery()
+	elif shot_dir != "" and shot_scene.begins_with("show"):
+		_run_showroom()
 	elif shot_dir != "" and shot_scene == "test":
 		_run_test()
 	elif shot_dir != "":
@@ -882,6 +884,70 @@ func _run_test() -> void:
 	get_tree().quit()
 
 # model galerisi: iki ordunun araç ve askerleri yakın plan
+# model vitrini: --scene=show_<harita>[_tip1,tip2]  (yakın çekim + oyun yakınlığı)
+func _run_showroom() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var parts := shot_scene.split("_", false, 1)
+	var rest: String = parts[1] if parts.size() > 1 else "green_valley"
+	var mid := "green_valley"
+	for k in MapGen.MAPS:
+		if rest.begins_with(k):
+			mid = k
+			rest = rest.substr(k.length())
+	var types: Array = ["tank", "apc", "ifv", "technical", "truck", "aa", "arty"]
+	if rest.begins_with(":"):
+		types = Array(rest.substr(1).split(","))
+	G.spectate = true
+	build_world(mid, 4242)
+	for u in G.units.duplicate():
+		if u is Soldier or u is Vehicle:
+			u.queue_free()
+	await get_tree().process_frame
+	var c := Vector3(170, 0, 170)
+	G.props.clear_area(c, 40.0)
+	for t in 2:
+		for i in types.size():
+			var vt: String = types[i]
+			var p := c + Vector3(-18 + i * 10.0, 0, -8 + t * 11.0)
+			var v := spawn_vehicle(t, vt, p, PI * 0.9)
+			v.set_process(false)
+			v.hull.rotation.y = PI * 0.9
+			if v.is_air():
+				v.hull.position.y = 2.0
+				if v.rotor_blades:
+					v.rotor_blades.visible = false
+		var roles := ["rifle", "mg", "at", "medic", "sniper", "engineer"]
+		for i in roles.size():
+			var s := spawn_soldier(t, roles[i], c + Vector3(-22 + i * 1.4, 0, 6 + t * 2.4), null)
+			s.rotation.y = PI * 0.9
+			s.set_process(false)
+			s.body.animate(0.5, ["stand", "aim", "crouch_aim", "stand", "prone_aim", "stand"][i], 0.0)
+	G.running = false
+	G.cam.input_enabled = false
+	G.cam.jump_to(c, true)
+	G.cam.size = 40.0
+	G.cam.target_size = 40.0
+	await _wait(1.5)
+	await _shot("show_" + mid + "_overview")
+	for i in types.size():
+		G.cam.jump_to(c + Vector3(-18 + i * 10.0, 0, -2.5), true)
+		G.cam.size = 15.0
+		G.cam.target_size = 15.0
+		await _wait(0.6)
+		await _shot("show_" + mid + "_" + types[i])
+	G.cam.jump_to(c + Vector3(-18.5, 0, 7.2), true)
+	G.cam.size = 6.5
+	G.cam.target_size = 6.5
+	await _wait(0.6)
+	await _shot("show_" + mid + "_soldiers")
+	G.cam.jump_to(c + Vector3(-12, 0, 0), true)
+	G.cam.size = 22.0
+	G.cam.target_size = 22.0
+	await _wait(0.6)
+	await _shot("show_" + mid + "_minzoom")
+	get_tree().quit()
+
 func _run_gallery() -> void:
 	get_window().size = Vector2i(1920, 1080)
 	Sfx.muted = true

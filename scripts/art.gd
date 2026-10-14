@@ -64,6 +64,7 @@ static func material(name: String, team: int) -> StandardMaterial3D:
 		return _mat[key]
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
+	m.vertex_color_is_srgb = true
 	m.roughness = 0.85
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	var t := ""
@@ -100,9 +101,8 @@ static func material(name: String, team: int) -> StandardMaterial3D:
 			m.roughness = 0.95
 		"mark":
 			tint = G.TEAM_COL[team]
-			m.emission_enabled = true
-			m.emission = G.TEAM_COL[team]
-			m.emission_energy_multiplier = 0.35
+			tint = G.TEAM_COL[team].lerp(Color(0.85, 0.85, 0.8), 0.25)
+			m.roughness = 0.6
 		"light":
 			tint = Color(1.0, 0.95, 0.8)
 			m.emission_enabled = true
@@ -133,9 +133,7 @@ static func material(name: String, team: int) -> StandardMaterial3D:
 			tint = Color(0.72, 0.55, 0.42)
 			m.roughness = 0.7
 		"team":
-			tint = G.TEAM_COL[team] if team == 0 else Color(0.72, 0.1, 0.08)
-			if team == 0:
-				tint = tint.darkened(0.15)
+			tint = Color(0.28, 0.48, 0.78) if team == 0 else Color(0.72, 0.2, 0.14)
 		"boot":
 			t = "leather"
 			tint = Color(0.2, 0.16, 0.12) if G.map_kind != "desert" else Color(0.55, 0.45, 0.32)

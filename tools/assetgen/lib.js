@@ -82,6 +82,8 @@ export function texture(path, size, fn) {
 // ---------------- model kurma ----------------
 
 // Bir model: malzeme adı → parça listesi. Her parça: geometri + dünya dönüşümü + uv kipi + renk çarpanı.
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
+
 export class Model {
   constructor(name) { this.name = name; this.parts = []; this.node = 'body'; this.pivots = { body: [0, 0, 0] }; }
 
@@ -101,6 +103,41 @@ export class Model {
   box(mat, w, h, d, pos, o = {}) { return this.add(mat, new THREE.BoxGeometry(w, h, d), { ...o, pos }); }
   cyl(mat, rt, rb, h, seg, pos, o = {}) { return this.add(mat, new THREE.CylinderGeometry(rt, rb, h, seg, 1, false), { ...o, pos }); }
   sphere(mat, r, pos, o = {}) { return this.add(mat, new THREE.IcosahedronGeometry(r, o.detail ?? 0), { ...o, pos }); }
+
+  // dışbükey gövde: verilen noktaların konveks zarfı (eğimli zırh, kama taret vb.)
+  hull(mat, pts, o = {}) {
+    return this.add(mat, new ConvexGeometry(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2]))), o);
+  }
+
+  // pahlı kutu: kenarları b kadar kırılmış kutu
+  bevel(mat, w, h, d, pos, b = 0.05, o = {}) {
+    const x = w / 2, y = h / 2, z = d / 2;
+    b = Math.min(b, x * 0.9, y * 0.9, z * 0.9);
+    const pts = [];
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      pts.push([sx * (x - b), sy * y, sz * (z - b)]);
+      pts.push([sx * x, sy * (y - b), sz * (z - b)]);
+      pts.push([sx * (x - b), sy * (y - b), sz * z]);
+    }
+    return this.hull(mat, pts, { ...o, pos });
+  }
+
+  // kesitlerden konveks gövde: secs = [[z, [[x,y],...]], ...] (x simetrik verilirse mirror:true)
+  loft(mat, secs, o = {}) {
+    const pts = [];
+    for (const [z, ring] of secs) for (const [x, y] of ring) {
+      pts.push([x, y, z]);
+      if (o.mirror) pts.push([-x, y, z]);
+    }
+    return this.hull(mat, pts, o);
+  }
+
+  // yandan profil (z,y) → x0..x1 arası uzatılmış konveks prizma
+  prismX(mat, prof, x0, x1, o = {}) {
+    const pts = [];
+    for (const [z, y] of prof) { pts.push([x0, y, z]); pts.push([x1, y, z]); }
+    return this.hull(mat, pts, o);
+  }
 
   // Beşik (iki yana eğimli) çatı: genişlik w (x), derinlik d (z), yükseklik h, saçak taşması over.
   // Çatı kiremit dokusu sıraları saçağa paralel gider; mahya kiremidi eklenir.
