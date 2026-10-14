@@ -159,7 +159,39 @@ func _leaf_cards(st: SurfaceTool, r: RandomNumberGenerator, center: Vector3, rad
 func _tree_mesh(seed_v: int, win: bool) -> ArrayMesh:
 	if not win:
 		return _leafy_tree(seed_v)
-	return _tree_mesh_old(seed_v, win)
+	return _bare_tree(seed_v)
+
+# kış: yaprağı dökülmüş, özyinelemeli dallanan ağaç; dalların üstünde ince kar
+func _bare_tree(seed_v: int) -> ArrayMesh:
+	var r := RandomNumberGenerator.new()
+	r.seed = 2100 + seed_v
+	var mb := MB.new()
+	var bark := Color(0.2, 0.17, 0.14)
+	var snow := Color(0.9, 0.92, 0.95)
+	var H := r.randf_range(2.2, 3.2)
+	mb.cyl_between(Vector3.ZERO, Vector3(0, H, 0), 0.2, 0.13, 7, bark, false)
+	var stack: Array = [[Vector3(0, H, 0), Vector3(0, 1, 0), 1.9, 0.13, 0]]
+	while not stack.is_empty():
+		var it: Array = stack.pop_back()
+		var p0: Vector3 = it[0]
+		var dir: Vector3 = it[1]
+		var L: float = it[2]
+		var rad: float = it[3]
+		var depth: int = it[4]
+		var n := 3 if depth < 2 else 2
+		for k in n:
+			var d := (dir + Vector3(r.randf_range(-0.9, 0.9), r.randf_range(-0.1, 0.5), r.randf_range(-0.9, 0.9))).normalized()
+			if d.y < 0.15:
+				d.y = 0.15
+				d = d.normalized()
+			var l := L * r.randf_range(0.65, 0.9)
+			var p1 := p0 + d * l
+			mb.cyl_between(p0, p1, rad, rad * 0.6, 5 if depth < 2 else 4, bark, false)
+			if rad > 0.03:
+				mb.cyl_between(p0 + Vector3(0, rad * 0.7, 0), p1 + Vector3(0, rad * 0.45, 0), rad * 0.55, rad * 0.3, 4, snow, false)
+			if depth < 3:
+				stack.append([p1, d, l, rad * 0.62, depth + 1])
+	return mb.commit(Mats.vc())
 
 func _leafy_tree(seed_v: int) -> ArrayMesh:
 	var r := RandomNumberGenerator.new()
@@ -227,9 +259,16 @@ func _tree_mesh_old(seed_v: int, win: bool) -> ArrayMesh:
 	return leaf.commit(Mats.vc2() if win else Mats.vc(), m)
 
 # ------------------------------------------------------------ sivil araba
+const CIV_MODELS := ["car_sedan", "car_hatch", "car_boxy", "car_pickup", "car_van", "car_sedan", "car_boxy"]
+const CIV_COLS := [Color(0.82, 0.82, 0.8), Color(0.12, 0.13, 0.15), Color(0.5, 0.52, 0.55), Color(0.42, 0.08, 0.07), Color(0.12, 0.2, 0.36), Color(0.62, 0.58, 0.48), Color(0.25, 0.32, 0.22), Color(0.72, 0.62, 0.3)]
+
 func car(p: Vector3, rot: float, color_idx := -1) -> void:
 	var v := color_idx if color_idx >= 0 else rng.randi() % 5
-	var mesh := _cached("car%d" % v, func(): return car_mesh(v))
+	var model: String = CIV_MODELS[rng.randi() % CIV_MODELS.size()]
+	var col: Color = CIV_COLS[(v * 3 + rng.randi()) % CIV_COLS.size()]
+	var mesh: Mesh = Art.civil(model, col) if Art.has(model) else null
+	if mesh == null:
+		mesh = _cached("car%d" % v, func(): return car_mesh(v))
 	var mi := _place(mesh, p, rot)
 	items.append({"node": mi, "pos": p, "kind": "car", "hp": 50.0, "alive": true, "r": 1.6})
 	G.grid.set_static_rect(p, Vector2(4.2, 1.8), rot, 1.25, Grid.K_WRECK)

@@ -231,6 +231,71 @@ static func skinned(model: String, node: String, team: int) -> ArrayMesh:
 	_skin[key] = out
 	return out
 
+# sivil araç: tek mesh, boya rengi verilir; tozlu / kirli araç boyası
+static func civil(model: String, col: Color) -> ArrayMesh:
+	var key := "civ|%s|%s|%s" % [model, col.to_html(), G.map_kind]
+	if _skin.has(key):
+		return _skin[key]
+	var nd := nodes(model)
+	if not nd.has("body"):
+		return null
+	var out: ArrayMesh = (nd["body"]["mesh"] as ArrayMesh).duplicate()
+	for i in out.get_surface_count():
+		var sm := out.surface_get_material(i)
+		var nm := String(sm.resource_name) if sm else "body"
+		out.surface_set_material(i, _civil_mat(nm, col))
+	_skin[key] = out
+	return out
+
+static func _civil_mat(nm: String, col: Color) -> Material:
+	var key := "civm|%s|%s|%s" % [nm, col.to_html() if nm == "body" else "", G.map_kind]
+	if _mat.has(key):
+		return _mat[key]
+	var m: Material
+	match nm:
+		"body":
+			if _armor_shader == null:
+				_armor_shader = load("res://shaders/armor.gdshader")
+			var sm := ShaderMaterial.new()
+			sm.shader = _armor_shader
+			sm.set_shader_parameter("tint", col)
+			sm.set_shader_parameter("roughness", 0.42)
+			sm.set_shader_parameter("metallic", 0.35)
+			sm.set_shader_parameter("streak_tex", mat_tex("rusty_painted_metal", "albedo"))
+			sm.set_shader_parameter("grime_tex", mat_tex("rust_coarse_01", "albedo"))
+			sm.set_shader_parameter("micro_nrm", mat_tex("metal_plate_02", "normal"))
+			sm.set_shader_parameter("micro_rough", mat_tex("metal_plate_02", "rough"))
+			sm.set_shader_parameter("streaks", 0.25)
+			sm.set_shader_parameter("rust", 0.08)
+			sm.set_shader_parameter("micro", 0.2)
+			var dd := _dirt()
+			sm.set_shader_parameter("dirt_amount", 0.6)
+			sm.set_shader_parameter("dirt_height", 0.7)
+			sm.set_shader_parameter("dirt_col", dd["dirt"])
+			sm.set_shader_parameter("dust_col", dd["dust"])
+			sm.set_shader_parameter("dust_amount", dd["dust_a"] * 1.5)
+			m = sm
+		"chrome":
+			var c := StandardMaterial3D.new()
+			c.albedo_color = Color(0.7, 0.7, 0.72)
+			c.metallic = 0.9
+			c.roughness = 0.25
+			m = c
+		"rubber":
+			var r := StandardMaterial3D.new()
+			r.albedo_color = Color(0.06, 0.06, 0.06)
+			r.roughness = 0.95
+			m = r
+		"trim":
+			var t := StandardMaterial3D.new()
+			t.albedo_color = Color(0.1, 0.1, 0.1)
+			t.roughness = 0.7
+			m = t
+		_:
+			m = material(nm, 0)
+	_mat[key] = m
+	return m
+
 static func clear_cache() -> void:
 	_mat.clear()
 	_skin.clear()

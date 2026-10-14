@@ -11,6 +11,7 @@ import { ARMOR } from './armor.js';
 import { ARMOR2 } from './armor2.js';
 import { AIR } from './air.js';
 import { ARTILLERY } from './artillery.js';
+import { CIVIL } from './civil.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'assets');
 const only = process.argv[2] ?? 'all';
@@ -22,7 +23,7 @@ if (only === 'all' || only === 'textures') {
   console.log(`dokular: ${((Date.now() - t0) / 1000).toFixed(1)} sn`);
 }
 if (only === 'all' || only === 'models') {
-  const all = { ...VEHICLES, ...VEHICLES2, ...SOLDIERS, ...ARMOR, ...ARMOR2, ...AIR, ...ARTILLERY };
+  const all = { ...VEHICLES, ...VEHICLES2, ...SOLDIERS, ...ARMOR, ...ARMOR2, ...AIR, ...ARTILLERY, ...CIVIL };
   const pick = process.argv[3];
   if (pick) for (const k of Object.keys(all)) if (!k.startsWith(pick)) delete all[k];
   for (const [name, fn] of Object.entries(all)) {
