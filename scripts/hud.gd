@@ -674,6 +674,8 @@ func _update_info() -> void:
 		var tm := "SAKİN" if u.suppression < 30 else ("GERGİN" if u.suppression < 70 else "BASTIRILDI")
 		if u.stress_lv > 0:
 			tm = "PANİK" if u.stress_lv == 2 else "SARSILMIŞ"
+		if u.cold >= 50.0:
+			tm += "  ·  " + I18n.s("DONUYOR" if u.cold >= 90.0 else "ÜŞÜYOR")
 		stats.text = "%s %d   ·   %s %d   ·   %s %d   ·   %s %d" % [I18n.s("MERMİ"), u.ammo, I18n.s("BOMBA"), u.grenades, I18n.s("YARALANMA"), u.downs, I18n.s("STRES"), int(u.stress)]
 		status.text = "%s   ·   %s" % [I18n.s(stt), I18n.s(tm)]
 		status.add_theme_color_override("font_color", RED if u.suppression >= 70 or u.stress_lv == 2 or u.incapacitated() else (AMBER if u.suppression >= 30 or u.stress_lv == 1 else GREEN))
@@ -1204,6 +1206,18 @@ func show_menu() -> void:
 		var ks := Modes.MODE_NAME.keys()
 		G.mode = ks[(ks.find(G.mode) + 1) % ks.size()]
 		mb.text = I18n.s("MOD") + ": " + I18n.s(Modes.MODE_NAME[G.mode]))
+	var wb := _menu_btn(vb, "", func(): pass, I18n.s("Değişken: biyoma göre hava 3-4 dakikada bir değişir"))
+	var wk := ["dynamic", "clear", "rain", "storm", "sandstorm", "snowstorm"]
+	var wtxt := func(): return I18n.s("HAVA DURUMU") + ": " + I18n.s(Weather.NAME[G.weather_pref]) + ("  ·  " + I18n.s("GECE") if G.night_pref else "")
+	wb.text = wtxt.call()
+	wb.gui_input.connect(func(ev):
+		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
+			G.night_pref = not G.night_pref
+			wb.text = wtxt.call())
+	wb.pressed.connect(func():
+		G.weather_pref = wk[(wk.find(G.weather_pref) + 1) % wk.size()]
+		wb.text = wtxt.call())
+	wb.tooltip_text = I18n.s("Sol tık: hava · Sağ tık: gece")
 	for id in MapGen.MAPS:
 		var mid: String = id
 		_menu_btn(vb, I18n.s(MapGen.MAPS[id]["title"]).to_upper(), func(): G.main.start_game(mid), I18n.s(MapGen.MAPS[id].get("desc", "")))

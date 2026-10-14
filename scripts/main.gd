@@ -45,6 +45,8 @@ func _ready() -> void:
 		_run_art_test()
 	elif shot_dir != "" and shot_scene == "vehtest":
 		_run_veh_test()
+	elif shot_dir != "" and shot_scene == "weathertest":
+		_run_weather_test()
 	elif shot_dir != "" and shot_scene == "logitest":
 		_run_logi_test()
 	elif shot_dir != "" and shot_scene == "modetest":
@@ -144,6 +146,10 @@ func _clear_world() -> void:
 	if G.modes and is_instance_valid(G.modes):
 		G.modes.queue_free()
 	G.modes = null
+	if G.weather and is_instance_valid(G.weather):
+		G.weather.restore()
+		G.weather.queue_free()
+	G.weather = null
 	G.reset()
 	bodies.clear()
 
@@ -416,6 +422,9 @@ func start_game(kind: String, data := {}, sandbox := false) -> void:
 		add_child(sandbox_ui)
 	if not sandbox and G.scenario.is_empty() and shot_dir == "":
 		G.deploy_t = G.DEPLOY_TIME
+	G.weather = Weather.new()
+	add_child(G.weather)
+	G.weather.setup("clear" if (sandbox or shot_dir != "") else G.weather_pref, G.night_pref and not sandbox and shot_dir == "")
 	if sandbox:
 		pass
 	elif G.scenario.is_empty() and G.mode != "bases":
@@ -657,6 +666,83 @@ func _run_crash_test() -> void:
 	print("CRASH done alive=%s,%s" % [h1.alive, h2.alive])
 	get_tree().quit()
 
+func _run_weather_test() -> void:
+	# yağmur/sağanak (sel), kum fırtınası (uçuş yok), kar fırtınası (üşüme/ısınma), gece
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	var W := G.weather
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
+	var sq := Squad.new(0, "T")
+	for i in 6:
+		spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(i * 1.5, 0, 0), Grid.M_INF), sq)
+	var tech := spawn_vehicle(0, "technical", G.grid.nearest_free(c + Vector3(0, 0, 8), Grid.M_LIGHT), 0.0)
+	G.cam.jump_to(c, true)
+	G.cam.target_size = 45.0
+	W.set_kind("rain")
+	await _wait(2.0)
+	await _shot("weather_01_rain")
+	print("WEATHER rain sight=%.2f mud_speed=%.2f" % [W.sight_mult(), tech.speed_factor()])
+	if W.sight_mult() >= 1.0 or tech.speed_factor() >= 1.0:
+		fails += 1
+	var wet0 := 0
+	for i in G.grid.water.size():
+		if G.grid.water[i] >= 1:
+			wet0 += 1
+	W.set_kind("storm")
+	await _wait(3.0)
+	var wet1 := 0
+	for i in G.grid.water.size():
+		if G.grid.water[i] >= 1:
+			wet1 += 1
+	if not G.grid.bridges.is_empty():
+		G.cam.jump_to(G.grid.bridges[0]["c"], true)
+	await _wait(4.0)
+	await _shot("weather_02_storm_flood")
+	print("WEATHER storm water cells %d -> %d" % [wet0, wet1])
+	if G.terrain.has_water and wet1 <= wet0:
+		fails += 1
+	W.set_kind("clear")
+	await _wait(1.0)
+	var wet2 := 0
+	for i in G.grid.water.size():
+		if G.grid.water[i] >= 1:
+			wet2 += 1
+	print("WEATHER flood receded %d" % wet2)
+	if wet2 != wet0:
+		fails += 1
+	# kum fırtınası
+	var h := spawn_vehicle(0, "heli", c + Vector3(10, 0, -10), 0.0)
+	await _wait(3.0)
+	var alt0: float = h.hull.position.y
+	W.set_kind("sandstorm")
+	G.cam.jump_to(c, true)
+	await _wait(6.0)
+	await _shot("weather_03_sandstorm")
+	print("WEATHER sandstorm heli alt %.1f -> %.1f no_air=%s" % [alt0, h.hull.position.y, W.no_air()])
+	if h.hull.position.y > 1.0 or alt0 < 2.0:
+		fails += 1
+	# kar fırtınası: sahada üşür, karargâhta ısınır
+	W.set_kind("snowstorm")
+	var s0: Soldier = sq.members[0]
+	var hqs := spawn_soldier(0, "rifle", G.grid.nearest_free(G.hq_pos[0] + Vector3(10, 0, 0), Grid.M_INF), null)
+	await _wait(20.0)
+	await _shot("weather_04_snow")
+	print("WEATHER snow field_cold=%d hq_cold=%d" % [int(s0.cold), int(hqs.cold)])
+	if s0.cold < 10.0 or hqs.cold > 1.0:
+		fails += 1
+	W.set_kind("clear")
+	W.night = true
+	W.set_kind_silent("clear")
+	await _wait(1.0)
+	await _shot("weather_05_night")
+	print("WEATHER night sight=%.2f" % W.sight_mult())
+	if W.sight_mult() >= 1.0:
+		fails += 1
+	print("WEATHERTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
 func _run_logi_test() -> void:
 	# kg stok: ileri üs mühimmatı stoktan verir, araç onarımı, üsse dönüş iadesi, konuşlanma aşaması
 	get_window().size = Vector2i(1920, 1080)
@@ -790,7 +876,6 @@ func _run_stress_test() -> void:
 	var fails := 0
 	start_game("green_valley", {}, true)
 	sandbox_ui.run("fog")
-	sandbox_ui.run("ai off")
 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
 	var s := spawn_soldier(0, "rifle", c, null)
 	await _wait(0.5)
@@ -857,7 +942,6 @@ func _run_armor_test() -> void:
 	var fails := 0
 	start_game("green_valley", {}, true)
 	sandbox_ui.run("fog")
-	sandbox_ui.run("ai off")
 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
 	var res := {}
 	for vt in ["tank", "ifv", "apc", "technical"]:

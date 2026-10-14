@@ -223,7 +223,7 @@ func run(cmd: String) -> void:
 	var sel: Array = G.player.selected
 	match a[0].to_lower():
 		"help":
-			_print("spawn <id> [n] [blue|red] · supply <n> · god · fog · ai · speed <x> · kill · heal · build · clear · team · boom <r> · rank")
+			_print("spawn <id> [n] [blue|red] · supply <n> · god · fog · ai · speed <x> · kill · heal · build · clear · team · boom <r> · rank · weather <clear|rain|storm|sandstorm|snowstorm> · night")
 		"spawn":
 			if a.size() < 2:
 				return
@@ -256,6 +256,16 @@ func run(cmd: String) -> void:
 						x.queue_free()
 				G.ais.clear()
 			_print("ai: %s" % on)
+		"weather", "hava":
+			if G.weather and a.size() > 1 and a[1] in Weather.KINDS:
+				G.weather.dynamic = false
+				G.weather.set_kind(a[1])
+			_print("weather: %s (%s)" % [G.weather.kind if G.weather else "-", ", ".join(Weather.KINDS)])
+		"night", "gece":
+			if G.weather:
+				G.weather.night = not G.weather.night
+				G.weather.set_kind_silent(G.weather.kind)
+				_print("night: %s" % G.weather.night)
 		"speed":
 			Engine.time_scale = clampf(float(a[1]) if a.size() > 1 else 1.0, 0.1, 8.0)
 		"kill":

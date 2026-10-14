@@ -24,6 +24,9 @@ var player: PlayerCtl
 var logi: Logistics
 var mode := "bases"        # bases | conquest | wargoals
 var modes: Modes = null
+var weather: Weather = null
+var weather_pref := "dynamic"
+var night_pref := false
 var deploy_t := 0.0        # konuşlanma aşaması (sn): ateş yok, üretim hızlı
 const DEPLOY_TIME := 45.0
 var cam: CamRig
@@ -163,10 +166,14 @@ func _update_visibility() -> void:
 				u.seen[t] = true
 				continue
 			var s: bool = u is Building and time < reveal[t]
+			var wm: float = weather.sight_mult() if weather != null and is_instance_valid(weather) else 1.0
+			# gece/kötü havada ateş eden birim yine de görünür
+			if wm < 1.0 and u is Soldier and time - u.fired_t < 1.5:
+				wm = maxf(wm, 1.0)
 			for f in near(u.position, 85.0):
 				if s:
 					break
-				if f.team == t and f.alive and f.position.distance_to(u.position) <= f.sight:
+				if f.team == t and f.alive and f.position.distance_to(u.position) <= f.sight * (wm if not (f is Building) else maxf(wm, 0.75)):
 					s = true
 					break
 			u.seen[t] = s

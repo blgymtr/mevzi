@@ -156,7 +156,7 @@ func _update_base(c: Vector2i) -> void:
 			var i := (c.y * 2 + dz) * N + c.x * 2 + dx
 			var v := h[i]
 			var k := kind[i]
-			if water[i] == 1 and bridge[i] == 0:
+			if water[i] >= 1 and bridge[i] == 0:
 				wet = true
 			mx = maxf(mx, v)
 			if k == K_WIRE:
@@ -442,4 +442,4 @@ func bridge_at(p: Vector3) -> Dictionary:
 
 func is_water(p: Vector3) -> bool:
 	var i := idx(p)
-	return water[i] == 1 and bridge[i] == 0
+	return water[i] >= 1 and bridge[i] == 0

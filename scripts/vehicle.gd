@@ -524,7 +524,8 @@ func immobile() -> bool:
 	return crit["mob"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (vtype in WHEELED and tires >= maxi(wheels.size(), 4))
 
 func speed_factor() -> float:
-	return clampf(1.0 - 0.2 * tires, 0.3, 1.0) * (0.55 if crit["mob"] == 1 else 1.0)
+	var mud: float = G.weather.mud() if G.weather != null and vtype in WHEELED else 1.0
+	return clampf(1.0 - 0.2 * tires, 0.3, 1.0) * (0.55 if crit["mob"] == 1 else 1.0) * mud
 
 func has_crit() -> bool:
 	for k in crit:
@@ -1395,6 +1396,14 @@ func _subsystem_hit(dmg: float, src, k: String) -> void:
 			_kill_driver(src)
 
 func _heli(dt: float) -> void:
+	if G.weather != null and G.weather.no_air():
+		# kum fırtınası: yere in, bekle
+		hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt)
+		position += hvel * dt
+		hull.position.y = move_toward(hull.position.y, 0.6, dt * 2.0)
+		rotor.rotation.y += dt * (28.0 if hull.position.y > 0.7 else 6.0)
+		target = null
+		return
 	var goal := dest
 	var t := target
 	if forced_target != null and is_instance_valid(forced_target) and forced_target.hostile():
@@ -1483,6 +1492,9 @@ func _heli(dt: float) -> void:
 		Sfx.play3d("hmg", gp, 2.0, 0.08, 0.03)
 
 func _fpv(dt: float) -> void:
+	if G.weather != null and G.weather.no_air():
+		hull.position.y = move_toward(hull.position.y, 0.2, dt * 3.0)
+		return
 	var t: Unit = forced_target
 	if t == null or not is_instance_valid(t) or not t.alive:
 		# yeni hedef: yakındaki düşman

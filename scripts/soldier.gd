@@ -41,6 +41,8 @@ var to_cover := false
 var suppression := 0.0
 # stres (BA): baskıdan ayrı, yavaş birikir/yavaş iner. 1 = sarsılmış, 2 = panik
 var stress := 0.0
+var cold := 0.0           # kar fırtınasında üşüme (0-100)
+var fired_t := -99.0
 var cost_share := 0.0      # üretim maliyetinden payı (iade/imha puanı)
 var stress_lv := 0
 var stress_t := -99.0
@@ -717,7 +719,7 @@ func _think_repair() -> void:
 		state = "move"
 		return
 	repair_target.hp = minf(repair_target.max_hp, repair_target.hp + 40.0 * 0.32)
-	if repair_target is Vehicle and repair_target.tires > 0 and randf() < 0.12:
+	if repair_target is Vehicle and repair_target.tires > 0 and randf() < 0.25:
 		repair_target.tires -= 1
 	if repair_target is Vehicle and repair_target.tracks_broken > 0.0:
 		repair_target.tracks_broken = maxf(0.0, repair_target.tracks_broken - 3.0)
@@ -732,6 +734,8 @@ func _think_repair() -> void:
 
 func _think_drone() -> void:
 	if my_drone != null and is_instance_valid(my_drone) and my_drone.alive:
+		return
+	if G.weather != null and G.weather.no_air():
 		return
 	my_drone = null
 	if drone_cd > 0.0:
@@ -923,6 +927,8 @@ func _movement(dt: float) -> void:
 				spd *= 0.4
 			if body_lift > 0.2:
 				spd = minf(spd, 2.0)
+			if cold > 50.0:
+				spd *= 0.78
 			want = _follow(spd)
 		"escort":
 			want = _escort_move()
@@ -1218,6 +1224,7 @@ func _shoot(t: Unit) -> void:
 	mag -= 1
 	ammo -= 1
 	shots += 1
+	fired_t = G.time
 	if ammo < 40 and not low_ammo_said:
 		low_ammo_said = true
 		say("MERMİ AZ!")
@@ -1302,6 +1309,8 @@ func _hit_chance(t: Unit, d: float) -> float:
 		c *= 0.5
 	c *= 1.0 - suppression / 170.0
 	c *= [1.0, 0.78, 0.5][stress_lv]
+	if cold > 50.0:
+		c *= 0.8
 	c *= 1.0 + accuracy_bonus
 	return clampf(c, 0.02, 0.95)
 
