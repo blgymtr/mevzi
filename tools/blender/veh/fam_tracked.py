@@ -490,26 +490,36 @@ def eng_breach(v):
 def eng_dozer(v):
     big = v.get("big", False)
     if big:
-        # zırhlı buldozer: yüksek kabin, geniş bıçak, arkada sökücü
-        L, W, zt = 5.0, 3.2, 1.5
+        # zırhlı buldozer: yüksek kabin, geniş bıçak, arkada sökücü (L: gövde boyu, BAT-2 için uzun)
+        L, W, zt = float(v.get("L", 5.0)), 3.2, 1.5
+        cy = (L - 5.0) * 0.8         # uzun gövdede (BAT-2) mürettebat kabini önde, motor ve vinç arkada
         tracked(L, W, 6, 0.32, 1.25, 0.6, zt, nose=0.3, tools_side=False)
-        slab(0.6, 0.5, -1.4, -1.5, zt, zt + 1.6, 1.0, 0.9, "paint", bev=0.014)
+        slab(0.6 + cy, 0.5 + cy, -1.4 + cy, -1.5 + cy, zt, zt + 1.6, 1.0, 0.9, "paint", bev=0.014)
         for s in (-1, 1):
-            box((s * 0.92, -0.45, zt + 1.05), (0.03, 1.4, 0.5), "glass", bev=0.0)
+            box((s * 0.92, -0.45 + cy, zt + 1.05), (0.03, 1.4, 0.5), "glass", bev=0.0)
             for t in (-0.5, 0.0, 0.5):
-                box((s * 0.95, -0.45 + t, zt + 1.05), (0.04, 0.04, 0.55), "dark", bev=0.0)       # cam koruma ızgarası
-            box((s * 1.4, 2.4, 0.8), (0.2, 1.8, 0.25), "metal", bev=0.0)
-            cyl((s * 1.1, 1.6, 1.2), 0.08, 1.2, "metal", seg=10, rot=(1.2, 0, 0))
-        box((0, 0.55, zt + 1.05), (1.6, 0.04, 0.5), "glass", bev=0.0)
-        box((0, 3.3, 0.9), (4.0, 0.25, 1.6), "paint", rot=(-0.15, 0, 0), bev=0.012)
+                box((s * 0.95, -0.45 + cy + t, zt + 1.05), (0.04, 0.04, 0.55), "dark", bev=0.0)  # cam koruma ızgarası
+            box((s * 1.4, L / 2 - 0.1, 0.8), (0.2, 1.8, 0.25), "metal", bev=0.0)
+            cyl((s * 1.1, L / 2 - 0.9, 1.2), 0.08, 1.2, "metal", seg=10, rot=(1.2, 0, 0))
+        box((0, 0.55 + cy, zt + 1.05), (1.6, 0.04, 0.5), "glass", bev=0.0)
+        if cy > 0.5:
+            # motor güvertesi ızgaraları + katlanmış vinç kolu ve kancası (arka)
+            grille(-0.7, cy - 2.6, zt + 0.01, 1.0, 1.3, 6)
+            box((0.95, -L / 2 + 1.9, zt + 0.32), (0.32, 3.0, 0.32), "paint", bev=0.01)
+            box((0.95, -L / 2 + 0.35, zt + 0.2), (0.5, 0.4, 0.4), "paint", bev=0.01)            # vinç tabanı
+            cyl((0.95, -L / 2 + 3.45, zt + 0.25), 0.08, 0.25, "dark", seg=10)                   # kanca makarası
+            box((0.95, -L / 2 + 3.45, zt + 0.06), (0.1, 0.06, 0.16), "metal", bev=0.0)
+        yb = L / 2 + 0.8
+        box((0, yb, 0.9), (4.0, 0.25, 1.6), "paint", rot=(-0.15, 0, 0), bev=0.012)
         for k in range(7):
-            box(((k - 3) * 0.55, 3.18, 0.9), (0.04, 0.1, 1.5), "paint", rot=(-0.15, 0, 0), bev=0.0)   # bıçak nervürleri
-        box((0, 3.45, 0.12), (4.0, 0.12, 0.12), "metal", bev=0.0)
-        box((0, -3.0, 0.6), (0.2, 0.9, 1.0), "metal", rot=(0.3, 0, 0), bev=0.0)
+            box(((k - 3) * 0.55, yb - 0.12, 0.9), (0.04, 0.1, 1.5), "paint", rot=(-0.15, 0, 0), bev=0.0)   # bıçak nervürleri
+        box((0, yb + 0.15, 0.12), (4.0, 0.12, 0.12), "metal", bev=0.0)
+        box((0, -L / 2 - 0.5, 0.6), (0.2, 0.9, 1.0), "metal", rot=(0.3, 0, 0), bev=0.0)
         zr = zt + 1.6
-        hatch(0, -0.4, zr, 0.3)
-        exhaust(0.6, -0.9, zr + 0.2, 0.08, fy=1)
+        hatch(0, -0.4 + cy, zr, 0.3)
+        exhaust(0.6, -0.9 + cy, zr + 0.2, 0.08, fy=1)
     else:
+        cy = 0.0
         L, W, zt = 6.2, 3.2, 1.2
         tracked(L, W, 4, 0.36, 1.3, 0.46, zt, nose=0.5, tools_side=False)
         box((0, 3.4, 0.7), (3.4, 0.22, 1.0), "paint", rot=(-0.2, 0, 0), bev=0.012)
@@ -521,24 +531,26 @@ def eng_dozer(v):
         zr = zt + 0.7
         hatch(0, -1.9, zr, 0.3)
     node("turret")
-    tp = (0, -1.5, zr)
-    cyl((0, -1.5, zr + 0.05), 0.2, 0.1, "dark", seg=10)
+    tp = (0, -1.5 + cy, zr)
+    cyl((0, -1.5 + cy, zr + 0.05), 0.2, 0.1, "dark", seg=10)
     node("barrel")
-    mg(0, -1.2, zr + 0.2, 0.0, 0.8, False)
-    return {"body": (0, 0, 0), "turret": tp, "barrel": (0, -1.2, zr + 0.2)}, {"muzzle": (0, -0.4, zr + 0.2), "radius": 2.8}
+    mg(0, -1.2 + cy, zr + 0.2, 0.0, 0.8, False)
+    return {"body": (0, 0, 0), "turret": tp, "barrel": (0, -1.2 + cy, zr + 0.2)}, {"muzzle": (0, -0.4 + cy, zr + 0.2), "radius": 2.8}
 
 def eng_bridge(v):
     zt = _abrams_hull()
+    bl = float(v.get("bl", 6.6))          # katlanmış köprü boyu (MTU-72 ~11,4 m, Wolverine ~13 m)
     # katlanmış köprü (üstte iki makas parça) + atma kolu
     for k, zz in enumerate((zt + 0.55, zt + 0.95)):
-        box((0, 0.2, zz), (3.9, 6.6, 0.35), "paint", bev=0.012)
+        box((0, 0.2, zz), (3.9, bl, 0.35), "paint", bev=0.012)
         for s in (-1, 1):
-            box((s * 1.3, 0.2, zz + 0.18), (0.9, 6.5, 0.02), "trim", bev=0.0)                    # yürüyüş yolu
-            for t in range(9):
-                box((s * 1.3, -2.9 + t * 0.78, zz + 0.2), (0.86, 0.04, 0.02), "metal", bev=0.0)   # kaymaz çıtalar
+            box((s * 1.3, 0.2, zz + 0.18), (0.9, bl - 0.1, 0.02), "trim", bev=0.0)               # yürüyüş yolu
+            nt = int((bl - 0.4) / 0.78)
+            for t in range(nt):
+                box((s * 1.3, 0.2 - (nt - 1) * 0.39 + t * 0.78, zz + 0.2), (0.86, 0.04, 0.02), "metal", bev=0.0)   # kaymaz çıtalar
         seam((-1.95, -0.3, zz), (1.95, -0.3, zz))
     for s in (-1, 1):
-        box((s * 1.6, 0.2, zt + 0.75), (0.25, 6.4, 0.2), "dark", bev=0.0)
+        box((s * 1.6, 0.2, zt + 0.75), (0.25, bl - 0.2, 0.2), "dark", bev=0.0)
     box((0, 3.6, zt + 0.2), (1.2, 0.6, 0.5), "metal", bev=0.008)
     for s in (-1, 1):
         cyl((s * 0.4, 3.3, zt + 0.5), 0.08, 1.0, "metal", seg=10, rot=(1.0, 0, 0))

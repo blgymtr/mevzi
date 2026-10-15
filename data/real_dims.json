@@ -1,5 +1,5 @@
 {
-  "note": "Gerçek boyutlar (m), yayımlanmış teknik verilerden yaklaşık. L: toplam uzunluk (tank/obüs: namlu önde; helikopter: gövde, rotor hariç; İHA: gövde boyu), W: genişlik (uçaklarda kanat açıklığı, helikopterde ana rotor çapı), H: yükseklik. tol: kabul edilen sapma (varsayılan 0.15; emin olunmayan verilerde daha geniş). Hava araçlarında (helikopter, İHA, dolanan mühimmat) model şekli doğru kabul edilir; katalogdaki 'scale' W'ye göre bulunur (tools/size_audit.gd). Kara araçlarında sapma Blender aile parametrelerinden düzeltilir.",
+  "note": "Gerçek boyutlar (m), yayımlanmış teknik verilerden yaklaşık. L: toplam uzunluk (tank/obüs: namlu önde; helikopter: gövde, rotor hariç; İHA: gövde boyu), W: genişlik (uçaklarda kanat açıklığı, helikopterde ana rotor çapı), H: yükseklik. fire: atış düzenindeki boyut (D-30 gibi kuyruğu açılan toplarda model atış düzeninde; denetim bunu kullanır, iz/görünürlük ise yürüyüş boyutunu). tol: kabul edilen sapma (varsayılan 0.15; emin olunmayan verilerde daha geniş). Hava araçlarında (helikopter, İHA, dolanan mühimmat) model şekli doğru kabul edilir; katalogdaki 'scale' W'ye göre bulunur (tools/size_audit.gd). Kara araçlarında sapma Blender aile parametrelerinden düzeltilir.",
   "units": {
     "usa_mbt_a1": {"L": 9.77, "W": 3.66, "H": 2.44},
     "usa_mbt_a2": {"L": 9.77, "W": 3.66, "H": 2.44},
@@ -129,11 +129,11 @@
     "rus_spg_gvoz": {"L": 7.26, "W": 2.85, "H": 2.73},
     "rus_spg_malka": {"L": 10.5, "W": 3.38, "H": 3.0},
     "rus_spg_malva": {"L": 10.8, "W": 2.55, "H": 3.4, "tol": 0.25},
-    "rus_tow_d30": {"L": 5.4, "W": 1.95, "H": 1.9},
+    "rus_tow_d30": {"L": 5.4, "W": 1.95, "H": 1.9, "fire": {"L": 6.7, "W": 5.3, "H": 1.9, "tol": 0.15}},
     "rus_tow_mstab": {"L": 12.7, "W": 2.65, "H": 2.76},
     "rus_tow_giats": {"L": 12.92, "W": 2.79, "H": 2.76},
     "rus_tow_d20": {"L": 8.69, "W": 2.32, "H": 1.92},
-    "rus_tow_d30a": {"L": 5.4, "W": 1.95, "H": 1.9},
+    "rus_tow_d30a": {"L": 5.4, "W": 1.95, "H": 1.9, "fire": {"L": 6.7, "W": 5.3, "H": 1.9, "tol": 0.15}},
     "rus_tow_nonak": {"L": 5.0, "W": 1.9, "H": 1.6, "tol": 0.25},
     "rus_mlrs_grad": {"L": 7.35, "W": 2.4, "H": 3.09},
     "rus_mlrs_torg": {"L": 7.35, "W": 2.4, "H": 3.0},

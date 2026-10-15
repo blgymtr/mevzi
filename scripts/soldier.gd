@@ -422,6 +422,8 @@ func cmd_follow_vehicle(v: Vehicle, slot: int, n: int) -> void:
 	cover_slot = (float(slot) - (n - 1) * 0.5) * 1.1
 	order = "follow_veh"
 	force_move = false
+	if not v.escorts.has(self):
+		v.escorts.append(self)
 	_follow_veh_tick()
 
 func _follow_veh_tick() -> void:

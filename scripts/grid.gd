@@ -381,6 +381,48 @@ func nearest_free(p: Vector3, mode: int, maxr := 8) -> Vector3:
 			return cell_center(best)
 	return p
 
+# kapalı cep: hücreden sınırlı taşmayla en çok 'need' hücreye ulaşılabiliyorsa (her yanı ağaç/duvar/su) true
+func _pocket(c: Vector2i, mode: int, need := 64) -> bool:
+	var g: AStarGrid2D = nav[mode]
+	var seen := {c: true}
+	var q: Array[Vector2i] = [c]
+	var i := 0
+	while i < q.size():
+		var p: Vector2i = q[i]
+		i += 1
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = p + d
+			if seen.has(n) or n.x < 0 or n.y < 0 or n.x >= NN or n.y >= NN or g.is_point_solid(n):
+				continue
+			seen[n] = true
+			q.append(n)
+			if q.size() >= need:
+				return false
+	return true
+
+# nearest_free gibi, ama kapalı cebe düşen hücreyi atlar (doğan araç hareket edebilsin)
+func nearest_open(p: Vector3, mode: int, maxr := 16) -> Vector3:
+	var c := cell_of(p)
+	if not _occupied(c, mode) and not _pocket(c, mode):
+		return p
+	for r in range(1, maxr + 1):
+		var best := Vector2i(-1, -1)
+		var bd := 1e9
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if absi(dx) != r and absi(dz) != r:
+					continue
+				var q := c + Vector2i(dx, dz)
+				if _occupied(q, mode):
+					continue
+				var d := Vector2((q.x + 0.5) * NAV - p.x, (q.y + 0.5) * NAV - p.z).length_squared()
+				if d < bd and not _pocket(q, mode):
+					bd = d
+					best = q
+		if best.x >= 0:
+			return cell_center(best)
+	return nearest_free(p, mode)
+
 # uzun yol önbelleği (büyük harita): aynı bölgeden aynı hedefe kısa sürede gelen istekler
 # (bir grubun tüm askerleri) A*'ı tekrar çalıştırmaz; ara noktalar paylaşılır
 var _pcache := {}
@@ -797,6 +839,32 @@ func bridge_at(p: Vector3) -> Dictionary:
 		if absf(along) <= b["L"] * 0.5 + 1.0 and absf(side) <= b["w"] * 0.5 + 0.5:
 			return b
 	return {}
+
+# en yakın kuru (su olmayan ya da köprü) ve alçak engelsiz nokta — suya / köprü kenarına kaymış araç için
+func nearest_dry(p: Vector3, maxr_m := 8.0) -> Vector3:
+	var c := Vector2i(ci(p.x), ci(p.z))
+	var R := int(maxr_m / CS)
+	for r in range(0, R + 1):
+		var best := Vector2i(-1, -1)
+		var bd := 1e9
+		for dz in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if absi(dx) != r and absi(dz) != r:
+					continue
+				var x := c.x + dx
+				var z := c.y + dz
+				if x < 0 or z < 0 or x >= N or z >= N:
+					continue
+				var i := z * N + x
+				if (water[i] >= 1 and bridge[i] == 0) or h[i] >= 0.3:
+					continue
+				var d := float(dx * dx + dz * dz)
+				if d < bd:
+					bd = d
+					best = Vector2i(x, z)
+		if best.x >= 0:
+			return Vector3((best.x + 0.5) * CS, p.y, (best.y + 0.5) * CS)
+	return p
 
 func is_water(p: Vector3) -> bool:
 	var i := idx(p)

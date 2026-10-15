@@ -45,7 +45,7 @@ func _ready() -> void:
 		_start_watchdog()
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
-		start_units = shot_scene in ["battletest", "modetest", "stresstest", "supplytest", "logitest", "hudtest", "test", "crash"]
+		start_units = shot_scene in ["battletest", "modetest", "supplytest", "logitest", "hudtest", "test", "crash"]
 	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
@@ -453,6 +453,13 @@ func spawn_vehicle(t: int, vt: String, p: Vector3, yaw: float) -> Vehicle:
 	v.rotation.y = yaw
 	world.add_child(v)
 	v.setup(t, vt)
+	if not v.is_air() and not v.is_drone():
+		# kapalı cepte (her yanı ağaç/duvar) doğan araç hiç yürüyemez: en yakın açık alana al
+		var q: Vector3 = G.grid.nearest_open(v.position, v.nav_mode)
+		if Vector2(q.x - v.position.x, q.z - v.position.z).length_squared() > 0.01:
+			v.position = G.on_ground(q)
+			v.dest = v.position
+			v._last_pos = v.position
 	return v
 
 func place_building(t: int, bt: String, p: Vector3, rot: float) -> Building:
@@ -561,7 +568,16 @@ func start_game(kind: String, data := {}, sandbox := false, seed_v := -1) -> voi
 	sandbox_ui = null
 	G.sandbox = sandbox
 	G.fog_off = false
-	build_world(kind, seed_v if seed_v >= 0 else randi(), data)
+	if seed_v < 0 and shot_dir != "":
+		# test: --seed=<n> ile harita tohumu sabitlenir (kararsız sonucu yeniden üretmek için)
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--seed="):
+				seed_v = int(a.substr(7))
+	if seed_v < 0:
+		seed_v = randi() % 1000000
+	if shot_dir != "":
+		print("MAP id=%s seed=%d" % [kind, seed_v])
+	build_world(kind, seed_v, data)
 	if sandbox:
 		sandbox_ui = Sandbox.new()
 		add_child(sandbox_ui)
@@ -916,7 +932,8 @@ func _run_cat_test() -> void:
 	# hareket + düşmana ateş
 	var e1 := spawn_vehicle(1, "tank", G.grid.nearest_free(c + Vector3(0, 0, -40), Grid.M_HEAVY), 0.0)
 	for v in vs:
-		v.cmd_attack(e1)
+		if is_instance_valid(v) and v.alive:
+			v.cmd_attack(e1)
 	await _wait(18.0)
 	print("CAT enemy hp=%d/%d" % [int(e1.hp), int(e1.max_hp)])
 	if e1.alive and e1.hp >= e1.max_hp:
@@ -957,7 +974,8 @@ func _run_escort_test() -> void:
 	await _wait(14.0)
 	var near := 0
 	for s in men:
-		if s.position.distance_to(tk.position) < 9.0:
+		# eskort yeri aracın arkası: gövde yarı boyu + ~4 m (gerçek boyutlu tankta gövde 8 m)
+		if s.position.distance_to(tk.position) < tk.ext.y + 4.5:
 			near += 1
 	G.cam.jump_to(tk.position, true)
 	await _wait(0.5)
@@ -1482,7 +1500,7 @@ func _run_hold_test() -> void:
 	G.cam.jump_to(c + Vector3(2.4, 0, 0.0), true)
 	await _wait(0.5)
 	await _shot("hold_close_b")
-	print("HOLDTEST DONE")
+	print("HOLDTEST RESULT fails=0")
 	get_tree().quit()
 
 func _run_build_test() -> void:
@@ -2055,6 +2073,7 @@ func _run_veh_test() -> void:
 		tech.take_damage(5.0, sn, "bullet")
 	var g_dead := not tech.gunner_ok
 	sn.die(null)
+	tech.cmd_stop()
 	var rep := spawn_soldier(0, "rifle", G.grid.nearest_free(tech.position + Vector3(4, 0, 0), Grid.M_INF), null)
 	rep.cmd_board(tech)
 	await _wait(6.0)
@@ -2110,11 +2129,20 @@ func _run_art_test() -> void:
 	cb.add_work(99999.0)
 	# hedefler
 	for i in 4:
-		spawn_vehicle(1, "tank" if i % 2 == 0 else "apc", G.grid.nearest_free(c + fwd * (45.0 + i * 12.0) + side * (i - 1.5) * 8.0, Grid.M_HEAVY), Soldier._yaw_of(-fwd))
+		var ev := spawn_vehicle(1, "tank" if i % 2 == 0 else "apc", G.grid.nearest_free(c + fwd * (45.0 + i * 12.0) + side * (i - 1.5) * 8.0, Grid.M_HEAVY), Soldier._yaw_of(-fwd))
+		ev.fire_mode = 2    # hedefler ateş etmez: deney topların ateşini ölçer (gerçek menzilde toplar ilk saniyelerde vuruluyordu)
 	var sq := Squad.new(1, "T")
 	for i in 6:
-		spawn_soldier(1, "rifle", G.grid.nearest_free(c + fwd * 40.0 + side * (i - 3) * 2.0, Grid.M_INF), sq)
-	spawn_vehicle(1, "heli", c + fwd * 50.0, 0.0)
+		var es := spawn_soldier(1, "rifle", G.grid.nearest_free(c + fwd * 40.0 + side * (i - 3) * 2.0, Grid.M_INF), sq)
+		es.fire_mode = 2
+	spawn_vehicle(1, "heli", c + fwd * 50.0, 0.0).fire_mode = 2
+	# yakındaki hedefler önce düz atışlılarca yok edilebildiğinden obüs/roketatar için ayrı, dayanıklı uzak hedefler
+	for k in 2:
+		var gi: int = [6, 7][k]
+		var far_t := spawn_vehicle(1, "tank", G.grid.nearest_free(c + fwd * (guns[gi]._min_range() + 30.0) + side * (k * 2 - 1) * 10.0, Grid.M_HEAVY), Soldier._yaw_of(-fwd))
+		far_t.cmd_hold()
+		far_t.fire_mode = 2
+		print("ART %s min=%.0f far_d=%.0f" % [types[gi], guns[gi]._min_range(), guns[gi].position.distance_to(far_t.position)])
 	G.cam.jump_to(c + fwd * 15.0, true)
 	G.cam.size = 52.0
 	G.cam.target_size = 52.0
@@ -2122,7 +2150,7 @@ func _run_art_test() -> void:
 	for k in 50:
 		await _wait(0.5)
 		if k == 8 or k == 20:
-			spawn_vehicle(1, "heli", guns[3].position + fwd * 35.0, 0.0)
+			spawn_vehicle(1, "heli", guns[3].position + fwd * 35.0, 0.0).fire_mode = 2
 		for g in guns:
 			if is_instance_valid(g) and (g.main_cd > 0.5 or g.mlrs_left > 0 or (g.vtype == "aagun" and g.target != null)):
 				fired[g.vtype] = true

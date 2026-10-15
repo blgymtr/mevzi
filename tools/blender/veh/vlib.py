@@ -877,6 +877,58 @@ def _ao(objs, ground=True, rays=14, dist=0.85):
         me.color_attributes.active_color = ca
         me.color_attributes.render_color_index = 0
 
+def apply_fit(v, pivots, meta):
+    """Gerçek boyut düzeltmesi (roadmap 38, data/real_dims.json → tools/size_audit.gd), katalog 'v' alanından:
+    turret_dy: taret + namlu Y kaydırma (m) · gun_k: namlu boyu çarpanı (namlu pivotundan) ·
+    fit_s [sx, sy, sz]: genel ölçek — tekerlek düğümleri ölçeklenmez yalnız taşınır (tekerler oval olmaz);
+    paletli araçta yalnız sx (genişlik) kullanılır, yol tekerleri yan düzlemde bozulmaz."""
+    def _move(name, d):
+        for b in NODES.get(name, {}).values():
+            for vt in b.verts:
+                vt.co += d
+    dy = float(v.get("turret_dy", 0.0))
+    if dy:
+        d = Vector((0, dy, 0))
+        for n in ("turret", "barrel"):
+            _move(n, d)
+            if n in pivots:
+                p = pivots[n]
+                pivots[n] = (p[0], p[1] + dy, p[2])
+        if "muzzle" in meta:
+            m = meta["muzzle"]
+            meta["muzzle"] = (m[0], m[1] + dy, m[2])
+    gk = float(v.get("gun_k", 1.0))
+    if gk != 1.0 and "barrel" in pivots:
+        o = pivots["barrel"]
+        for b in NODES.get("barrel", {}).values():
+            for vt in b.verts:
+                if vt.co.y > o[1]:
+                    vt.co.y = o[1] + (vt.co.y - o[1]) * gk
+        if "muzzle" in meta:
+            m = meta["muzzle"]
+            meta["muzzle"] = (m[0], o[1] + (m[1] - o[1]) * gk, m[2])
+    fs = v.get("fit_s")
+    if fs:
+        S = Vector((float(fs[0]), float(fs[1]), float(fs[2])))
+        for name, mats in NODES.items():
+            if name.startswith("wheel_"):
+                p = Vector(pivots.get(name, (0, 0, 0)))
+                np_ = Vector((p.x * S.x, p.y * S.y, p.z))
+                _move(name, np_ - p)
+                pivots[name] = tuple(np_)
+            else:
+                for b in mats.values():
+                    for vt in b.verts:
+                        vt.co = Vector((vt.co.x * S.x, vt.co.y * S.y, vt.co.z * S.z))
+                if name in pivots:
+                    p = pivots[name]
+                    pivots[name] = (p[0] * S.x, p[1] * S.y, p[2] * S.z)
+        for k in list(meta.keys()):
+            m = meta[k]
+            if isinstance(m, (tuple, list)) and len(m) == 3:
+                meta[k] = (m[0] * S.x, m[1] * S.y, m[2] * S.z)
+    return pivots, meta
+
 def export(path_glb, pivots, meta, ao=True):
     import json
     objs = []
@@ -986,7 +1038,7 @@ def wheel_pivots(pv):
 
 def gun(y0, z, L, r, mname="paint", brake=False, sleeve=0.0, x=0.0, bands=0, bore=True):
     """Namlu (Y boyunca y0'dan L kadar): koni namlu, duman tahliye kovanı, ısı kılıfı kelepçeleri, namlu ağzı, fren."""
-    cyl((x, y0 + L / 2, z), r, L, mname, "Y", seg=14, r2=r * 0.9)
+    cyl((x, y0 + L / 2, z), r * 0.9, L, mname, "Y", seg=14, r2=r)          # Y ekseninde ilk yarıçap +Y (ağız) ucunda
     if sleeve:
         cyl((x, y0 + L * 0.45, z), r * 1.45, sleeve, mname, "Y", seg=14)
         for t in (-0.5, 0.5):

@@ -10,7 +10,8 @@
    "name": "Ana Muharebe Tankı (doğu) I",
    "fam": "mbt_ru",
    "v": {
-    "era": "k1"
+    "era": "k1",
+    "gun_k": 0.72
    },
    "cost": 420,
    "hp": 820,
@@ -28,7 +29,7 @@
      2
     ]
    ],
-   "speed": 6.0
+   "speed": 6
   },
   {
    "cat": "tank",
@@ -38,7 +39,8 @@
    "fam": "mbt_ru",
    "v": {
     "era": "relikt",
-    "cage": true
+    "cage": true,
+    "gun_k": 0.72
    },
    "cost": 480,
    "hp": 850,
@@ -94,7 +96,8 @@
    "fam": "mbt_ru",
    "v": {
     "era": "k5",
-    "welded": true
+    "welded": true,
+    "gun_k": 0.72
    },
    "cost": 540,
    "hp": 880,
@@ -124,7 +127,8 @@
     "era": "relikt",
     "welded": true,
     "bustle": true,
-    "rws": true
+    "rws": true,
+    "gun_k": 0.72
    },
    "cost": 620,
    "hp": 920,
@@ -166,7 +170,7 @@
      5
     ]
    ],
-   "speed": 7.0
+   "speed": 7
   },
   {
    "cat": "apc",
@@ -199,7 +203,7 @@
    "fam": "apc_mtlb",
    "cost": 120,
    "hp": 300,
-   "speed": 9.0
+   "speed": 9
   },
   {
    "cat": "apc",
@@ -212,7 +216,7 @@
    },
    "cost": 160,
    "hp": 300,
-   "speed": 10.0
+   "speed": 10
   },
   {
    "cat": "apc",
@@ -225,7 +229,7 @@
    },
    "cost": 240,
    "hp": 480,
-   "speed": 11.0
+   "speed": 11
   },
   {
    "cat": "apc",
@@ -237,7 +241,7 @@
    },
    "cost": 140,
    "hp": 280,
-   "speed": 10.0,
+   "speed": 10,
    "id": "rus_apc_btrd"
   },
   {
@@ -335,7 +339,7 @@
    },
    "cost": 200,
    "hp": 220,
-   "speed": 14.0
+   "speed": 14
   },
   {
    "cat": "td",
@@ -348,7 +352,7 @@
    },
    "cost": 220,
    "hp": 300,
-   "speed": 9.0
+   "speed": 9
   },
   {
    "cat": "td",
@@ -388,7 +392,7 @@
    },
    "cost": 150,
    "hp": 240,
-   "speed": 12.0
+   "speed": 12
   },
   {
    "cat": "td",
@@ -460,11 +464,17 @@
    "name": "Ağır Açık KMO",
    "fam": "spg_open",
    "v": {
-    "cal": 203
+    "cal": 203,
+    "gun_k": 1.327,
+    "fit_s": [
+     1.06,
+     1,
+     1
+    ]
    },
    "cost": 480,
    "hp": 380,
-   "speed": 6.0
+   "speed": 6
   },
   {
    "cat": "spg",
@@ -473,8 +483,15 @@
    "fam": "spg_truck",
    "cost": 420,
    "hp": 300,
-   "speed": 11.0,
-   "id": "rus_spg_malva"
+   "speed": 11,
+   "id": "rus_spg_malva",
+   "v": {
+    "fit_s": [
+     0.729,
+     1,
+     1
+    ]
+   }
   },
   {
    "cat": "towed",
@@ -483,7 +500,17 @@
    "name": "Hafif Obüs 122",
    "fam": "howitzer",
    "v": {
-    "old": true
+    "cal": 122,
+    "tri": true,
+    "gl": 4.66,
+    "bf": 0.28,
+    "tl": 2.7,
+    "tw": 0.8,
+    "wr": 0.45,
+    "ww": 0.28,
+    "brake": "db",
+    "shield": 1.5,
+    "bz": 1.25
    },
    "cost": 200
   },
@@ -493,7 +520,18 @@
    "ref": "2A65 Msta-B",
    "name": "Çekili Obüs 152",
    "fam": "howitzer",
-   "cost": 290
+   "cost": 290,
+   "v": {
+    "cal": 152,
+    "gl": 8.06,
+    "tl": 5.71,
+    "tw": 1.05,
+    "wr": 0.6,
+    "ww": 0.34,
+    "brake": "db",
+    "shield": 2.1,
+    "bz": 1.55
+   }
   },
   {
    "cat": "towed",
@@ -502,7 +540,16 @@
    "name": "Uzun Menzilli Top 152",
    "fam": "howitzer",
    "v": {
-    "heavy": true
+    "cal": 152,
+    "gl": 8.2,
+    "tl": 5.65,
+    "tw": 1.1,
+    "wr": 0.55,
+    "ww": 0.3,
+    "wn": 2,
+    "brake": "multi",
+    "shield": 2.2,
+    "bz": 1.55
    },
    "cost": 300
   },
@@ -513,7 +560,15 @@
    "name": "Eski Obüs 152",
    "fam": "howitzer",
    "v": {
-    "old": true
+    "cal": 152,
+    "gl": 5.2,
+    "tl": 3.98,
+    "tw": 0.98,
+    "wr": 0.5,
+    "ww": 0.3,
+    "brake": "db",
+    "shield": 2,
+    "bz": 1.35
    },
    "cost": 220
   },
@@ -523,7 +578,17 @@
    "name": "Hafif Obüs 122 II",
    "fam": "howitzer",
    "v": {
-    "old": true
+    "cal": 122,
+    "tri": true,
+    "gl": 4.66,
+    "bf": 0.28,
+    "tl": 2.7,
+    "tw": 0.8,
+    "wr": 0.45,
+    "ww": 0.28,
+    "brake": "db",
+    "shield": 1.5,
+    "bz": 1.25
    },
    "cost": 210,
    "id": "rus_tow_d30a"
@@ -534,7 +599,17 @@
    "name": "Çekili Havan-Top 120",
    "fam": "fieldgun",
    "v": {
-    "old": true
+    "cal": 120,
+    "trail": "split",
+    "gl": 2.9,
+    "tl": 2.16,
+    "tw": 0.75,
+    "wr": 0.4,
+    "ww": 0.24,
+    "brake": "db",
+    "shield": 1.6,
+    "spread": 0.7,
+    "bz": 0.95
    },
    "cost": 170,
    "id": "rus_tow_nonak"
@@ -546,11 +621,16 @@
    "name": "Kamyon Roketatar 122",
    "fam": "mlrs_ru",
    "v": {
-    "tubes": 40
+    "tubes": 40,
+    "fit_s": [
+     0.774,
+     0.925,
+     1
+    ]
    },
    "cost": 380,
    "hp": 260,
-   "speed": 11.0
+   "speed": 11
   },
   {
    "cat": "mlrs",
@@ -560,7 +640,12 @@
    "fam": "mlrs_ru",
    "v": {
     "tubes": 40,
-    "kamaz": true
+    "kamaz": true,
+    "fit_s": [
+     0.75,
+     0.977,
+     1
+    ]
    },
    "cost": 440,
    "hp": 280,
@@ -574,11 +659,16 @@
    "fam": "mlrs_ru",
    "v": {
     "tubes": 16,
-    "big": true
+    "big": true,
+    "fit_s": [
+     0.8,
+     1.137,
+     1
+    ]
    },
    "cost": 560,
    "hp": 300,
-   "speed": 10.0
+   "speed": 10
   },
   {
    "cat": "mlrs",
@@ -589,11 +679,16 @@
    "v": {
     "tubes": 12,
     "big": true,
-    "eight": true
+    "eight": true,
+    "fit_s": [
+     0.871,
+     1.43,
+     1
+    ]
    },
    "cost": 680,
    "hp": 320,
-   "speed": 10.0
+   "speed": 10
   },
   {
    "cat": "mlrs",
@@ -603,7 +698,16 @@
    "fam": "mlrs_tos",
    "cost": 620,
    "hp": 820,
-   "speed": 5.8
+   "speed": 5.8,
+   "v": {
+    "turret_dy": 2,
+    "gun_k": 1.45,
+    "fit_s": [
+     0.915,
+     1,
+     1
+    ]
+   }
   },
   {
    "cat": "mlrs",
@@ -613,7 +717,14 @@
    "fam": "missile_ru",
    "cost": 1000,
    "hp": 300,
-   "speed": 9.0
+   "speed": 9,
+   "v": {
+    "fit_s": [
+     0.877,
+     1.43,
+     1
+    ]
+   }
   },
   {
    "cat": "mortar",
@@ -642,7 +753,7 @@
    },
    "cost": 300,
    "hp": 380,
-   "speed": 11.0
+   "speed": 11
   },
   {
    "cat": "mortar",
@@ -651,7 +762,17 @@
    "name": "Otomatik Havan",
    "fam": "fieldgun",
    "v": {
-    "old": true
+    "cal": 82,
+    "trail": "split",
+    "gl": 1.8,
+    "tl": 2.85,
+    "tw": 0.75,
+    "wr": 0.38,
+    "ww": 0.22,
+    "brake": "none",
+    "jacket": true,
+    "spread": 0.75,
+    "bz": 0.9
    },
    "cost": 140
   },
@@ -665,7 +786,7 @@
    },
    "cost": 280,
    "hp": 300,
-   "speed": 9.0,
+   "speed": 9,
    "id": "rus_mor_nonas"
   },
   {
@@ -689,7 +810,7 @@
    "fam": "sam_ru_long",
    "cost": 1000,
    "hp": 300,
-   "speed": 8.0
+   "speed": 8
   },
   {
    "cat": "aa",
@@ -725,7 +846,14 @@
    "fam": "sam_ru_truck",
    "cost": 620,
    "hp": 360,
-   "speed": 11.0
+   "speed": 11,
+   "v": {
+    "fit_s": [
+     0.829,
+     1.358,
+     1
+    ]
+   }
   },
   {
    "cat": "aa",
@@ -738,7 +866,7 @@
    },
    "cost": 480,
    "hp": 420,
-   "speed": 8.0
+   "speed": 8
   },
   {
    "cat": "aa",
@@ -759,7 +887,7 @@
    },
    "cost": 360,
    "hp": 800,
-   "speed": 6.0
+   "speed": 6
   },
   {
    "cat": "eng",
@@ -769,7 +897,7 @@
    "fam": "eng_recovery",
    "cost": 300,
    "hp": 780,
-   "speed": 6.0
+   "speed": 6
   },
   {
    "cat": "eng",
@@ -779,20 +907,28 @@
    "fam": "eng_bridge",
    "cost": 360,
    "hp": 820,
-   "speed": 6.0
+   "speed": 6,
+   "v": {
+    "bl": 11.4,
+    "fit_s": [
+     0.89,
+     1,
+     1
+    ]
+   }
   },
   {
    "cat": "eng",
    "id": "rus_eng_ur77",
    "ref": "UR-77 Meteorit",
    "name": "Hat Açma Roket Aracı",
-   "fam": "eng_breach",
+   "fam": "apc_mtlb",
    "v": {
     "ur77": true
    },
    "cost": 320,
    "hp": 320,
-   "speed": 8.0
+   "speed": 8
   },
   {
    "cat": "eng",
@@ -801,11 +937,12 @@
    "name": "Yol Açma Dozeri",
    "fam": "eng_dozer",
    "v": {
-    "big": true
+    "big": true,
+    "L": 7.6
    },
    "cost": 260,
    "hp": 600,
-   "speed": 6.0
+   "speed": 6
   },
   {
    "cat": "eng",
@@ -827,7 +964,12 @@
    "name": "Mayına Dayanıklı Araç 6x6 (doğu)",
    "fam": "mrap6",
    "v": {
-    "truck": true
+    "truck": true,
+    "fit_s": [
+     0.823,
+     1.297,
+     1
+    ]
    },
    "cost": 210,
    "hp": 420,
@@ -840,11 +982,16 @@
    "name": "Mayına Dayanıklı Araç 4x4 (doğu)",
    "fam": "mrap4",
    "v": {
-    "tall": true
+    "tall": true,
+    "fit_s": [
+     0.917,
+     1.445,
+     1
+    ]
    },
    "cost": 190,
    "hp": 380,
-   "speed": 12.0
+   "speed": 12
   },
   {
    "cat": "mrap",
@@ -858,7 +1005,7 @@
    },
    "cost": 180,
    "hp": 360,
-   "speed": 12.0
+   "speed": 12
   },
   {
    "cat": "mrap",
@@ -867,7 +1014,7 @@
    "fam": "mrap4",
    "cost": 170,
    "hp": 340,
-   "speed": 13.0,
+   "speed": 13,
    "id": "rus_mrap_vdv"
   },
   {
@@ -880,7 +1027,7 @@
    },
    "cost": 180,
    "hp": 380,
-   "speed": 11.0,
+   "speed": 11,
    "id": "rus_mrap_kamaz"
   },
   {
@@ -890,7 +1037,7 @@
    "fam": "mrap6",
    "cost": 200,
    "hp": 400,
-   "speed": 11.0,
+   "speed": 11,
    "id": "rus_mrap_vpk"
   },
   {
@@ -916,7 +1063,7 @@
    },
    "cost": 140,
    "hp": 250,
-   "speed": 14.0,
+   "speed": 14,
    "id": "rus_lv_tigrm"
   },
   {
@@ -938,7 +1085,12 @@
    "name": "Arazi Aracı",
    "fam": "lv_isv",
    "v": {
-    "uaz": true
+    "uaz": true,
+    "fit_s": [
+     0.785,
+     0.956,
+     1
+    ]
    },
    "cost": 60,
    "hp": 100,
@@ -952,11 +1104,16 @@
    "fam": "lv_isv",
    "v": {
     "gun": true,
-    "uaz": true
+    "uaz": true,
+    "fit_s": [
+     0.83,
+     0.834,
+     1
+    ]
    },
    "cost": 80,
    "hp": 110,
-   "speed": 15.0,
+   "speed": 15,
    "id": "rus_lv_hunter"
   },
   {
@@ -966,8 +1123,15 @@
    "fam": "truck_cargo",
    "cost": 90,
    "hp": 180,
-   "speed": 10.0,
-   "id": "rus_lv_ural"
+   "speed": 10,
+   "id": "rus_lv_ural",
+   "v": {
+    "fit_s": [
+     0.806,
+     0.927,
+     1
+    ]
+   }
   },
   {
    "cat": "heli_atk",
@@ -992,7 +1156,7 @@
    },
    "cost": 760,
    "hp": 700,
-   "speed": 17.0
+   "speed": 17
   },
   {
    "cat": "heli_atk",
@@ -1003,7 +1167,7 @@
    "fam": "heli_hind",
    "cost": 660,
    "hp": 720,
-   "speed": 18.0
+   "speed": 18
   },
   {
    "cat": "heli_atk",
@@ -1017,7 +1181,7 @@
    },
    "cost": 700,
    "hp": 740,
-   "speed": 18.0
+   "speed": 18
   },
   {
    "cat": "heli_atk",
@@ -1039,7 +1203,7 @@
    },
    "cost": 700,
    "hp": 680,
-   "speed": 17.0,
+   "speed": 17,
    "id": "rus_heli_mi28n",
    "scale": 1.178
   },
@@ -1055,7 +1219,7 @@
    },
    "cost": 560,
    "hp": 620,
-   "speed": 17.0
+   "speed": 17
   },
   {
    "cat": "heli_tr",
@@ -1094,7 +1258,7 @@
    },
    "cost": 700,
    "hp": 900,
-   "speed": 16.0
+   "speed": 16
   },
   {
    "cat": "heli_tr",
@@ -1107,7 +1271,7 @@
    },
    "cost": 280,
    "hp": 300,
-   "speed": 19.0
+   "speed": 19
   },
   {
    "cat": "heli_tr",
@@ -1119,7 +1283,7 @@
    },
    "cost": 260,
    "hp": 300,
-   "speed": 20.0,
+   "speed": 20,
    "id": "rus_heli_ansat"
   },
   {
@@ -1221,7 +1385,11 @@
   {
    "cat": "uav",
    "id": "rus_uav_orlan10",
-   "scale": [0.671, 0.571, 0.486],
+   "scale": [
+    0.671,
+    0.571,
+    0.486
+   ],
    "ref": "Orlan 10",
    "name": "Taktik Keşif İHA (doğu)",
    "fam": "uav_tac",
@@ -1230,7 +1398,11 @@
   {
    "cat": "uav",
    "id": "rus_uav_orlan30",
-   "scale": [0.736, 0.646, 0.568],
+   "scale": [
+    0.736,
+    0.646,
+    0.568
+   ],
    "ref": "Orlan 30",
    "name": "Taktik Keşif İHA II (doğu)",
    "fam": "uav_tac",
@@ -1239,7 +1411,11 @@
   {
    "cat": "uav",
    "id": "rus_uav_zala42116e",
-   "scale": [1.783, 1.511, 1.28],
+   "scale": [
+    1.783,
+    1.511,
+    1.28
+   ],
    "ref": "ZALA 421 16E",
    "name": "Hafif Keşif İHA (doğu)",
    "fam": "uav_hand",
@@ -1248,7 +1424,11 @@
   {
    "cat": "uav",
    "id": "rus_uav_eleron3",
-   "scale": [0.936, 0.67, 0.48],
+   "scale": [
+    0.936,
+    0.67,
+    0.48
+   ],
    "ref": "Eleron 3",
    "name": "El Atımlı Keşif İHA (doğu)",
    "fam": "uav_hand",
@@ -1257,7 +1437,11 @@
   {
    "cat": "uav",
    "id": "rus_uav_forpostr",
-   "scale": [0.611, 0.675, 0.746],
+   "scale": [
+    0.611,
+    0.675,
+    0.746
+   ],
    "ref": "Forpost R",
    "name": "Silahlı İHA (doğu)",
    "fam": "uav_male",
@@ -1266,7 +1450,11 @@
   {
    "cat": "uav",
    "id": "rus_uav_orion",
-   "scale": [1.164, 1.09, 1.02],
+   "scale": [
+    1.164,
+    1.09,
+    1.02
+   ],
    "ref": "Orion",
    "name": "Silahlı İHA II (doğu)",
    "fam": "uav_male",
@@ -1438,7 +1626,11 @@
   {
    "cat": "loiter",
    "id": "rus_lm_kub",
-   "scale": [1.247, 0.832, 0.556],
+   "scale": [
+    1.247,
+    0.832,
+    0.556
+   ],
    "ref": "ZALA Kub-BLA",
    "name": "Dolanan Mühimmat (doğu)",
    "fam": "lm_wing",
@@ -1447,7 +1639,11 @@
   {
    "cat": "loiter",
    "id": "rus_lm_geran2",
-   "scale": [1.096, 1.07, 1.045],
+   "scale": [
+    1.096,
+    1.07,
+    1.045
+   ],
    "ref": "Geran-2",
    "name": "Ağır Kamikaze İHA",
    "fam": "lm_delta",
@@ -1459,7 +1655,11 @@
   {
    "cat": "loiter",
    "id": "rus_lm_molniya2",
-   "scale": [1.443, 0.919, 0.585],
+   "scale": [
+    1.443,
+    0.919,
+    0.585
+   ],
    "ref": "Molniya-2",
    "name": "Dolanan Mühimmat (doğu)",
    "fam": "lm_wing",
@@ -1468,13 +1668,17 @@
   {
    "cat": "loiter",
    "id": "rus_lm_upyr",
-   "scale": [0.758, 0.758, 0.758],
+   "scale": [
+    0.758,
+    0.758,
+    0.758
+   ],
    "ref": "Upyr FPV",
    "name": "FPV Kamikaze (doğu)",
    "fam": "fpv",
    "cost": 40,
    "hp": 22,
-   "speed": 21.0
+   "speed": 21
   }
  ]
 }

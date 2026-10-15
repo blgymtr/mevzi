@@ -444,6 +444,16 @@ def apc_mtlb(v):
         box((s * 0.42, -L / 2 - 0.06, 1.3), (0.12, 0.02, 0.1), "dark", bev=0.0)
     dress_hull(L, W, zt, zf=0.75, cable=False, ties=False)
     antenna(-1.1, -2.7, zt, 1.8)
+    if v.get("ur77"):
+        # UR-77 Meteorit: arka güvertede iki yükseltilebilir hat açma roketi rampası + kablo makaraları
+        for s in (-1, 1):
+            f = F((s * 0.62, -1.3, zt + 0.45), (0.35, 0, 0))
+            f.box((0, 0, 0), (0.95, 2.6, 0.55), "paint", bev=0.012)
+            f.box((0, 1.31, 0), (0.75, 0.02, 0.4), "dark")
+            for t in (-0.8, 0.0, 0.8):
+                f.box((0, t, 0.29), (0.97, 0.06, 0.03), "metal")
+            cyl((s * 0.62, -2.6, zt + 0.3), 0.35, 0.5, "dark", "X", seg=14)                         # şarj kablosu makarası
+        box((0, -0.2, zt + 0.2), (1.6, 0.6, 0.35), "paint", bev=0.01)
     node("turret")
     if v.get("atgm"):
         tp = (0.0, -0.4, zt)

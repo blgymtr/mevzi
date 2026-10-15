@@ -35,6 +35,7 @@ var gunner: SoldierBody
 var M: Dictionary
 var armor := 0
 var ext := Vector2(1.5, 3.0)   # zemin izi yarı boyutları (genişlik, uzunluk) — modelden
+var escorts: Array = []        # aracı izleyen piyade (Soldier.cmd_follow_vehicle); araç onların yürüyüşüne uyar
 var deployed := 1.0       # topçu kurulum durumu: 1 kurulu (ateşe hazır), 0 toplanmış (yürüyüşe hazır)
 var vid := ""            # katalog kimliği (boşsa taban araç)
 # gerçek performans (data/real_perf.json, roadmap 2): yol hızı, ana silah dolumu, otomatik top, salvo
@@ -736,11 +737,17 @@ func _calc_ext() -> void:
 	var a := AABB()
 	var first := true
 	for mi in _meshes(hull):
-		if mi.mesh == null or mi == rotor_disc:
+		# namlu taşması iz sayılmaz (piyade namlunun altından geçer; tank izi gövde + taret)
+		if mi.mesh == null or mi == rotor_disc or (barrel != null and barrel.is_ancestor_of(mi)):
 			continue
-		var bb: AABB = mi.transform * mi.mesh.get_aabb()
-		if mi.get_parent() != hull and mi.get_parent() is Node3D:
-			bb = (mi.get_parent() as Node3D).transform * bb
+		# gövdeye göre tam dönüşüm zinciri (taret → namlu düğümleri)
+		var t: Transform3D = mi.transform
+		var pn: Node = mi.get_parent()
+		while pn != null and pn != hull:
+			if pn is Node3D:
+				t = (pn as Node3D).transform * t
+			pn = pn.get_parent()
+		var bb: AABB = t * mi.mesh.get_aabb()
 		a = bb if first else a.merge(bb)
 		first = false
 	if not first:
@@ -1151,7 +1158,9 @@ func _process(dt: float) -> void:
 	if think_t <= 0.0:
 		think_t = 0.45 + randf() * 0.15
 		if not is_air() and G.grid.is_water(position):
-			position = G.grid.nearest_free(position, nav_mode, 30)
+			# suya düşmüş / köprü kenarından su hücresine taşmış: en yakın kuru zemine ya da köprüye
+			var dry: Vector3 = G.grid.nearest_dry(position, 12.0)
+			position = dry if dry != position else G.grid.nearest_free(position, nav_mode, 30)
 		# emir yarıda kaldıysa (yol boşaldı ama hedefe varılmadı) yeniden yol bul
 		if not is_air() and order in ["move", "amove", "retreat"] and path_i >= path.size() and dist2_p(dest) > 4.0 and not immobile():
 			_repath(dest)
@@ -1200,6 +1209,26 @@ func tracked() -> bool:
 
 func immobile() -> bool:
 	return crit["mob"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (wheeled() and tires >= maxi(wheels.size(), 4))
+
+# piyade eskortu: araç arkasındaki piyadenin koşusuna uyar (koşudan biraz yavaş), geride kalanı bekler
+func _escort_pace() -> float:
+	var far := 0.0
+	var n := 0
+	for i in range(escorts.size() - 1, -1, -1):
+		var s = escorts[i]
+		if not is_instance_valid(s) or not s.alive or s.order != "follow_veh" or s.cover_veh != self:
+			escorts.remove_at(i)
+			continue
+		if not s.can_fight():
+			continue
+		n += 1
+		far = maxf(far, Vector2(s.position.x - position.x, s.position.z - position.z).length())
+	if n == 0:
+		return INF
+	var gap: float = ext.y + 5.0
+	if far > gap + 9.0:
+		return 0.0
+	return Soldier.RUN_SPEED * clampf(1.0 - (far - gap) / 9.0, 0.3, 0.85)
 
 func speed_factor() -> float:
 	var mud: float = G.weather.mud() if G.weather != null and wheeled() else 1.0
@@ -1424,6 +1453,8 @@ func _drive(dt: float) -> void:
 			elif order == "amove" and target != null and fire_mode != 2:
 				target_speed = 0.0
 			target_speed *= speed_factor()
+			if not escorts.is_empty():
+				target_speed = minf(target_speed, _escort_pace())
 			if reverse:
 				target_speed = -minf(target_speed, speed_max * 0.45)
 			break
@@ -1488,6 +1519,22 @@ func _drive(dt: float) -> void:
 		# ayrışma itmesi suya / korkuluğa sokmasın
 		np = position + f * cur_speed * dt
 		if not _cell_ok(np) and G.grid.is_water(np):
+			var brq := G.grid.bridge_at(position)
+			if not brq.is_empty():
+				# köprü kenarına dayandı (kenardaki hücre su): eksene doğru çekilerek köprü boyunca ilerle
+				var axq: Vector3 = brq["d"] * signf(f.dot(brq["d"]) * cur_speed + 0.0001)
+				var relq: Vector3 = position - brq["c"]
+				relq.y = 0.0
+				var onax: Vector3 = brq["c"] + brq["d"] * relq.dot(brq["d"])
+				onax.y = position.y
+				var npq: Vector3 = position + axq * absf(cur_speed) * dt + (onax - position).limit_length(maxf(absf(cur_speed), 1.0) * dt * 0.7)
+				if not G.grid.is_water(npq):
+					position = npq
+					return
+			if G.grid.is_water(position):
+				# köprü kenarında su hücresine taşmış: durup kalmasın, köprüye / kuru zemine doğru kay
+				position = position.move_toward(G.grid.nearest_dry(position, 6.0), maxf(absf(cur_speed), 1.5) * dt)
+				return
 			cur_speed = 0.0
 			return
 	var moved := np.distance_to(position)
@@ -1911,7 +1958,7 @@ func _crew_setup_props() -> void:
 func _breech_local() -> Vector3:
 	if barrel == null:
 		return Vector3(0, 0.9, 0.6)
-	var w := barrel.global_transform * Vector3(0, 0, 0.55)
+	var w := barrel.global_transform * (M["breech"] as Vector3 if M.has("breech") else Vector3(0, 0, 0.55))
 	return hull.to_local(w)
 
 func _muzzle_local() -> Vector3:

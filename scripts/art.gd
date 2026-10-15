@@ -377,5 +377,8 @@ static func vehicle_model(model: String, team: int) -> Dictionary:
 		out["muzzle"] = v3(md["muzzle"]) - bp
 	if md.has("gunner"):
 		out["gunner"] = v3(md["gunner"])
+	if md.has("breech"):
+		# çekili top: kama arkası (doldurucunun durduğu yer), namlu düğümüne göre
+		out["breech"] = v3(md["breech"]) - bp
 	out["meta"] = md
 	return out

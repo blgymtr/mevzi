@@ -1,4 +1,4 @@
-| 31 | Roketler havada önlenebilsin (dengeli) | ✅ | APS (Trophy/Afganit) %70 / üstten %15, 4 şarj; C-RAM inen mermide %35, 20 angajman (missiletest) || 15 | Hava araçları füzeden kaçınsın; gerçek füze türleri ve atış mekanizmaları | ✅ | Güdüm türleri (IR / tel / lazer hüzme / lazer işaretleme / radar), kilit süreleri, nişancı izleme prosedürü (bastırılınca sapma), görünür tel, füzeye göre fişeğe kanma; helikopter fişek + kaçış (missiletest, evadetest) |# MEVZİ — Yol Haritası ve Değişiklik Günlüğü
+# MEVZİ — Yol Haritası ve Değişiklik Günlüğü
 
 > Bu dosya projenin tek kaynağıdır: en üstte **yapılanların madde madde günlüğü**, ardından **0.0.8 (32 maddelik liste)** durumu ve fazları, en altta Steam'e hazırlık tabloları.
 
@@ -107,6 +107,14 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Değişti (41, kısmen):** Gölge mesafesi basamaklı — yakınlaştırırken sürekli değişip gölgeleri kaydırmıyor
 - **Test altyapısı:** mapprof (yükleme aşamaları, bellek/VRAM, yakınlaştırmaya göre çizim yükü ve ot/gölge/ağaç/bina dökümü, harita görünümleri), lostest, icontest; `run_tests.ps1 -Extra` (ör. `--map=battle_8k`); tactest sabit tohum (rastgele haritada görüş hattı kapanınca takılıyordu)
 - **Eklendi (26):** İz kalınlığı ve kuyruk boyu kalibreye göre (tüfek ince/kısa, makineli orta, 12,7 mm ve otomatik top kalın, tank topu kalın/uzun/parlak; nişancı izi soluk). Yerden atılan RPG, tanksavar füzesi ve roketatar roketinde motor alevi + çevreyi aydınlatan ışık, tanksavar füzesinde kuyruk iz fişeği — kurşun ve roket artık açıkça farklı (ammotest gece görüntüsü)
+- **Düzeltildi (38):** Kara araçlarının boyutu gerçeğe uyduruldu — 42 araç gerçek ölçüden sapıyordu (tank namlusu uzun ve tareti önde, kamyon şasisi kısa, istihkâm köprüsü/dozer kısa, roketatar kutusu kısa). Blender aile parametreleriyle (taret yeri, namlu boyu, gövde ölçeği; tekerler ölçeklenmeden taşınır) yeniden üretildi → 190 araçta sapma yok (`tools/size_audit.gd`). UR-77 artık MT-LB gövdesinde iki rampalı mayın hattı açma aracı; BAT-2'de kabin önde, vinç arkada; MTU-72 ve Wolverine köprüsü gerçek boyda; TOS-1A fırlatıcı kutusu öne taşar
+- **Eklendi (10/38):** Çekili topçu modelleri baştan: konik namlu (hazne + omuz bileziği), kama bloğu ve kolları, beşik ve üstünde geri tepme silindirleri, dengeleyiciler, yükseliş/yön volanları, panoramik nişangâh, kalkan (yarığı namluyla yükselen kayar levha), kuyruk ayakları (hafifletme delikleri, toprağa gömülü pençe, çekme halkası, el kolları, alet sandığı, sürme çubuğu), çift bölmeli ya da çok delikli namlu freni. D-30 üç ayaklı (360° dönüş, kriko tablası), M777 ön destek ayakları, M198/M119 atış tablası, M102 kuyruk makarası, Giatsint-B çift teker, M114/M101 frensiz, Vasilek soğutma ceketi ve şarjör. Doldurucu kamanın gerçek yerinde durur (modelden `breech`)
+- **Düzeltildi (10):** Tüm namlular ters konikti (ağızda kalın) → kamada kalın, ağızda ince
+- **Eklendi (25, kısmen):** Araç arkasında yürüyen piyade (eskort): araç piyadenin koşusuna uyar (koşudan biraz yavaş), geride kalan olursa bekler — eskiden gerçek hızdaki tank piyadeyi geride bırakıyordu (escorttest)
+- **Düzeltildi:** Köprü kenarına kayan araç (kenardaki hücre su sayılıyordu) olduğu yerde sonsuza dek duruyordu → köprü ekseni boyunca kayarak geçer; suya taşmış araç en yakın kuru zemine / köprüye alınır (vehtest)
+- **Düzeltildi:** Her yanı ağaç/duvar olan küçük bir cepte doğan araç hiç yürüyemiyordu → doğduğunda en yakın açık alana alınır
+- **Düzeltildi:** Araç izi (çarpışma/siper/eskort yeri) namlu taşmasını da sayıyordu ve taret düğümünün yeri hesaba katılmıyordu → gövde + taret
+- **Test altyapısı:** testlerde harita tohumu yazdırılır, `-Extra "--seed=N"` ile aynı harita yeniden üretilir; kararsız testler düzeltildi (topçu testinde hedefler ateş etmez ve obüs/roketatara asgari menzil dışında hedef; stres testi başlangıç birliksiz; eskort ölçütü gerçek tank boyuna göre; holdtest sonuç satırı)
 
 ---
 
@@ -129,7 +137,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 12 | İmha mermi türüne göre değişsin: yan yatma, farklı yönde taret fırlaması, çakılma | 🟡 | Taret fırlaması, ikincil patlama var. → Fizik tabanlı imha (devrilme, taret yörüngesi, mermi türü/açıya göre) |
 | 13 | Nadir teslim olma: beyaz bayrak, silah zoruyla karargâha götürülme | 🟡 | Teslim olma/esir var. → Beyaz bayrak modeli, eller havada yürüme, muhafız silahı doğrultarak eşlik |
 | 14 | Patlama bulutu yarı saydam; suya düşüşte araç boyutuna göre dalga | 🟡 | Yarı saydam duman var. → Bulut saydamlığı, boyuta göre dalga halkası (su shader'ı) |
-| 15 | Hava araçları füzeden kaçınsın; gerçek füze türleri ve atış mekanizmaları | 🟡 | SAM + fişek + kaçış var. → Stinger/Igla/Verba/Javelin/Kornet/TOW vb. arayıcı türleri, kilitlenme süresi, atış prosedürü |
+| 15 | Hava araçları füzeden kaçınsın; gerçek füze türleri ve atış mekanizmaları | ✅ | Güdüm türleri (IR / tel / lazer hüzme / lazer işaretleme / radar), kilit süreleri, nişancı izleme prosedürü (bastırılınca sapma), görünür tel, füzeye göre fişeğe kanma; helikopter fişek + kaçış (missiletest, evadetest) |
 | 16 | 100+ farklı bina, yıkılabilir köprüler, ağaç/çiçek/kaldırım/kapı/pencere/sokak/başıboş araç/direk — tam detay | 🟡 | 143 bina arketipi ✅, köprüler var. → 34 (dini yapı yok, duvarlar), 35 (özgünlük), sokak eşyaları |
 | 17 | Asker modeli fotoğraftaki gibi + her eylem için animasyon (düşme, eğilme, zıplama, koşma...) | ⏳ | → 1 ve 25 ile birlikte: iskeletli animasyon kütüphanesi |
 | 18 | Araçlar 3. fotoğraftaki gibi gerçekçi (mürettebat görünür, açık bölme) | ⏳ | → Kundağı motorlu topçuda açık bölme + içeride çalışan mürettebat |
@@ -145,14 +153,14 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 28 | İnşaatta her asker kutudan malzeme alıp taşır, bırakır, farklı animasyonla çalışır | 🟡 | 6 işçi yeri var. → Kutu alma/taşıma/bırakma döngüsü |
 | 29 | Bazı İHA/drone'lar görünmüyor; özel sesler; yüksek irtifa | 🟡 | → 8 ile birlikte |
 | 30 | 9×9 / 9×6 km haritalar, 30+ harita, Senaryo; radar araçları, S-300 tipi radar+SAM, uçaklar; **Mevzi-Core**: oyuncu kontrolünde olmayan birimlerin gerçekçi doktrinle davranışı | 🟡 | 4 km harita, tim beyni var. → Mevzi-Core tasarımı (bölgesel komuta, birim rolleri, angajman kuralları), radar/SAM katmanı |
-| 31 | Roketler havada önlenebilsin (dengeli) | ⏳ | → APS / C-RAM tipi önleme, düşük olasılıklı |
+| 31 | Roketler havada önlenebilsin (dengeli) | ✅ | APS (Trophy/Afganit) %70 / üstten %15, 4 şarj; C-RAM inen mermide %35, 20 angajman (missiletest) |
 | 32 | Ana menü: Masaüstüne Çık · Ayarlar (Grafik, Ses, Oynanış, Klavye) · Senaryo Oluşturucu · Kampanya · Klasik Harita · Sandbox Test | ✅ | Menü + tuş atama birleştirildi (keybinds_test 55/55, menü ön izlemesi TR/EN) |
 | 33 | Bayrak animasyonu (Blender + UE) | ⏳ | → Blender kumaş simülasyonu pişirilir (köşe animasyon dokusu), Godot'ta rüzgârla oynatılır. UE kurulu değil; istenirse yalnız pişirme istasyonu olabilir |
 | 34 | Oyunda cami/kilise/mescit vb. hiçbir dini yapı olmayacak; her binanın yanında duvar olmasın, duvarlar gelişigüzel | ✅ | 8 dini arketip + minare/çan kulesi/alem/haç üreticileri silindi; avlu duvarları seyrek ve gelişigüzel (L/U, gedik, yıkık, eğri) |
 | 35 | Binalar referans fotoğraflardan biraz farklı olsun (aynısı değil) | ⏳ | → Oran, renk, cephe düzeni, çatı ve detay çeşitlemesi |
 | 36 | Kum torbaları gerçekçi (web'den CC0 varlık ya da kendi üretimimiz) | ⏳ | → Blender'da torba modeli (kumaş dokusu, sarkma, dikiş), şaşırtmalı dizim |
 | 37 | Kazma ve inşaat animasyonları: silah sırtta, binanın içine girmeden dışarıdan inşa (hata var) | ⏳ | → İnşaat yuvaları iskele dışında, tüfek sırtta, kazma/kürek/çekiç aleti |
-| 38 | Tüm araç boyutları gerçekçi | 🟡 | Hava araçları ✅ (`data/real_dims.json` + `tools/size_audit.gd`). → Kara araçlarında 42 sapma: namlu boyu, kamyon şasisi, köprü/dozer |
+| 38 | Tüm araç boyutları gerçekçi | ✅ | `data/real_dims.json` + `tools/size_audit.gd`: 190 araçta sapma yok (önce 42 kara aracı hatalı). Namlu boyu/taret yeri, kamyon şasisi, köprü/dozer, roketatar kutusu; çekili toplar gerçek yerleşimle yeniden (D-30 atış düzeninde) |
 | 39 | Helikopter pervaneleri gerçekçi, detay dokulu | ⏳ | → Kanat profili, uç bandı, hub; dönüşte hareket bulanıklığı diski |
 | 40 | Hiçbir mermi yuvarlak top/taş gibi görünmesin | ✅ | Topçu/havan yüksek yörünge + iz, moloz köşeli parça (ammotest) |
 | 41 | Köprüler gerçekçi olsun ve hasar alsın; uzaklaşınca (zoom out) gölgeler kayıyor/parlıyor | ⏳ | → Köprü modeli (ayak, kiriş, korkuluk, hasar durumları); yönlü gölge mesafesi yakınlaştırmaya göre basamaklı + sapma ayarı |

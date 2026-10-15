@@ -1,5 +1,5 @@
 # Hava aileleri: taarruz/hafif/genel maksat/tandem/ağır helikopter, tiltrotor, dörtpervaneli kamikaze;
-# ayrıca çekili topçu (obüs, sahra topu, ağır havan).
+# ayrıca ağır havan (çekili obüs ve sahra topu: fam_arty.py).
 # Helikopter düğümleri: body, rotor (ana rotor göbeği), trotor (kuyruk rotoru; tandem/tiltrotor'da ikinci ana rotor).
 import math
 from vlib import *
@@ -234,40 +234,6 @@ def fpv(v):
     return {"body": (0, 0, 0)}, {"muzzle": (0, 0.2, 0.0), "radius": 0.6}
 
 # ------------------------------------------------------------ çekili topçu
-def howitzer(v):
-    heavy = v.get("heavy", False) or v.get("old", False)
-    # açık ayaklı kuyruk + taban + iki teker
-    for s in (-1, 1):
-        box((s * 0.55, -2.4, 0.3), (0.18, 3.8, 0.2), "paint", rot=(0, 0, s * 0.22), bev=0.008)
-        box((s * 1.0, -4.15, 0.12), (0.4, 0.3, 0.25), "metal", bev=0.008)                           # pençe
-    n = wheels_axles([0.0], 1.05, 0.55 if heavy else 0.45, 0.32)
-    box((0, 0.0, 0.55), (1.6, 0.9, 0.3), "paint", bev=0.008)
-    box((0, 0.3, 0.2), (1.2, 1.0, 0.1), "metal", bev=0.008)                                         # taban plakası
-    node("turret")
-    box((0, 0.1, 0.95), (1.0, 1.2, 0.5), "paint", bev=0.008)
-    for s in (-1, 1):
-        box((s * 0.45, 0.1, 1.25), (0.08, 1.0, 0.5), "paint", bev=0.008)
-    node("barrel")
-    bz = 1.45
-    box((0, -0.2, bz), (0.5, 1.4, 0.42), "paint", bev=0.008)                                        # geri tepme kızağı
-    gun(0.3, bz, 5.2 if not v.get("old") else 3.8, 0.085, "paint", brake=True)
-    L = 5.2 if not v.get("old") else 3.8
-    return wheel_pivots({"body": (0, 0, 0), "turret": (0, 0.1, 0.95), "barrel": (0, 0.1, bz)}), {"muzzle": (0, 0.3 + L + 0.2, bz), "radius": 2.0}
-
-def fieldgun(v):
-    box((0, -1.7, 0.35), (0.3, 3.0, 0.25), "paint", rot=(0.12, 0, 0), bev=0.008)                    # kutu kuyruk
-    box((0, -3.2, 0.12), (0.5, 0.3, 0.2), "metal", bev=0.008)
-    wheels_axles([0.0], 0.85, 0.42, 0.26)
-    box((0, 0.0, 0.5), (1.4, 0.5, 0.25), "paint", bev=0.008)
-    node("turret")
-    box((0, 0.0, 0.8), (0.7, 0.8, 0.35), "paint", bev=0.008)
-    node("barrel")
-    bz = 1.05
-    box((0, -0.1, bz), (0.36, 1.0, 0.3), "paint", bev=0.008)
-    gun(0.3, bz, 3.3 if not v.get("old") else 2.6, 0.06, "paint", brake=not v.get("old"))
-    L = 3.3 if not v.get("old") else 2.6
-    return wheel_pivots({"body": (0, 0, 0), "turret": (0, 0.0, 0.8), "barrel": (0, 0.0, bz)}), {"muzzle": (0, 0.3 + L + 0.15, bz), "radius": 1.6}
-
 def hmortar(v):
     cyl((0, 0.0, 0.08), 0.55, 0.12, "metal", seg=14)                                                # taban plakası
     wheels_axles([0.6], 0.7, 0.3, 0.2, "dark")
@@ -282,4 +248,4 @@ def hmortar(v):
 
 FAMILIES = {"heli_atk": heli_atk, "heli_slim": heli_slim, "heli_light": heli_light, "heli_utility": heli_utility,
             "heli_tandem": heli_tandem, "heli_heavy": heli_heavy, "tiltrotor": tiltrotor, "fpv": fpv,
-            "howitzer": howitzer, "fieldgun": fieldgun, "hmortar": hmortar}
+            "hmortar": hmortar}

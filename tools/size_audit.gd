@@ -30,6 +30,9 @@ func _init() -> void:
 		var sc := sv.x
 		var m := dims(id) * sv
 		var r: Dictionary = real[id]
+		if r.has("fire"):
+			# kuyruğu açılan top (D-30): model atış düzeninde
+			r = r["fire"]
 		var tol := float(r.get("tol", 0.15))
 		var air := AIR_PREFIX.any(func(p): return fam.begins_with(p))
 		var dl := m.z / float(r["L"]) - 1.0
