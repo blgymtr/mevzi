@@ -326,10 +326,11 @@ func patch_blob(p: Vector3, r: float, amount := 1.0) -> void:
 
 # ------------------------------------------------------------ küçük ayrıntılar
 func scatter(rng: RandomNumberGenerator) -> void:
+	# çakıl/taş: kaya modelinin düşük çözünürlüklü çeşitleri (kırık yüzlü, dokulu)
 	var winter: bool = biome["winter"]
-	var mb := MB.new()
-	mb.sphere(Vector3.ZERO, Vector3(0.18, 0.1, 0.14), 5, 3, Color(0.55, 0.47, 0.38) if not winter else Color(0.4, 0.38, 0.36), Basis(), true)
-	_mm(mb.commit(Mats.vc()), 1400, rng, 0.6, 2.2)
+	var n := int(1400 * clampf(G.MAP * G.MAP / (256.0 * 256.0), 1.0, 6.0))
+	for v in 4:
+		_mm(Props.rock_mesh(10 + v, winter, false, 1), n / 4, rng, 0.08, 0.26)
 
 func _mm(mesh: Mesh, n: int, rng: RandomNumberGenerator, s0: float, s1: float) -> void:
 	var mm := MultiMesh.new()

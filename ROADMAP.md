@@ -168,7 +168,9 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 - [x] Patika ve evden yola taş döşeme yollar
 - [x] Efekt flipbook'ları: numpy 3B gaz simülasyonu (yanma, kaldırma, girdap, basınç) → patlama ateş topu/mantar bulutu, kalın duman sütunu, toprak sütunu (tools/fx_sim.py)
 - [~] 100+ bina türü — ayrı dalda yapılıyor
-- [ ] Yol bulmayı iş parçacığına almak (4 km'de uzun yol 0,3–0,8 sn takılma; grup isteği önbellekte)
+- [x] Uzun yol bulma iş parçacığında (2 km+): kopya ızgarada A*, birim o sırada hedefe doğru engelsiz düz parçayı yürür; 12 birimlik grup emri 2–8 ms (önce 0,5–0,7 sn donma). Bedeli 4 km'de ~+250 MB (hugetest)
+- [x] Kayalar: kırık yüzlü ikosfer modeller + üretilmiş kaya dokusu (Voronoi çatlak, tabaka, liken), kışta kar / yazın yosun; çakıllar da aynı modelden (rocktest)
+- [x] Ulus silahları (Blender): M4A1/ACOG/PEQ, M249, AT4, M110, M17 — AK-12, PKP, RPG-7, SV-98, PL-15
 - [ ] 4 km'de bellek (~1,5 GB) ve yükleme (~77 sn yazılım render altında): seyrek ızgara, ot yoğunluğu
 - [ ] İskeletli (Blender) animasyon kütüphanesi: koşu/nişan/binme/halat/paraşüt pozlarının keyframe klipleri (şu an kodla poz + IK iskelete uygulanıyor)
 - [ ] Araç modelleri A-Z detay geçişi (ABD/Rusya tüm katalog)

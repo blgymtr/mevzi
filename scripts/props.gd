@@ -869,6 +869,10 @@ func rock(p: Vector3, s := 1.0) -> void:
 # kaya: alt bölünmüş ikosfer → elipsoid → rastgele düzlem kesikleri (kırık yüzler, keskin kenar)
 # → üç boyutlu gürültü; doku: tools/rock_tex.py (Voronoi kırık ağı, tabakalanma, liken)
 func _rock_mesh(v: int) -> ArrayMesh:
+	return rock_mesh(v, winter, not winter and biome_id != "desert", 3)
+
+# lvl: ikosfer alt bölme düzeyi (3: kaya ~1280 üçgen, 1: çakıl ~80 üçgen)
+static func rock_mesh(v: int, winter: bool, moss: bool, lvl: int) -> ArrayMesh:
 	var r := RandomNumberGenerator.new()
 	r.seed = 900 + v
 	var t := (1.0 + sqrt(5.0)) * 0.5
@@ -879,7 +883,7 @@ func _rock_mesh(v: int) -> ArrayMesh:
 		vs[i] = vs[i].normalized()
 	var fs: Array = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
 		[3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
-	for lvl in 3:
+	for _l in lvl:
 		var mid := {}
 		var nf: Array = []
 		for f in fs:
@@ -923,23 +927,17 @@ func _rock_mesh(v: int) -> ArrayMesh:
 		pos[i] = p + Vector3(0, 0.08, 0)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var moss := not winter and biome_id != "desert"
 	for f in fs:
 		for e in [0, 2, 1]:
 			var p: Vector3 = pos[f[e]]
 			var hgt := clampf((p.y + 0.1) / (rad.y * 0.9 + 0.1), 0.0, 1.0)
 			var c := Color(0.92, 0.9, 0.86).lerp(Color(0.62, 0.6, 0.56), 1.0 - hgt)   # taban gölgeli/toprak lekeli
-			var up: float = vs[f[e]].y
-			if winter and up > 0.55:
-				c = c.lerp(Color(1.6, 1.62, 1.7), clampf((up - 0.55) * 3.0, 0, 1))
-			elif moss and up > 0.6:
-				c = c.lerp(Color(0.55, 0.68, 0.38), clampf((up - 0.6) * 1.6, 0, 0.45))
 			st.set_color(c)
 			st.add_vertex(p)
 	st.index()
 	st.generate_normals()
 	var mesh := st.commit()
-	mesh.surface_set_material(0, Mats.rock())
+	mesh.surface_set_material(0, Mats.rock(winter, moss))
 	return mesh
 
 func hay(p: Vector3) -> void:
