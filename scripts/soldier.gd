@@ -1099,18 +1099,18 @@ func _movement(dt: float) -> void:
 			if o is Soldier:
 				if not o.alive or o.state == "dragged":
 					continue
-				if dl < 0.7 and dl > 0.001:
-					sep += dv / dl * (0.7 - dl) * 3.0
+				if dl < 0.75 and dl > 0.001:
+					sep += dv / dl * (0.75 - dl) * 7.0
+				elif dl <= 0.001:
+					sep += Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
 			elif o is Vehicle and o.alive:
 				pass
-		for o in G.near(position, 4.5):
-			if o is Vehicle and o.alive:
-				var dv = position - o.position
-				dv.y = 0
-				var dl = dv.length()
-				var rr: float = o.radius + 0.5
-				if dl < rr and dl > 0.001:
-					sep += dv / dl * (rr - dl) * 6.0
+		for o in G.near(position, 8.0):
+			if o is Vehicle and (o.alive or o.wreck) and not o.is_air() and state != "aboard":
+				var pv: Vector3 = o.obb_push(position, 0.35)
+				if pv != Vector3.ZERO:
+					position += pv * 0.6
+					sep += pv * 8.0
 	vel = want
 	var mv := (want + sep) * dt
 	if mv.length_squared() > 0.0:

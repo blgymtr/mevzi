@@ -34,6 +34,7 @@ var wheels: Array = []
 var gunner: SoldierBody
 var M: Dictionary
 var armor := 0
+var ext := Vector2(1.5, 3.0)   # zemin izi yarı boyutları (genişlik, uzunluk) — modelden
 var vid := ""            # katalog kimliği (boşsa taban araç)
 var cat: Dictionary = {}
 # 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
@@ -318,6 +319,7 @@ func setup(t: int, vt: String) -> void:
 		tmi2.mesh = M["trotor"]
 		trotor.add_child(tmi2)
 	set_layer(self, 2)
+	_calc_ext()
 	heading = rotation.y
 	rotation.y = 0.0
 	hull.rotation.y = heading
@@ -326,6 +328,73 @@ func setup(t: int, vt: String) -> void:
 	think_t = randf() * 0.5
 	if not is_drone() and not (vt in TOWED):
 		engine = Sfx.loop3d("heli" if vt in ["heli", "transport"] else ("engine_tank" if vt in ["tank", "apc", "ifv", "aa", "arty"] else "engine_truck"), self, -8.0 if vt in ["heli", "transport"] else -10.0)
+
+func _calc_ext() -> void:
+	var a := AABB()
+	var first := true
+	for mi in _meshes(hull):
+		if mi.mesh == null or mi == rotor_disc:
+			continue
+		var bb: AABB = mi.transform * mi.mesh.get_aabb()
+		if mi.get_parent() != hull and mi.get_parent() is Node3D:
+			bb = (mi.get_parent() as Node3D).transform * bb
+		a = bb if first else a.merge(bb)
+		first = false
+	if not first:
+		ext = Vector2(clampf(a.size.x * 0.5, 0.4, 3.0), clampf(a.size.z * 0.5, 0.4, 7.0))
+
+func right() -> Vector3:
+	return Vector3(cos(heading), 0, -sin(heading))
+
+# bir noktayı araç izinin (yönlü dikdörtgen) dışına iten vektör
+func obb_push(p: Vector3, pad: float) -> Vector3:
+	var d := p - position
+	d.y = 0.0
+	var f := forward()
+	var r := right()
+	var lx := d.dot(r)
+	var lz := d.dot(f)
+	var ex := ext.x + pad
+	var ez := ext.y + pad
+	if absf(lx) >= ex or absf(lz) >= ez:
+		return Vector3.ZERO
+	var px := ex - absf(lx)
+	var pz := ez - absf(lz)
+	if px < pz:
+		return r * (px * signf(lx if lx != 0.0 else 1.0))
+	return f * (pz * signf(lz if lz != 0.0 else 1.0))
+
+# araç–araç çakışması: yönlü dikdörtgenlerde ayırıcı eksen (SAT) ile en küçük itme
+func _sep_vehicles() -> void:
+	for o in G.near(position, radius + 8.0):
+		if o == self or not (o is Vehicle) or o.is_air() or (not o.alive and not o.wreck):
+			continue
+		var d: Vector3 = o.position - position
+		d.y = 0.0
+		var axes := [forward(), right(), o.forward(), o.right()]
+		var best := 1e9
+		var bax := Vector3.ZERO
+		var sep := false
+		for ax in axes:
+			var ra := absf(forward().dot(ax)) * ext.y + absf(right().dot(ax)) * ext.x
+			var rb: float = absf(o.forward().dot(ax)) * o.ext.y + absf(o.right().dot(ax)) * o.ext.x
+			var dist := absf(d.dot(ax))
+			var ov: float = ra + rb + 0.15 - dist
+			if ov <= 0.0:
+				sep = true
+				break
+			if ov < best:
+				best = ov
+				bax = ax * (-1.0 if d.dot(ax) > 0.0 else 1.0)
+		if sep:
+			continue
+		var other_static: bool = not o.alive or o.immobile() or absf(o.cur_speed) < 0.2
+		var k := 1.0 if other_static else 0.5
+		var np := position + bax * best * k
+		if _cell_ok(np):
+			position = np
+		if d.dot(forward()) * signf(cur_speed) > 0.0:
+			cur_speed *= 0.5
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0, -cos(heading))
@@ -552,6 +621,7 @@ func _process(dt: float) -> void:
 		_heli(dt)
 		return
 	_drive(dt)
+	_sep_vehicles()
 	_aim_fire(dt)
 	_visuals(dt)
 

@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "septest":
+		_run_sep_test()
 	elif shot_dir != "" and shot_scene.begins_with("maptest"):
 		_run_map_test()
 	elif shot_dir != "" and shot_scene == "garrisontest":
@@ -741,6 +743,52 @@ func _run_cat_test() -> void:
 	if e1.alive and e1.hp >= e1.max_hp:
 		fails += 1
 	print("CATTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_sep_test() -> void:
+	# iç içe girme: aynı noktaya araçlar ve askerler; ayrışmalı
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var vs: Array = []
+	for i in 6:
+		var v := spawn_vehicle(0, ["usa_mbt_s3", "usa_ifv_m2a3", "usa_apc_icv", "usa_lv_m1151", "rus_mbt_90m", "rus_apc_btr82"][i], c + Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)), randf() * TAU)
+		v.cmd_hold()
+		vs.append(v)
+	var ss: Array = []
+	for i in 20:
+		var s := spawn_soldier(0, "rifle", c + Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3)), null)
+		s.cmd_hold()
+		ss.append(s)
+	await _wait(4.0)
+	var vo := 0
+	for i in vs.size():
+		for j in range(i + 1, vs.size()):
+			var a: Vehicle = vs[i]
+			var b: Vehicle = vs[j]
+			if a.obb_push(b.position, -0.3) != Vector3.ZERO:
+				vo += 1
+	var inside := 0
+	for s in ss:
+		for v in vs:
+			if v.obb_push(s.position, 0.0) != Vector3.ZERO:
+				inside += 1
+	var close := 0
+	for i in ss.size():
+		for j in range(i + 1, ss.size()):
+			if ss[i].position.distance_to(ss[j].position) < 0.4:
+				close += 1
+	G.cam.jump_to(c, true)
+	G.cam.size = 30.0
+	G.cam.target_size = 30.0
+	await _wait(1.0)
+	await _shot("sep_01")
+	print("SEP vehicle_overlaps=%d soldiers_inside_vehicles=%d soldier_pairs_too_close=%d" % [vo, inside, close])
+	if vo > 0 or inside > 0 or close > 2:
+		fails += 1
+	print("SEPTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_map_test() -> void:
