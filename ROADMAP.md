@@ -69,11 +69,24 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Eklendi:** Windows/GPU test çalıştırıcısı `tools/run_tests.ps1` (sahne başına süre sınırı, TIMEOUT/CRASH tespiti, özet tablo) ve devir notu `docs/DEVIR_NOTU.md`
 - **Doğrulama durumu (dürüst not):** crewtest (top hedef almıyor), paratest (8 askerden 7'si indi) ve SPIES/evadetest testleri takıldı → kök neden ve kalıcı önlem çalışması sürüyor (aşağıda 0.0.8 Faz 0)
 
+### 0.0.8 (yerel GPU oturumu, RTX 5060) — 15 Ekim
+- **Düzeltildi (Faz 0):** crewtest / paratest / SPIES / evadetest takılmaları — yamalar uygulandı ve GPU'da doğrulandı: doğrudan atışlı araç (çekili top dahil) görmediği hedefe yaklaşır, dolaylı atışlı topçu gözcü ister; paraşüt çıkış noktaları kare süresinden bağımsız, dolu hücreye iniş yok, havada vurulan yaralı süzülerek iner; halat çekmede geciken beklenmez; test bekçisi (duvar saati + kare kilitlenmesi)
+- **Düzeltildi:** Saldırı emrindeki helikopter hedefi ilk konumdan göremiyorsa (ağaç/bina) sonsuza dek asılı kalıyordu → hedef çevresinde 50° dönerek, mesafeyi daraltarak atış açısı arar
+- **Eklendi (32):** Ana menü — Kampanya (Hazırlanıyor), Klasik Harita, Sandbox Test, Senaryo Oluşturucu, Ayarlar (Grafik/Ses/Oynanış/Klavye), Masaüstüne Çık (onaylı); tam tuş atama (çakışma denetimi, kalıcı)
+- **Düzeltildi:** "Arayüz sesleri: kapalı" tüm savaş seslerini de susturuyordu
+- **Eklendi:** Faction yapılarının Blender modelleri (karargâh, kışla, fabrika, helipad, hastane, ileri üs — ABD/Rus)
+- **Değişti (10):** Araç kataloğunun tamamı (191 araç) yeni detay çekirdeğiyle yeniden üretildi (AO pişirme, bmesh; ortalama 13,6 K üçgen)
+- **Eklendi (16):** 143 bina arketipi (köy, kasaba/şehir, sanayi, çöl, kış), harita üreticisinde deste mantığıyla yerleşim, editörde "BİNA (100+ TÜR)"
+- **Düzeltildi:** Drone istasyonundan dev İHA kalkıyordu (temel "uav" tipi RQ-4 modelini 1,6 kat büyütüyordu) → mancınıkla atılan küçük taktik İHA (RQ-7 / Orlan-10 sınıfı), gerçek ölçekte
+- **Değişti:** Tüm hava araçları gerçek boyutta (`data/real_dims.json` + `tools/size_audit.gd`; helikopterlerde rotor çapına göre, İHA/dolanan mühimmatta kanat açıklığı ve boya göre)
+- **Düzeltildi (6/26):** Topçu/havan mermisi alçak yayla "taş atar gibi" uçuyordu → yüksek gerçekçi yörünge + hareket bulanıklığı izi; patlama molozu yuvarlak top değil köşeli parça
+- **Test altyapısı:** testler oyun süresiyle sınırlı (hugetest, crewtest...), `shots/.gdignore`, yeni testler: para2test, ammotest, structtest denetimi, evadetest "engel halkası"; GPU'da tam paket (13 sahne) + arch/map/garrison/editor/roundtrip/cat testleri geçiyor
+
 ---
 
 ## 🎯 0.0.8 — 32 maddelik büyük güncelleme (kullanıcı listesi, 15 Ekim)
 Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) · ⏳ yapılacak · 🔄 şu an çalışılıyor.
-(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu.)
+(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu. 33–40: 15 Ekim yerel oturumunda kullanıcının ek istekleri.)
 
 | # | İstek (özet) | Durum | Mevcut durum → yapılacak |
 |---|---|---|---|
@@ -83,19 +96,19 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 5 | Seçim göstergesi: daha küçük, estetik, kendi tarzımız | 🟡 | Kompakt halka var. → Özgün tasarım (köşeli parantez + rol işareti, takım rengi), RA/SS/CoH analiziyle |
 | 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | 🟡 | Mermi modelleri var. → Kalibre bazlı mühimmat veri tablosu (namlu çıkış hızı, kütle, iz rengi, patlama yarıçapı) |
 | 7 | Havan, top, obüs ve kurmalı ekip animasyonları | 🟡 | Çekili top dolum döngüsü var (doğrulama sürüyor). → Havan timi, obüs, ağır silah kurma/sökme/dolum animasyonları |
-| 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Mini drone + istasyon var. → Görünürlük düzeltmesi, ses, pervane, 2 kişilik ekip, türe göre görüş/tespit |
+| 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Mini drone + istasyon var; istasyon artık gerçek ölçekte küçük taktik İHA kaldırıyor ✅. → Ses, pervane, 2 kişilik ekip, türe göre görüş/tespit |
 | 9 | Vurulma yerine göre kan, patlamada uzuv kopması, sağlık çadırı/hastane/paramedikte ilk yardım, timleri isteğe göre birleştirme (tim+tim=manga) | 🟡 | Kan, bölgesel yara, hastane var. → İsabet bölgesine göre kan, uzuv kopması, ilk yardım animasyonu, oyuncu kontrollü tim birleştirme |
-| 10 | Araç modelleri çok detaylı (teker, kapak, yakıt deposu, namlu, zırh, renk) — EN KRİTİK KURAL | 🔄 | Araç detay geçişi ayrı dalda çalışıyor. → Tüm katalog için detay standardı |
+| 10 | Araç modelleri çok detaylı (teker, kapak, yakıt deposu, namlu, zırh, renk) — EN KRİTİK KURAL | 🟡 | Katalog (191 araç) detay çekirdeğiyle yeniden üretildi ✅. → Taban tip modelleri (tank_blue vb.), gerçek boyut (38) |
 | 11 | Tank mürettebatı inip binebilsin (dismount/mount) | ⏳ | → Mürettebat ayrı askerler olarak iner/biner, araç mürettebatsız hareket etmez |
 | 12 | İmha mermi türüne göre değişsin: yan yatma, farklı yönde taret fırlaması, çakılma | 🟡 | Taret fırlaması, ikincil patlama var. → Fizik tabanlı imha (devrilme, taret yörüngesi, mermi türü/açıya göre) |
 | 13 | Nadir teslim olma: beyaz bayrak, silah zoruyla karargâha götürülme | 🟡 | Teslim olma/esir var. → Beyaz bayrak modeli, eller havada yürüme, muhafız silahı doğrultarak eşlik |
 | 14 | Patlama bulutu yarı saydam; suya düşüşte araç boyutuna göre dalga | 🟡 | Yarı saydam duman var. → Bulut saydamlığı, boyuta göre dalga halkası (su shader'ı) |
 | 15 | Hava araçları füzeden kaçınsın; gerçek füze türleri ve atış mekanizmaları | 🟡 | SAM + fişek + kaçış var. → Stinger/Igla/Verba/Javelin/Kornet/TOW vb. arayıcı türleri, kilitlenme süresi, atış prosedürü |
-| 16 | 100+ farklı bina, yıkılabilir köprüler, ağaç/çiçek/kaldırım/kapı/pencere/sokak/başıboş araç/direk — tam detay | 🔄 | 100+ bina türü ayrı dalda çalışıyor; köprüler var |
+| 16 | 100+ farklı bina, yıkılabilir köprüler, ağaç/çiçek/kaldırım/kapı/pencere/sokak/başıboş araç/direk — tam detay | 🟡 | 143 bina arketipi ✅, köprüler var. → 34 (dini yapı yok, duvarlar), 35 (özgünlük), sokak eşyaları |
 | 17 | Asker modeli fotoğraftaki gibi + her eylem için animasyon (düşme, eğilme, zıplama, koşma...) | ⏳ | → 1 ve 25 ile birlikte: iskeletli animasyon kütüphanesi |
 | 18 | Araçlar 3. fotoğraftaki gibi gerçekçi (mürettebat görünür, açık bölme) | ⏳ | → Kundağı motorlu topçuda açık bölme + içeride çalışan mürettebat |
 | 19 | Animasyon için kendi sistemimiz (Unreal ile) | ⏳ | → Bkz. teknik not: Blender + mocap tabanlı kendi animasyon hattımız |
-| 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🔄 | Bina işi ayrı dalda; çatı eşyaları (klima, su deposu, boru, anten) eklenecek |
+| 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🟡 | Arketiplerde çatı eşyaları (klima, su deposu, anten) var. → Fotoğraftan farklılaştırma (35) |
 | 21 | Harita boyutları en son büyütülecek | ⏳ | En sona alındı |
 | 22 | Helikopter alçaldıkça pervane sesi artsın, rotor rüzgârı ağaç/çimen sallasın | ⏳ | → Global shader rüzgâr kaynağı (patlama dalgası sistemi gibi), irtifaya bağlı ses |
 | 23 | Palet izi; iklime göre kalıcı/kaybolan; savaş sisine uyumlu | ⏳ | → Arazi iz dokusu, biyoma göre sönüm, görülmeyen izler gizli |
@@ -107,14 +120,22 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 29 | Bazı İHA/drone'lar görünmüyor; özel sesler; yüksek irtifa | 🟡 | → 8 ile birlikte |
 | 30 | 9×9 / 9×6 km haritalar, 30+ harita, Senaryo; radar araçları, S-300 tipi radar+SAM, uçaklar; **Mevzi-Core**: oyuncu kontrolünde olmayan birimlerin gerçekçi doktrinle davranışı | 🟡 | 4 km harita, tim beyni var. → Mevzi-Core tasarımı (bölgesel komuta, birim rolleri, angajman kuralları), radar/SAM katmanı |
 | 31 | Roketler havada önlenebilsin (dengeli) | ⏳ | → APS / C-RAM tipi önleme, düşük olasılıklı |
-| 32 | Ana menü: Masaüstüne Çık · Ayarlar (Grafik, Ses, Oynanış, Klavye) · Senaryo Oluşturucu · Kampanya · Klasik Harita · Sandbox Test | ⏳ | → Menü yeniden düzenlenecek (şimdilik bu düzen) |
+| 32 | Ana menü: Masaüstüne Çık · Ayarlar (Grafik, Ses, Oynanış, Klavye) · Senaryo Oluşturucu · Kampanya · Klasik Harita · Sandbox Test | ✅ | Menü + tuş atama birleştirildi (keybinds_test 55/55, menü ön izlemesi TR/EN) |
+| 33 | Bayrak animasyonu (Blender + UE) | ⏳ | → Blender kumaş simülasyonu pişirilir (köşe animasyon dokusu), Godot'ta rüzgârla oynatılır. UE kurulu değil; istenirse yalnız pişirme istasyonu olabilir |
+| 34 | Oyunda cami/kilise/mescit vb. hiçbir dini yapı olmayacak; her binanın yanında duvar olmasın, duvarlar gelişigüzel | ⏳ | → Dini arketipler, kule/sivri parçalar kaldırılır; avlu duvarı seyrekleşir, kısmi/yıkık/eğri duvarlar |
+| 35 | Binalar referans fotoğraflardan biraz farklı olsun (aynısı değil) | ⏳ | → Oran, renk, cephe düzeni, çatı ve detay çeşitlemesi |
+| 36 | Kum torbaları gerçekçi (web'den CC0 varlık ya da kendi üretimimiz) | ⏳ | → Blender'da torba modeli (kumaş dokusu, sarkma, dikiş), şaşırtmalı dizim |
+| 37 | Kazma ve inşaat animasyonları: silah sırtta, binanın içine girmeden dışarıdan inşa (hata var) | ⏳ | → İnşaat yuvaları iskele dışında, tüfek sırtta, kazma/kürek/çekiç aleti |
+| 38 | Tüm araç boyutları gerçekçi | 🟡 | Hava araçları ✅ (`data/real_dims.json` + `tools/size_audit.gd`). → Kara araçlarında 42 sapma: namlu boyu, kamyon şasisi, köprü/dozer |
+| 39 | Helikopter pervaneleri gerçekçi, detay dokulu | ⏳ | → Kanat profili, uç bandı, hub; dönüşte hareket bulanıklığı diski |
+| 40 | Hiçbir mermi yuvarlak top/taş gibi görünmesin | ✅ | Topçu/havan yüksek yörünge + iz, moloz köşeli parça (ammotest) |
 
 ### Uygulama sırası (fazlar)
-- **Faz 0 — Stabilite (🔄 yerel GPU oturumuna devredildi — `docs/DEVIR_NOTU.md` §3; teşhis yamaları `wip/faz0/`):** test zaman aşımı bekçisi + hata dökümü, ekransız hızlı test modu, `tools/run_tests.sh`; crewtest/paratest/SPIES/evade kök nedenleri; oyunda takılabilecek her geçici duruma süre sınırı + güvenli çıkış; yapılamayan emirde birimin sesli geri bildirimi
-- **Faz 1 — Veri gerçekçiliği:** 2, 6, 26, 15, 27, 31
-- **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 8/29, 18, 7
-- **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28, 5
-- **Faz 4 — Dünya ve görsel:** 10, 16, 20, 14, 24
+- **Faz 0 — Stabilite (🔄 yamalar uygulandı, GPU'da doğrulandı; test bekçisi ✅, crewtest/paratest/SPIES/evade ✅):** kalan — oyunda takılabilecek her geçici duruma süre sınırı + güvenli çıkış; yapılamayan emirde birimin sesli geri bildirimi; ekransız hızlı test modu
+- **Faz 1 — Veri gerçekçiliği:** 2, 38, 6, 26, 15, 27, 31
+- **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 39, 8/29, 18, 7
+- **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28/37, 5
+- **Faz 4 — Dünya ve görsel:** 34 (öne alındı), 10, 16, 20, 35, 36, 33, 14, 24
 - **Faz 5 — Menü ve çekirdek:** 32, 30 (Mevzi-Core, radar/S-300)
 - **Faz 6 — En son:** 21 / 30 harita büyütme (9×9 km, seyrek ızgara, akışlı yükleme)
 
