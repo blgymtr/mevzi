@@ -69,6 +69,8 @@ func _ready() -> void:
 		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
 		_run_weather_test()
+	elif shot_dir != "" and shot_scene == "holdtest":
+		_run_hold_test()
 	elif shot_dir != "" and shot_scene == "buildtest":
 		_run_build_test()
 	elif shot_dir != "" and shot_scene == "cargotest":
@@ -1229,6 +1231,53 @@ func _run_weather_test() -> void:
 	if W.sight_mult() >= 1.0:
 		fails += 1
 	print("WEATHERTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_hold_test() -> void:
+	# silah tutuşu yakın çekim: bekleme (low ready) ayakta/yürüyüş/koşu, nişan, tabanca çekme (kılıf) ve nişan, çömelme
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	G.spectate = true
+	build_world("green_valley", 4242)
+	for u in G.units.duplicate():
+		if u is Soldier or u is Vehicle:
+			u.queue_free()
+	await get_tree().process_frame
+	var c := Vector3(170, 0, 170)
+	G.props.clear_area(c, 20.0)
+	var poses := [["stand", 0.0, -1.0], ["walk", 1.6, -1.0], ["run", 4.0, -1.0], ["aim", 0.0, -1.0], ["stand", 0.0, 0.3], ["stand", 0.0, 1.0], ["crouch", 0.0, -1.0], ["crouch_aim", 0.0, -1.0]]
+	var bodies: Array = []
+	for t in 2:
+		for i in poses.size():
+			var s := spawn_soldier(t, "rifle", c, null)
+			s.position = c + Vector3(-5.6 + i * 1.6, 0, t * 2.4)
+			s.rotation.y = PI * 1.25 + (0.6 if t == 1 else 0.0)
+			s.set_process(false)
+			bodies.append([s, poses[i]])
+	G.running = false
+	G.cam.input_enabled = false
+	for k in 50:
+		for b in bodies:
+			var pk: float = b[1][2]
+			b[0].body.pistol = pk >= 0.0
+			if pk >= 0.0:
+				b[0].body.pistol_k = pk - 0.0001
+			b[0].body.animate(0.033, b[1][0], b[1][1], 0.0)
+		await get_tree().process_frame
+	G.cam.jump_to(c + Vector3(0, 0, 1.2), true)
+	G.cam.size = 7.0
+	G.cam.target_size = 7.0
+	await _wait(0.8)
+	await _shot("hold_all")
+	G.cam.jump_to(c + Vector3(-2.4, 0, 0.0), true)
+	G.cam.size = 3.2
+	G.cam.target_size = 3.2
+	await _wait(0.5)
+	await _shot("hold_close_a")
+	G.cam.jump_to(c + Vector3(2.4, 0, 0.0), true)
+	await _wait(0.5)
+	await _shot("hold_close_b")
+	print("HOLDTEST DONE")
 	get_tree().quit()
 
 func _run_build_test() -> void:

@@ -547,9 +547,12 @@ func _process(dt: float) -> void:
 	_combat(dt)
 	if state == "dragged" or (state == "wounded" and downs <= 1):
 		_pistol()
+	elif state in ["idle", "move"] and can_fight() and G.time - threat_time < 4.0 and threat_pos.distance_to(position) < 14.0 and ((ammo <= 0 and mag <= 0) or reload_t > 0.8):
+		# tüfek boş / şarjör değişiyor ve düşman yakın: tabancaya geç
+		_pistol()
 	var sp := vel.length()
 	body.move_yaw = angle_difference(rotation.y, _yaw_of(vel)) if sp > 0.3 else 0.0
-	body.pistol = G.time - pistol_t < 0.8
+	body.pistol = G.time - pistol_t < 2.5
 	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if state == "build" else ""))
 	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))

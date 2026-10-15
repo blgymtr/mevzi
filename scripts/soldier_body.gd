@@ -26,6 +26,26 @@ var rng := RandomNumberGenerator.new()
 var role := "rifle"
 var dead_pose := {}
 var pistol := false
+var pistol_k := 0.0              # 0 kılıfta, 1 çekili ve nişanda
+var _pistol_mi: MeshInstance3D = null
+static var _pistol_mesh: Mesh = null
+
+func _pistol_model() -> void:
+	if _pistol_mesh == null:
+		var mb := MB.new()
+		var blk := Color(0.09, 0.09, 0.1)
+		mb.box(Vector3(0, 0.035, -0.08), Vector3(0.032, 0.035, 0.19), blk)                 # sürgü
+		mb.box(Vector3(0, 0.005, -0.07), Vector3(0.03, 0.03, 0.16), Color(0.16, 0.15, 0.13)) # gövde
+		mb.box(Vector3(0, -0.045, 0.0), Vector3(0.03, 0.1, 0.045), Color(0.16, 0.15, 0.13), Basis(Vector3.RIGHT, -0.25))  # kabza
+		mb.box(Vector3(0, -0.012, -0.035), Vector3(0.012, 0.025, 0.035), blk)               # tetik korkuluğu
+		_pistol_mesh = mb.commit(Mats.vcs())
+	_pistol_mi = MeshInstance3D.new()
+	_pistol_mi.mesh = _pistol_mesh
+	fore_r.add_child(_pistol_mi)
+	# el kemiği ucunda; namlu önkolun -Y yönünde (kol uzanınca ileri bakar)
+	_pistol_mi.position = Vector3(0, -0.31, -0.02)
+	_pistol_mi.rotation = Vector3(-PI * 0.5, 0, 0)
+	_pistol_mi.visible = false
 
 func build(team: int, rl: String, winter: bool) -> void:
 	role = rl
@@ -575,7 +595,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["srx"] = 0.15
 				T["prz"] = sin(G.time * 1.3) * 0.15
 				wpn = 6
-			elif pose == "dragged" and pistol:
+			elif pose == "dragged" and pistol and false:
 				# sürüklenirken tabancayla ateş: sağ kol tehdide uzanır
 				T["arx"] = 0.85
 				T["arz"] = 0.05
@@ -625,8 +645,33 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		T["sry"] = float(T.get("sry", 0.0)) - py_
 	else:
 		T["pry"] = 0.0
+	# tabanca: sağ el önce kılıfa iner (k<0.45), sonra tabancayı nişana kaldırır; destek eli kavrar
+	pistol_k = move_toward(pistol_k, 1.0 if pistol else 0.0, dt * 2.4)
+	if pistol_k > 0.0 and fore_r and pose in ["stand", "walk", "run", "aim", "crouch", "crouch_aim", "dragged"]:
+		if _pistol_mi == null:
+			_pistol_model()
+		var k := pistol_k
+		if k < 0.45:
+			var a := k / 0.45
+			T["arx"] = lerpf(float(T.get("arx", 0.3)), -0.12, a)
+			T["arz"] = lerpf(float(T.get("arz", 0.1)), 0.34, a)
+			T["frx"] = lerpf(float(T.get("frx", 0.6)), 0.3, a)
+		else:
+			var b := smoothstep(0.45, 1.0, k)
+			var up := 1.42 if pose != "dragged" else 0.85
+			T["arx"] = lerpf(-0.12, up, b)
+			T["arz"] = lerpf(0.34, 0.06, b)
+			T["frx"] = lerpf(0.3, 0.06, b)
+			if pose != "dragged":
+				T["alx"] = lerpf(0.4, 1.32, b)
+				T["alz"] = lerpf(-0.2, -0.62, b)
+				T["flx"] = lerpf(0.4, 0.5, b)
+		wpn = 4
+		_pistol_mi.visible = k > 0.42
+	elif _pistol_mi:
+		_pistol_mi.visible = false
 	# nişan / taşıma / yüzüstü: eller silaha IK ile oturur
-	if wpn in [1, 2, 3] and not pistol and arm_r and rest.has(arm_r):
+	if wpn in [1, 2, 3] and not pistol and pistol_k <= 0.0 and arm_r and rest.has(arm_r):
 		var ik := _ik_pose(wpn)
 		T["arx"] = ik[0].x
 		T["arz"] = ik[0].y
@@ -725,7 +770,7 @@ func _weapon_xf(w: int) -> Transform3D:
 		2:
 			if role in ["at", "atgm"]:
 				return Transform3D(Basis(Vector3.FORWARD, 0.8) * Basis(Vector3.RIGHT, -1.2), Vector3(0.0, 0.3, 0.2))
-			return Transform3D(Basis(Vector3.UP, 0.35) * Basis(Vector3.RIGHT, -0.35) * Basis(Vector3.FORWARD, 0.7), Vector3(-0.02, 0.3, -0.2))
+			return Transform3D(Basis(Vector3.UP, -0.55) * Basis(Vector3.RIGHT, -0.62) * Basis(Vector3.FORWARD, -0.25), Vector3(-0.07, 0.33, -0.2))
 		3:
 			return Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(-0.08, 0.7, 0.14))
 		4:
