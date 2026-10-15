@@ -205,6 +205,12 @@ func make_water() -> void:
 	water_mat.set_shader_parameter("shallow", biome["water_shallow"])
 	water_mat.set_shader_parameter("deep", biome["water_deep"])
 	water_mat.set_shader_parameter("clarity", biome["clarity"])
+	var mi := Image.create(HRES, HRES, false, Image.FORMAT_L8)
+	for z in HRES:
+		for x in HRES:
+			mi.set_pixel(x, z, Color(1, 1, 1) if himg.get_pixel(x, z).r < -0.05 else Color(0, 0, 0))
+	water_mat.set_shader_parameter("river_mask", ImageTexture.create_from_image(mi))
+	water_mat.set_shader_parameter("map_size", G.MAP)
 	water.material_override = water_mat
 	add_child(water)
 	# suyun altında kalan yerleri ızgarada geçilmez yap

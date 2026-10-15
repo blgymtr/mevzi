@@ -12,6 +12,16 @@ static func vc() -> StandardMaterial3D:
 		_c["vc"] = m
 	return _c["vc"]
 
+static func vcs() -> StandardMaterial3D:
+	# sRGB tepe rengi (doğru doygunluk) — siper, toprak set, kalas
+	if not _c.has("vcs"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		m.roughness = 0.92
+		_c["vcs"] = m
+	return _c["vcs"]
+
 static func vc2() -> StandardMaterial3D:
 	# çift yüzlü (yaprak, tente)
 	if not _c.has("vc2"):

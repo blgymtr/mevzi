@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "trenchtest":
+		_run_trench_test()
 	elif shot_dir != "" and shot_scene == "vfxtest":
 		_run_vfx_test()
 	elif shot_dir != "" and shot_scene == "septest":
@@ -745,6 +747,42 @@ func _run_cat_test() -> void:
 	if e1.alive and e1.hp >= e1.max_hp:
 		fails += 1
 	print("CATTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_trench_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("winter_village" if shot_dir.contains("win") else "green_valley", {}, true)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var tr := place_line(0, "trench", c + Vector3(-7, 0, 0), c + Vector3(7, 0, 3))
+	var tr2 := place_line(0, "trench", c + Vector3(-7, 0, 8), c + Vector3(7, 0, 11))
+	var men: Array = []
+	for i in 4:
+		var s := spawn_soldier(0, "engineer", G.grid.nearest_free(c + Vector3(i * 2 - 3, 0, -3), Grid.M_INF), null)
+		s.cmd_build(tr)
+		men.append(s)
+	tr2.add_work(99999.0)
+	G.cam.jump_to(c + Vector3(0, 0, 4), true)
+	G.cam.size = 16.0
+	G.cam.target_size = 16.0
+	for k in 40:
+		await _wait(0.5)
+		if is_instance_valid(tr) and tr.progress > 0.45 and tr.progress < 0.7:
+			break
+	await _shot("trench_01_digging")
+	tr.add_work(99999.0) if is_instance_valid(tr) else null
+	await _wait(1.0)
+	var deep := G.terrain.ground_h(c + Vector3(0, 0, 1.5))
+	for i in 3:
+		var s := spawn_soldier(0, ["rifle", "mg", "rifle"][i], c + Vector3(i * 3 - 3, 0, 9.5), null)
+		s.cmd_hold()
+	await _wait(2.0)
+	await _shot("trench_02_done")
+	print("TRENCH depth=%.2f" % deep)
+	if deep > -0.8:
+		fails += 1
+	print("TRENCHTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_vfx_test() -> void:

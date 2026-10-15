@@ -407,9 +407,11 @@ func add_work(amount: float) -> void:
 	progress = minf(1.0, progress + amount / build_time())
 	hp = maxf(hp, max_hp * (0.15 + 0.85 * progress))
 	_work_flash -= amount
+	if btype == "trench" and is_line():
+		_dig_progress()
 	if _work_flash <= 0.0:
 		_work_flash = 0.6
-		Sfx.play3d("hammer", position, -8.0, 0.15, 0.2)
+		Sfx.play3d("hammer" if btype != "trench" else "crumble", position, -8.0 if btype != "trench" else -14.0, 0.15, 0.2)
 		if not is_line():
 			model.scale = Vector3(1, lerpf(0.25, 1.0, progress), 1)
 	if progress >= 1.0:
@@ -432,6 +434,22 @@ func complete() -> void:
 	if team == G.player_team and not G.spectate:
 		G.say(I18n.s("%s tamamlandı") % I18n.s(title), position, team)
 		Sfx.play2d("ui_done", -4.0)
+
+var _dug := 0.0
+# siper: kazıldıkça zemin derinleşir, çıkan toprak kenara savrulur
+func _dig_progress() -> void:
+	var want := snappedf(progress, 0.2)
+	if want <= _dug:
+		return
+	_dug = want
+	G.terrain.carve_trench(a, b, 1.5, 1.35 * _dug)
+	var dir := (b - a).normalized()
+	var side := Vector3(-dir.z, 0, dir.x)
+	var sand := G.fx.sand_col.darkened(0.35)
+	for i in 10:
+		var p := a.lerp(b, randf())
+		var sg := -1.0 if randf() < 0.5 else 1.0
+		G.fx.emit(Fx.P_STREAK, p, side * sg * randf_range(1.5, 3.0) + Vector3(0, randf_range(2.5, 4.0), 0), randf_range(0.5, 0.8), 0.07, 0.05, 12.0, 0.8, Color(sand.r, sand.g, sand.b, 0.95))
 
 func _make_line() -> void:
 	var L := a.distance_to(b)
@@ -468,33 +486,49 @@ func _make_line() -> void:
 				G.grid.kind[ci] = Grid.K_WIRE
 				G.grid.refresh([ci])
 		"trench":
-			G.grid.set_trench(a, b, 1.4)
-			G.terrain.carve_trench(a, b, 1.4, 1.05)
-			G.terrain.paint_line(a, b, 2.6, 1, 0.5)
+			G.grid.set_trench(a, b, 1.5)
+			G.terrain.carve_trench(a, b, 1.5, 1.35)
+			G.terrain.paint_line(a, b, 3.2, 1, 0.7)
 			var dir := (b - a).normalized()
 			var side := Vector3(-dir.z, 0, dir.x)
 			var rotm := Basis(Vector3.UP, atan2(-dir.z, dir.x))
 			var mb := MB.new()
-			var wood := Color(0.42, 0.33, 0.24)
 			var snow := G.map_kind == "winter"
-			var berm := Color(0.9, 0.91, 0.94) if snow else (Color(0.52, 0.42, 0.3) if G.map_kind == "desert" else Color(0.34, 0.28, 0.2))
+			var wood := Color(0.47, 0.38, 0.28) if not snow else Color(0.5, 0.45, 0.38)
+			var berm := Color(0.92, 0.93, 0.95) if snow else (Color(0.56, 0.45, 0.32) if G.map_kind == "desert" else Color(0.36, 0.3, 0.22))
+			var bag := Color(0.68, 0.6, 0.44) if not snow else Color(0.82, 0.8, 0.74)
 			var c0 := (a + b) * 0.5
-			# taban tahtaları
-			var nb := maxi(1, int(L / 0.5))
+			# taban ızgarası (duckboard): iki kiriş + enine çıtalar
+			for sg2 in [-0.3, 0.3]:
+				mb.box(side * sg2 + Vector3(0, -1.3, 0), Vector3(L, 0.06, 0.08), wood.darkened(0.3), rotm)
+			var nb := maxi(1, int(L / 0.22))
 			for i in nb:
 				var p := a.lerp(b, (i + 0.5) / nb) - c0
-				mb.box(p + Vector3(0, -1.0, 0), Vector3(0.42, 0.05, 1.2), wood.darkened(0.1 * (i % 2)), rotm)
-			# iki yanda tahta perdeleme + dikmeler + set (toprak/kar)
+				mb.box(p + Vector3(0, -1.25, 0), Vector3(0.14, 0.04, 0.85), wood.darkened(0.08 * (i % 3)), rotm)
 			for sg in [-1.0, 1.0]:
-				var off: Vector3 = side * sg * 0.7
-				mb.box(off + Vector3(0, -0.5, 0), Vector3(L, 1.05, 0.06), wood, rotm)
-				var np := maxi(1, int(L / 1.6))
+				var off: Vector3 = side * float(sg) * 0.74
+				# yatay kalaslar (aralıklı, hafif renk farkı) — hafif içe yatık
+				for row in 5:
+					var y := -1.2 + row * 0.27
+					var tone := wood.darkened(0.05 * ((row * 7) % 3)).lightened(0.04 * (row % 2))
+					mb.box(off + side * sg * (row * 0.025) + Vector3(0, y, 0), Vector3(L, 0.22, 0.05), tone, rotm * Basis(Vector3.FORWARD, -sg * 0.08))
+				# dikmeler (yuvarlak kazık)
+				var np := maxi(1, int(L / 1.4))
 				for i in np + 1:
-					var p := a.lerp(b, float(i) / np) - c0 + off
-					mb.box(p + Vector3(0, -0.45, 0), Vector3(0.1, 1.2, 0.12), wood.darkened(0.2), rotm)
-				mb.prism(PackedVector2Array([Vector2(-0.6, -0.05), Vector2(0.6, -0.05), Vector2(0.35, 0.16), Vector2(0.0, 0.24), Vector2(-0.35, 0.16)]), L + 0.4, berm, off + side * sg * 0.62, rotm * Basis(Vector3.UP, PI * 0.5))
+					var p := a.lerp(b, float(i) / np) - c0 + off * 1.03
+					mb.cyl(p + Vector3(0, -0.6, 0), 0.06, 0.06, 1.55, 6, wood.darkened(0.25))
+				# kum torbası korkuluk (ön kenar)
+				var nbag := maxi(1, int(L / 0.55))
+				for i in nbag:
+					var p2: Vector3 = a.lerp(b, (i + 0.5) / nbag) - c0 + side * sg * 0.98
+					var j := Vector3(randf_range(-0.03, 0.03), 0, randf_range(-0.03, 0.03))
+					mb.box(p2 + j + Vector3(0, 0.12, 0), Vector3(0.5, 0.2, 0.32), bag.darkened(randf_range(0.0, 0.12)), rotm * Basis(Vector3.UP, randf_range(-0.12, 0.12)))
+					if i % 2 == 0:
+						mb.box(p2 + j + Vector3(0.0, 0.31, 0) + dir * 0.27, Vector3(0.5, 0.18, 0.3), bag.darkened(randf_range(0.0, 0.12)), rotm * Basis(Vector3.UP, randf_range(-0.12, 0.12)))
+				# çıkan toprak seti: yuvarlatılmış, dış yana yayılan
+				mb.prism(PackedVector2Array([Vector2(-0.9, -0.06), Vector2(0.9, -0.06), Vector2(0.6, 0.18), Vector2(0.25, 0.32), Vector2(-0.15, 0.3), Vector2(-0.55, 0.16)]), L + 0.8, berm, off + side * sg * 0.95, rotm * Basis(Vector3.UP, PI * 0.5))
 			var mi := MeshInstance3D.new()
-			mi.mesh = mb.commit(Mats.vc())
+			mi.mesh = mb.commit(Mats.vcs())
 			mi.position = c0
 			G.world.add_child(mi)
 

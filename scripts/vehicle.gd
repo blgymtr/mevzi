@@ -389,12 +389,25 @@ func _sep_vehicles() -> void:
 		if sep:
 			continue
 		var other_static: bool = not o.alive or o.immobile() or absf(o.cur_speed) < 0.2
+		var me_moving := absf(cur_speed) > 0.3
+		var ahead: bool = d.dot(forward()) * signf(cur_speed) > 0.0
+		# önündekine doğru giden araç yana itilmez (köprü korkuluğuna sıkışmasın): yavaşlar/durur
+		if me_moving and ahead:
+			if not other_static:
+				# hareketli aracı takip et
+				cur_speed = signf(cur_speed) * minf(absf(cur_speed), absf(o.cur_speed) * 0.9 + 0.3)
+				continue
+			# duran araç/enkaz önde: yanından sıyrıl (yan eksende it), yavaşla
+			var sd2 := right() * (-1.0 if d.dot(right()) > 0.0 else 1.0)
+			var np2 := position + sd2 * minf(best, 0.4) * 0.35
+			if _cell_ok(np2) and G.grid.height_at(np2) < 0.3:
+				position = np2
+			cur_speed *= 0.85
+			continue
 		var k := 1.0 if other_static else 0.5
-		var np := position + bax * best * k
-		if _cell_ok(np):
+		var np := position + bax * minf(best, 0.6) * k
+		if _cell_ok(np) and G.grid.height_at(np) < 0.3:
 			position = np
-		if d.dot(forward()) * signf(cur_speed) > 0.0:
-			cur_speed *= 0.5
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0, -cos(heading))

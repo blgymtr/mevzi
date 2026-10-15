@@ -13,6 +13,8 @@ uniform float depth_scale = 1.4;
 uniform float foam_amt = 1.0;
 uniform vec2 flow = vec2(0.25, 0.1);
 uniform float clarity = 0.35;
+uniform sampler2D river_mask : filter_linear, repeat_disable;
+uniform float map_size = 256.0;
 
 varying vec3 wpos;
 
@@ -21,6 +23,10 @@ void vertex() {
 }
 
 void fragment() {
+	// yalnızca nehir/göl yatağında (siper, krater gibi sonradan kazılan çukurlarda su görünmez)
+	if (texture(river_mask, wpos.xz / map_size).r < 0.5) {
+		discard;
+	}
 	float t = game_time;
 	vec2 w = wpos.xz;
 	vec3 n1 = texture(wave_n, w / 9.0 + flow * t * 0.12).xyz * 2.0 - 1.0;
