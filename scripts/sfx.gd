@@ -8,7 +8,8 @@ var pool2d: Array = []
 var _last := {}
 var _pi := 0
 var volume := 0.8
-var muted := false
+var muted := false       # tüm sesler (testler)
+var ui_muted := false    # yalnız 2B arayüz/uyarı sesleri (Ayarlar > Ses); savaş sesleri sürer
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -79,7 +80,7 @@ func play3d(n: String, pos: Vector3, vol_db := 0.0, pitch_var := 0.08, min_gap :
 	p.play()
 
 func play2d(n: String, vol_db := 0.0) -> void:
-	if muted:
+	if muted or ui_muted:
 		return
 	var st := _get_stream(n)
 	if st == null:

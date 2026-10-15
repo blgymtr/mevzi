@@ -40,6 +40,7 @@ const ORDERS := {
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
 }
 const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronestation", "refund", "abandon", "demolish"]
+# emir kısayollarının VARSAYILANLARI; oyuncu atamaları ve eşleşme Keybinds üzerinden (Ayarlar > Klavye Ayarları)
 const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_L: "minidrone", KEY_O: "dronestation", KEY_I: "fastrope", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
 const STANCE_TXT := ["OTO", "AYAKTA", "ÇÖMEL", "YAT"]
@@ -134,6 +135,7 @@ func _ready() -> void:
 	tooltip.z_index = 50
 	root.add_child(tooltip)
 	G.alert.connect(_on_alert)
+	MainMenu.apply_cfg()      # ayar dosyasındaki ek seçenekler (v-sync, arayüz sesleri)
 
 func _theme() -> Theme:
 	var th := Theme.new()
@@ -435,7 +437,7 @@ func _cmd_btn(id: String) -> Control:
 	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(ic)
 	var k := Label.new()
-	k.text = O["k"]
+	k.text = Keybinds.short("o." + id)
 	k.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	k.add_theme_font_override("font", font_b)
 	k.add_theme_font_size_override("font_size", 11)
@@ -457,7 +459,7 @@ func _cmd_btn(id: String) -> Control:
 	st.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(st)
 	b.pressed.connect(func(): G.player.order_button(id))
-	_tip(b, func(): return "%s  [%s]\n%s" % [I18n.s(O["t"]), O["k"], I18n.s(O["d"])])
+	_tip(b, func(): return "%s  [%s]\n%s" % [I18n.s(O["t"]), Keybinds.label("o." + id), I18n.s(O["d"])])
 	_cmd_live.append([b, id, st, ic])
 	return b
 
@@ -1114,7 +1116,7 @@ func _deploy_banner() -> void:
 	_dep_lbl.visible = true
 	_dep_lbl.size = Vector2(900, 30)
 	_dep_lbl.position = Vector2(root.size.x * 0.5 - 450, 128)
-	_dep_lbl.text = "%s  %d   ·   %s" % [I18n.s("KONUŞLANMA"), int(ceil(G.deploy_t)), I18n.s("birlik yerleştir, üretim hızlı · Enter: hazır")]
+	_dep_lbl.text = "%s  %d   ·   %s" % [I18n.s("KONUŞLANMA"), int(ceil(G.deploy_t)), I18n.s("birlik yerleştir, üretim hızlı · Enter: hazır").replace("Enter", Keybinds.label("deploy"))]
 
 func _process(dt: float) -> void:
 	_sweep += dt * 1.6
@@ -1155,7 +1157,7 @@ func _process(dt: float) -> void:
 		if sig != _sel_sig:
 			_sel_sig = sig
 			call_deferred("_rebuild_info")
-		var csig := sig
+		var csig := sig + "k%d" % Keybinds.version
 		for id in ORDER_SEQ:
 			csig += str(order_state(id, sel) >= 0)
 		if csig != _cmd_sig:
@@ -1242,72 +1244,16 @@ func intel(who: String, text: String, pos: Vector3) -> void:
 		f.free()
 
 # ------------------------------------------------------------ menüler
-func show_menu() -> void:
+# ana menü scripts/main_menu.gd'de (Kampanya, Klasik Harita, Sandbox Test, Senaryo
+# Oluşturucu, Ayarlar, Masaüstüne Çık)
+func show_menu() -> MainMenu:
 	if menu:
 		menu.queue_free()
-	menu = Control.new()
-	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	root.add_child(menu)
-	var grad := TextureRect.new()
-	var gt := GradientTexture2D.new()
-	var gr := Gradient.new()
-	gr.set_color(0, Color(0, 0, 0, 0.84))
-	gr.set_color(1, Color(0, 0, 0, 0.0))
-	gt.gradient = gr
-	gt.fill_from = Vector2(0, 0)
-	gt.fill_to = Vector2(1, 0)
-	grad.texture = gt
-	grad.set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	grad.offset_right = 760
-	grad.stretch_mode = TextureRect.STRETCH_SCALE
-	grad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	menu.add_child(grad)
-	var vb := VBoxContainer.new()
-	vb.position = Vector2(90, 130)
-	vb.add_theme_constant_override("separation", 6)
-	menu.add_child(vb)
-	var t := _label(vb, "MEVZİ", 116, Color(0.97, 0.94, 0.86), font_b)
-	t.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	t.add_theme_constant_override("shadow_offset_y", 4)
-	_label(vb, "MODERN SAVAŞ · GERÇEK SİPER · İKMAL HATLARI", 21, AMBER, font_m)
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 34)
-	vb.add_child(spacer)
-	var mb := _menu_btn(vb, "", func(): pass, I18n.s("Klasik: üsleri yok et · Fetih: bölge tut, puan topla · Savaş Hedefleri: 3 aşama, bölge + imha puanı"))
-	mb.text = I18n.s("MOD") + ": " + I18n.s(Modes.MODE_NAME[G.mode])
-	mb.pressed.connect(func():
-		var ks := Modes.MODE_NAME.keys()
-		G.mode = ks[(ks.find(G.mode) + 1) % ks.size()]
-		mb.text = I18n.s("MOD") + ": " + I18n.s(Modes.MODE_NAME[G.mode]))
-	var wb := _menu_btn(vb, "", func(): pass, I18n.s("Değişken: biyoma göre hava 3-4 dakikada bir değişir"))
-	var wk := ["dynamic", "clear", "rain", "storm", "sandstorm", "snowstorm"]
-	var wtxt := func(): return I18n.s("HAVA DURUMU") + ": " + I18n.s(Weather.NAME[G.weather_pref]) + ("  ·  " + I18n.s("GECE") if G.night_pref else "")
-	wb.text = wtxt.call()
-	wb.gui_input.connect(func(ev):
-		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
-			G.night_pref = not G.night_pref
-			wb.text = wtxt.call())
-	wb.pressed.connect(func():
-		G.weather_pref = wk[(wk.find(G.weather_pref) + 1) % wk.size()]
-		wb.text = wtxt.call())
-	wb.tooltip_text = I18n.s("Sol tık: hava · Sağ tık: gece")
-	for id in MapGen.MAPS:
-		var mid: String = id
-		_menu_btn(vb, I18n.s(MapGen.MAPS[id]["title"]).to_upper(), func(): G.main.start_game(mid), I18n.s(MapGen.MAPS[id].get("desc", "")))
-	_menu_btn(vb, "SANDBOX", func(): _sandbox_menu())
-	_menu_btn(vb, "ÖZEL HARİTALAR", func(): _custom_list())
-	_menu_btn(vb, "HARİTA EDİTÖRÜ", func(): _editor_menu())
-	_menu_btn(vb, "AYARLAR", func(): _settings_menu())
-	_menu_btn(vb, "ÇIKIŞ", func(): get_tree().quit())
-	var help := _label(menu, "Sol tık seç · Sağ tık emir ver · Askerler kendi siperlerini bulur, yaralıları kurtarır.\nÜs kur, yolu koru: ikmal kamyonları ileri üslere ulaşmazsa gelir kesilir.", 16, Color(0.85, 0.82, 0.75), font_m)
-	help.position = Vector2(90, 800)
-	var cr := _label(menu, "", 13, DIM, font_m)
-	cr.text = "v0.2"
-	cr.anchor_top = 1.0
-	cr.anchor_bottom = 1.0
-	cr.offset_top = -30
-	cr.offset_left = 24
+	var mm := MainMenu.new()
+	mm.hud = self
+	menu = mm
+	root.add_child(mm)
+	return mm
 
 func _menu_btn(parent: Control, text: String, cb: Callable, tip := "") -> Button:
 	var b := Button.new()
@@ -1324,125 +1270,6 @@ func _menu_btn(parent: Control, text: String, cb: Callable, tip := "") -> Button
 		_tip(b, func(): return tip)
 	parent.add_child(b)
 	return b
-
-func _sub_menu(title: String) -> VBoxContainer:
-	if menu.has_meta("sub"):
-		var old = menu.get_meta("sub")
-		if is_instance_valid(old):
-			old.queue_free()
-	var pc := PanelContainer.new()
-	pc.position = Vector2(500, 300)
-	pc.custom_minimum_size = Vector2(380, 0)
-	menu.add_child(pc)
-	menu.set_meta("sub", pc)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
-	pc.add_child(v)
-	_label(v, title, 24, AMBER, font_b)
-	return v
-
-func _sandbox_menu() -> void:
-	var v := _sub_menu("SANDBOX")
-	_label(v, "Sınırsız ikmal, birlik sınırı yok, geliştirici komutları.", 14, DIM, font_m)
-	for id in MapGen.MAPS:
-		var mid: String = id
-		var b := _menu_btn(v, "", func(): G.main.start_game(mid, {}, true))
-		b.text = I18n.s(MapGen.MAPS[id]["title"]).to_upper()
-
-func _custom_list() -> void:
-	var v := _sub_menu("ÖZEL HARİTALAR")
-	var maps := MapEditor.list_maps()
-	if maps.is_empty():
-		_label(v, "Kayıtlı harita yok. Harita editöründen oluşturun.", 15, DIM, font_m)
-	for m in maps:
-		var mn: String = m
-		var b := _menu_btn(v, "", func(): G.main.start_game("", MapEditor.load_map(mn)))
-		b.text = mn.to_upper()
-
-func _editor_menu() -> void:
-	var v := _sub_menu("HARİTA EDİTÖRÜ")
-	_menu_btn(v, "BOŞ ÇÖL HARİTASI", func(): G.main.new_map("desert"))
-	_menu_btn(v, "BOŞ YEŞİL HARİTA", func(): G.main.new_map("green"))
-	_menu_btn(v, "BOŞ KIŞ HARİTASI", func(): G.main.new_map("winter"))
-	for id in MapGen.MAPS:
-		var mid: String = id
-		var b := _menu_btn(v, "", func(): G.main.open_editor_from_builtin(mid))
-		b.text = I18n.s("DÜZENLE: ") + I18n.s(MapGen.MAPS[id]["title"]).to_upper()
-	for m in MapEditor.list_maps():
-		var mn: String = m
-		var b := _menu_btn(v, "", func(): G.main.open_editor(MapEditor.load_map(mn)))
-		b.text = I18n.s("AÇ: ") + mn.to_upper()
-
-func _settings_menu() -> void:
-	var v := _sub_menu("AYARLAR")
-	var names := ["KOLAY", "NORMAL", "ZOR"]
-	var diff := _menu_btn(v, "", func(): pass)
-	diff.text = "%s:  %s" % [I18n.s("ZORLUK"), I18n.s(names[G.difficulty])]
-	diff.pressed.connect(func():
-		G.difficulty = (G.difficulty + 1) % 3
-		diff.text = "%s:  %s" % [I18n.s("ZORLUK"), I18n.s(names[G.difficulty])]
-		G.main.save_cfg())
-	var lang := _menu_btn(v, "", func(): pass)
-	lang.text = "%s:  %s" % [I18n.s("DİL"), "TÜRKÇE" if I18n.lang == "tr" else "ENGLISH"]
-	lang.pressed.connect(func():
-		G.main.set_lang("en" if I18n.lang == "tr" else "tr")
-		show_menu()
-		_settings_menu())
-	var fs := _menu_btn(v, "", func(): pass)
-	var fs_txt := func(): return "%s:  %s" % [I18n.s("Tam ekran").to_upper(), I18n.s("AÇIK" if G.main.cfg.get("fullscreen", true) else "KAPALI")]
-	fs.text = fs_txt.call()
-	fs.pressed.connect(func():
-		G.main.cfg["fullscreen"] = not G.main.cfg.get("fullscreen", true)
-		G.main.apply_video()
-		G.main.save_cfg()
-		fs.text = fs_txt.call())
-	var sh := _menu_btn(v, "", func(): pass)
-	var sh_txt := func(): return "%s:  %s" % [I18n.s("Gölgeler").to_upper(), I18n.s("AÇIK" if G.main.cfg.get("shadows", true) else "KAPALI")]
-	sh.text = sh_txt.call()
-	sh.pressed.connect(func():
-		G.main.cfg["shadows"] = not G.main.cfg.get("shadows", true)
-		G.main.apply_video()
-		G.main.save_cfg()
-		sh.text = sh_txt.call())
-	var es := _menu_btn(v, "", func(): pass)
-	var es_txt := func(): return "%s:  %s" % [I18n.s("Kenar kaydırma").to_upper(), I18n.s("AÇIK" if G.main.cfg.get("edge_scroll", true) else "KAPALI")]
-	es.text = es_txt.call()
-	es.pressed.connect(func():
-		G.main.cfg["edge_scroll"] = not G.main.cfg.get("edge_scroll", true)
-		G.main.apply_video()
-		G.main.save_cfg()
-		es.text = es_txt.call())
-	var vol := HBoxContainer.new()
-	vol.add_theme_constant_override("separation", 12)
-	v.add_child(vol)
-	_label(vol, "SES", 20, DIM, font_b).custom_minimum_size = Vector2(70, 0)
-	var sl := HSlider.new()
-	sl.custom_minimum_size = Vector2(270, 30)
-	sl.min_value = 0.0
-	sl.max_value = 1.0
-	sl.step = 0.05
-	sl.value = Sfx.volume
-	sl.value_changed.connect(func(x):
-		Sfx.set_volume(x)
-		G.main.save_cfg())
-	vol.add_child(sl)
-	var mm := HBoxContainer.new()
-	mm.add_theme_constant_override("separation", 12)
-	v.add_child(mm)
-	_label(mm, "HARİTA", 20, DIM, font_b).custom_minimum_size = Vector2(70, 0)
-	var ms := HSlider.new()
-	ms.custom_minimum_size = Vector2(270, 30)
-	ms.min_value = 0.8
-	ms.max_value = 2.0
-	ms.step = 0.05
-	ms.value = mini_scale
-	ms.value_changed.connect(func(x):
-		mini_scale = x
-		G.main.cfg["minimap"] = x
-		apply_mini_size()
-		radar.tex = null
-		G.main.save_cfg())
-	mm.add_child(ms)
 
 func hide_menu() -> void:
 	if menu:
@@ -1465,7 +1292,16 @@ func toggle_pause() -> void:
 	_menu_btn(vb, "ANA MENÜ", func():
 		toggle_pause()
 		G.main.to_menu())
-	_menu_btn(vb, "ÇIKIŞ", func(): get_tree().quit())
+	var qb := _menu_btn(vb, "", func(): _confirm_quit(pause_menu))
+	qb.text = MainMenu.t("MASAÜSTÜNE ÇIK")
+
+# duraklatma menüsünden çıkış: onay kutusu (İPTAL kutuyu kapatır)
+func _confirm_quit(parent: Control) -> void:
+	if parent == null:
+		return
+	if parent.has_meta("confirm") and is_instance_valid(parent.get_meta("confirm")):
+		return
+	parent.set_meta("confirm", MainMenu.make_confirm(self, parent, "MASAÜSTÜNE ÇIK", "Oyun kapatılsın mı?", "ÇIK", func(): get_tree().quit(), Callable()))
 
 func _center_box(title: String) -> Control:
 	var c := Control.new()
@@ -1932,7 +1768,7 @@ class Overlay extends Control:
 					txt += "  — " + I18n.s("%d ikmal") % int(ceil(B["cost"] * minf(30.0, G.player.place_a.distance_to(cam.mouse_ground(m)))))
 			else:
 				var why := PlayerCtl.can_place(G.player.place_type, cam.mouse_ground(m), G.player.place_rot, G.player_team)
-				txt += "  — " + I18n.s("%d ikmal") % B["cost"] + (("  ·  " + I18n.s(why)) if why != "" else "") + "   " + I18n.s("[R] döndür")
+				txt += "  — " + I18n.s("%d ikmal") % B["cost"] + (("  ·  " + I18n.s(why)) if why != "" else "") + "   " + I18n.s("[R] döndür").replace("[R]", "[%s]" % Keybinds.short("place.rot"))
 			draw_string(f, m + Vector2(18, 30), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.95))
 
 	func _status_icon(c: Vector2, kind: String) -> void:
