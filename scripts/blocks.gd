@@ -140,7 +140,8 @@ func house_free_slot(hid: int) -> int:
 	return -1
 
 func house_team(hid: int) -> int:
-	for o in houses[hid]["occ"].values():
+	# pencere yuvası olmayan yapı (minare, silo, sera) kimse tarafından tutulmaz
+	for o in houses[hid].get("occ", {}).values():
 		if o != null and is_instance_valid(o) and o.alive and o.house_id == hid:
 			return o.team
 	return -1
@@ -203,6 +204,10 @@ func add_block(pos: Vector3, size: Vector3, rot: float, col: Color, t: int, wall
 	else:
 		_pending[ck] = [id]
 	return id
+
+# kurulumda blok rengini değiştir (kaide, köşe taşı); dışarıdan dizi yazmak her seferinde kopyalar
+func set_col(id: int, c: Color) -> void:
+	bcol[id] = c
 
 func _xform(id: int) -> Transform3D:
 	var k := 0.997 if bkind[id] == Grid.K_HOUSE else 0.965
@@ -585,6 +590,10 @@ func _check_house(hh: int) -> void:
 		var roof: Node3D = h["roof"]
 		if roof and is_instance_valid(roof):
 			roof.visible = false
+		# cephe süsü (balkon, pencere, tabela): yalnız çökünce gizlenir
+		var deco = h.get("deco", null)
+		if deco != null and is_instance_valid(deco):
+			deco.visible = false
 		# çatı parçaları
 		var c: Vector3 = h["center"]
 		var sz: Vector2 = h["size"]

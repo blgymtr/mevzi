@@ -714,15 +714,22 @@ func huge_test() -> void:
 		for u in grp:
 			u.cmd_move(goal)
 		var issue_ms := Time.get_ticks_msec() - tq
+		# kare sayısıyla değil süreyle sınırlı: GPU'da 60 kare ~0,4 sn, 4 km'de tek A* ~300 ms sürer
+		# (yazılım çiziminde 60 kare saniyelerdi). Yollar gelene kadar en çok 10 sn bekle.
 		var worst := 0
 		var last := Time.get_ticks_msec()
-		for k in 60:
+		var long_n := 0
+		var frames := 0
+		while Time.get_ticks_msec() - tq < 10000:
 			await m.get_tree().process_frame
+			frames += 1
 			var now := Time.get_ticks_msec()
 			worst = maxi(worst, now - last)
 			last = now
-		var long_n := grp.filter(func(u): return u.path.size() >= 3).size()
-		print("HUGE id=%s async=%s issue_ms=%d worst_frame_ms=%d units_with_full_path=%d/%d" % [id, G.grid.wants_async(G.hq_pos[0], goal), issue_ms, worst, long_n, grp.size()])
+			long_n = grp.filter(func(u): return u.path.size() >= 3).size()
+			if long_n >= grp.size() and frames >= 60:
+				break
+		print("HUGE id=%s async=%s issue_ms=%d worst_frame_ms=%d units_with_full_path=%d/%d wait_ms=%d frames=%d" % [id, G.grid.wants_async(G.hq_pos[0], goal), issue_ms, worst, long_n, grp.size(), Time.get_ticks_msec() - tq, frames])
 		if G.grid.wants_async(G.hq_pos[0], goal) and long_n < grp.size() - 1:
 			fails += 1
 		_cam(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), 115.0)

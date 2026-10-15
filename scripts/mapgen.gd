@@ -14,6 +14,8 @@ var bridges: Array = []
 var ops: Array = []          # kayıtlı yerleştirme işlemleri (harita dosyası / editör)
 var _depth := 0
 var data_in: Dictionary = {}
+var arch_us := 0          # arketip bina kurulum süresi (ölçüm)
+var arch_n := 0
 const MAPS := {
 	"desert_canal": {"title": "Çöl Kanalı", "biome": "desert", "desc": "Turkuaz bir sulama kanalı iki orduyu ayırıyor. Üç köprüyü tutan kazanır."},
 	"green_valley": {"title": "Yeşil Vadi", "biome": "green", "desc": "Kıvrılan nehir, toprak yollar ve tek taş köprü. Ağaçlıklar pusu için ideal."},
@@ -24,6 +26,13 @@ const MAPS := {
 	"large_front": {"title": "Geniş Cephe", "biome": "green", "size": 1024, "desc": "1 km: büyük nehir ve kolu, otoyol, altı köy, ormanlar ve tarlalar. Helikopter, hava indirme ve uzun menzilli topçu için."},
 	"desert_town": {"title": "Çöl Kasabası", "biome": "desert", "desc": "Düz çatılı beyaz evler ve yıkıntılarla dolu kasabada sokak sokak savaş."},
 }
+
+# şehir: sokak cephesi (bitişik nizam) ve blok ortası simge yapılar
+const FRONT := ["sira_ev", "sira_ev_3", "carsi_evi", "dukkanli_apt", "kose_dukkan", "eczane", "berber", "pastane", "kuruyemis", "sebzeci", "nalbur", "kahve_2kat",
+	"apartman_3", "bakkal", "kasap", "lokanta", "firin", "arasta", "sira_ev", "sira_ev_3", "lojman", "dukkanli_apt", "apartman_3"]
+const LANDMARK := ["merkez_camii", "belediye", "hastane", "lise", "kutuphane", "banka", "otel", "sinema", "hal", "otogar", "itfaiye", "emniyet", "spor_salonu",
+	"supermarket", "telekom", "dugun_salonu", "askerlik_subesi", "kultur_merkezi", "ishani", "panel_blok", "l_blok", "apartman_5", "apartman_4", "kilise",
+	"lojman_blok", "motel", "oto_galeri", "cami_mahalle"]
 
 const STONE := Color(0.9, 0.8, 0.62)
 const WHITE := Color(0.94, 0.93, 0.89)
@@ -71,6 +80,7 @@ func build(id: String, seed_v: int) -> void:
 			_desert()
 	if id != "custom" and id != "big_city" and G.MAP <= 1024.0:
 		_footpaths()
+	print("ARCH bina=%d ms=%d blok=%d" % [arch_n, arch_us / 1000, B.bpos.size()])
 	T.make_water()
 	B.finalize()
 	G.grid.flush_all()
@@ -628,42 +638,27 @@ func _desert() -> void:
 		[Vector3(100, 0, 128), 6.0, 5.0], [Vector3(156, 0, 128), 6.0, 6.0], [Vector3(128, 0, 102), 6.0, 5.0], [Vector3(128, 0, 156), 7.0, 5.0],
 		[Vector3(96, 0, 106), 6.0, 5.0], [Vector3(160, 0, 150), 6.0, 5.0], [Vector3(150, 0, 104), 5.0, 5.0], [Vector3(104, 0, 152), 6.0, 5.0],
 		[Vector3(178, 0, 140), 6.0, 5.0], [Vector3(78, 0, 116), 6.0, 5.0]]
+	# kasaba: çöl arketipleri + çarşı dükkânları (deste: her tür bir kez)
+	var pool := village_pool()
 	for s in spots:
 		var p: Vector3 = s[0]
-		var w: float = s[1]
-		var d: float = s[2]
-		var rot := rng.randf() < 0.5
-		var r := maxf(w, d) * 0.75
-		if not free_at(p, r, 1.5):
-			p = rand_free(r, 40, Rect2(p.x - 14, p.z - 14, 28, 28), 1.5)
-			if p.x < 0:
-				continue
-		if rng.randf() < 0.22:
-			house_pitched(p, w, d, rot, WHITE, Color(0.62, 0.5, 0.35), false)
-		else:
-			house_flat(p, w, d, rng.randi_range(5, 7), rot, facade() if kind != "desert" else WHITE)
-		reserve(p, r + 1.0)
-		if rng.randf() < 0.55:
-			var cw := w + rng.randf_range(5, 8)
-			var cd := d + rng.randf_range(5, 8)
-			if rot:
-				var tt := cw
-				cw = cd
-				cd = tt
+		var r := arch_near(p, "town", pool, 14.0, 1.5)
+		if r > 0.0 and r < 6.5 and rng.randf() < 0.45:
+			var cw := r * 2.0 + rng.randf_range(4, 7)
 			var cp := p + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
-			if road_dist(cp) > maxf(cw, cd) * 0.5 + 1.5:
-				compound(cp, cw, cd, rng.randi_range(3, 5), rng.randi() % 4)
-				reserve(cp, maxf(cw, cd) * 0.6)
+			if road_dist(cp) > cw * 0.5 + 1.5:
+				compound(cp, cw, cw * rng.randf_range(0.85, 1.15), rng.randi_range(3, 5), rng.randi() % 4)
+				reserve(cp, cw * 0.6)
 	# karargah yakın binalar (kenarda büyük yapı)
+	var outer := arch_pool(["col"])
+	outer.append_array(["sarnic", "kuyu_evi", "at_ahiri", "saman_sundurma", "akaryakit_depo", "su_kulesi", "trafo", "atolye"])
 	for i in 6:
 		var p := rand_free(4.0, 50, Rect2(170, 30, 70, 70), 2.0)
 		if p.x > 0:
-			house_flat(p, rng.randf_range(5, 8), rng.randf_range(4, 6), 5, rng.randf() < 0.5)
-			reserve(p, 6)
+			arch_near(p, "outer", outer, 10.0, 2.0)
 		p = rand_free(4.0, 50, Rect2(30, 170, 70, 70), 2.0)
 		if p.x > 0:
-			house_flat(p, rng.randf_range(5, 8), rng.randf_range(4, 6), 5, rng.randf() < 0.5)
-			reserve(p, 6)
+			arch_near(p, "outer", outer, 10.0, 2.0)
 	# ileri üs noktaları (boş bırak)
 	G.fob_sites = [Vector3(186, 0, 160), Vector3(160, 0, 188), Vector3(196, 0, 128), Vector3(128, 0, 196),
 		Vector3(70, 0, 96), Vector3(96, 0, 70), Vector3(60, 0, 128), Vector3(128, 0, 60),
@@ -750,8 +745,9 @@ func _winter() -> void:
 	road([Vector3(8, 0, 128), Vector3(60, 0, 128), Vector3(128, 0, 128), Vector3(196, 0, 128), Vector3(250, 0, 128)], 6.0)
 	road([Vector3(128, 0, 8), Vector3(128, 0, 70), Vector3(128, 0, 128), Vector3(128, 0, 190), Vector3(128, 0, 250)], 6.0)
 	road([Vector3(80, 0, 100), Vector3(100, 0, 160), Vector3(160, 0, 176)], 5.0)
-	var wall_cols := [Color(0.88, 0.85, 0.72), Color(0.76, 0.82, 0.68), Color(0.9, 0.86, 0.66), Color(0.82, 0.78, 0.7), Color(0.86, 0.84, 0.8)]
-	var roof_cols := [Color(0.52, 0.18, 0.12), Color(0.22, 0.38, 0.26), Color(0.42, 0.3, 0.18), Color(0.4, 0.42, 0.45), Color(0.48, 0.35, 0.22)]
+	# kış arketipleri (şale, kütük ev, karlı ahır…) + kışa uygun köy yapıları
+	var wpool := village_pool()
+	wpool.append_array(arch_pool(["kir"], 12.0))
 	# yollar boyunca evler (bahçe çitli)
 	var placed := 0
 	for r in roads:
@@ -765,16 +761,18 @@ func _winter() -> void:
 			for sg in [-1.0, 1.0]:
 				if rng.randf() < 0.42:
 					continue
-				var w := rng.randf_range(6.0, 9.0)
-				var dd := rng.randf_range(5.0, 7.0)
+				var aid := deck("winter", wpool)
+				var asz := Arch.pick_size(aid, rng)
+				var w := asz.x
+				var dd := asz.y
 				var p = a + side * sg * (dd * 0.5 + 6.5)
 				p.x = snappedf(p.x, 0.5)
 				p.z = snappedf(p.z, 0.5)
 				if not free_at(p, maxf(w, dd) * 0.6 + 1.0, 2.0):
+					undeck("winter", aid)
 					continue
 				var rot := absf(d.x) > absf(d.z)
-				var wc: Color = wall_cols[rng.randi() % wall_cols.size()]
-				house_pitched(p, w, dd, not rot, wc, roof_cols[rng.randi() % roof_cols.size()], true)
+				bld(p, aid, _face_rot(p, -side * sg), asz)
 				reserve(p, maxf(w, dd) * 0.6 + 2.0)
 				placed += 1
 				# çit
@@ -869,30 +867,35 @@ func _ruins_and_walls(n_ruins: int, n_walls: int, col := STONE) -> void:
 			wall(p, p + ax * L, rng.randi_range(2, 3), rng.randf_range(0.0, 0.35), col)
 			reserve(p + ax * L * 0.5, L * 0.5 + 1.0)
 
-func _town(c: Vector3, radius: float, n: int, flat := true) -> void:
+func _town(c: Vector3, radius: float, n: int, flat := true, pool: Array = [], key := "town") -> void:
+	if pool.is_empty():
+		pool = village_pool()
+	var _f := flat
 	for i in n:
-		var w := rng.randf_range(5.5, 9.0)
-		var d := rng.randf_range(5.0, 7.0)
-		var r := maxf(w, d) * 0.75
-		var p := rand_free(r, 40, Rect2(c.x - radius, c.z - radius, radius * 2, radius * 2), 1.5)
+		var p := rand_free(4.0, 40, Rect2(c.x - radius, c.z - radius, radius * 2, radius * 2), 1.5)
 		if p.x < 0:
 			continue
-		var rot := rng.randf() < 0.5
-		if flat and rng.randf() > 0.2:
-			house_flat(p, w, d, rng.randi_range(5, 7), rot, facade() if kind != "desert" else WHITE)
-		else:
-			house_pitched(p, w, d, rot, facade(), roof_col(), kind == "winter")
-		reserve(p, r + 1.0)
-		if rng.randf() < 0.45:
-			var cw := w + rng.randf_range(5, 8)
-			var cd := d + rng.randf_range(5, 8)
-			if rot:
-				var tt := cw
-				cw = cd
-				cd = tt
-			if road_dist(p) > maxf(cw, cd) * 0.5 + 1.5:
-				compound(p, cw, cd, rng.randi_range(3, 5), rng.randi() % 4)
-				reserve(p, maxf(cw, cd) * 0.6)
+		var r := arch_near(p, key, pool, 8.0, 1.5)
+		if r > 0.0 and r < 6.0 and rng.randf() < 0.4:
+			var cw := r * 2.0 + rng.randf_range(4, 7)
+			if road_dist(p) > cw * 0.5 + 1.5:
+				compound(p, cw, cw * rng.randf_range(0.85, 1.15), rng.randi_range(3, 5), rng.randi() % 4)
+				reserve(p, cw * 0.6)
+
+# çiftlik: ev + ahır / ambar / kümes kümesi
+func _farm(c: Vector3, n: int) -> void:
+	var home := ["ciftlik_evi", "koy_evi", "yayla_evi", "tas_ev", "koy_konutu_tek", "kerpic_koy_evi"] if kind != "winter" else ["kis_koy_evi", "sale", "kutuk_ev", "kis_ambari"]
+	var p := rand_free(5.0, 40, Rect2(c.x - 10, c.z - 10, 20, 20), 2.0)
+	if p.x < 0:
+		return
+	var homes: Array = []
+	for h in home:
+		if Arch.ARCH.has(h) and String(Arch.ARCH[h]["b"]).contains({"green": "g", "winter": "w", "desert": "d"}.get(kind, "g")):
+			homes.append(h)
+	if place_arch(p, pick_arch(homes), 2.0) < 0.0:
+		return
+	for i in n:
+		arch_near(p + Vector3(rng.randf_range(-14, 14), 0, rng.randf_range(-14, 14)), "farm", farm_pool(), 9.0, 2.0)
 
 # ------------------------------------------------------------ Büyük Şehir (512 m)
 func _city() -> void:
@@ -947,77 +950,65 @@ func _city() -> void:
 	for q in rail:
 		reserve(q, 3.0)
 	P.railway(rail)
+	# tren istasyonu: rayın kuzeyinde, perona dönük
+	var stp := rail[8] - Vector3(0, 0, 12.5)
+	if free_at(stp, 6.0, 2.0) and not (T.has_water and T.ground_h(stp) < -0.2):
+		bld(stp, "istasyon", _face_rot(stp, Vector3(0, 0, 1)), Arch.pick_size("istasyon", rng))
+		reserve(stp, 12.0)
 	# sıra evler: merkez bloklarda sokak cephesine bitişik, iki katlı
 	for bx in range(1, 5):
 		for bz in range(1, 5):
 			var bc2 := Vector3(c0 + (bx + 0.5) * step, 0, c0 + (bz + 0.5) * step)
 			if T.has_water and T.ground_h(bc2) < -0.2:
 				continue
-			var z0 := bc2.z - step * 0.5 + 6.0
-			var x := bc2.x - step * 0.5 + 6.0
-			while x < bc2.x + step * 0.5 - 6.0:
-				var w2 := rng.randf_range(5.6, 7.0)
-				var hp2 := Vector3(x + w2 * 0.5, 0, z0)
-				if free_at(hp2, 3.2, 1.5) and not (T.has_water and T.ground_h(hp2) < -0.2):
-					house_pitched(hp2, w2, 6.2, false, facade(), roof_col(), false, 9)
-					reserve(hp2, 3.4)
-					if rng.randf() < 0.22:
-						P.roof_damage(hp2, w2, 6.2, 9 * BH, 0.0)
-				x += w2 + 0.25
-	# bloklar: her blokta 2-4 girilebilir bina, merkezde düz çatı, kenarda kırma çatı
+			var ze := bc2.z - step * 0.5 + 2.7
+			var x := bc2.x - step * 0.5 + 3.4
+			var xe := bc2.x + step * 0.5 - 3.4
+			var tries := 0
+			while x < xe - 4.0 and tries < 8:
+				tries += 1
+				var id := deck("front", FRONT)
+				var sz := Arch.pick_size(id, rng)
+				if x + sz.x > xe:
+					undeck("front", id)
+					id = ["berber", "kuruyemis", "carsi_evi", "sebzeci"][rng.randi() % 4]
+					sz = Arch.pick_size(id, rng)
+					if x + sz.x > xe:
+						break
+				var hp2 := Vector3(x + sz.x * 0.5, 0, ze + sz.y * 0.5)
+				if not (T.has_water and T.ground_h(hp2) < -0.2) and place_arch_row(hp2, id, sz, Vector3(0, 0, -1)):
+					x += sz.x + 0.3
+				else:
+					undeck("front", id)
+					x += 2.0
+	# bloklar: merkezde simge yapı + apartman / dükkân, kenarda ev / atölye / köy yapıları
 	var houses := 0
+	var cpool := arch_pool(["sehir", "kasaba"], 15.0)
+	var opool := arch_pool(["kasaba", "koy"], 14.0)
+	opool.append_array(["ciftlik_evi", "bag_evi", "traktor_garaji", "atolye", "garaj_sirasi", "marangoz", "oto_tamir", "trafo", "pompa_istasyonu"])
 	for bx in 6:
 		for bz in 6:
 			var bc := Vector3(c0 + (bx + 0.5) * step, 0, c0 + (bz + 0.5) * step)
 			if T.has_water and T.ground_h(bc) < -0.2:
 				continue
 			var centre := absf(bx - 2.5) < 1.6 and absf(bz - 2.5) < 1.6
-			var n := rng.randi_range(4, 6) if centre else rng.randi_range(3, 4)
+			var n := rng.randi_range(3, 5) if centre else rng.randi_range(3, 4)
+			if rng.randf() < (0.5 if centre else 0.25):
+				if arch_near(bc, "landmark", LANDMARK, 5.0, 1.5) > 0.0:
+					houses += 1
+					n -= 2
 			for k in n:
-				var w := rng.randf_range(6.0, 9.0)
-				var d := rng.randf_range(5.5, 7.5)
-				var r := maxf(w, d) * 0.6
-				var p := rand_free(r, 40, Rect2(bc.x - step * 0.5 + 3.5, bc.z - step * 0.5 + 3.5, step - 7, step - 7), 1.5)
+				var p := rand_free(3.5, 40, Rect2(bc.x - step * 0.5 + 3.5, bc.z - step * 0.5 + 3.5, step - 7, step - 7), 1.5)
 				if p.x < 0:
 					continue
-				var rot := rng.randf() < 0.5
-				var bt := rng.randf()
-				if centre and bt < 0.22 and free_at(p, 6.0, 1.5):
-					# apartman: 3-4 katlı geniş blok
-					house_flat(p, w + 3.0, d + 1.5, rng.randi_range(13, 16), rot, facade())
-				elif centre and bt < 0.42:
-					# dükkân: tente + tabela
-					house_flat(p, w, d, 7, rot, facade())
-					var fr := (d if not rot else w) * 0.5 + 0.1
-					P.awning(p + (Vector3(0, 0, fr) if not rot else Vector3(fr, 0, 0)), 0.0 if not rot else PI * 0.5, (w if not rot else d) * 0.8, [Color(0.7, 0.1, 0.08), Color(0.1, 0.35, 0.2), Color(0.12, 0.25, 0.55), Color(0.85, 0.6, 0.1)][rng.randi() % 4])
-				elif not centre and bt < 0.08 and free_at(p, 8.0, 2.0):
-					# kilise: uzun nef + taş kule + sivri
-					house_pitched(p, 8.0, 15.0, rot, Color(0.78, 0.74, 0.66), Color(0.32, 0.33, 0.34), false, 11)
-					var tp := p + (Vector3(0, 0, 9.5) if not rot else Vector3(9.5, 0, 0))
-					if free_at(tp, 2.5, 1.0):
-						house_flat(tp, 4.2, 4.2, 26, false, Color(0.76, 0.72, 0.64))
-						P.spire(tp + Vector3(0, 26 * BH + 0.5, 0), 6.0)
-						reserve(tp, 3.0)
-				elif not centre and bt < 0.18:
-					# ambar: büyük, ahşap kahve duvar, gri çatı
-					house_pitched(p, w + 3.0, d + 2.0, rot, Color(0.45, 0.32, 0.22), Color(0.4, 0.4, 0.42), false, 8)
-				elif not centre and bt < 0.22 and free_at(p, 7.0, 0.0) and road_dist(p) < 14.0:
-					P.gas_station(p, 0.0 if not rot else PI * 0.5)
-				elif centre and rng.randf() < 0.75:
-					house_flat(p, w, d, rng.randi_range(6, 8), rot, facade())
-				else:
-					house_pitched(p, w, d, rot, facade(), roof_col(), false)
-					if rng.randf() < 0.2:
-						P.roof_damage(p, w, d, 6 * BH, PI * 0.5 if rot else 0.0)
-					# bahçe çiti
-					if not centre and rng.randf() < 0.5:
-						var fw := (d if rot else w) * 0.5 + 2.2
-						var fd := (w if rot else d) * 0.5 + 2.2
-						var fz := p.z + fd
+				var r := arch_near(p, "centre" if centre else "outer", cpool if centre else opool, 5.0, 1.5)
+				if r > 0.0:
+					houses += 1
+					# bahçe çiti (kenar mahalle)
+					if not centre and rng.randf() < 0.3:
+						var fz := p.z + r + 1.2
 						if free_at(Vector3(p.x, 0, fz), 0.5, 1.0):
-							P.picket(Vector3(p.x - fw, 0, fz), Vector3(p.x + fw, 0, fz))
-				reserve(p, r + 1.0)
-				houses += 1
+							P.picket(Vector3(p.x - r, 0, fz), Vector3(p.x + r, 0, fz))
 			# bahçe duvarı / çalılar
 			for k in 3:
 				var q := rand_free(0.8, 10, Rect2(bc.x - step * 0.5 + 3, bc.z - step * 0.5 + 3, step - 6, step - 6), 1.5)
@@ -1026,13 +1017,17 @@ func _city() -> void:
 	# dış mahalleler: köyler + çiftlik yıkıntıları
 	for tc in [Vector3(S * 0.18, 0, S * 0.78), Vector3(S * 0.82, 0, S * 0.22), Vector3(S * 0.15, 0, S * 0.15 + 70), Vector3(S * 0.85, 0, S * 0.85 - 70)]:
 		_town(tc, 26, 7, false)
-	# sanayi bölgesi: büyük duvarlı avlular
-	for k in 5:
-		var ip := rand_free(10.0, 40, Rect2(S * 0.62, S * 0.05, S * 0.3, S * 0.2), 3.0)
-		if ip.x > 0:
-			compound(ip, rng.randf_range(16, 24), rng.randf_range(14, 20), 5, rng.randi() % 4, Color(0.7, 0.68, 0.64))
-			house_flat(ip, rng.randf_range(8, 11), rng.randf_range(6, 8), 8, rng.randf() < 0.5, Color(0.76, 0.74, 0.7))
-			reserve(ip, 14.0)
+	# sanayi bölgesi: depo, fabrika, silo, tank; bir kısmı duvarlı avlu içinde
+	var ind := arch_pool(["sanayi"])
+	for k in 12:
+		var ip := rand_free(7.0, 40, Rect2(S * 0.6, S * 0.04, S * 0.34, S * 0.26), 3.0)
+		if ip.x < 0:
+			continue
+		var rot := _face_rot(ip)
+		var r := arch_near(ip, "ind", ind, 4.0, 3.0)
+		if r > 0.0 and r < 11.0 and rng.randf() < 0.45 and road_dist(ip) > r + 6.0:
+			compound(ip, r * 2.0 + 6.0, r * 2.0 + 5.0, 5, [2, 1, 0, 3][rot], Color(0.7, 0.68, 0.64))
+			reserve(ip, r + 4.0)
 	for i in 50:
 		var p := rand_free(3.0, 30, R, 3.0)
 		if p.x > 0:
@@ -1210,6 +1205,9 @@ func _green_valley() -> void:
 			reserve(p, 4.0)
 	_town(Vector3(176, 0, 120), 16, 4, false)
 	_town(Vector3(70, 0, 130), 16, 4, false)
+	# çiftlikler (kır arketipleri)
+	_farm(Vector3(200, 0, 60), 2)
+	_farm(Vector3(56, 0, 196), 2)
 	# ağaçlıklar
 	for g in 22:
 		var c := rand_free(5.0, 40, Rect2(8, 8, 240, 240), 2.0)
@@ -1326,6 +1324,11 @@ func _run(op: Dictionary):
 			_x_house_flat(v3(op["p"]), float(op["w"]), float(op["d"]), int(op["rows"]), bool(op["r90"]), col(op["col"]))
 		"house_pitched":
 			_x_house_pitched(v3(op["p"]), float(op["w"]), float(op["d"]), bool(op["r90"]), col(op["col"]), col(op["roof"]), bool(op["snow"]), int(op["rows"]))
+		"bld":
+			var t0 := Time.get_ticks_usec()
+			Arch.new(self).build(v3(op["p"]), String(op["a"]), int(op.get("r", 0)), float(op.get("w", 0.0)), float(op.get("d", 0.0)), bool(op.get("dmg", false)))
+			arch_us += Time.get_ticks_usec() - t0
+			arch_n += 1
 		"wall":
 			_x_wall(v3(op["a"]), v3(op["b"]), int(op["rows"]), float(op["ruin"]), col(op["col"]))
 		"ruin":
@@ -1390,6 +1393,122 @@ func house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, cl :=
 
 func house_pitched(c: Vector3, w: float, d: float, rot90: bool, wall_col: Color, roof_col: Color, snow: bool, rows := 6) -> void:
 	exec({"t": "house_pitched", "p": vv(c), "w": w, "d": d, "r90": rot90, "col": cc(wall_col), "roof": cc(roof_col), "snow": snow, "rows": rows})
+
+# arketip bina (scripts/arch.gd): r = 0..3 (çeyrek tur), ön cephe yerel +z
+func bld(c: Vector3, id: String, rot: int, sz := Vector2.ZERO, dmg := false) -> void:
+	var op := {"t": "bld", "p": vv(c), "a": id, "r": rot, "w": snappedf(sz.x, 0.01), "d": snappedf(sz.y, 0.01)}
+	if dmg:
+		op["dmg"] = true
+	exec(op)
+
+# arketip yerleştir: boyut seç, ön cephe en yakın yola (ya da face yönüne) baksın; yer doluysa -1
+func place_arch(p: Vector3, id: String, road_m := 1.5, face := Vector3.ZERO) -> float:
+	var sz := Arch.pick_size(id, rng)
+	var a: Dictionary = Arch.ARCH[id]
+	var r := maxf(sz.x, sz.y) * 0.6 + float(a.get("ext", 0.0)) * 0.6
+	if not free_at(p, r, road_m):
+		return -1.0
+	# şehir / kasaba savaş izi: bir kısım binanın çatısı delik
+	var dmg := map_id == "big_city" and rng.randf() < 0.14 and String(a["rf"]) in ["gable", "hip", "flat"]
+	bld(p, id, _face_rot(p, face), sz, dmg)
+	reserve(p, r + 1.0)
+	return r
+
+func _face_rot(p: Vector3, face := Vector3.ZERO) -> int:
+	var d := face
+	if d == Vector3.ZERO:
+		var best := 1e9
+		for rd in roads:
+			var pts: PackedVector3Array = rd
+			for i in pts.size() - 1:
+				var q := Geometry3D.get_closest_point_to_segment(p, pts[i], pts[i + 1])
+				var l := Vector2(q.x - p.x, q.z - p.z).length()
+				if l < best:
+					best = l
+					d = q - p
+	if d == Vector3.ZERO:
+		return rng.randi() % 4
+	var bk := 0
+	var bd := -2.0
+	for k in 4:
+		var f := Vector3(sin(k * PI * 0.5), 0, cos(k * PI * 0.5))
+		var dt := f.dot(Vector3(d.x, 0, d.z).normalized())
+		if dt > bd:
+			bd = dt
+			bk = k
+	return bk
+
+# biyoma uygun arketip havuzu; maxw: cephe genişliği üst sınırı (dar parsel)
+func arch_pool(cats: Array, maxw := 99.0) -> Array:
+	var out: Array = []
+	for id in Arch.ids_where(kind, cats):
+		if float(Arch.ARCH[id]["w"][0]) <= maxw:
+			out.append(id)
+	return out
+
+func pick_arch(pool: Array) -> String:
+	return String(pool[rng.randi() % pool.size()]) if not pool.is_empty() else "tas_ev"
+
+# deste: havuz karıştırılır, sırayla çekilir (harita başına her tür en az bir kez çıkar)
+var _decks := {}
+func deck(key: String, pool: Array) -> String:
+	if not _decks.has(key) or (_decks[key] as Array).is_empty():
+		var d := pool.duplicate()
+		for i in range(d.size() - 1, 0, -1):
+			var j := rng.randi() % (i + 1)
+			var t = d[i]
+			d[i] = d[j]
+			d[j] = t
+		_decks[key] = d
+	if (_decks[key] as Array).is_empty():
+		return "tas_ev"
+	return String((_decks[key] as Array).pop_back())
+
+func undeck(key: String, id: String) -> void:
+	if _decks.has(key):
+		(_decks[key] as Array).push_front(id)
+
+# desteden çekip p çevresine yerleştir; sığmazsa desteye geri koy, yakında başka yer dene
+func arch_near(p: Vector3, key: String, pool: Array, area := 12.0, road_m := 1.5, face := Vector3.ZERO) -> float:
+	for t in 5:
+		var id := deck(key, pool)
+		var q := p
+		if t > 0:
+			q = rand_free(3.0, 25, Rect2(p.x - area, p.z - area, area * 2.0, area * 2.0), road_m)
+			if q.x < 0:
+				undeck(key, id)
+				continue
+		var r := place_arch(q, id, road_m, face)
+		if r > 0.0:
+			return r
+		undeck(key, id)
+	return -1.0
+
+# sokak cephesi: bitişik nizam (sıkı yarıçap), ön cephe face yönüne
+func place_arch_row(p: Vector3, id: String, sz: Vector2, face: Vector3) -> bool:
+	if not free_at(p, minf(sz.x, sz.y) * 0.5, 1.2):
+		return false
+	bld(p, id, _face_rot(p, face), sz)
+	reserve(p, minf(sz.x, sz.y) * 0.5 + 0.1)
+	return true
+
+# biyoma göre köy / kasaba havuzu
+func village_pool() -> Array:
+	match kind:
+		"desert":
+			var p := arch_pool(["col"])
+			p.append_array(["bakkal", "kahvehane", "kasap", "firin", "koy_camii", "muhtarlik", "kuyu_evi", "at_ahiri", "demirci", "kubbeli_cami", "saglik_ocagi", "jandarma"])
+			return p
+		"winter":
+			var p := arch_pool(["kis"])
+			p.append_array(["tas_ev", "koy_evi", "cumbali_ev", "lojman", "muhtarlik", "kahvehane", "firin", "koy_kilisesi", "ciftlik_evi", "yayla_evi", "kutuk_ev", "koy_konutu_tek", "jandarma"])
+			return p
+	var g := arch_pool(["koy"])
+	g.append_array(["ciftlik_evi", "kuyu_evi", "bag_evi", "kumes", "traktor_garaji"])
+	return g
+
+func farm_pool() -> Array:
+	return arch_pool(["kir"])
 
 func wall(a: Vector3, b: Vector3, rows: int, ruin := 0.0, cl := STONE) -> void:
 	exec({"t": "wall", "a": vv(a), "b": vv(b), "rows": rows, "ruin": ruin, "col": cc(cl)})

@@ -112,6 +112,8 @@ func _ready() -> void:
 		_run_showroom()
 	elif shot_dir != "" and shot_scene.begins_with("structtest"):
 		_run_struct_test()
+	elif shot_dir != "" and shot_scene.begins_with("archtest"):
+		_run_arch_test()
 	elif shot_dir != "" and shot_scene == "test":
 		_run_test()
 	elif shot_dir != "":
@@ -2697,4 +2699,63 @@ func _run_scen_test() -> void:
 		await get_tree().process_frame
 	await _shot("scen_02_play")
 	print("SCENTEST over=%s winner=%d t=%d" % [G.game_over, G.winner, int(G.time)])
+	get_tree().quit()
+
+# bina arketipleri vitrini: --scene=archtest[_desert|_winter][:kimlik1,kimlik2]
+# arketipler ekran eksenine hizalı ızgarada, ön cephe kameraya dönük; 3x2'lik gruplar halinde çekilir
+func _run_arch_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var bio := "green"
+	for b in ["desert", "winter"]:
+		if shot_scene.contains(b):
+			bio = b
+	var ids: Array = Arch.ARCH.keys() if bio == "green" else Arch.ids_where(bio, [])
+	if shot_scene.contains(":"):
+		ids = Array(shot_scene.substr(shot_scene.find(":") + 1).split(","))
+	var S := 512.0
+	var right := Vector3(1, 0, -1).normalized()
+	var down := Vector3(1, 0, 1).normalized()
+	var c := Vector3(14, 0, 262)
+	var cols := 12
+	var ops: Array = []
+	var pos: Array = []
+	for i in ids.size():
+		var p := c + right * ((i % cols) * 30.0 + 16.0) + down * ((i / cols) * 32.0 + 16.0)
+		pos.append(p)
+		ops.append({"t": "bld", "p": MapGen.vv(p), "a": ids[i], "r": 0, "s": 1000 + i})
+	G.spectate = true
+	var t0 := Time.get_ticks_msec()
+	build_world("custom", 4242, {"biome": bio, "size": S, "ops": ops, "hq": [[S - 16, S - 16], [16, 16]], "fobs": []})
+	print("ARCH n=%d build_ms=%d houses=%d blocks=%d" % [ids.size(), Time.get_ticks_msec() - t0, G.blocks.houses.size(), G.blocks.bpos.size()])
+	for u in G.units.duplicate():
+		if u is Soldier or u is Vehicle:
+			u.queue_free()
+	G.running = false
+	G.cam.input_enabled = false
+	await get_tree().process_frame
+	var g := 0
+	var i := 0
+	while i < ids.size():
+		var names: Array = []
+		var ctr := Vector3.ZERO
+		var n := 0
+		for dr in 2:
+			for dc in 3:
+				var k := i + dr * cols + dc
+				if (i % cols) + dc < cols and k < ids.size():
+					names.append("%s(%s)" % [ids[k], Arch.name_of(ids[k])])
+					ctr += pos[k]
+					n += 1
+		G.cam.jump_to(ctr / maxf(n, 1), true)
+		G.cam.size = 46.0
+		G.cam.target_size = 46.0
+		await _wait(0.4)
+		await _shot("arch_%s_%02d" % [bio, g])
+		print("ARCHSHOT %s_%02d %s" % [bio, g, " ".join(names)])
+		g += 1
+		i += 3
+		if i % cols == 0:
+			i += cols
+	print("ARCHTEST RESULT fails=0")
 	get_tree().quit()

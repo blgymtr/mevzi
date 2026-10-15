@@ -59,6 +59,11 @@ static func masonry() -> Material:
 		m.set_shader_parameter("concrete_nrm", _mt("concrete_wall_005", "normal"))
 		m.set_shader_parameter("streak_tex", _mt("rusty_painted_metal", "albedo"))
 		m.set_shader_parameter("chip_alb", _mt("rough_plaster_brick", "albedo"))
+		m.set_shader_parameter("wood_alb", _mt("brown_planks_05", "albedo"))
+		m.set_shader_parameter("metal_alb", _mt("corrugated_iron_02", "albedo"))
+		m.set_shader_parameter("panel_alb", _mt("precast_concrete_wall", "albedo"))
+		m.set_shader_parameter("rough_alb", _mt("white_plaster_rough_02", "albedo"))
+		m.set_shader_parameter("steel_alb", _mt("metal_plate_02", "albedo"))
 		var nt := NoiseTexture2D.new()
 		nt.width = 256
 		nt.height = 256
@@ -91,6 +96,49 @@ static func roof(snow: bool) -> Material:
 		m.set_shader_parameter("snow", 1.0 if snow else 0.0)
 		_c[key] = m
 	return _c[key]
+
+# çatı (doku seçmeli): kil / arduvaz / kiremit / sac / paslı sac / beton / kurşun / bakır / kerpiç / ahşap
+const ROOF_TEX := {"clay": ["clay_roof_tiles_02", 0.0, 0.85, 1.0], "slate": ["grey_roof_tiles", 0.0, 0.8, 1.1], "tile": ["roof_tiles_14", 0.0, 0.8, 1.15],
+	"metal": ["corrugated_iron_02", 1.0, 0.45, 1.5], "rust": ["worn_corrugated_iron", 0.0, 0.45, 1.0], "conc": ["concrete_wall_005", 1.0, 0.35, 0.75],
+	"lead": ["metal_plate_02", 1.0, 0.6, 1.6], "copper": ["green_metal_rust", 0.0, 0.5, 1.0], "mud": ["white_plaster_rough_02", 1.0, 0.5, 1.0], "wood": ["brown_planks_05", 0.7, 0.6, 1.0]}
+
+static func roof2(tex: String, snow: bool) -> Material:
+	if not ROOF_TEX.has(tex):
+		return roof(snow)
+	var key := "roof2_%s_%s" % [tex, snow]
+	if not _c.has(key):
+		var m: ShaderMaterial = (roof(snow) as ShaderMaterial).duplicate()
+		var t: Array = ROOF_TEX[tex]
+		m.set_shader_parameter("tile_alb", _mt(t[0], "albedo"))
+		m.set_shader_parameter("tile_nrm", _mt(t[0], "normal"))
+		m.set_shader_parameter("mono", t[1])
+		m.set_shader_parameter("gain", t[3])
+		m.set_shader_parameter("scale", t[2])
+		_c[key] = m
+	return _c[key]
+
+# pencere camı: koyu, hafif yansımalı
+static func glass() -> StandardMaterial3D:
+	if not _c.has("glass"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		m.roughness = 0.12
+		m.metallic = 0.35
+		m.metallic_specular = 0.8
+		_c["glass"] = m
+	return _c["glass"]
+
+# sRGB tepe rengi + hafif metalik (klima, depo, korkuluk)
+static func metal_s() -> StandardMaterial3D:
+	if not _c.has("metal_s"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		m.roughness = 0.55
+		m.metallic = 0.25
+		_c["metal_s"] = m
+	return _c["metal_s"]
 
 static func stone() -> StandardMaterial3D:
 	# taş/sıva bloklar: dünya üç düzlemli hafif gürültü dokusu
