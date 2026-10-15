@@ -110,6 +110,8 @@ func _ready() -> void:
 		_run_gallery()
 	elif shot_dir != "" and shot_scene.begins_with("show"):
 		_run_showroom()
+	elif shot_dir != "" and shot_scene.begins_with("structtest"):
+		_run_struct_test()
 	elif shot_dir != "" and shot_scene == "test":
 		_run_test()
 	elif shot_dir != "":
@@ -2456,6 +2458,66 @@ func _run_showroom() -> void:
 	G.cam.target_size = 22.0
 	await _wait(0.6)
 	await _shot("show_" + mid + "_minzoom")
+	get_tree().quit()
+
+# yapı vitrini: --scene=structtest[:tip1,tip2]  her yapının ABD ve Rus modeli (yakın + oyun yakınlığı) ve yarım inşaat
+func _run_struct_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var types: Array = ["factory", "hq", "barracks", "fob", "helipad", "hospital"]
+	if shot_scene.contains(":"):
+		types = Array(shot_scene.split(":")[1].split(","))
+	G.spectate = true
+	build_world("green_valley", 4242)
+	for u in G.units.duplicate():
+		if u is Soldier or u is Vehicle:
+			u.queue_free()
+	await get_tree().process_frame
+	var c := Vector3(150, 0, 150)
+	G.props.clear_area(c + Vector3(types.size() * 11.0, 0, 0), types.size() * 13.0 + 20.0)
+	var bs: Array = []
+	for i in types.size():
+		for t in 2:
+			var b := place_building(t, types[i], c + Vector3(i * 24.0, 0, -11.0 + t * 24.0), 0.0)
+			b.done = true
+			b.progress = 1.0
+			b.hp = b.max_hp
+			b._apply_construct_look()
+			bs.append(b)
+	# yarım inşaat (kesme shader'ı + iskele Blender modeliyle)
+	var ub := place_building(0, types[0], c + Vector3(-28, 0, 2), PI * 0.25)
+	ub.progress = 0.5
+	ub._apply_construct_look()
+	print("STRUCT glb=%s h=%.1f scaffold=%s" % [ub.glb_model, ub.model_h, ub.scaffold != null])
+	# denetim: her yapının iki tarafı da Blender modeliyle kuruldu, yarım inşaatta iskele var
+	var fails := 0
+	for b in bs:
+		if not b.glb_model:
+			print("STRUCT no-glb %s team=%d" % [b.btype, b.team])
+			fails += 1
+	if not ub.glb_model or ub.scaffold == null or ub.model_h <= 0.5:
+		fails += 1
+	G.running = false
+	G.cam.input_enabled = false
+	for i in types.size():
+		for t in 2:
+			var b: Building = bs[i * 2 + t]
+			G.cam.jump_to(b.position + Vector3(0, 0, 0.5), true)
+			G.cam.size = maxf(b.size.x, b.size.y) * 1.25 + 4.0
+			G.cam.target_size = G.cam.size
+			await _wait(0.5)
+			await _shot("struct_%s_%s" % [types[i], ["usa", "rus"][t]])
+		G.cam.jump_to(c + Vector3(i * 24.0, 0, 1.0), true)
+		G.cam.size = 40.0
+		G.cam.target_size = 40.0
+		await _wait(0.5)
+		await _shot("struct_%s_normal" % types[i])
+	G.cam.jump_to(ub.position, true)
+	G.cam.size = 22.0
+	G.cam.target_size = 22.0
+	await _wait(0.5)
+	await _shot("struct_construct")
+	print("STRUCTTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_gallery() -> void:
