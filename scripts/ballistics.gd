@@ -23,8 +23,6 @@ class Proj:
 var projs: Array = []
 var _gmesh: Mesh
 var _rmesh: Mesh
-var _mortar_m: Mesh
-var _arty_m: Mesh
 var _apfsds_m: Mesh
 var _he_m: Mesh
 var _atgm_m: Mesh
@@ -34,6 +32,7 @@ var _hydra_m: Mesh
 var _sam_m: Mesh
 var _flame_m: Mesh
 var _flare_m: Mesh
+var _blur_m: Mesh       # topçu/havan mermisinin uçuş izi (hareket bulanıklığı)
 
 func _ready() -> void:
 	# ileri -Z: look_at(hız) ile uçuş yönüne döner
@@ -54,23 +53,6 @@ func _ready() -> void:
 		var a := k * PI * 0.5
 		rb.box(Vector3(cos(a) * 0.04, sin(a) * 0.04, 0.3), Vector3(0.005 + absf(cos(a)) * 0.06, 0.005 + absf(sin(a)) * 0.06, 0.08), Color(0.25, 0.25, 0.24))
 	_rmesh = rb.commit(Mats.vc())
-	# havan mermisi: damla gövde + kuyruk borusu + kanatçıklar
-	var mo := MB.new()
-	mo.cyl(Vector3(0, 0, -0.18), 0.0, 0.04, 0.1, 10, Color(0.3, 0.32, 0.25), X)
-	mo.cyl(Vector3(0, 0, -0.07), 0.04, 0.04, 0.12, 10, Color(0.3, 0.32, 0.25), X)
-	mo.cyl(Vector3(0, 0, 0.05), 0.04, 0.015, 0.12, 10, Color(0.3, 0.32, 0.25), X)
-	mo.cyl(Vector3(0, 0, 0.16), 0.012, 0.012, 0.12, 6, Color(0.25, 0.25, 0.25), X)
-	for k in 6:
-		var a := k * TAU / 6.0
-		mo.box(Vector3(cos(a) * 0.03, sin(a) * 0.03, 0.19), Vector3(0.004 + absf(cos(a)) * 0.05, 0.004 + absf(sin(a)) * 0.05, 0.07), Color(0.25, 0.25, 0.25))
-	_mortar_m = mo.commit(Mats.vc())
-	# topçu mermisi (155): sivri burun (tapa) + gövde + sevk bileziği
-	var ar := MB.new()
-	ar.cyl(Vector3(0, 0, -0.38), 0.0, 0.03, 0.08, 10, Color(0.65, 0.55, 0.25), X)
-	ar.cyl(Vector3(0, 0, -0.25), 0.03, 0.078, 0.2, 12, Color(0.32, 0.34, 0.26), X)
-	ar.cyl(Vector3(0, 0, 0.05), 0.078, 0.078, 0.42, 12, Color(0.32, 0.34, 0.26), X)
-	ar.cyl(Vector3(0, 0, 0.2), 0.082, 0.082, 0.04, 12, Color(0.6, 0.38, 0.2), X)
-	_arty_m = ar.commit(Mats.vc())
 	# tank zırh delici ok (APFSDS): uzun ince çubuk + kuyruk kanatçıkları
 	var ap := MB.new()
 	ap.cyl(Vector3(0, 0, -0.42), 0.0, 0.014, 0.08, 6, Color(0.55, 0.55, 0.55), X)
@@ -95,6 +77,28 @@ func _ready() -> void:
 		at.box(Vector3(cos(a) * 0.07, sin(a) * 0.07, 0.32), Vector3(0.004 + absf(cos(a)) * 0.08, 0.004 + absf(sin(a)) * 0.08, 0.08), Color(0.3, 0.32, 0.26))
 	_atgm_m = at.commit(Mats.vc())
 	_air_models(X)
+	_blur_m = _make_blur()
+
+# topçu/havan mermisi uçuşta: çapraz iki şerit, baş (z=0) koyu ve opak, kuyruk (z=1) saydam; boyu
+# hıza göre ölçeklenir. İleri -Z (look_at), iz +Z yönünde geride kalır.
+func _make_blur() -> Mesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var head := Color(0.14, 0.14, 0.13, 0.95)
+	var tail := Color(0.55, 0.55, 0.52, 0.0)
+	for ax in [Vector3(0.07, 0, 0), Vector3(0, 0.07, 0)]:
+		var back := Vector3(0, 0, 1)
+		for v in [[-ax, head], [ax, head], [ax + back, tail], [-ax, head], [ax + back, tail], [-ax + back, tail]]:
+			st.set_color(v[1])
+			st.add_vertex(v[0])
+	var m := st.commit()
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.vertex_color_use_as_albedo = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.surface_set_material(0, mat)
+	return m
 
 # Hava füzeleri gerçek boyutta: Hellfire (AGM-114), Vikhr (9K121), Hydra-70/S-8 roket,
 # karadan havaya füze (Stinger/Igla tipi; büyük olanlar Buk/Tor ölçeğinde büyütülür)
@@ -294,8 +298,12 @@ func flare(from: Vector3, vel: Vector3) -> void:
 	p.node.position = from
 	projs.append(p)
 
+# Dolaylı atış yörüngesi gerçekçi: mermi yüksek bir yayla (havan çok dik) ekrandan çıkar, hedefe dik iner.
+# Eskiden ~7 m tepeli, 2,5 sn'lik alçak yay çiziyordu — mancınıktan atılan taş gibi görünüyordu.
+# Uçuşta top/taş gibi değil, hız yönünde uzayan hareket bulanıklığı izi olarak çizilir (gerçekte mermi
+# gözle seçilmez); roketatar roketi görünür kalır (motor alevi + duman izi).
 func mortar(from: Vector3, to: Vector3, team: int, src) -> void:
-	_lob(from, to, team, src, "mortar", 2.2 + from.distance_to(to) * 0.02)
+	_lob(from, to, team, src, "mortar", _flight_t(from.distance_to(to), 1.3, 45.0, 140.0))
 
 func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
 	_lob(from, to, team, src, "rkt", 3.2 + from.distance_to(to) * 0.018)
@@ -306,7 +314,12 @@ func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
 	p.node.position = from
 
 func artillery(from: Vector3, to: Vector3, team: int, src) -> void:
-	_lob(from, to, team, src, "arty", 2.5 + from.distance_to(to) * 0.025)
+	_lob(from, to, team, src, "arty", _flight_t(from.distance_to(to), 0.7, 60.0, 180.0))
+
+# tepe yüksekliğinden uçuş süresi: H = mesafe × k (sınırlı), T = 2·√(2H/g)
+func _flight_t(dist: float, k: float, hmin: float, hmax: float) -> float:
+	var H := clampf(dist * k, hmin, hmax)
+	return 2.0 * sqrt(2.0 * H / 9.8)
 
 func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float) -> void:
 	var p := Proj.new()
@@ -318,7 +331,9 @@ func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float) ->
 	p.src = src
 	p.life = T + 0.5
 	p.aim = to
-	p.node = _node(_mortar_m if kind == "mortar" else _arty_m)
+	p.node = _node(_blur_m if kind != "rkt" else _rmesh)
+	if kind != "rkt":
+		(p.node as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.node.position = from
 	projs.append(p)
 
@@ -345,6 +360,9 @@ func _step_lob(p: Proj, dt: float) -> bool:
 	p.node.position = np
 	if p.vel.length() > 0.1:
 		p.node.look_at(np + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
+		if p.kind != "rkt":
+			# hareket bulanıklığı: iz boyu ≈ 1/25 sn'de alınan yol (tepede kısalır, inişte uzar)
+			p.node.scale = Vector3(1.0, 1.0, clampf(p.vel.length() * 0.04, 0.6, 6.0))
 	if hit or p.t > p.life:
 		var at := Vector3(np.x, maxf(np.y, 0.0), np.z)
 		if p.kind == "mortar":

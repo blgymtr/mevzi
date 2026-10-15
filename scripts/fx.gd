@@ -22,6 +22,7 @@ var emitters: Array = []    # sürekli kaynaklar: [konum, bitiş, tür, güç, b
 var rng := RandomNumberGenerator.new()
 var puff_tex: ImageTexture
 var dot_tex: ImageTexture
+var debris_tex: ImageTexture
 var crater_tex: ImageTexture
 var scorch_tex: ImageTexture
 var winter := false
@@ -31,6 +32,7 @@ func _ready() -> void:
 	rng.randomize()
 	puff_tex = _make_puff()
 	dot_tex = _make_dot()
+	debris_tex = _make_debris()
 	crater_tex = _make_crater()
 	scorch_tex = _make_scorch()
 	var base: Shader = load("res://shaders/puff.gdshader")
@@ -57,7 +59,7 @@ func _ready() -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var mat := ShaderMaterial.new()
 		mat.shader = add_sh if k == P_SPARK else base
-		mat.set_shader_parameter("tex", dot_tex if k == P_SPARK else puff_tex)
+		mat.set_shader_parameter("tex", dot_tex if k == P_SPARK else (debris_tex if k == P_DEBRIS else puff_tex))
 		if k == P_FLIP and has_flip:
 			mat.set_shader_parameter("tex", load("res://assets/fx/expl_flip.png"))
 		elif k == P_FLIPS and has_flip_smoke:
@@ -138,6 +140,48 @@ func _make_dot() -> ImageTexture:
 			var d := sqrt(u * u + w * w)
 			var a := clampf(1.0 - d, 0.0, 1.0)
 			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+# moloz parçası atlası (2x2): her hücrede düzensiz, köşeli bir kırık parça — 5-8 köşeli çokgen, gelişigüzel
+# uzatılmış; yüzeyler (iç noktadan üçgen yelpaze) ayrı ayrı gölgeli → yontulmuş taş/toprak kesiği görünümü.
+# Eskiden yuvarlak, küre gibi ışıklı "puf" dokusu kullanılıyordu: parçalar taş atılmış top gibi görünüyordu.
+func _make_debris() -> ImageTexture:
+	var S := 64
+	var img := Image.create(S * 2, S * 2, true, Image.FORMAT_RGBA8)
+	var r := RandomNumberGenerator.new()
+	r.seed = 4711
+	for v in 4:
+		var n := r.randi_range(5, 8)
+		var stretch := r.randf_range(0.45, 0.95)
+		var rot := r.randf() * TAU
+		var poly: PackedVector2Array = []
+		for k in n:
+			var a := TAU * (k + r.randf_range(-0.3, 0.3)) / n
+			var rad := r.randf_range(0.55, 0.95)
+			var q := Vector2(cos(a) * rad, sin(a) * rad * stretch).rotated(rot)
+			poly.append(q)
+		var c0 := Vector2(r.randf_range(-0.15, 0.15), r.randf_range(-0.15, 0.15))
+		var shade: Array = []
+		for k in n:
+			shade.append(r.randf_range(0.3, 1.0))
+		var ox := (v % 2) * S
+		var oy := (v / 2) * S
+		for y in S:
+			for x in S:
+				var p := Vector2((x + 0.5) / S * 2.0 - 1.0, (y + 0.5) / S * 2.0 - 1.0)
+				if not Geometry2D.is_point_in_polygon(p, poly):
+					img.set_pixel(ox + x, oy + y, Color(0, 0, 0, 0))
+					continue
+				# hangi yüzey (merkezden açıya göre yelpaze dilimi)
+				var ang := fposmod((p - c0).angle() - (poly[0] - c0).angle(), TAU)
+				var f := 0
+				for k in n:
+					var a0 := fposmod((poly[k] - c0).angle() - (poly[0] - c0).angle(), TAU)
+					if ang >= a0:
+						f = k
+				var lum: float = shade[f] * (0.85 + 0.15 * r.randf())
+				img.set_pixel(ox + x, oy + y, Color(lum, lum, lum, 1.0))
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
@@ -346,12 +390,13 @@ func explosion(p: Vector3, size: float, kind := "") -> void:
 	for i in int(22 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1.5), rng.randf_range(-1, 1)).normalized()
 		emit(P_SPARK, p + Vector3(0, 0.3, 0), d * rng.randf_range(8.0, 22.0) * sqrt(s), rng.randf_range(0.4, 1.1), 0.09, 0.07, 9.8, 1.2, Color(1.0, 0.7, 0.35, 1))
-	# moloz parçaları
+	# moloz parçaları: köşeli kırık parçalar (debris_tex), çoğu küçük, azı iri; dönerek uçar
 	var dc := _sand().darkened(0.25)
 	for i in int(14 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.6, 1.8), rng.randf_range(-1, 1)).normalized()
 		var c := dc if rng.randf() < 0.6 else Color(0.15, 0.13, 0.12)
-		emit(P_DEBRIS, p + Vector3(0, 0.2, 0), d * rng.randf_range(4.0, 13.0) * sqrt(s), rng.randf_range(1.8, 3.2), rng.randf_range(0.1, 0.24) * sqrt(s), rng.randf_range(0.1, 0.24) * sqrt(s), 13.0, 0.25, c, 0.0, rng.randf_range(-6, 6))
+		var sz := (rng.randf_range(0.14, 0.24) if rng.randf() < 0.12 else rng.randf_range(0.04, 0.11)) * sqrt(s)
+		emit(P_DEBRIS, p + Vector3(0, 0.2, 0), d * rng.randf_range(4.0, 13.0) * sqrt(s), rng.randf_range(1.6, 2.8), sz, sz, 13.0, 0.25, c, 0.0, rng.randf_range(-9, 9))
 
 # toprak tacı: patlamadan yukarı/dışa fırlayan dikenli toprak çizgileri (mermi/top isabeti, havan)
 func dirt_crown(p: Vector3, s: float) -> void:

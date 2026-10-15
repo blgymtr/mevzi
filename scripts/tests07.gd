@@ -26,6 +26,8 @@ func run(scene: String) -> void:
 			await para_test()
 		"para2test":
 			await para2_test()
+		"ammotest":
+			await ammo_test()
 		"tactest":
 			await tac_test()
 		"largetest":
@@ -619,6 +621,50 @@ func para2_test() -> void:
 	await m._shot("para2_10")
 	print("P2 elapsed=%.1f" % el)
 	print("PARA2TEST RESULT fails=%d" % fails)
+
+# dolaylı atış görünümü: topçu/havan mermisi yüksek yayla çıkar (tepe ≥ 45 m), uçuşta top değil hareket
+# bulanıklığı izi; isabette moloz köşeli parça dokusuyla. Eskiden ~7 m tepeli alçak yay: taş atar gibiydi.
+func ammo_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true)
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var to := G.grid.nearest_free(c + Vector3(0, 0, -60), Grid.M_HEAVY)
+	G.bal.artillery(c + Vector3(0, 1.5, 0), to, 0, null)
+	G.bal.mortar(c + Vector3(4, 1.0, 0), to + Vector3(6, 0, 0), 0, null)
+	var arty: Ballistics.Proj = null
+	var mor: Ballistics.Proj = null
+	for p in G.bal.projs:
+		if p.kind == "arty":
+			arty = p
+		elif p.kind == "mortar":
+			mor = p
+	var apex := 0.0
+	var apex_m := 0.0
+	var blur := arty != null and (arty.node as MeshInstance3D).mesh == G.bal._blur_m
+	var t0 := G.time
+	var shot := 0
+	_cam(to + Vector3(0, 0, 25), 60.0)
+	while G.time - t0 < 16.0:
+		await m._wait(0.05)
+		if arty != null and is_instance_valid(arty.node):
+			apex = maxf(apex, arty.pos.y)
+			if shot < 2 and arty.vel.y < 0.0 and arty.pos.y < 40.0 - shot * 20.0:
+				await m._shot("ammo_%02d_descent" % shot)
+				shot += 1
+		if mor != null and is_instance_valid(mor.node):
+			apex_m = maxf(apex_m, mor.pos.y)
+		if not G.bal.projs.any(func(p): return p.kind in ["arty", "mortar"]):
+			break
+	await m._wait(0.25)
+	await m._shot("ammo_10_impact")
+	var flight := G.time - t0
+	print("AMMO arty_apex=%.1f mortar_apex=%.1f blur=%s flight=%.1f" % [apex, apex_m, blur, flight])
+	if apex < 45.0 or apex_m < 40.0 or not blur:
+		fails += 1
+	print("AMMOTEST RESULT fails=%d" % fails)
 
 # tim beyni: YZ timi uzun çatışmada kanattan dolanır, taban kolu baskı ateşi açar
 func tac_test() -> void:

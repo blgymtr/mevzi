@@ -103,10 +103,11 @@ void fragment() {
 		ALBEDO = v_col.rgb * (0.6 + 0.4 * tx.r);
 		ALPHA = tx.a * v_col.a * (1.0 - smoothstep(0.6, 1.0, a));
 	} else {
+		// moloz: köşeli kırık parça (Fx._make_debris), yüzeyler belirgin gölgeli
 		if (tx.a < 0.5) {
 			discard;
 		}
-		ALBEDO = v_col.rgb * (0.55 + 0.45 * tx.r);
+		ALBEDO = v_col.rgb * (0.3 + 0.7 * tx.r);
 		ALPHA = v_col.a * (1.0 - smoothstep(0.85, 1.0, a));
 	}
 }
