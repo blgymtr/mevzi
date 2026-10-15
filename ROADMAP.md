@@ -96,7 +96,7 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 
 ## 🎯 0.0.8 — 32 maddelik büyük güncelleme (kullanıcı listesi, 15 Ekim)
 Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) · ⏳ yapılacak · 🔄 şu an çalışılıyor.
-(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu. 33–48: 15 Ekim yerel oturumunda kullanıcının ek istekleri.)
+(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu. 33–58: 15 Ekim yerel oturumunda kullanıcının ek istekleri.)
 
 | # | İstek (özet) | Durum | Mevcut durum → yapılacak |
 |---|---|---|---|
@@ -147,17 +147,28 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 46 | Harita daha estetik | ⏳ | → Arazi dokusu ve renk paleti, kıyılar, yol kenarları, bitki dağılımı, ışık/atmosfer |
 | 47 | Roadmap bitince genel kalite turu: grafik ayarlarıyla hata kontrolü, sandbox'ta tüm yapılar, tüm animasyonlar (model güncellemesi sonrası), büyük haritada oyuncu gibi uzun ve gerçekçi maç (maç süresi ölçülür), olası hataların bulunup engellenmesi | ⏳ | → Faz 7 |
 | 48 | Büyük haritadan sonra özel (custom) haritalar | ⏳ | → Faz 6: editörle yeni haritalar |
+| 49 | Her aracın (ve silahın) menzili kontrol edilecek, gerçekçi olacak | ⏳ | Şu an tip başına sabit (tank 58 m, obüs 175 m, roketatar 180 m) ve 191 araç tipiyle aynı menzilde. → `data/real_range.json`: silah/araç başına gerçek etkili menzil (top, otomatik top, makineli, güdümlü füze, havan, obüs, roketatar), tek ölçek katsayısı, mesafeye göre isabet eğrisi |
+| 50 | Araçların birbirini görme kapasitesi kontrol edilecek (hata varsa düzeltilecek) | ⏳ | Şu an tip başına sabit görüş (30–85 m); hedef boyutu, gizlenme, optik farkı yok. → Tespit modeli: gözcü optiği (çıplak göz, dürbün, gündüz nişangâhı, termal, radar), hedefin boyutu/hareketi/ateşi/örtüsü (orman, bina, duman, siper), takım içi görüş paylaşımı |
+| 51 | Her birimin canı ve zırhı farklı olacak, sisteme uyarlanacak | ⏳ | Şu an tip başına sabit (tüm tanklar 900 can, aynı zırh). → Araç başına gerçek zırh (ön/yan/arka/üst, kinetik/HEAT için RHA eşdeğeri) ve ağırlık/yapıya göre can; piyadede sınıf ve yeleğe göre can |
+| 52 | Bina yıkımı "lego gibi" — çok daha gerçekçi olacak | ⏳ | Bloklar tek tek düşüyor. → Kırık kenarlı duvar levhaları, kat kat çökme, toz bulutu, moloz yığını ve kalıcı yıkıntı, kısmi hasar (delik, çatlak, açılmış cephe) |
+| 53 | Büyük haritalar Broken Arrow / CoH3 büyüklüğünde ve detayında | ⏳ | → 21 ile birlikte: 8×8 km, stratejik yakınlaştırma + birim simgeleri, gerçek yer düzeni, yoğun detay |
+| 54 | **Kritik:** modellerle ilgili tüm maddeler eksiksiz yapılacak | ⏳ | → 1, 10, 12, 13, 17, 18, 33, 35, 36, 38, 39/44 — her biri kendi fazında, atlanmadan |
+| 55 | Performans iyileştirmeleri | ⏳ | → Faz 7 |
+| 56 | Ses efektleri | ⏳ | → Faz 7 (helikopter rotor devri ses için hazır tutulur) |
+| 57 | Genel HUD/arayüz yenilemesi ve buna yönelik hata avı | ⏳ | → Faz 7 (45 ile birlikte) |
+| 58 | Kayıt sistemi aktif: oyunu kaydet / yükle, otomatik kayıt | ⏳ | → Faz 7 |
 
 ### Uygulama sırası (fazlar)
 - **Faz 0 — Stabilite ✅:** yamalar + test bekçisi, crewtest/paratest/SPIES/evade; takılma bekçisi (asker/araç/sedye, stucktest); yapılamayan emirde sesli uyarı; ekransız test (-Headless, run_tests.sh)
-- **Faz 1 — Veri gerçekçiliği (🔄):** 2 ✅, 27 ✅, 6 ✅, 26 ✅, 15, 31, 38
-- **Faz 1B — Büyük muharebe haritası (öne alındı, 🔄):** 21 — bundan sonra her madde bu haritada da test edilir
+- **Faz 1B — Büyük muharebe haritası (öne alındı, 🔄):** 21/53 — önce motor (ızgara, arazi, su, kamera, simgeler), sonra 49/50/51 ile birlikte harita içeriği ve YZ; bundan sonra her madde bu haritada da test edilir
+- **Faz 1 — Veri gerçekçiliği (🔄):** 2 ✅, 27 ✅, 6 ✅, 26 ✅, 49, 50, 51, 15, 31, 38
 - **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 39/44, 8/29, 18, 7
 - **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28/37, 5
-- **Faz 4 — Dünya ve görsel:** 34 ✅ (öne alındı), 42, 43, 46, 45, 10, 16, 20, 35, 36, 33, 14, 24, 41
+- **Faz 4 — Dünya ve görsel:** 34 ✅ (öne alındı), 42, 43, 46, 52, 10, 16, 20, 35, 36, 33, 14, 24, 41
 - **Faz 5 — Menü ve çekirdek:** 32, 30 (Mevzi-Core, radar/S-300)
 - **Faz 6 — Haritalar:** 30 (9×9 km ve 30+ harita), 48 özel haritalar
-- **Faz 7 — Genel kalite turu (roadmap bitince):** 47 — grafik ayarları × hata kontrolü, sandbox'ta tüm yapılar, tüm animasyonlar, büyük haritada uzun gerçekçi maç ve süre ölçümü
+- **Faz 7 — Genel kalite turu (roadmap bitince):** 47, 55 performans, 56 ses efektleri, 57/45 HUD/arayüz + hata avı, 58 kayıt sistemi — grafik ayarları × hata kontrolü, sandbox'ta tüm yapılar, tüm animasyonlar, büyük haritada uzun gerçekçi maç ve süre ölçümü
+- **Model maddeleri (54, kritik):** 1, 10, 12, 13, 17, 18, 33, 35, 36, 38, 39/44 hiçbiri atlanmayacak
 
 ### Teknik not: Unreal Engine ve animasyon hattı (dürüst değerlendirme)
 - Bu bulut ortamında Unreal Engine kurulamaz: Epic hesabı ile indirme gerekiyor, ağ yalnız GitHub/npm/PyPI'ye açık, GPU yok. Kurulsaydı bile Niagara efektleri ve UE animasyon sistemi Godot'a taşınamaz; yalnız pişirilmiş çıktı (flipbook PNG, FBX/GLB animasyon klibi) taşınabilir.
