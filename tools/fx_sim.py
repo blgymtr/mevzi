@@ -2,6 +2,7 @@
 # Efekt flipbook üretici: numpy ile 3B gaz simülasyonu (yanma + duman) ve ışın yürütmeli işleme.
 #   python3 tools/fx_sim.py expl     -> assets/fx/expl_flip.png  (patlama ateş topu, 8x6 kare)
 #   python3 tools/fx_sim.py smoke    -> assets/fx/smoke_flip.png (yükselen yoğun duman)
+#   python3 tools/fx_sim.py dust     -> assets/fx/dust_flip.png  (top/havan isabetinde toprak-toz patlaması)
 # Yöntem: yarı-Lagrange adveksiyon (üç doğrusal örnekleme), sıcaklık/yoğunluk kaldırma kuvveti,
 # girdap koruması (vorticity confinement), Jacobi basınç projeksiyonu, yakıt yanması (ısı+is).
 # İşleme: yandan ortografik bakış, ön→arka birleştirme, üstten ışığa gölge geçirgenliği,
@@ -87,6 +88,14 @@ def emit(step):
 			dirx = (X - cx) / (r + 1e-3); diry = (Y - 22) / (r + 1e-3); dirz = (Z - cz) / (r + 1e-3)
 			sp = m * 9.0 * (1.0 + 0.4 * noise)
 			u += dirx * sp; v += diry * sp + m * 6.0; w += dirz * sp
+	elif KIND == "dust":
+		if step == 0:
+			# yerden yukarı/dışa fışkıran toprak: alçak yarım küre, güçlü dikey hız
+			r = np.sqrt((X - cx) ** 2 + ((Y - 4) * 1.2) ** 2 + (Z - cz) ** 2)
+			m = np.clip(1.0 - r / 14.0, 0, 1) * (0.7 + 0.3 * noise)
+			dens += m * 1.6
+			dirx = (X - cx) / (r + 1e-3); dirz = (Z - cz) / (r + 1e-3)
+			u += dirx * m * 9.0; w += dirz * m * 9.0; v += m * (22.0 + 9.0 * noise)
 	else:
 		if step < 70:
 			r = np.sqrt((X - cx) ** 2 + (Y - 6) ** 2 + (Z - cz) ** 2)
@@ -111,7 +120,7 @@ for fr in range(NFR):
 			gx, gy, gz = grad(burn)
 			u -= gx * 30 * DT; v -= gy * 30 * DT; w -= gz * 30 * DT
 		# kaldırma kuvveti
-		v += (temp * (2.6 if KIND == "expl" else 1.6) - dens * 0.22) * DT
+		v += (temp * (2.6 if KIND == "expl" else 1.6) - dens * (0.22 if KIND != "dust" else 0.3)) * DT
 		vorticity(1.6 if KIND == "expl" else 0.9, DT)
 		boundary()
 		project(30)
@@ -130,7 +139,7 @@ for fr in range(NFR):
 	# üstten (ve hafif yandan) ışık geçirgenliği
 	cum = np.cumsum(dens[:, ::-1, :] * 0.55 * light_dir_k, axis=1)[:, ::-1, :]
 	light = np.exp(-cum) * 0.75 + 0.3
-	base = np.array([0.5, 0.47, 0.43] if KIND == "expl" else [0.66, 0.64, 0.6], np.float32)
+	base = np.array({"expl": [0.5, 0.47, 0.43], "dust": [0.62, 0.52, 0.4]}.get(KIND, [0.66, 0.64, 0.6]), np.float32)
 	smoke_rgb = light[..., None] * base[None, None, None, :]
 	# kara cisim ışıması (sıcaklık rampası)
 	t = np.clip(temp * 1.1, 0, 1.6)

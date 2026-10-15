@@ -19,6 +19,8 @@ const MAPS := {
 	"green_valley": {"title": "Yeşil Vadi", "biome": "green", "desc": "Kıvrılan nehir, toprak yollar ve tek taş köprü. Ağaçlıklar pusu için ideal."},
 	"winter_village": {"title": "Karlı Köy", "biome": "winter", "desc": "Karla kaplı köy, tuğla duvarlar ve kazılmış siperler."},
 	"big_city": {"title": "Büyük Şehir", "biome": "green", "size": 512, "desc": "512 m: nehirle bölünmüş şehir, sokak sokak girilebilir binalar, sanayi bölgesi ve dış mahalleler."},
+	"front_2k": {"title": "Kuzey Cephesi", "biome": "green", "size": 2048, "desc": "2 km: geniş nehir vadisi, köyler ve mezralar, ormanlar. Zırhlı manevra ve helikopter harekâtı."},
+	"airborne_4k": {"title": "Hava İndirme Bölgesi", "biome": "green", "size": 4096, "desc": "4×4 km: paraşütçü ve nakliye helikopteri harekâtı için büyük cephe; köyler, ormanlar, nehirler."},
 	"large_front": {"title": "Geniş Cephe", "biome": "green", "size": 1024, "desc": "1 km: büyük nehir ve kolu, otoyol, altı köy, ormanlar ve tarlalar. Helikopter, hava indirme ve uzun menzilli topçu için."},
 	"desert_town": {"title": "Çöl Kasabası", "biome": "desert", "desc": "Düz çatılı beyaz evler ve yıkıntılarla dolu kasabada sokak sokak savaş."},
 }
@@ -63,11 +65,11 @@ func build(id: String, seed_v: int) -> void:
 			_winter()
 		"big_city":
 			_city()
-		"large_front":
+		"large_front", "front_2k", "airborne_4k":
 			MapGenLarge.new().build(self)
 		_:
 			_desert()
-	if id != "custom" and id != "big_city":
+	if id != "custom" and id != "big_city" and G.MAP <= 1024.0:
 		_footpaths()
 	T.make_water()
 	B.finalize()
@@ -212,9 +214,21 @@ func road_dist(p: Vector3) -> float:
 func free_at(p: Vector3, r: float, road_m := 4.0) -> bool:
 	if p.x < r + 3 or p.z < r + 3 or p.x > G.MAP - r - 3 or p.z > G.MAP - r - 3:
 		return false
-	for k in keep:
-		if Vector2(p.x - k[0].x, p.z - k[0].z).length() < k[1] + r:
-			return false
+	if G.MAP > 512.0:
+		var reach := int(ceil((_keep_rmax + r) / SEG_CELL))
+		var c := Vector2i(int(p.x / SEG_CELL), int(p.z / SEG_CELL))
+		for dz in range(-reach, reach + 1):
+			for dx in range(-reach, reach + 1):
+				var arr = _keep_idx.get(c + Vector2i(dx, dz))
+				if arr == null:
+					continue
+				for k in arr:
+					if Vector2(p.x - k[0].x, p.z - k[0].z).length() < k[1] + r:
+						return false
+	else:
+		for k in keep:
+			if Vector2(p.x - k[0].x, p.z - k[0].z).length() < k[1] + r:
+				return false
 	if road_dist(p) < r + road_m:
 		return false
 	if G.MAP > 512.0:
@@ -238,8 +252,16 @@ func rand_free(r: float, tries := 60, region := Rect2(4, 4, 248, 248), road_m :=
 			return p
 	return Vector3(-1, 0, -1)
 
+var _keep_idx := {}
+var _keep_rmax := 0.0
 func reserve(p: Vector3, r: float) -> void:
 	keep.append([p, r])
+	if G.MAP > 512.0:
+		_keep_rmax = maxf(_keep_rmax, r)
+		var k := Vector2i(int(p.x / SEG_CELL), int(p.z / SEG_CELL))
+		if not _keep_idx.has(k):
+			_keep_idx[k] = []
+		_keep_idx[k].append([p, r])
 
 # ------------------------------------------------------------ yapılar
 # girilebilir bina: pencere boşlukları atış yuvası, kapı boşluğu giriş

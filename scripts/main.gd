@@ -34,7 +34,7 @@ func _ready() -> void:
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
 	apply_video()
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "tactest", "largetest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "tactest", "largetest", "hugetest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -200,9 +200,8 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	G.map_id = id
 	# harita boyutu: ızgara ve arazi çözünürlüğü buna göre
 	G.MAP = float(MapGen.MAPS.get(id, {}).get("size", 256)) if id != "custom" else float(data.get("size", 256))
-	Grid.NN = int(G.MAP)
-	Grid.N = Grid.NN * 2
-	Terrain.HRES = int(G.MAP * 2.0)
+	Grid.configure(G.MAP)
+	Terrain.HRES = mini(2048, int(G.MAP * 2.0))
 	Terrain.RES = mini(2048, int(G.MAP * 4.0))
 	var bio := Biomes.get_biome(kind)
 	G.biome = bio

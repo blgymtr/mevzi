@@ -1,9 +1,27 @@
 class_name Grid extends RefCounted
 # Engel yükseklik ızgarası (0.5 m), yol bulma (1 m, üç hareket sınıfı) ve görüş hattı.
 
-const CS := 0.5
+# hücre boyutları haritaya göre (main.build_world): ≤1 km 0,5 m ince / 1 m yol bulma;
+# 2 km 0,5 m / 2 m; 4 km 1 m / 4 m. FPN: bir yol bulma hücresindeki ince hücre sayısı (kenar)
+static var CS := 0.5
+static var NAV := 1.0
+static var FPN := 2
 static var N := 512
 static var NN := 256
+
+static func configure(map_size: float) -> void:
+	if map_size <= 1024.0:
+		CS = 0.5
+		NAV = 1.0
+	elif map_size <= 2048.0:
+		CS = 0.5
+		NAV = 2.0
+	else:
+		CS = 1.0
+		NAV = 4.0
+	FPN = int(round(NAV / CS))
+	N = int(map_size / CS)
+	NN = int(map_size / NAV)
 enum { K_NONE, K_WALL, K_HOUSE, K_WRECK, K_TRAP, K_WIRE, K_TREE, K_BUILDING }
 enum { M_INF, M_LIGHT, M_HEAVY }
 
@@ -124,7 +142,7 @@ func refresh(cells: Array) -> void:
 	for i in cells:
 		var v := maxf(hs[i], hb[i])
 		h[i] = v
-		_dirty[Vector2i((i % N) / 2, (i / N) / 2)] = true
+		_dirty[Vector2i((i % N) / FPN, (i / N) / FPN)] = true
 
 func flush_nav() -> void:
 	if _dirty.is_empty():
@@ -160,19 +178,22 @@ func flush_all() -> void:
 
 func _update_base(c: Vector2i) -> void:
 	var mx := 0.0
+	var nblk := 0
 	var wire := false
 	var hard_l := false
 	var hard_h := false
 	var wall_h := false
 	var wet := false
-	for dz in 2:
-		for dx in 2:
-			var i := (c.y * 2 + dz) * N + c.x * 2 + dx
+	for dz in FPN:
+		for dx in FPN:
+			var i := (c.y * FPN + dz) * N + c.x * FPN + dx
 			var v := h[i]
 			var k := kind[i]
 			if water[i] >= 1 and bridge[i] == 0:
 				wet = true
 			mx = maxf(mx, v)
+			if v >= 0.45:
+				nblk += 1
 			if k == K_WIRE:
 				wire = true
 			if k == K_TRAP:
@@ -192,7 +213,11 @@ func _update_base(c: Vector2i) -> void:
 		wall_h = false
 	var inf: AStarGrid2D = nav[M_INF]
 	var vlt := mx >= 0.45 and mx < 1.15 and not wet
-	inf.set_point_solid(c, (mx >= 0.45 and not vlt) or wet)
+	# iri yol bulma hücresinde (2 km+) ince duvar tüm hücreyi kapatmasın: piyade için çoğunluk kuralı
+	var blk := mx >= 0.45 and not vlt
+	if FPN > 2:
+		blk = blk and nblk * 2 > FPN * FPN
+	inf.set_point_solid(c, blk or wet)
 	inf.set_point_weight_scale(c, 5.0 if wire else (6.0 if vlt else 1.0))
 	vault[c.y * NN + c.x] = 1 if vlt else 0
 	base_l[c.y * NN + c.x] = 1 if hard_l else 0
@@ -225,7 +250,10 @@ func _update_inflated(c: Vector2i) -> void:
 
 # ------------------------------------------------------------ yol bulma
 static func cell_of(p: Vector3) -> Vector2i:
-	return Vector2i(clampi(int(p.x), 0, NN - 1), clampi(int(p.z), 0, NN - 1))
+	return Vector2i(clampi(int(p.x / NAV), 0, NN - 1), clampi(int(p.z / NAV), 0, NN - 1))
+
+static func cell_center(c: Vector2i) -> Vector3:
+	return Vector3((c.x + 0.5) * NAV, 0, (c.y + 0.5) * NAV)
 
 func solid(c: Vector2i, mode: int) -> bool:
 	if c.x < 0 or c.y < 0 or c.x >= NN or c.y >= NN:
@@ -251,15 +279,39 @@ func nearest_free(p: Vector3, mode: int, maxr := 8) -> Vector3:
 					continue
 				var q := c + Vector2i(dx, dz)
 				if not _occupied(q, mode):
-					var d := Vector2(q.x + 0.5 - p.x, q.y + 0.5 - p.z).length_squared()
+					var d := Vector2((q.x + 0.5) * NAV - p.x, (q.y + 0.5) * NAV - p.z).length_squared()
 					if d < bd:
 						bd = d
 						best = q
 		if best.x >= 0:
-			return Vector3(best.x + 0.5, 0, best.y + 0.5)
+			return cell_center(best)
 	return p
 
+# uzun yol önbelleği (büyük harita): aynı bölgeden aynı hedefe kısa sürede gelen istekler
+# (bir grubun tüm askerleri) A*'ı tekrar çalıştırmaz; ara noktalar paylaşılır
+var _pcache := {}
+var _pcache_t := 0.0
+
 func find_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
+	if NN > 1024 or from.distance_to(to) > 160.0:
+		var key := Vector4i(int(from.x / 12.0), int(from.z / 12.0), int(to.x / 12.0) * 4 + mode, int(to.z / 12.0))
+		var now := G.time
+		if now - _pcache_t > 8.0:
+			_pcache.clear()
+			_pcache_t = now
+		if _pcache.has(key):
+			var cp: PackedVector3Array = _pcache[key]
+			var out2 := PackedVector3Array()
+			out2.append_array(cp)
+			if out2.size() > 0:
+				out2[out2.size() - 1] = nearest_free(to, mode)
+			return out2
+		var res := _find_path(from, to, mode)
+		_pcache[key] = res
+		return res
+	return _find_path(from, to, mode)
+
+func _find_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
 	var out := PackedVector3Array()
 	var a := nearest_free(from, mode)
 	var b := nearest_free(to, mode)
@@ -275,7 +327,7 @@ func find_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
 	var pts := PackedVector3Array()
 	pts.append(from)
 	for i in range(1, ids.size()):
-		pts.append(Vector3(ids[i].x + 0.5, 0, ids[i].y + 0.5))
+		pts.append(cell_center(ids[i]))
 	if cell_of(pts[pts.size() - 1]) == cb:
 		pts[pts.size() - 1] = b
 	# ip çekme düzleştirmesi
@@ -295,7 +347,7 @@ func walkable_line(a: Vector3, b: Vector3, mode: int) -> bool:
 	var nv: AStarGrid2D = nav[mode]
 	for s in range(1, steps + 1):
 		var t := float(s) / steps
-		var c := Vector2i(int(a.x + d.x * t), int(a.z + d.y * t))
+		var c := Vector2i(int((a.x + d.x * t) / NAV), int((a.z + d.y * t) / NAV))
 		if c.x < 0 or c.y < 0 or c.x >= NN or c.y >= NN:
 			return false
 		if nv.is_point_solid(c):
@@ -378,7 +430,7 @@ func find_cover(around: Vector3, threat: Vector3, radius: float, claimed: Array,
 			if h[i] >= 0.3:
 				continue
 			var p := Vector3((x + 0.5) * CS, 0, (z + 0.5) * CS)
-			if inf.is_point_solid(Vector2i(int(p.x), int(p.z))):
+			if inf.is_point_solid(cell_of(p)):
 				continue
 			var td := Vector2(threat.x - p.x, threat.z - p.z)
 			var tl := td.length()

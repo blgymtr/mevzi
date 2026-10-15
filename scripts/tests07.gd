@@ -28,6 +28,8 @@ func run(scene: String) -> void:
 			await tac_test()
 		"largetest":
 			await large_test()
+		"hugetest":
+			await huge_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -478,3 +480,26 @@ func large_test() -> void:
 	await m._wait(0.5)
 	await m._shot("large_02_village")
 	print("LARGETEST RESULT fails=%d" % fails)
+
+# 2 km ve 4 km haritalar: yükleme süresi, bellek, ağaç/bina sayısı, uçtan uca yol bulma
+func huge_test() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	for id in ["front_2k", "airborne_4k"]:
+		var t0 := Time.get_ticks_msec()
+		m.start_game(id, {}, true)
+		var ms := Time.get_ticks_msec() - t0
+		var trees := G.props.items.filter(func(it): return it["kind"] == "tree").size()
+		print("HUGE id=%s map=%.0f cs=%.1f nav=%.1f load_ms=%d mem_mb=%d trees=%d houses=%d banks=%d" % [id, G.MAP, Grid.CS, Grid.NAV, ms, OS.get_static_memory_usage() / 1048576, trees, G.blocks.houses.size(), G.props._banks.size()])
+		var t1 := Time.get_ticks_msec()
+		var path := G.grid.find_path(G.hq_pos[0], G.hq_pos[1], Grid.M_HEAVY)
+		var pi := G.grid.find_path(G.hq_pos[0], G.hq_pos[1], Grid.M_INF)
+		print("HUGE id=%s path_heavy=%d path_inf=%d path_ms=%d" % [id, path.size(), pi.size(), Time.get_ticks_msec() - t1])
+		if path.size() < 3 or pi.size() < 3:
+			fails += 1
+		_cam(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), 115.0)
+		G.fog_off = true
+		await m._wait(1.0)
+		await m._shot("huge_%s" % id)
+	print("HUGETEST RESULT fails=%d" % fails)

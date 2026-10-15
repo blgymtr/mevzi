@@ -157,7 +157,8 @@ func _real_tree(p: Vector3, set_name: String, sc := 1.0) -> bool:
 	var id: String = ids[rng.randi() % ids.size()]
 	if winter and not id.begins_with("pine") and not id.begins_with("bush"):
 		id += "_bare"
-	var mesh := _tree_model("%s_%d" % [id, rng.randi() % 3])
+	# büyük haritada tek tohum (banka/çizim çağrısı sayısı 3'te 1)
+	var mesh := _tree_model("%s_%d" % [id, rng.randi() % (3 if G.MAP <= 1024.0 else 1)])
 	if mesh == null:
 		return false
 	var s2 := sc * rng.randf_range(0.85, 1.15)
@@ -178,11 +179,15 @@ func _real_tree(p: Vector3, set_name: String, sc := 1.0) -> bool:
 # ------------------------------------------------------------ ağaç örnekleme (MultiMesh)
 # Aynı modeldeki tüm ağaçlar tek MultiMesh: çizim çağrısı az, büyük haritada binlerce ağaç.
 # Örnek gizleme: ölçek 0; saydamlaşma: özel veri r (shader'da titreşimli kesim).
-var _banks := {}          # mesh -> {"mm": MultiMesh, "items": Array, "dirty": bool}
+var _banks := {}          # "mesh_karoX_karoZ" -> {"mm": MultiMesh, "items": Array, "dirty": bool}
 
 func _mm_add(it: Dictionary, bush: bool) -> void:
 	var mesh: Mesh = it["mesh"]
-	if not _banks.has(mesh):
+	# banka = model × 256 m karo (karo dışı görüşte kırpılır)
+	var p: Vector3 = it["pos"]
+	var bt := 256.0 if G.MAP <= 1024.0 else 512.0
+	var key := "%d_%d_%d" % [mesh.get_instance_id(), int(p.x / bt), int(p.z / bt)]
+	if not _banks.has(key):
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_custom_data = true
@@ -191,8 +196,8 @@ func _mm_add(it: Dictionary, bush: bool) -> void:
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if bush else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		add_child(mmi)
-		_banks[mesh] = {"mm": mm, "items": [], "dirty": true}
-	var b: Dictionary = _banks[mesh]
+		_banks[key] = {"mm": mm, "items": [], "dirty": true}
+	var b: Dictionary = _banks[key]
 	it["bank"] = b
 	it["mi_idx"] = b["items"].size()
 	b["items"].append(it)
@@ -204,8 +209,8 @@ func _mm_add(it: Dictionary, bush: bool) -> void:
 var _bank_pending := false
 func _flush_banks() -> void:
 	_bank_pending = false
-	for mesh in _banks:
-		var b: Dictionary = _banks[mesh]
+	for key in _banks:
+		var b: Dictionary = _banks[key]
 		if not b["dirty"]:
 			continue
 		b["dirty"] = false

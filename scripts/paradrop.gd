@@ -33,7 +33,7 @@ func _ready() -> void:
 	dir = target - from
 	dir.y = 0.0
 	dir = dir.normalized() if dir.length() > 1.0 else Vector3(1, 0, 0)
-	position = target - dir * (G.MAP * 0.9 + 60.0)
+	position = target - dir * minf(G.MAP * 0.9 + 60.0, 650.0)
 	position.y = 0.0
 	plane = Node3D.new()
 	add_child(plane)
@@ -128,7 +128,7 @@ func _process(dt: float) -> void:
 			_jt = 0.42
 			_jump(jumped)
 			jumped += 1
-	if along > G.MAP * 0.9 + 80.0:
+	if along > minf(G.MAP * 0.9 + 80.0, 700.0):
 		queue_free()
 
 func _jump(i: int) -> void:

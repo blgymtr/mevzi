@@ -86,7 +86,7 @@ void fragment() {
 	} else if (mode == 2) {
 		ALBEDO = v_col.rgb * intensity;
 		ALPHA = tx.a * (1.0 - a);
-	} else if (mode == 5 || mode == 6) {
+	} else if (mode >= 5) {
 		// flipbook (8x6): yaşa göre kare seçilir, iki kare arası karışım
 		float fr = clamp(a, 0.0, 0.999) * 48.0;
 		float f0 = floor(fr);

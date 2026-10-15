@@ -18,6 +18,7 @@ var has_water := false
 var biome: Dictionary
 var kind := "desert"
 var _dirty := false
+var wet_rects: Array = []
 var _upd := 0.0
 
 func build(b: Dictionary) -> void:
@@ -124,6 +125,11 @@ func carve(pts: PackedVector3Array, width: float, depth: float) -> void:
 	# nehir/kanal yatağı: merkezde -depth, kıyıda yumuşak geçiş
 	var bank := width * 0.5 + 2.5
 	var k := float(HRES) / G.MAP
+	# ıslak alan sınır kutusu (su maskesi/ızgara yalnız burada taranır)
+	var bb := Rect2(pts[0].x, pts[0].z, 0, 0)
+	for q0 in pts:
+		bb = bb.expand(Vector2(q0.x, q0.z))
+	wet_rects.append(bb.grow(bank + 1.0))
 	for i in pts.size() - 1:
 		var a := pts[i]
 		var b := pts[i + 1]
@@ -234,22 +240,30 @@ func make_water() -> void:
 	water_mat.set_shader_parameter("deep", biome["water_deep"])
 	water_mat.set_shader_parameter("clarity", biome["clarity"])
 	var mi := Image.create(HRES, HRES, false, Image.FORMAT_L8)
-	for z in HRES:
-		for x in HRES:
-			mi.set_pixel(x, z, Color(1, 1, 1) if himg.get_pixel(x, z).r < -0.05 else Color(0, 0, 0))
+	var kk := float(HRES) / G.MAP
+	for rc in wet_rects:
+		var r2: Rect2 = rc
+		for z in range(maxi(0, int(r2.position.y * kk)), mini(HRES, int(r2.end.y * kk) + 1)):
+			for x in range(maxi(0, int(r2.position.x * kk)), mini(HRES, int(r2.end.x * kk) + 1)):
+				if himg.get_pixel(x, z).r < -0.05:
+					mi.set_pixel(x, z, Color(1, 1, 1))
 	water_mat.set_shader_parameter("river_mask", ImageTexture.create_from_image(mi))
 	water_mat.set_shader_parameter("map_size", G.MAP)
 	water.material_override = water_mat
 	add_child(water)
 	# suyun altında kalan yerleri ızgarada geçilmez yap
 	var cells: Array = []
-	for z in Grid.N:
-		for x in Grid.N:
-			var p := Vector3((x + 0.5) * Grid.CS, 0, (z + 0.5) * Grid.CS)
-			if ground_h(p) < -0.32:
+	for rc in wet_rects:
+		var r3: Rect2 = rc
+		for z in range(maxi(0, int(r3.position.y / Grid.CS)), mini(Grid.N, int(r3.end.y / Grid.CS) + 1)):
+			for x in range(maxi(0, int(r3.position.x / Grid.CS)), mini(Grid.N, int(r3.end.x / Grid.CS) + 1)):
 				var i := z * Grid.N + x
-				G.grid.water[i] = 1
-				cells.append(i)
+				if G.grid.water[i] == 1:
+					continue
+				var p := Vector3((x + 0.5) * Grid.CS, 0, (z + 0.5) * Grid.CS)
+				if ground_h(p) < -0.32:
+					G.grid.water[i] = 1
+					cells.append(i)
 	G.grid.refresh(cells)
 
 # ------------------------------------------------------------ boyama

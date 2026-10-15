@@ -1,14 +1,15 @@
 class_name Fx extends Node3D
 # Görsel efektler: GPU-hesaplı parçacık halkaları, iz mermileri, parlama ışıkları, krater izleri.
 
-enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS, P_STREAK, P_FLIP, P_FLIPS }
-const CAP := [7000, 4000, 3000, 1800, 2400, 300, 400]
+enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS, P_STREAK, P_FLIP, P_FLIPS, P_FLIPD }
+const CAP := [7000, 4000, 3000, 1800, 2400, 300, 400, 300]
 # flipbook atlasları (tools/blender/fx_flipbook.py, Mantaflow simülasyonu): yoksa bu türler kullanılmaz
 var has_flip := false
 var has_flip_smoke := false
+var has_flip_dust := false
 
 var mms: Array = []
-var heads := [0, 0, 0, 0, 0]
+var heads := [0, 0, 0, 0, 0, 0, 0, 0]
 var tr_mm: MultiMesh
 var tr_head := 0
 const TR_CAP := 900
@@ -39,7 +40,8 @@ func _ready() -> void:
 	quad.size = Vector2(1, 1)
 	has_flip = ResourceLoader.exists("res://assets/fx/expl_flip.png")
 	has_flip_smoke = ResourceLoader.exists("res://assets/fx/smoke_flip.png")
-	for k in 7:
+	has_flip_dust = ResourceLoader.exists("res://assets/fx/dust_flip.png")
+	for k in 8:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
@@ -60,10 +62,12 @@ func _ready() -> void:
 			mat.set_shader_parameter("tex", load("res://assets/fx/expl_flip.png"))
 		elif k == P_FLIPS and has_flip_smoke:
 			mat.set_shader_parameter("tex", load("res://assets/fx/smoke_flip.png"))
+		elif k == P_FLIPD and has_flip_dust:
+			mat.set_shader_parameter("tex", load("res://assets/fx/dust_flip.png"))
 		mat.set_shader_parameter("mode", k)
 		mat.set_shader_parameter("intensity", 1.35 if k == P_FIRE else 4.0)
 		mat.set_shader_parameter("ground_stop", 1.0 if k == P_DEBRIS or k == P_SPARK or k == P_STREAK else 0.0)
-		mat.render_priority = [1, 3, 4, 0, 2, 3, 1][k]
+		mat.render_priority = [1, 3, 4, 0, 2, 3, 1, 1][k]
 		mi.material_override = mat
 		add_child(mi)
 		mms.append(mm)
@@ -351,6 +355,11 @@ func explosion(p: Vector3, size: float, kind := "") -> void:
 
 # toprak tacı: patlamadan yukarı/dışa fırlayan dikenli toprak çizgileri (mermi/top isabeti, havan)
 func dirt_crown(p: Vector3, s: float) -> void:
+	if has_flip_dust:
+		# simüle edilmiş toprak sütunu (flipbook): fışkırıp yayılan, yavaş çöken toz
+		var sand := _sand()
+		var c := Color(lerpf(sand.r, 0.9, 0.3) * 1.1, sand.g * 1.05, sand.b, 0.95)
+		emit(P_FLIPD, p + Vector3(0, 1.6 * s, 0), Vector3(0, 0.3, 0), rng.randf_range(2.6, 3.4), 5.0 * s, 7.5 * s, 0.0, 1.0, c, 0.0, rng.randf_range(-0.2, 0.2))
 	var sand := _sand().darkened(0.35)
 	for i in int(18 * s) + 6:
 		var d := Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(0.9, 1.6), rng.randf_range(-0.6, 0.6)).normalized()

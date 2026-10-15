@@ -1,5 +1,5 @@
 class_name MapGenLarge extends RefCounted
-# Geniş Cephe (1024 m): helikopter/paraşüt menzili için büyük ılıman harita.
+# Geniş Cephe (1024 m) / Kuzey Cephesi (2048 m) / Hava İndirme Bölgesi (4096 m): ölçeklenen büyük harita.
 # İki karargâh arası ~1,2 km; büyük nehir + kol, otoyol ve köy yolları, altı köy,
 # ormanlık alanlar, tarlalar, ileri üs noktaları. MapGen'in kayıtlı işlemlerini kullanır
 # (editörde açılır/kaydedilir).
@@ -11,6 +11,7 @@ func build(m: MapGen) -> void:
 	mg = m
 	rng = m.rng
 	var S := G.MAP
+	var A := (S / 1024.0) * (S / 1024.0)     # alan çarpanı (2 km: 4, 4 km: 16)
 	G.hq_pos = [Vector3(S - 80, 0, S - 80), Vector3(80, 0, 80)]
 	mg.reserve(G.hq_pos[0], 30)
 	mg.reserve(G.hq_pos[1], 30)
@@ -41,10 +42,15 @@ func build(m: MapGen) -> void:
 		mg.reserve(s, 10.0)
 	# köyler
 	for v in V:
-		mg._town(v, 34.0, rng.randi_range(12, 20), false)
+		mg._town(v, 34.0 * sqrt(sqrt(A)), int(rng.randi_range(12, 20) * sqrt(A)), false)
 	mg._town(Vector3(S * 0.5, 0, S * 0.5) + Vector3(18, 0, 26), 28.0, 10, false)
+	# büyük haritada ek mezralar
+	for i in int((A - 1.0) * 5.0):
+		var hc := mg.rand_free(20.0, 40, Rect2(80, 80, S - 160, S - 160), 6.0)
+		if hc.x > 0:
+			mg._town(hc, 26.0, rng.randi_range(5, 10), false)
 	# tarlalar: dikdörtgen toprak/ekin yamaları, saman balyaları, tarla kenarı çit
-	for i in 40:
+	for i in int(40 * A):
 		var c := Vector3(rng.randf_range(40, S - 40), 0, rng.randf_range(40, S - 40))
 		if not mg.free_at(c, 14.0, 6.0):
 			continue
@@ -63,7 +69,7 @@ func build(m: MapGen) -> void:
 			var p0 := c - ax * w * 0.5 - bx * d * 0.5
 			mg.fence(p0, p0 + ax * w)
 	# ormanlar (yapraklı + çam karışık) ve dağınık ağaçlar
-	for g in 26:
+	for g in int(26 * A):
 		var c2 := mg.rand_free(8.0, 60, Rect2(20, 20, S - 40, S - 40), 4.0)
 		if c2.x < 0:
 			continue
@@ -81,7 +87,7 @@ func build(m: MapGen) -> void:
 			var p := c2 + Vector3(rng.randf_range(-R * 1.15, R * 1.15), 0, rng.randf_range(-R * 1.15, R * 1.15))
 			if mg.free_at(p, 0.6, 1.0):
 				mg.p_bush(p, rng.randf() < 0.3)
-	for i in 520:
+	for i in int(520 * A):
 		var p := mg.rand_free(0.8, 20, Rect2(10, 10, S - 20, S - 20), 2.0)
 		if p.x > 0:
 			var r := rng.randf()
@@ -93,17 +99,17 @@ func build(m: MapGen) -> void:
 				mg.p_rock(p, rng.randf_range(0.6, 1.4))
 	# yol kenarı direkleri, park etmiş araçlar, çayır yamaları
 	mg._poles_along(mg.roads[0], 22.0, 5.5)
-	for i in 30:
+	for i in int(30 * A):
 		var p := mg.rand_free(2.2, 30, Rect2(40, 40, S - 80, S - 80), 0.0)
 		if p.x > 0 and mg.road_dist(p) < 9.0:
 			mg.p_car(p, rng.randf() * TAU)
-	for i in 240:
+	for i in int(240 * A):
 		mg.patch(Vector3(rng.randf_range(0, S), 0, rng.randf_range(0, S)), rng.randf_range(5, 18), rng.randf_range(0.4, 1.0))
 	# ot: 256 m'lik karolar halinde (ekran dışı karolar kırpılır)
 	var tiles := int(S / 256.0)
 	for tz in tiles:
 		for tx in tiles:
-			mg.p_grass_field(9000, Color(0.42, 0.55, 0.24), Rect2(tx * 256 + 2, tz * 256 + 2, 252, 252), 0.5)
+			mg.p_grass_field(int(9000 / sqrt(A)), Color(0.42, 0.55, 0.24), Rect2(tx * 256 + 2, tz * 256 + 2, 252, 252), 0.5)
 	for k in 10:
 		var mp: Vector3 = riv[clampi(int(float(k) / 10.0 * riv.size()), 0, riv.size() - 1)]
 		G.fx.ground_mist(mp + Vector3(rng.randf_range(-12, 12), 0, rng.randf_range(-12, 12)), 16.0)
