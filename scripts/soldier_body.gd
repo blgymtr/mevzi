@@ -30,7 +30,22 @@ var pistol_k := 0.0              # 0 kılıfta, 1 çekili ve nişanda
 var _pistol_mi: MeshInstance3D = null
 static var _pistol_mesh: Mesh = null
 
+# ulusa özel Blender silahı (tools/blender/weapons.py): ABD M4A1/M249/AT4/M110/M17, Rusya AK-12/PKP/RPG-7/SV-98/PL-15
+static func _nation_weapon(wpn: String, team: int) -> ArrayMesh:
+	var wm := "weapons_%s" % ("usa" if team == 0 else "rus")
+	if not Art.has(wm):
+		return null
+	return Art.skinned(wm, wpn, team)
+
 func _pistol_model() -> void:
+	var nw := _nation_weapon("pistol", team_id)
+	if nw != null:
+		_pistol_mi = MeshInstance3D.new()
+		_pistol_mi.mesh = nw
+		fore_r.add_child(_pistol_mi)
+		_pistol_mi.position = Vector3(0, -0.31, -0.02)
+		_pistol_mi.rotation = Vector3(-PI * 0.5, 0, 0)
+		return
 	if _pistol_mesh == null:
 		var mb := MB.new()
 		var blk := Color(0.09, 0.09, 0.1)
@@ -47,8 +62,10 @@ func _pistol_model() -> void:
 	_pistol_mi.rotation = Vector3(-PI * 0.5, 0, 0)
 	_pistol_mi.visible = false
 
+var team_id := 0
 func build(team: int, rl: String, winter: bool) -> void:
 	role = rl
+	team_id = team
 	rng.randomize()
 	var key := "%d_%s_%s" % [team, rl, G.map_kind]
 	if not _mesh.has(key):
@@ -307,7 +324,7 @@ static func _art_meshes(team: int, rl: String) -> Dictionary:
 		"torso": Art.skinned(bm, "torso", team), "head": null,
 		"upper": Art.skinned(bm, "arm", team), "fore": Art.skinned(bm, "fore", team),
 		"thigh": Art.skinned(bm, "thigh", team), "shin": Art.skinned(bm, "shin", team),
-		"weapon": Art.skinned(model, wpn, team), "extra": null,
+		"weapon": _nation_weapon(wpn, team) if _nation_weapon(wpn, team) != null else Art.skinned(model, wpn, team), "extra": null,
 	}
 	if rl == "medic":
 		M["extra"] = Art.skinned(model, "x_medic", team)

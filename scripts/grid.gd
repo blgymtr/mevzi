@@ -59,6 +59,17 @@ func _init() -> void:
 		a.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 		a.update()
 		nav.append(a)
+	# büyük haritada işçi iş parçacığı için kopya ızgaralar (uzun A* ana döngüyü dondurmasın)
+	if NN > 512:
+		for i in 3:
+			var w := AStarGrid2D.new()
+			w.region = Rect2i(0, 0, NN, NN)
+			w.cell_size = Vector2(1, 1)
+			w.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+			w.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+			w.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+			w.update()
+			navw.append(w)
 
 # ------------------------------------------------------------ hücre yardımcıları
 static func ci(x: float) -> int:
@@ -147,6 +158,14 @@ func refresh(cells: Array) -> void:
 func flush_nav() -> void:
 	if _dirty.is_empty():
 		return
+	var locked := false
+	if not navw.is_empty():
+		locked = _wmx.try_lock()
+		if locked:
+			_qmx.lock()
+			_apply_pend()
+			_qmx.unlock()
+	_direct = locked
 	var touched := {}
 	for c in _dirty:
 		_update_base(c)
@@ -158,6 +177,9 @@ func flush_nav() -> void:
 	for q in touched:
 		_update_inflated(q)
 	_dirty.clear()
+	_direct = false
+	if locked:
+		_wmx.unlock()
 
 func flush_all() -> void:
 	if NN > 512:
@@ -219,6 +241,8 @@ func _update_base(c: Vector2i) -> void:
 		blk = blk and nblk * 2 > FPN * FPN
 	inf.set_point_solid(c, blk or wet)
 	inf.set_point_weight_scale(c, 5.0 if wire else (6.0 if vlt else 1.0))
+	if not navw.is_empty():
+		_mset(M_INF, c, blk or wet, 5.0 if wire else (6.0 if vlt else 1.0))
 	vault[c.y * NN + c.x] = 1 if vlt else 0
 	base_l[c.y * NN + c.x] = 1 if hard_l else 0
 	base_h[c.y * NN + c.x] = 1 if hard_h else (2 if wall_h else 0)
@@ -247,6 +271,9 @@ func _update_inflated(c: Vector2i) -> void:
 	var hv: AStarGrid2D = nav[M_HEAVY]
 	hv.set_point_solid(c, sh)
 	hv.set_point_weight_scale(c, 4.0 if wh else 1.0)
+	if not navw.is_empty():
+		_mset(M_LIGHT, c, sl, 1.0)
+		_mset(M_HEAVY, c, sh, 4.0 if wh else 1.0)
 
 # ------------------------------------------------------------ yol bulma
 static func cell_of(p: Vector3) -> Vector2i:
@@ -294,33 +321,26 @@ var _pcache_t := 0.0
 
 func find_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
 	if NN > 1024 or from.distance_to(to) > 160.0:
-		var key := Vector4i(int(from.x / 12.0), int(from.z / 12.0), int(to.x / 12.0) * 4 + mode, int(to.z / 12.0))
-		var now := G.time
-		if now - _pcache_t > 8.0:
-			_pcache.clear()
-			_pcache_t = now
-		if _pcache.has(key):
-			var cp: PackedVector3Array = _pcache[key]
-			var out2 := PackedVector3Array()
-			out2.append_array(cp)
-			if out2.size() > 0:
-				out2[out2.size() - 1] = nearest_free(to, mode)
-			return out2
+		var cp := cached_path(from, to, mode)
+		if cp.size() > 0:
+			return cp
 		var res := _find_path(from, to, mode)
-		_pcache[key] = res
+		_pcache[_pkey(from, to, mode)] = res
 		return res
 	return _find_path(from, to, mode)
 
 func _find_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
+	return _search(nav[mode], from, nearest_free(from, mode), nearest_free(to, mode), mode)
+
+# A* + ip çekme düzleştirmesi; gr: ana ya da işçi ızgarası
+func _search(gr: AStarGrid2D, from: Vector3, a: Vector3, b: Vector3, mode: int) -> PackedVector3Array:
 	var out := PackedVector3Array()
-	var a := nearest_free(from, mode)
-	var b := nearest_free(to, mode)
 	var ca := cell_of(a)
 	var cb := cell_of(b)
 	if ca == cb:
 		out.append(b)
 		return out
-	var ids: Array[Vector2i] = nav[mode].get_id_path(ca, cb, true)
+	var ids: Array[Vector2i] = gr.get_id_path(ca, cb, true)
 	if ids.is_empty():
 		out.append(b)
 		return out
@@ -334,17 +354,160 @@ func _find_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
 	var i := 0
 	while i < pts.size() - 1:
 		var j := mini(pts.size() - 1, i + 24)
-		while j > i + 1 and not walkable_line(pts[i], pts[j], mode):
+		while j > i + 1 and not walkable_line(pts[i], pts[j], mode, gr):
 			j -= 1
 		out.append(pts[j])
 		i = j
 	return out
 
-func walkable_line(a: Vector3, b: Vector3, mode: int) -> bool:
+# ------------------------------------------------------------ iş parçacıklı uzun yol (2 km+)
+# Uzun A* (büyük haritada 0,1–0,8 sn) işçi iş parçacığında ızgaranın kopyasında (navw) çalışır.
+# Kopyaya yazımlar işçi meşgulken kuyruğa alınır (_pend), iş başında ya da işçi boştayken uygulanır.
+# Kilit sırası her yerde _wmx → _qmx (kilitlenme olmaz).
+var navw: Array = []
+var _wmx := Mutex.new()       # işçi arama yaparken tutulur
+var _qmx := Mutex.new()       # _pend, _jobs, _busy
+var _pend: Array = []         # [mode, hücre, katı, ağırlık]
+var _jobs: Array = []         # [key, from, a, b, mode]
+var _waiters := {}            # key -> [[cb, to], ...]
+var _busy := false
+var _direct := false
+var _task := -1
+
+# ızgara değişmeden önce (yeni oyun) süren aramayı bekle
+func shutdown() -> void:
+	_qmx.lock()
+	_jobs.clear()
+	_qmx.unlock()
+	if _task >= 0:
+		WorkerThreadPool.wait_for_task_completion(_task)
+		_task = -1
+	_waiters.clear()
+
+func _mset(mode: int, c: Vector2i, sol: bool, w: float) -> void:
+	if _direct:
+		var g: AStarGrid2D = navw[mode]
+		g.set_point_solid(c, sol)
+		g.set_point_weight_scale(c, w)
+	else:
+		_qmx.lock()
+		_pend.append([mode, c, sol, w])
+		_qmx.unlock()
+
+func _apply_pend() -> void:
+	for e in _pend:
+		var g: AStarGrid2D = navw[e[0]]
+		g.set_point_solid(e[1], e[2])
+		g.set_point_weight_scale(e[1], e[3])
+	_pend.clear()
+
+# bu istek iş parçacığına gitmeli mi (uzun yol, büyük harita)
+func wants_async(from: Vector3, to: Vector3) -> bool:
+	return not navw.is_empty() and Vector2(to.x - from.x, to.z - from.z).length() > 160.0
+
+func _pkey(from: Vector3, to: Vector3, mode: int) -> Vector4i:
+	return Vector4i(int(from.x / 12.0), int(from.z / 12.0), int(to.x / 12.0) * 4 + mode, int(to.z / 12.0))
+
+func _cache_tick() -> void:
+	var now := G.time
+	if now - _pcache_t > 8.0:
+		_pcache.clear()
+		_pcache_t = now
+
+# önbellekte varsa kopyası (son nokta isteğin hedefine çekilir), yoksa boş
+func cached_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
+	_cache_tick()
+	var key := _pkey(from, to, mode)
+	var out := PackedVector3Array()
+	if _pcache.has(key):
+		out.append_array(_pcache[key])
+		if out.size() > 0:
+			out[out.size() - 1] = nearest_free(to, mode)
+	return out
+
+# sonuç gelene kadar yürünecek düz parça: hedefe doğru engelsiz en çok 48 m; yoksa boş
+func provisional(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
+	var d := Vector3(to.x - from.x, 0, to.z - from.z).normalized()
+	var best := from
+	for k in range(1, 13):
+		var p := from + d * k * 4.0
+		if not walkable_line(from, p, mode):
+			break
+		best = p
+	if best.distance_to(from) < 3.0:
+		return PackedVector3Array()
+	return PackedVector3Array([best])
+
+# uzun yol isteği: cb(path) ana iş parçacığında çağrılır; aynı bölge→hedef istekleri tek aramada birleşir
+func request_path(from: Vector3, to: Vector3, mode: int, cb: Callable) -> void:
+	var key := _pkey(from, to, mode)
+	if _waiters.has(key):
+		_waiters[key].append([cb, to])
+		return
+	_waiters[key] = [[cb, to]]
+	var job := [key, from, nearest_free(from, mode), nearest_free(to, mode), mode]
+	_qmx.lock()
+	_jobs.append(job)
+	var start := not _busy
+	_busy = true
+	_qmx.unlock()
+	if start:
+		if _task >= 0:
+			WorkerThreadPool.wait_for_task_completion(_task)     # önceki görev bitmişti (_busy false)
+		_task = WorkerThreadPool.add_task(_work, false, "yol bulma")
+
+func _work() -> void:
+	while true:
+		_wmx.lock()
+		_qmx.lock()
+		if _jobs.is_empty():
+			_busy = false
+			_qmx.unlock()
+			_wmx.unlock()
+			return
+		var j: Array = _jobs.pop_front()
+		_apply_pend()
+		_qmx.unlock()
+		var res := _search(navw[j[4]], j[1], j[2], j[3], j[4])
+		_wmx.unlock()
+		_deliver.call_deferred(j[0], res)
+
+func _deliver(key: Vector4i, res: PackedVector3Array) -> void:
+	_cache_tick()
+	_pcache[key] = res
+	var ws: Array = _waiters.get(key, [])
+	_waiters.erase(key)
+	for w in ws:
+		var cb: Callable = w[0]
+		if not cb.is_valid():
+			continue
+		var out := PackedVector3Array()
+		out.append_array(res)
+		if out.size() > 0:
+			out[out.size() - 1] = nearest_free(w[1], key.z % 4)
+		cb.call(out)
+
+# gelen yolu birimin şimdiki konumundan devam ettir (geçici parçada ilerlemişti)
+func splice(res: PackedVector3Array, pos: Vector3, mode: int) -> PackedVector3Array:
+	if res.size() < 2:
+		return res
+	var best := 0
+	var bd := INF
+	for k in mini(res.size(), 12):
+		var d := Vector2(res[k].x - pos.x, res[k].z - pos.z).length_squared()
+		if d < bd:
+			bd = d
+			best = k
+	if best + 1 < res.size() and walkable_line(pos, res[best + 1], mode):
+		best += 1
+	return res.slice(best)
+
+func walkable_line(a: Vector3, b: Vector3, mode: int, nv: AStarGrid2D = null) -> bool:
 	var d := Vector2(b.x - a.x, b.z - a.z)
 	var L := d.length()
-	var steps := int(L / 0.4) + 1
-	var nv: AStarGrid2D = nav[mode]
+	var steps := int(L / (NAV * 0.4)) + 1
+	if nv == null:
+		nv = nav[mode]
 	for s in range(1, steps + 1):
 		var t := float(s) / steps
 		var c := Vector2i(int((a.x + d.x * t) / NAV), int((a.z + d.y * t) / NAV))

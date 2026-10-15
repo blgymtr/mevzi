@@ -791,9 +791,9 @@ func cmd_move(p: Vector3, force := false) -> void:
 		_rope_reset()
 	if is_air():
 		path = PackedVector3Array([dest])
+		path_i = 0
 	else:
-		path = G.grid.find_path(position, dest, nav_mode)
-	path_i = 0
+		_repath(dest)
 
 func cmd_attack(u: Unit) -> void:
 	if not alive or vtype == "truck":
@@ -803,8 +803,7 @@ func cmd_attack(u: Unit) -> void:
 	var rng_w := _range()
 	if dist2(u) > rng_w * 0.85:
 		dest = u.position + (position - u.position).normalized() * rng_w * 0.7
-		path = G.grid.find_path(position, dest, nav_mode)
-		path_i = 0
+		_repath(dest)
 
 func cmd_stop() -> void:
 	order = ""
@@ -904,6 +903,28 @@ func cmd_suppress(p: Vector3) -> void:
 		path = PackedVector3Array()
 		order = ""
 
+# yol bul; büyük haritada uzun yol iş parçacığında (o sırada hedefe doğru düz parça)
+var path_req := 0
+
+func _repath(to: Vector3) -> void:
+	path_req += 1
+	path_i = 0
+	if G.grid.wants_async(position, to):
+		path = G.grid.cached_path(position, to, nav_mode)
+		if path.size() > 0:
+			return
+		path = G.grid.provisional(position, to, nav_mode)
+		if path.size() > 0:
+			G.grid.request_path(position, to, nav_mode, _on_path.bind(path_req))
+			return
+	path = G.grid.find_path(position, to, nav_mode)
+
+func _on_path(res: PackedVector3Array, req: int) -> void:
+	if req != path_req or not alive or order == "":
+		return
+	path = G.grid.splice(res, position, nav_mode)
+	path_i = 0
+
 func follow_route(pts: PackedVector3Array) -> void:
 	path = pts
 	path_i = 0
@@ -972,8 +993,7 @@ func _process(dt: float) -> void:
 			position = G.grid.nearest_free(position, nav_mode, 30)
 		# emir yarıda kaldıysa (yol boşaldı ama hedefe varılmadı) yeniden yol bul
 		if not is_air() and order in ["move", "amove", "retreat"] and path_i >= path.size() and dist2_p(dest) > 4.0 and not immobile():
-			path = G.grid.find_path(position, dest, nav_mode)
-			path_i = 0
+			_repath(dest)
 		_scan()
 		_refund_check()
 	atgm_cd -= dt
@@ -1279,8 +1299,7 @@ func _drive(dt: float) -> void:
 			if _cell_ok(bp):
 				position = bp
 			if path_i < path.size():
-				path = G.grid.find_path(position, path[path.size() - 1], nav_mode)
-				path_i = 0
+				_repath(path[path.size() - 1])
 		return
 	# diğer araçlarla ayrışma
 	for o in G.near(np, 7.0):

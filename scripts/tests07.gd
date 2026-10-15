@@ -48,6 +48,10 @@ func _densest(kind: String) -> Vector3:
 	return best
 
 func _cam(c: Vector3, size: float) -> void:
+	# yüksekteki nesne (halat, paraşüt, helikopter): yer odağı, ekranda aynı yere düşecek kadar kaydırılır
+	if c.y > 0.5:
+		var th := deg_to_rad(CamRig.PITCH)
+		c = Vector3(c.x, 0, c.z) + G.cam.up_vec() * (c.y / tan(th))
 	G.cam.jump_to(c, true)
 	G.cam.size = size
 	G.cam.target_size = size
@@ -160,12 +164,17 @@ func evade_test() -> void:
 		var nfl := G.bal.projs.filter(func(p): return p.kind == "flare").size()
 		if nsam > 0:
 			seen_sam = true
+		if i % 30 == 0:
+			print("EVADE loop i=%d ms=%d fps=%d projs=%d heli=%s" % [i, Time.get_ticks_msec(), Engine.get_frames_per_second(), G.bal.projs.size(), is_instance_valid(heli) and heli.alive])
 		if (nsam > 0 or nfl > 0) and shot_n < 4 and i % 6 == 0:
-			_cam(heli.position + Vector3(-6, 0, 2), 34.0)
+			if is_instance_valid(heli):
+				_cam(heli.position + Vector3(0, heli.hull.position.y, 0), 34.0)
 			await m._shot("evade_%02d" % shot_n)
 			shot_n += 1
-	print("EVADE seen_sam=%s flares_used=%d heli_alive=%s" % [seen_sam, flares0 - heli.flares, heli.alive])
-	if not seen_sam or flares0 == heli.flares:
+	var hv := is_instance_valid(heli)
+	var fl_used: int = flares0 - (heli.flares if hv else 0)
+	print("EVADE seen_sam=%s flares_used=%d heli_alive=%s" % [seen_sam, fl_used, hv and heli.alive])
+	if not seen_sam or fl_used == 0:
 		fails += 1
 	# helikopter füzesi: dost helikopter düşman tanka Hellfire atar
 	var h2: Vehicle = m.spawn_vehicle(0, "heli", c + Vector3(-40, 0, 40), 0.0)
@@ -261,7 +270,7 @@ func rope_test() -> void:
 		await m._wait(0.05)
 		var on_rope := sq.members.filter(func(x): return x.state == "rope")
 		if not on_rope.is_empty() and shots < 4 and i % 14 == 0:
-			_cam(on_rope[0].position - Vector3(0, on_rope[0].position.y, 0), 10.0 if shots % 2 == 0 else 16.0)
+			_cam(on_rope[0].position, 10.0 if shots % 2 == 0 else 16.0)
 			await m._wait(0.05)
 			await m._shot("rope_%02d" % shots)
 			shots += 1
@@ -285,7 +294,7 @@ func rope_test() -> void:
 		var ups := sq.members.filter(func(x): return x.state == "rope_up")
 		if ups.size() >= 3 and not up_shot and ups[0].position.y > 3.0:
 			up_shot = true
-			_cam(Vector3(ups[0].position.x, 0, ups[0].position.z), 16.0)
+			_cam(ups[0].position, 16.0)
 			await m._shot("rope_11_spies")
 		if h.cargo.size() >= 8:
 			break
@@ -404,7 +413,7 @@ func para_test() -> void:
 		await m._wait(0.05)
 		var air := sq.members.filter(func(x): return is_instance_valid(x) and x.state == "para")
 		if air.size() >= 3 and shots < 3 and i % 25 == 0:
-			_cam(Vector3(air[0].position.x, 0, air[0].position.z) + Vector3(-6, 0, -6), 34.0 if shots == 0 else 22.0)
+			_cam(air[0].position, 34.0 if shots == 0 else 22.0)
 			await m._wait(0.05)
 			await m._shot("para_%02d" % shots)
 			shots += 1
@@ -499,6 +508,30 @@ func huge_test() -> void:
 		var pi := G.grid.find_path(G.hq_pos[0], G.hq_pos[1], Grid.M_INF)
 		print("HUGE id=%s path_heavy=%d path_inf=%d path_ms=%d" % [id, path.size(), pi.size(), Time.get_ticks_msec() - t1])
 		if path.size() < 3 or pi.size() < 3:
+			fails += 1
+		# iş parçacıklı uzun yol: 10 kişilik grup + 2 araç haritanın öbür ucuna; kare süresi ölçülür
+		G.grid._pcache.clear()
+		var grp: Array = []
+		for k in 10:
+			grp.append(m.spawn_soldier(G.player_team, "rifle", G.grid.nearest_free(G.hq_pos[0] + Vector3(-40 - k * 2.0, 0, -30), Grid.M_INF), null))
+		for k in 2:
+			grp.append(m.spawn_vehicle(G.player_team, "truck", G.grid.nearest_free(G.hq_pos[0] + Vector3(-60, 0, -50 - k * 12.0), Grid.M_HEAVY), 0.0))
+		await m._wait(0.2)
+		var goal := G.grid.nearest_free(G.hq_pos[1] + Vector3(60, 0, 60), Grid.M_INF)
+		var tq := Time.get_ticks_msec()
+		for u in grp:
+			u.cmd_move(goal)
+		var issue_ms := Time.get_ticks_msec() - tq
+		var worst := 0
+		var last := Time.get_ticks_msec()
+		for k in 60:
+			await m.get_tree().process_frame
+			var now := Time.get_ticks_msec()
+			worst = maxi(worst, now - last)
+			last = now
+		var long_n := grp.filter(func(u): return u.path.size() >= 3).size()
+		print("HUGE id=%s async=%s issue_ms=%d worst_frame_ms=%d units_with_full_path=%d/%d" % [id, G.grid.wants_async(G.hq_pos[0], goal), issue_ms, worst, long_n, grp.size()])
+		if G.grid.wants_async(G.hq_pos[0], goal) and long_n < grp.size() - 1:
 			fails += 1
 		_cam(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), 115.0)
 		G.fog_off = true

@@ -806,7 +806,25 @@ func cmd_build(site: Node3D) -> void:
 	state = "move"
 
 func _set_path(p: Vector3) -> void:
+	path_req += 1
+	path_i = 0
+	# büyük haritada uzun yol iş parçacığında aranır; o sırada hedefe doğru düz parça yürünür
+	if G.grid.wants_async(position, p):
+		path = G.grid.cached_path(position, p, Grid.M_INF)
+		if path.size() > 0:
+			return
+		path = G.grid.provisional(position, p, Grid.M_INF)
+		if path.size() > 0:
+			G.grid.request_path(position, p, Grid.M_INF, _on_path.bind(path_req))
+			return
 	path = G.grid.find_path(position, p, Grid.M_INF)
+
+var path_req := 0
+
+func _on_path(res: PackedVector3Array, req: int) -> void:
+	if req != path_req or not alive:
+		return
+	path = G.grid.splice(res, position, Grid.M_INF)
 	path_i = 0
 
 # ------------------------------------------------------------ ana döngü

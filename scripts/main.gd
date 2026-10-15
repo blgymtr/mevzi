@@ -210,6 +210,8 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	world.name = "World"
 	add_child(world)
 	G.world = world
+	if G.grid != null:
+		G.grid.shutdown()
 	G.grid = Grid.new()
 	var t := Terrain.new()
 	world.add_child(t)
