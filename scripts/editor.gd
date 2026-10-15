@@ -9,6 +9,7 @@ const TOOLS := [
 	["river", "NEHİR", "Tıkla: nokta ekle · Enter / sağ tık: bitir"],
 	["house_flat", "DÜZ ÇATILI EV", "R: döndür · 1-3: boyut"],
 	["house_pitched", "KİREMİT ÇATILI EV", "R: döndür · 1-3: boyut"],
+	["bld", "BİNA (100+ TÜR)", "Tıkla: rastgele bina · 1: köy/kır · 2: kasaba/şehir · 3: sanayi · R: döndür"],
 	["compound", "AVLU DUVARI", "Tıkla: yerleştir · R: kapıyı çevir"],
 	["wall", "TAŞ DUVAR", "İki tık: başlangıç / bitiş"],
 	["fence", "ÇİT", "İki tık: başlangıç / bitiş"],
@@ -341,6 +342,16 @@ func _click(p: Vector3, brush: bool) -> void:
 				_op(func(): mg.wall(a, p, [2, 3, 5][size_i], 0.0))
 			else:
 				_op(func(): mg.fence(a, p))
+		"bld":
+			var cats: Array = [["kir", "koy", "col", "kis"], ["kasaba", "sehir"], ["sanayi"]][size_i]
+			var bio := String(data.get("biome", "green"))
+			var pool := Arch.ids_where(bio, cats)
+			if pool.is_empty():
+				pool = Arch.ids_where(bio, [])
+			var aid: String = pool[r.randi() % pool.size()]
+			var rr := 1 if rot90 else 0
+			_op(func(): mg.bld(p, aid, rr))
+			info.text = Arch.name_of(aid) + "\n" + info.text
 		"house_flat", "house_pitched":
 			var w: float = [6.0, 8.0, 10.0][size_i]
 			var d: float = [5.0, 6.0, 7.0][size_i]
@@ -634,7 +645,7 @@ class EdOverlay extends Control:
 		if prev != Vector2.INF:
 			draw_line(prev, m, Color(1, 1, 1, 0.5), 1.5)
 		# imleç
-		var r: float = {"house_flat": 5.0, "house_pitched": 5.0, "compound": 8.0, "ruin": 3.0, "crater": 2.5, "patch": 8.0, "hq0": 13.0, "hq1": 13.0, "fob": 7.0}.get(ed.tool, 1.5)
+		var r: float = {"house_flat": 5.0, "house_pitched": 5.0, "bld": 7.0, "compound": 8.0, "ruin": 3.0, "crater": 2.5, "patch": 8.0, "hq0": 13.0, "hq1": 13.0, "fob": 7.0}.get(ed.tool, 1.5)
 		_ring(gp, r * ([0.8, 1.0, 1.3][ed.size_i] if ed.tool in ["house_flat", "house_pitched", "compound", "patch", "crater"] else 1.0), Color(0.5, 1.0, 0.7, 0.9), 2.0)
 		var title := ""
 		for t in ed._tool_list():

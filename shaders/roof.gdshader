@@ -8,6 +8,8 @@ uniform sampler2D tile_nrm : hint_normal, filter_linear_mipmap_anisotropic, repe
 uniform sampler2D noise_tex : source_color, filter_linear_mipmap, repeat_enable;
 uniform float scale = 0.85;
 uniform float snow = 0.0;
+uniform float mono = 0.0;   // 1: doku yalnız parlaklık, renk tepe renginden (beton, sac, kurşun)
+uniform float gain = 1.0;   // dokuya göre parlaklık dengesi
 
 varying vec3 mpos;
 varying vec3 mnrm;
@@ -30,6 +32,7 @@ void fragment() {
 	// kil kiremit kendi rengini korur; blok rengiyle hafif tonlanır, rastgele soluk/koyu kiremit lekeleri
 	float pn = texture(noise_tex, wpos.xz * 0.15).r;
 	vec3 col = t * mix(vec3(1.0), c / max(dot(c, vec3(0.333)), 0.05) * 0.55, 0.45) * 1.6;
+	col = mix(col, vec3(dot(t, vec3(0.299, 0.587, 0.114)) / 0.32) * c, mono) * gain;
 	col *= mix(0.78, 1.15, pn);
 	float nz = texture(noise_tex, wpos.xz * 0.07).r * 0.6 + texture(noise_tex, wpos.xz * 0.21).r * 0.4;
 	// kar: üstte kalın, saçağa doğru incelir; yumuşak kenarlı
