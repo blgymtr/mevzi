@@ -32,6 +32,8 @@ func run(scene: String) -> void:
 			await stuck_test()
 		"fftest":
 			await ff_test()
+		"perftest":
+			await perf_test()
 		"tactest":
 			await tac_test()
 		"largetest":
@@ -625,6 +627,77 @@ func para2_test() -> void:
 	await m._shot("para2_10")
 	print("P2 elapsed=%.1f" % el)
 	print("PARA2TEST RESULT fails=%d" % fails)
+
+# gerçek performans verisi (roadmap 2): azami hız = km/h ÷ 3,6 × ölçek; tekerlekli araç yolda araziden hızlı;
+# ana top dolum süresi ve otomatik top atış aralığı veriden
+func perf_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true)
+	_fast()
+	# yol: toplam boyu ≥ 90 m olan ilk çoklu çizginin ilk 90 m'si
+	var route := PackedVector3Array()
+	for r in G.mapgen.roads:
+		var pts: PackedVector3Array = r
+		var L := 0.0
+		for i in pts.size() - 1:
+			L += pts[i].distance_to(pts[i + 1])
+		if L < 150.0:
+			continue
+		var acc := 0.0
+		route.append(pts[0])
+		for i in range(1, pts.size()):
+			acc += pts[i - 1].distance_to(pts[i])
+			route.append(pts[i])
+			if acc >= 150.0:
+				break
+		break
+	var dir := (route[1] - route[0]).normalized()
+	var ids := ["usa_mbt_a1", "usa_apc_icv", "usa_lv_m1151"]
+	var rows: Array = []
+	for k in ids.size():
+		# yol testi yalnız tekerlekli HMMWV ile (konvoyda öndeki yavaş araç arkadakini bekletir)
+		var vr: Vehicle = m.spawn_vehicle(G.player_team, ids[k], route[0] if k == 2 else G.grid.nearest_free(route[0] - Vector3(-dir.z, 0, dir.x) * (90.0 + k * 12.0), Grid.M_HEAVY), Soldier._yaw_of(dir))
+		if k == 2:
+			vr.follow_route(route)
+		# arazi: yoldan uzak, düz 70 m
+		var side := Vector3(-dir.z, 0, dir.x) * (45.0 + k * 10.0)
+		var vo: Vehicle = m.spawn_vehicle(G.player_team, ids[k], G.grid.nearest_free(route[0] + side, Grid.M_HEAVY), Soldier._yaw_of(dir))
+		vo.cmd_move(G.grid.nearest_free(vo.position + dir * 70.0, Grid.M_HEAVY))
+		rows.append([ids[k], vr, vo, 0.0, 0.0, -1.0])
+	var t0 := G.time
+	while G.time - t0 < 26.0:
+		await m._wait(0.1)
+		for rw in rows:
+			var vr2: Vehicle = rw[1]
+			var vo2: Vehicle = rw[2]
+			if vr2._on_road:
+				rw[3] = maxf(rw[3], absf(vr2.cur_speed))
+			if not vo2._on_road:
+				rw[4] = maxf(rw[4], absf(vo2.cur_speed))
+			if rw[5] < 0.0 and absf(vo2.cur_speed) >= 4.4:
+				rw[5] = G.time - t0       # 4,4 m/sn (≈ 32 km/h × 0,5) varış süresi
+	for rw in rows:
+		var v: Vehicle = rw[1]
+		var pf := Catalog.perf(rw[0])
+		print("PERF %s road=%.1f/%.1f off=%.1f/%.1f t32=%.1fs(data %.1f) reload=%.1f" % [rw[0], rw[3], v.road_speed, rw[4], v.speed_max, rw[5], float(pf.get("acc", 0)), v.reload_s])
+		if absf(v.speed_max - float(pf["off"]) / 3.6 * Catalog.K_GROUND) > 0.05:
+			fails += 1
+		if rw[2].speed_max > 0.0 and (rw[4] > v.speed_max + 0.3 or rw[3] > v.road_speed + 0.3):
+			fails += 1
+	# yol hızı: yoldaki noktada azami hız yol hızı (HMMWV 113 km/h), arazide arazi hızı (65 km/h)
+	var hm: Vehicle = rows[2][2]
+	hm.position = route[0]
+	hm._road_t = 0.0
+	var on_r := hm._vmax(0.0)
+	hm.position = rows[2][2].position + Vector3(-dir.z, 0, dir.x) * 30.0
+	hm._road_t = 0.0
+	var off_r := hm._vmax(0.0)
+	print("PERF vmax road=%.1f off=%.1f (beklenen %.1f / %.1f)" % [on_r, off_r, hm.road_speed, hm.speed_max])
+	if absf(on_r - hm.road_speed) > 0.01 or (G.terrain.on_road(hm.position) == false and absf(off_r - hm.speed_max) > 0.01):
+		fails += 1
+	print("PERFTEST RESULT fails=%d" % fails)
 
 # dost ateşi kuralı (roadmap 27): kendi aracının patlaması kendi askerine zarar vermez (yalnız bastırır);
 # bina patlaması iki tarafa da zarar verir

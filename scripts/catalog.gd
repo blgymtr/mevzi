@@ -70,6 +70,29 @@ static func first_of_base(base: String, nation: String) -> String:
 				any = o[2]
 	return any
 
+# gerçek performans verisi (data/real_perf.json, roadmap 2): aile varsayılanı + birim ayarı birleşik.
+# Alanlar: road/off (km/h), acc (0→32 km/h sn), reload (sn), rpm/burst, salvo/ival/rearm, cruise (km/h)
+static var _perf := {}
+static var K_GROUND := 0.5      # kara hızı ölçeği (km/h → oyun m/sn çarpanı ile)
+static var K_AIR := 0.25        # hava hızı ölçeği
+
+static func perf(id: String) -> Dictionary:
+	load_all()
+	if _perf.is_empty():
+		_perf = {"fam": {}, "units": {}}
+		var f := FileAccess.open("res://data/real_perf.json", FileAccess.READ)
+		if f != null:
+			var js = JSON.parse_string(f.get_as_text())
+			if js is Dictionary:
+				_perf = js
+				K_GROUND = float(js.get("K_ground", K_GROUND))
+				K_AIR = float(js.get("K_air", K_AIR))
+	var u: Dictionary = units.get(id, {})
+	var out := {}
+	out.merge(_perf.get("fam", {}).get(u.get("fam", ""), {}), true)
+	out.merge(_perf.get("units", {}).get(id, {}), true)
+	return out
+
 static func has(id: String) -> bool:
 	load_all()
 	return units.has(id)

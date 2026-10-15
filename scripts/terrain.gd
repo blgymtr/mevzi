@@ -299,6 +299,14 @@ func paint_line(a: Vector3, b: Vector3, w: float, ch: int, amount: float, jitter
 			p += Vector3(rng.randf_range(-jitter, jitter), 0, rng.randf_range(-jitter, jitter))
 		paint_circle(p, w * 0.5, ch, amount)
 
+# p yolda mı (arazi boya dokusunun kırmızı kanalı = yol, road_polyline ile boyanır)
+func on_road(p: Vector3) -> bool:
+	var x := _px(p.x)
+	var z := _px(p.z)
+	if x < 0 or z < 0 or x >= RES or z >= RES:
+		return false
+	return img.get_pixel(x, z).r > 0.5
+
 func track(p: Vector3, amount := 0.35) -> void:
 	var x := _px(p.x)
 	var z := _px(p.z)

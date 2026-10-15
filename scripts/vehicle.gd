@@ -37,6 +37,16 @@ var armor := 0
 var ext := Vector2(1.5, 3.0)   # zemin izi yarı boyutları (genişlik, uzunluk) — modelden
 var deployed := 1.0       # topçu kurulum durumu: 1 kurulu (ateşe hazır), 0 toplanmış (yürüyüşe hazır)
 var vid := ""            # katalog kimliği (boşsa taban araç)
+# gerçek performans (data/real_perf.json, roadmap 2): yol hızı, ana silah dolumu, otomatik top, salvo
+var road_speed := -1.0     # yolda azami hız (m/sn); <0: yol farkı yok
+var reload_s := -1.0       # ana silah atış arası (sn); <0: tipin varsayılanı
+var rpm := -1.0            # otomatik top dakikada atım
+var burst_n := 0
+var salvo_n := 0           # roketatar salvosu (roket), aralık, yeniden dolum
+var salvo_ival := 0.0
+var rearm_s := 0.0
+var _road_t := 0.0
+var _on_road := false
 var cat: Dictionary = {}
 # 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
 const ARMOR := {
@@ -520,10 +530,27 @@ func setup(t: int, vt: String) -> void:
 		D["title"] = cat.get("name", D["title"])
 		D["hp"] = float(cat.get("hp", D["hp"]))
 		D["speed"] = float(cat.get("speed", D["speed"]))
-		# ağır araç yavaş: ön zırh ve cana göre hız çarpanı
-		var fa: float = float(cat["armor"][0][0]) if cat.has("armor") else 6.0
-		D["speed"] *= clampf(1.15 - fa * 0.012 - float(D["hp"]) * 0.0002, 0.7, 1.1)
-		D["accel"] = float(D["accel"]) * clampf(1.2 - float(D["hp"]) * 0.0005, 0.6, 1.2)
+		var pf := Catalog.perf(vid)
+		var air_t: bool = vt in ["heli", "transport", "fpv", "uav", "uav_armed", "loiter"]
+		if air_t and pf.has("cruise"):
+			# gerçek seyir hızı (km/h) × hava ölçeği
+			D["speed"] = float(pf["cruise"]) / 3.6 * Catalog.K_AIR
+		elif float(pf.get("off", 0.0)) > 0.0:
+			# gerçek arazi / yol hızı ve 0→32 km/h ivmesi × kara ölçeği
+			D["speed"] = float(pf["off"]) / 3.6 * Catalog.K_GROUND
+			road_speed = float(pf.get("road", pf["off"])) / 3.6 * Catalog.K_GROUND
+			D["accel"] = (32.0 / 3.6 * Catalog.K_GROUND) / maxf(float(pf.get("acc", 8.0)), 1.0)
+		else:
+			# veri yoksa: ağır araç yavaş — ön zırh ve cana göre hız çarpanı
+			var fa: float = float(cat["armor"][0][0]) if cat.has("armor") else 6.0
+			D["speed"] *= clampf(1.15 - fa * 0.012 - float(D["hp"]) * 0.0002, 0.7, 1.1)
+			D["accel"] = float(D["accel"]) * clampf(1.2 - float(D["hp"]) * 0.0005, 0.6, 1.2)
+		reload_s = float(pf.get("reload", -1.0))
+		rpm = float(pf.get("rpm", -1.0))
+		burst_n = int(pf.get("burst", 0))
+		salvo_n = int(pf.get("salvo", 0))
+		salvo_ival = float(pf.get("ival", 0.0))
+		rearm_s = float(pf.get("rearm", 0.0))
 	title = D["title"]
 	max_hp = D["hp"]
 	hp = max_hp
@@ -1252,11 +1279,20 @@ func _cell_ok(p: Vector3) -> bool:
 		return false
 	return h < 0.3 or k == Grid.K_TREE or (nav_mode == Grid.M_HEAVY and k == Grid.K_WALL)
 
+# azami hız: yoldaysa gerçek yol hızı (tekerlekli araç asfaltta belirgin hızlı), değilse arazi hızı
+func _vmax(dt: float) -> float:
+	_road_t -= dt
+	if _road_t <= 0.0:
+		_road_t = 0.3
+		_on_road = road_speed > 0.0 and G.terrain != null and G.terrain.on_road(position)
+	return road_speed if _on_road else speed_max
+
 func _drive(dt: float) -> void:
 	_repair_tick(dt)
 	if immobile():
 		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
 	var target_speed := 0.0
+	var vm := _vmax(dt)
 	if not immobile():
 		while path_i < path.size():
 			var tp := path[path_i]
@@ -1287,9 +1323,9 @@ func _drive(dt: float) -> void:
 				tr *= clampf(0.35 + absf(cur_speed) / speed_max, 0.35, 1.2)
 			heading = rotate_toward(heading, want, tr * dt)
 			if vtype == "tank":
-				target_speed = speed_max * clampf(1.0 - diff / 0.9, 0.0, 1.0)
+				target_speed = vm * clampf(1.0 - diff / 0.9, 0.0, 1.0)
 			else:
-				target_speed = speed_max * clampf(1.0 - diff / 1.6, 0.25, 1.0)
+				target_speed = vm * clampf(1.0 - diff / 1.6, 0.25, 1.0)
 			var rem := L
 			for k in range(path_i + 1, path.size()):
 				rem += path[k].distance_to(path[k - 1])
@@ -1651,23 +1687,23 @@ func _aim_fire(dt: float) -> void:
 				_fire_arty(t)
 			"fieldgun":
 				_fire_cannon(t)
-				main_cd = 5.0
+				main_cd = _rl(5.0)
 				on_crew_fire()
 			"atgun":
 				_fire_atgun(t)
 			"howitzer":
 				_fire_arty(t)
-				main_cd = 11.0
+				main_cd = _rl(11.0)
 				on_crew_fire()
 			"mtngun":
 				_fire_arty(t)
-				main_cd = 7.0
+				main_cd = _rl(7.0)
 				on_crew_fire()
 			"hmortar":
 				_fire_hmortar(t.position)
 			"mlrs":
 				if mlrs_left <= 0:
-					mlrs_left = 12
+					mlrs_left = salvo_n if salvo_n > 0 else 12
 					mlrs_aim = t.position
 	_coax(dt)
 	_mlrs_tick(dt)
@@ -1682,7 +1718,7 @@ func _mlrs_tick(dt: float) -> void:
 	mlrs_t -= dt
 	if mlrs_t > 0.0:
 		return
-	mlrs_t = 0.22
+	mlrs_t = salvo_ival if salvo_ival > 0.0 else 0.22
 	mlrs_left -= 1
 	var mp := muzzle_world() + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.2), 0)
 	var d := dist2_p(mlrs_aim)
@@ -1694,10 +1730,20 @@ func _mlrs_tick(dt: float) -> void:
 		G.fx.emit(Fx.P_SMOKE, mp, back * randf_range(3, 7) + Vector3(randf_range(-1, 1), randf_range(0.5, 2), randf_range(-1, 1)), randf_range(1.5, 2.8), 0.6, 2.6, -0.1, 1.5, Color(0.82, 0.8, 0.76, 0.55))
 	G.fx.muzzle(mp, -back, true)
 	if mlrs_left <= 0:
-		main_cd = 32.0
+		main_cd = rearm_s if rearm_s > 0.0 else 32.0
+
+# atış hızı (roadmap 2): gerçek veri varsa onu, yoksa tipin varsayılanını kullan
+func _rl(def: float) -> float:
+	return reload_s if reload_s > 0.0 else def
+
+func _burst_len(a: int, b: int) -> int:
+	return maxi(1, burst_n + randi_range(-1, 1)) if burst_n > 0 else randi_range(a, b)
+
+func _auto_ival(def: float) -> float:
+	return maxf(60.0 / rpm, 0.04) if rpm > 0.0 else def
 
 func _fire_atgun(t: Unit) -> void:
-	main_cd = 4.2
+	main_cd = _rl(4.2)
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var spread := mp.distance_to(tp) * 0.015
@@ -1709,7 +1755,7 @@ func _fire_atgun(t: Unit) -> void:
 	on_crew_fire()
 
 func _fire_hmortar(tp: Vector3) -> void:
-	main_cd = randf_range(4.5, 5.5)
+	main_cd = _rl(randf_range(4.5, 5.5))
 	var d := dist2_p(tp)
 	var err := d * 0.05 + 2.0
 	var mp := muzzle_world()
@@ -1892,7 +1938,7 @@ func _fire_ground() -> void:
 	var p := ground_pt + Vector3(randf_range(-3.5, 3.5), 0.1, randf_range(-3.5, 3.5))
 	match vtype:
 		"tank":
-			main_cd = 6.5
+			main_cd = _rl(6.5)
 			G.bal.shell(mp, p, team, self, null, "he")
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 5.0)
@@ -1900,9 +1946,9 @@ func _fire_ground() -> void:
 			rock_v += 2.5
 		"apc", "ifv":
 			if burst <= 0:
-				burst = randi_range(3, 5)
+				burst = _burst_len(3, 5)
 			burst -= 1
-			main_cd = 0.26 if burst > 0 else randf_range(1.0, 1.8)
+			main_cd = _auto_ival(0.26) if burst > 0 else randf_range(1.0, 1.8)
 			G.bal.shell(mp, p, team, self, null, "auto")
 			G.fx.muzzle(mp, (p - mp).normalized(), true)
 			Sfx.play3d("autocannon", mp, 0.0)
@@ -1922,20 +1968,20 @@ func _fire_ground() -> void:
 			if shots % 2 == 0:
 				G.fx.tracer(mp, p, 260.0, Color(1.0, 0.55, 0.22), 0.09)
 		"arty":
-			main_cd = 9.0
+			main_cd = _rl(9.0)
 			G.bal.artillery(mp, p, team, self)
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 6.0)
 			recoil = 1.0
 			rock_v += 3.0
 		"fieldgun", "atgun":
-			main_cd = 5.0
+			main_cd = _rl(5.0)
 			G.bal.shell(mp, p, team, self, null, "he")
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 3.0)
 			recoil = 1.0
 		"howitzer", "mtngun":
-			main_cd = 10.0 if vtype == "howitzer" else 7.0
+			main_cd = _rl(10.0 if vtype == "howitzer" else 7.0)
 			G.bal.artillery(mp, p, team, self)
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 5.0)
@@ -1944,7 +1990,7 @@ func _fire_ground() -> void:
 			_fire_hmortar(p)
 		"mlrs":
 			if mlrs_left <= 0:
-				mlrs_left = 12
+				mlrs_left = salvo_n if salvo_n > 0 else 12
 				mlrs_aim = ground_pt
 			main_cd = 0.5
 		_:
@@ -1952,9 +1998,9 @@ func _fire_ground() -> void:
 
 func _fire_flak(t: Unit) -> void:
 	if burst <= 0:
-		burst = randi_range(6, 12)
+		burst = _burst_len(6, 12)
 	burst -= 1
-	main_cd = 0.07 if burst > 0 else randf_range(0.6, 1.1)
+	main_cd = _auto_ival(0.07) if burst > 0 else randf_range(0.6, 1.1)
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var air: bool = t is Vehicle and t.is_air()
@@ -1982,7 +2028,7 @@ func _fire_flak(t: Unit) -> void:
 	G.fx.tracer(mp, impact, 300.0, Color(1.0, 0.7, 0.3), 0.1)
 
 func _fire_arty(t: Unit) -> void:
-	main_cd = 9.0
+	main_cd = _rl(9.0)
 	var mp := muzzle_world()
 	var d := dist2(t)
 	var err := d * 0.05 + 2.0
@@ -1995,7 +2041,7 @@ func _fire_arty(t: Unit) -> void:
 	G.cam.shake(0.2, position)
 
 func _fire_cannon(t: Unit) -> void:
-	main_cd = 6.5
+	main_cd = _rl(6.5)
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var d := mp.distance_to(tp)
@@ -2011,9 +2057,9 @@ func _fire_cannon(t: Unit) -> void:
 
 func _fire_auto(t: Unit) -> void:
 	if burst <= 0:
-		burst = randi_range(3, 5)
+		burst = _burst_len(3, 5)
 	burst -= 1
-	main_cd = 0.26 if burst > 0 else randf_range(1.2, 2.2)
+	main_cd = _auto_ival(0.26) if burst > 0 else randf_range(1.2, 2.2)
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var d := mp.distance_to(tp)

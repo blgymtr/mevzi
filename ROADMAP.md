@@ -91,7 +91,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | # | İstek (özet) | Durum | Mevcut durum → yapılacak |
 |---|---|---|---|
 | 1 | Asker modelleri 1-2. fotoğraftaki gibi (gerçekçi oran, kıyafet katmanları, teçhizat) | ⏳ | v5 var ama stilize. → Gerçek insan taban modeli (MakeHuman CC0) + Blender'da katmanlı üniforma/teçhizat, PBR doku |
-| 2 | Her aracın hızı farklı ve gerçekçi; hava araçları; atış hızları | 🟡 | Hız ağırlıktan türetiliyor. → Araç başına gerçek veri tablosu (yol/arazi hızı, ivme, dönüş, atış hızı, dolum süresi) |
+| 2 | Her aracın hızı farklı ve gerçekçi; hava araçları; atış hızları | ✅ | `data/real_perf.json`: araç başına gerçek yol/arazi hızı, 0→32 km/h ivme, ana silah dolumu, otomatik top dakikada atım/seri, roketatar salvosu, hava aracı seyir hızı (kara ×0,5, hava ×0,25 ölçek); tekerlekli araç yolda hızlı (perftest) |
 | 3 | Palet/teker/motor arızası + istihkâm tamir animasyonu; daha önce hasar alan daha kolay hasar alır (dengeli) | 🟡 | Palet/teker kopması ve onarım var. → Motor arızası, birikimli yıpranma katsayısı, istihkâm tamir animasyonu (alet, eğilme, kıvılcım) |
 | 5 | Seçim göstergesi: daha küçük, estetik, kendi tarzımız | 🟡 | Kompakt halka var. → Özgün tasarım (köşeli parantez + rol işareti, takım rengi), RA/SS/CoH analiziyle |
 | 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | 🟡 | Mermi modelleri var. → Kalibre bazlı mühimmat veri tablosu (namlu çıkış hızı, kütle, iz rengi, patlama yarıçapı) |
@@ -115,7 +115,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 24 | Gerçekçi 3B alev, roketin poddan çıkışı vb. (dengeli) | 🟡 | → Hacimli alev flipbook'u, pod çıkış duman/alev |
 | 25 | Tüm asker animasyonları: tutuş, ateş, şarjör, silah değiştirme, siper, sürünme, atlama, depar, tetikte yürüme, araç arkasında yürüme | 🟡 | Kodla poz + IK var. → Keyframe/mocap klipleri |
 | 26 | Mühimmat efektleri için gerekli programları kur, test et; kurşun ve roket farklı görünsün | 🟡 | Blender + numpy simülasyon kurulu. → Mühimmat başına iz/duman/parlama |
-| 27 | Kendi araç patlaması/düşüşü kendi askerine zarar vermesin; bina patlaması iki tarafa da zarar verir | ⏳ | → Hasar kaynağı takım filtresi |
+| 27 | Kendi araç patlaması/düşüşü kendi askerine zarar vermesin; bina patlaması iki tarafa da zarar verir | ✅ | G.explode spare: araç imhası / helikopter düşüşü kendi askerine hasar vermez (bastırır); bina patlaması herkese (fftest) |
 | 28 | İnşaatta her asker kutudan malzeme alıp taşır, bırakır, farklı animasyonla çalışır | 🟡 | 6 işçi yeri var. → Kutu alma/taşıma/bırakma döngüsü |
 | 29 | Bazı İHA/drone'lar görünmüyor; özel sesler; yüksek irtifa | 🟡 | → 8 ile birlikte |
 | 30 | 9×9 / 9×6 km haritalar, 30+ harita, Senaryo; radar araçları, S-300 tipi radar+SAM, uçaklar; **Mevzi-Core**: oyuncu kontrolünde olmayan birimlerin gerçekçi doktrinle davranışı | 🟡 | 4 km harita, tim beyni var. → Mevzi-Core tasarımı (bölgesel komuta, birim rolleri, angajman kuralları), radar/SAM katmanı |
@@ -132,8 +132,8 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 41 | Köprüler gerçekçi olsun ve hasar alsın; uzaklaşınca (zoom out) gölgeler kayıyor/parlıyor | ⏳ | → Köprü modeli (ayak, kiriş, korkuluk, hasar durumları); yönlü gölge mesafesi yakınlaştırmaya göre basamaklı + sapma ayarı |
 
 ### Uygulama sırası (fazlar)
-- **Faz 0 — Stabilite (🔄 yamalar uygulandı, GPU'da doğrulandı; test bekçisi ✅, crewtest/paratest/SPIES/evade ✅):** kalan — oyunda takılabilecek her geçici duruma süre sınırı + güvenli çıkış; yapılamayan emirde birimin sesli geri bildirimi; ekransız hızlı test modu
-- **Faz 1 — Veri gerçekçiliği:** 2, 38, 6, 26, 15, 27, 31
+- **Faz 0 — Stabilite ✅:** yamalar + test bekçisi, crewtest/paratest/SPIES/evade; takılma bekçisi (asker/araç/sedye, stucktest); yapılamayan emirde sesli uyarı; ekransız test (-Headless, run_tests.sh)
+- **Faz 1 — Veri gerçekçiliği (🔄):** 2 ✅, 27 ✅, 6, 26, 15, 31, 38
 - **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 39, 8/29, 18, 7
 - **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28/37, 5
 - **Faz 4 — Dünya ve görsel:** 34 ✅ (öne alındı), 10, 16, 20, 35, 36, 33, 14, 24, 41
