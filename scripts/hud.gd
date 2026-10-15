@@ -33,10 +33,14 @@ const ORDERS := {
 	"grenade": {"t": "El Bombası", "k": "G", "tgt": true, "d": "Seçilen noktaya el bombası at."},
 	"smoke": {"t": "Sis", "k": "Z", "tgt": true, "d": "Sis bombası at / sis atarları ateşle."},
 	"suppress": {"t": "Baskı Ateşi", "k": "B", "tgt": true, "d": "Bir bölgeyi 12 sn boyunca ateş altında tut."},
+	"fastrope": {"t": "Halatla İndir", "k": "I", "tgt": true, "d": "Nakliye helikopteri noktada 8 m'de asılı kalır, iki halat sarkıtır; askerler tüfeği sırta atıp halattan kayarak iner. Bitince halatlar bırakılır."},
+	"ropepick": {"t": "Halatla Al", "k": "-", "tgt": true, "d": "Helikopter noktada asılı kalıp halat sarkıtır; yakındaki (ya da seçili) askerler kancalanır ve hep birlikte yukarı çekilir."},
+	"minidrone": {"t": "Mini Drone Kaldır", "k": "L", "tgt": true, "d": "Operatör sırt çantasından FPV drone çıkarıp elden kaldırır. Düşmana tıkla: saldırır; boş noktaya tıkla: orada asılı kalıp tarar."},
+	"dronestation": {"t": "Drone İstasyonu Kur", "k": "O", "tgt": true, "d": "Operatör seçilen yere yer kontrol istasyonu kurar (16 sn). Bitince mancınıktan keşif İHA'sı fırlatılır: yüksek irtifa, geniş görüş, vurulması zor."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "refund", "abandon", "demolish"]
-const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_DELETE: "demolish"}
+const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronestation", "refund", "abandon", "demolish"]
+const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_L: "minidrone", KEY_O: "dronestation", KEY_I: "fastrope", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
 const STANCE_TXT := ["OTO", "AYAKTA", "ÇÖMEL", "YAT"]
 const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "atgm": "atgm_team", "medic": "medic_team", "sniper": "sniper_team", "engineer": "engineer_squad", "mortar": "mortar_team", "drone": "drone_team"}
@@ -376,6 +380,22 @@ func order_state(id: String, sel: Array) -> int:
 				elif veh and u.has_smoke():
 					any = true
 					ok = ok or u.smoke_charges > 0
+			"fastrope":
+				if veh and u.vtype == "transport":
+					any = true
+					ok = ok or not u.cargo.is_empty()
+			"ropepick":
+				if veh and u.vtype == "transport":
+					any = true
+					ok = ok or u.cargo.size() < u.capacity()
+			"minidrone":
+				if sol and u.role == "drone":
+					any = true
+					ok = ok or (u.fpv_left > 0 and u.drone_cd <= 0.0 and u.can_fight())
+			"dronestation":
+				if sol and u.role == "drone":
+					any = true
+					ok = ok or u.can_fight()
 			"suppress":
 				if sol and not (u.role in ["mortar", "drone"]):
 					return 1
@@ -475,6 +495,8 @@ func _update_cmds() -> void:
 				st.text = str(n) if n > 0 else ""
 			"airdrop":
 				st.text = str(_sum_val(sel, "crates"))
+			"minidrone":
+				st.text = str(_sum_val(sel, "fpv_left"))
 			"hold":
 				ic.active = ic.active or _first_val(sel, "order", "") == "hold"
 
@@ -881,6 +903,8 @@ func _tab_items() -> Array:
 		if not out.is_empty():
 			if tab == "art":
 				out.append_array(["fieldgun", "hmortar"])
+			if tab == "air":
+				out.append("para_squad")
 			return out
 	match tab:
 		"base":
@@ -894,7 +918,7 @@ func _tab_items() -> Array:
 		"art":
 			return ["fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun", "arty", "mlrs"]
 		"air":
-			return ["heli", "transport"]
+			return ["heli", "transport", "para_squad"]
 	return []
 
 func _producer(id: String) -> Building:
@@ -1598,6 +1622,30 @@ class CmdIcon extends Control:
 			draw_rect(Rect2(Vector2(1, 1), size - Vector2(2, 2)), Color(1, 0.74, 0.3, 0.9), false, 2.0)
 		var w := 2.0
 		match kind:
+			"fastrope", "ropepick":
+				# helikopter gövdesi + sarkan halat + ok
+				draw_line(c + Vector2(-12, -9), c + Vector2(10, -9), col, w)
+				draw_rect(Rect2(c + Vector2(-8, -8), Vector2(12, 5)), col)
+				draw_line(c + Vector2(2, -3), c + Vector2(2, 12), col, 1.5)
+				if kind == "fastrope":
+					_arrow(c + Vector2(9, -2), c + Vector2(9, 11), col, 1.5)
+				else:
+					_arrow(c + Vector2(9, 11), c + Vector2(9, -2), col, 1.5)
+			"minidrone":
+				# quad: X kollar + 4 pervane halkası
+				for sx in [-1.0, 1.0]:
+					for sy in [-1.0, 1.0]:
+						draw_line(c, c + Vector2(sx, sy) * 9.0, col, w)
+						draw_arc(c + Vector2(sx, sy) * 9.0, 4.5, 0, TAU, 12, col, 1.2)
+				draw_rect(Rect2(c - Vector2(3, 3), Vector2(6, 6)), col)
+			"dronestation":
+				# anten direği + yayılan dalgalar + rampa
+				draw_line(c + Vector2(-6, 12), c + Vector2(-6, -8), col, w)
+				draw_line(c + Vector2(-11, 12), c + Vector2(-6, 2), col, 1.2)
+				draw_line(c + Vector2(-1, 12), c + Vector2(-6, 2), col, 1.2)
+				draw_arc(c + Vector2(-6, -8), 5.0, -PI * 0.85, -PI * 0.15, 8, col, 1.2)
+				draw_arc(c + Vector2(-6, -8), 9.0, -PI * 0.85, -PI * 0.15, 10, col, 1.2)
+				draw_line(c + Vector2(2, 11), c + Vector2(13, 4), col, w)
 			"move":
 				_arrow(c + Vector2(-9, 7), c + Vector2(9, -7), col, w)
 			"fast":

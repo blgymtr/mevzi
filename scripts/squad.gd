@@ -44,7 +44,76 @@ func claimed(me: Soldier) -> Array:
 func on_death(_s: Soldier) -> void:
 	pass
 
+var _merge_t := 3.0
+var peak := 0              # en kalabalık hâli (eriyen timi tanımak için)
+var had_leader := false
+
+func has_leader() -> bool:
+	for m in members:
+		if is_instance_valid(m) and m.alive and m.role == "leader" and m.can_fight():
+			return true
+	return false
+
+func able() -> Array:
+	return members.filter(func(m): return is_instance_valid(m) and m.alive and m.can_fight() and m.squad == self and m.state != "hospital")
+
+# Lideri ölen ya da 2 kişiye düşen tim dağılır: tedavi gereken yaralılar sahra hastanesine
+# yürür, kalanlar yakındaki liderli dost time katılıp onun yanına gider.
+func _reorganize() -> void:
+	var ab := able()
+	peak = maxi(peak, ab.size())
+	var hl := has_leader()
+	had_leader = had_leader or hl
+	if ab.is_empty():
+		return
+	# dağılma: lideri vardı ve öldü/yaralandı, ya da 4+ kişilik tim 2 kişiye eridi
+	if not ((had_leader and not hl) or (peak >= 4 and ab.size() <= 2)):
+		return
+	var hosp: Building = null
+	var hd := 1e9
+	for u in G.units:
+		if is_instance_valid(u) and u is Building and u.team == team and u.done and u.alive and u.btype == "hospital":
+			var d: float = u.position.distance_to(ab[0].position)
+			if d < hd and d < 160.0:
+				hd = d
+				hosp = u
+	var best: Squad = null
+	var bd := 70.0
+	for sq in G.squads:
+		if sq == self or sq.team != team or not sq.has_leader():
+			continue
+		var am: Array = sq.able()
+		if am.is_empty() or am.size() + ab.size() > 12:
+			continue
+		var d: float = am[0].position.distance_to(ab[0].position)
+		if d < bd:
+			bd = d
+			best = sq
+	for m in ab:
+		if m.order in ["hold", "board", "station"] or m.state in ["setup", "launch", "build", "aboard"] or m.vehicle_in != null:
+			continue
+		if m.order == "hospital":
+			continue
+		if hosp != null and m.injury != "" and m.injury_t < 0.0:
+			m.cmd_hospital(hosp)
+			continue
+		if best == null:
+			continue
+		members.erase(m)
+		best.add(m)
+		var lead: Soldier = best.able()[0]
+		for x in best.able():
+			if x.role == "leader":
+				lead = x
+		if m.state == "idle" and m.order == "":
+			m.cmd_move(G.grid.nearest_free(lead.position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)), Grid.M_INF))
+		m.say("%s'E KATILIYORUM" % best.name.to_upper() if I18n.lang == "tr" else "JOINING %s" % best.name.to_upper(), 2.5)
+
 func update(dt: float) -> void:
+	_merge_t -= dt
+	if _merge_t <= 0.0 and team >= 0:
+		_merge_t = 3.0
+		_reorganize()
 	_t -= dt
 	if _t > 0.0:
 		return

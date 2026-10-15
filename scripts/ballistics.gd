@@ -16,6 +16,9 @@ class Proj:
 	var landed := false
 	var trail := 0.0
 	var aim := Vector3.ZERO
+	var decoy := Vector3.INF      # füze fişeğe kandı: bu noktaya gider
+	var big := false
+	var spd := 0.0
 
 var projs: Array = []
 var _gmesh: Mesh
@@ -25,6 +28,12 @@ var _arty_m: Mesh
 var _apfsds_m: Mesh
 var _he_m: Mesh
 var _atgm_m: Mesh
+var _hellfire_m: Mesh
+var _vikhr_m: Mesh
+var _hydra_m: Mesh
+var _sam_m: Mesh
+var _flame_m: Mesh
+var _flare_m: Mesh
 
 func _ready() -> void:
 	# ileri -Z: look_at(hız) ile uçuş yönüne döner
@@ -85,6 +94,99 @@ func _ready() -> void:
 		at.box(Vector3(cos(a) * 0.08, sin(a) * 0.08, 0.0), Vector3(0.004 + absf(cos(a)) * 0.1, 0.004 + absf(sin(a)) * 0.1, 0.2), Color(0.3, 0.32, 0.26))
 		at.box(Vector3(cos(a) * 0.07, sin(a) * 0.07, 0.32), Vector3(0.004 + absf(cos(a)) * 0.08, 0.004 + absf(sin(a)) * 0.08, 0.08), Color(0.3, 0.32, 0.26))
 	_atgm_m = at.commit(Mats.vc())
+	_air_models(X)
+
+# Hava füzeleri gerçek boyutta: Hellfire (AGM-114), Vikhr (9K121), Hydra-70/S-8 roket,
+# karadan havaya füze (Stinger/Igla tipi; büyük olanlar Buk/Tor ölçeğinde büyütülür)
+func _air_models(X: Basis) -> void:
+	var olive := Color(0.33, 0.36, 0.27)
+	var glass := Color(0.08, 0.1, 0.14)
+	var yel := Color(0.85, 0.7, 0.15)
+	var brn := Color(0.45, 0.3, 0.16)
+	var dk := Color(0.2, 0.21, 0.2)
+	# --- Hellfire: yarım küre arayıcı camı, ön kanard, orta kanat, kuyruk kontrol yüzeyi
+	var h := MB.new()
+	h.sphere(Vector3(0, 0, -0.78), Vector3(0.088, 0.088, 0.07), 10, 6, glass)
+	h.cyl(Vector3(0, 0, -0.74), 0.088, 0.089, 0.06, 12, Color(0.5, 0.5, 0.48), X)
+	h.cyl(Vector3(0, 0, -0.45), 0.089, 0.089, 0.52, 12, olive, X)
+	h.cyl(Vector3(0, 0, -0.3), 0.0905, 0.0905, 0.05, 12, yel, X)           # HE bandı
+	h.cyl(Vector3(0, 0, 0.32), 0.089, 0.085, 1.0, 12, olive, X)
+	h.cyl(Vector3(0, 0, 0.2), 0.0905, 0.0905, 0.05, 12, brn, X)            # motor bandı
+	h.cyl(Vector3(0, 0, 0.84), 0.07, 0.055, 0.06, 10, dk, X)               # lüle
+	for k in 4:
+		var a := k * PI * 0.5 + PI * 0.25
+		var cx := cos(a)
+		var cy := sin(a)
+		h.box(Vector3(cx * 0.12, cy * 0.12, -0.58), Vector3(0.004 + absf(cx) * 0.07, 0.004 + absf(cy) * 0.07, 0.07), olive)
+		h.box(Vector3(cx * 0.15, cy * 0.15, 0.05), Vector3(0.005 + absf(cx) * 0.13, 0.005 + absf(cy) * 0.13, 0.32), olive)
+		h.box(Vector3(cx * 0.14, cy * 0.14, 0.72), Vector3(0.005 + absf(cx) * 0.11, 0.005 + absf(cy) * 0.11, 0.14), olive)
+	_hellfire_m = h.commit(Mats.vc())
+	# --- Vikhr: uzun ince gövde, sivri burun, açılır kuyruk kanatları, beyaz-gri
+	var v := MB.new()
+	var gry := Color(0.62, 0.64, 0.6)
+	v.cyl(Vector3(0, 0, -1.2), 0.0, 0.065, 0.32, 10, gry, X)
+	v.cyl(Vector3(0, 0, -0.2), 0.065, 0.065, 1.7, 10, gry, X)
+	v.cyl(Vector3(0, 0, -0.6), 0.067, 0.067, 0.05, 10, Color(0.75, 0.15, 0.1), X)
+	v.cyl(Vector3(0, 0, 0.7), 0.065, 0.05, 0.12, 10, dk, X)
+	for k in 4:
+		var a := k * PI * 0.5
+		var cx := cos(a)
+		var cy := sin(a)
+		v.box(Vector3(cx * 0.1, cy * 0.1, -0.9), Vector3(0.004 + absf(cx) * 0.07, 0.004 + absf(cy) * 0.07, 0.08), gry)
+		v.box(Vector3(cx * 0.16, cy * 0.16, 0.5), Vector3(0.004 + absf(cx) * 0.2, 0.004 + absf(cy) * 0.2, 0.18), gry)
+	_vikhr_m = v.commit(Mats.vc())
+	# --- Hydra-70 / S-8 roket: ince gövde, sivri tapalı harp başlığı, sarmal kuyruk kanatçığı
+	var r := MB.new()
+	r.cyl(Vector3(0, 0, -0.78), 0.0, 0.035, 0.16, 8, Color(0.55, 0.5, 0.25), X)
+	r.cyl(Vector3(0, 0, -0.55), 0.035, 0.035, 0.3, 8, olive, X)
+	r.cyl(Vector3(0, 0, 0.1), 0.035, 0.035, 1.0, 8, Color(0.6, 0.62, 0.6), X)
+	for k in 4:
+		var a := k * PI * 0.5 + 0.3
+		r.box(Vector3(cos(a) * 0.05, sin(a) * 0.05, 0.56), Vector3(0.003 + absf(cos(a)) * 0.05, 0.003 + absf(sin(a)) * 0.05, 0.1), dk)
+	_hydra_m = r.commit(Mats.vc())
+	# --- karadan havaya füze: kör sivri arayıcı, ön kanard, açılmış kuyruk, mavi eğitim değil savaş (sarı-kahve bant)
+	var sm := MB.new()
+	sm.sphere(Vector3(0, 0, -0.74), Vector3(0.035, 0.035, 0.06), 8, 5, Color(0.55, 0.6, 0.65))
+	sm.cyl(Vector3(0, 0, -0.62), 0.03, 0.035, 0.14, 8, Color(0.3, 0.3, 0.3), X)
+	sm.cyl(Vector3(0, 0, 0.05), 0.035, 0.035, 1.2, 8, olive, X)
+	sm.cyl(Vector3(0, 0, -0.4), 0.036, 0.036, 0.03, 8, yel, X)
+	sm.cyl(Vector3(0, 0, -0.32), 0.036, 0.036, 0.03, 8, brn, X)
+	for k in 4:
+		var a := k * PI * 0.5 + PI * 0.25
+		sm.box(Vector3(cos(a) * 0.055, sin(a) * 0.055, -0.5), Vector3(0.003 + absf(cos(a)) * 0.05, 0.003 + absf(sin(a)) * 0.05, 0.06), olive)
+		sm.box(Vector3(cos(a) * 0.07, sin(a) * 0.07, 0.6), Vector3(0.003 + absf(cos(a)) * 0.09, 0.003 + absf(sin(a)) * 0.09, 0.1), olive)
+	_sam_m = sm.commit(Mats.vc())
+	# --- motor alevi: parlak sarı çekirdek, saydam turuncu dış koni (eklemeli, gölgesiz)
+	var fm := StandardMaterial3D.new()
+	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	fm.vertex_color_use_as_albedo = true
+	fm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	fm.no_depth_test = false
+	var fl := MB.new()
+	fl.cyl(Vector3(0, 0, 0.35), 0.06, 0.0, 0.7, 8, Color(1.0, 0.55, 0.15, 1), X, false, false)
+	fl.cyl(Vector3(0, 0, 0.18), 0.035, 0.0, 0.36, 8, Color(1.0, 0.95, 0.7, 1), X, false, false)
+	_flame_m = fl.commit(fm)
+	var flm := StandardMaterial3D.new()
+	flm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	flm.albedo_color = Color(1.0, 0.95, 0.8)
+	var fs := SphereMesh.new()
+	fs.radius = 0.22
+	fs.height = 0.44
+	fs.radial_segments = 8
+	fs.rings = 4
+	fs.material = flm
+	_flare_m = fs
+
+func _flame(p: Proj, length := 1.0) -> void:
+	var f := MeshInstance3D.new()
+	f.mesh = _flame_m
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	f.scale = Vector3(1.0, 1.0, length)
+	p.node.add_child(f)
+	var bounds: AABB = p.node.mesh.get_aabb() if p.node is MeshInstance3D and p.node.mesh else AABB()
+	f.position = Vector3(0, 0, bounds.end.z)
 
 func _node(m: Mesh) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -114,7 +216,7 @@ func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String) -> 
 	projs.append(p)
 	G.fx.tracer(from, from + p.vel * p.life, sp, Color(1.0, 0.8, 0.45) if mode != "auto" else Color(1.0, 0.6, 0.3), 0.16 if mode != "auto" else 0.1, 6.0 if mode != "auto" else 3.0)
 
-func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -> void:
+func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", model := "") -> void:
 	var p := Proj.new()
 	p.kind = kind
 	var guided := kind == "atgm" or kind == "topatk"
@@ -134,7 +236,61 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -
 	p.team = team
 	p.src = src
 	p.target = target
-	p.node = _node(_atgm_m if guided else _rmesh)
+	var mm: Mesh = _atgm_m if guided else _rmesh
+	match model:
+		"hellfire":
+			mm = _hellfire_m
+		"vikhr":
+			mm = _vikhr_m
+		"hydra":
+			mm = _hydra_m
+	p.node = _node(mm)
+	p.node.position = from
+	if model != "":
+		p.node.look_at(from + p.vel, Vector3.UP)
+		_flame(p, 1.4 if model == "hydra" else 1.0)
+		if model in ["hellfire", "vikhr"]:
+			p.vel = p.vel.normalized() * 48.0
+			p.life = 7.0
+	projs.append(p)
+
+# karadan havaya güdümlü füze: hedefe orantılı seyrüsefer, yakınlık tapası, fişeğe kanabilir
+func sam(from: Vector3, target, team: int, src, big := false) -> void:
+	var p := Proj.new()
+	p.kind = "sam"
+	p.pos = from
+	p.big = big
+	p.team = team
+	p.src = src
+	p.target = target
+	p.spd = 30.0
+	var tp: Vector3 = target.aim_point()
+	p.vel = ((tp - from).normalized() + Vector3(0, 0.9, 0)).normalized() * p.spd
+	p.life = 7.0
+	p.node = _node(_sam_m)
+	p.node.scale = Vector3.ONE * (2.4 if big else 1.0)
+	p.node.position = from
+	p.node.look_at(from + p.vel, Vector3.UP)
+	_flame(p, 1.6)
+	projs.append(p)
+	G.fx.backblast(from, -p.vel.normalized())
+	G.fx.flash(from, 6.0, 10.0, 0.12, Color(1.0, 0.8, 0.5))
+	Sfx.play3d("rpg", from, 2.0)
+	if target is Vehicle:
+		target.on_missile(p)
+
+# ısı fişeği (magnezyum): parlak, kavis çizerek düşer, arkasında kalın beyaz duman
+func flare(from: Vector3, vel: Vector3) -> void:
+	var p := Proj.new()
+	p.kind = "flare"
+	p.pos = from
+	p.vel = vel
+	p.life = randf_range(2.6, 3.4)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _flare_m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	p.node = mi
 	p.node.position = from
 	projs.append(p)
 
@@ -231,6 +387,10 @@ func _process(dt: float) -> void:
 				done = _step_grenade(p, dt)
 			"mortar", "arty", "rkt":
 				done = _step_lob(p, dt)
+			"sam":
+				done = _step_sam(p, dt)
+			"flare":
+				done = _step_flare(p, dt)
 		if done:
 			if p.node:
 				p.node.queue_free()
@@ -343,6 +503,69 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 		G.explode(Vector3(p.pos.x, maxf(p.pos.y, 0.0), p.pos.z), 3.0, 95.0, "rpg", p.team, p.src)
 		return true
 	return false
+
+func _step_sam(p: Proj, dt: float) -> bool:
+	p.t += dt
+	# motor: 0.4 sn fırlatma, sonra hızlanma
+	p.spd = minf(p.spd + dt * (260.0 if p.t > 0.35 else 40.0), 150.0 if p.big else 120.0)
+	var tgt = p.target if p.target != null and is_instance_valid(p.target) else null
+	var aimp := p.pos + p.vel
+	if p.decoy != Vector3.INF:
+		aimp = p.decoy
+	elif tgt != null and tgt.alive:
+		var tp: Vector3 = tgt.aim_point()
+		var tv: Vector3 = tgt.hvel if tgt is Vehicle else Vector3.ZERO
+		var tt := p.pos.distance_to(tp) / maxf(p.spd, 1.0)
+		aimp = tp + tv * tt * 0.9
+	var want := (aimp - p.pos).normalized() * p.spd
+	var turn := (3.2 if p.big else 3.8) * dt
+	var cur := p.vel.normalized()
+	var nd := cur.slerp(want.normalized(), clampf(turn / maxf(cur.angle_to(want.normalized()), 0.001), 0.0, 1.0)) if p.t > 0.25 else cur
+	p.vel = nd * p.spd
+	var np := p.pos + p.vel * dt
+	p.trail -= dt
+	if p.trail <= 0.0:
+		p.trail = 0.012
+		# keskin, kalın beyaz duman şeridi + parlak alev
+		G.fx.emit(Fx.P_SMOKE, p.pos, G.fx._rv(0.15), randf_range(4.5, 7.0), 0.5 if not p.big else 0.9, 1.8 if not p.big else 2.8, -0.03, 1.4, Color(0.95, 0.95, 0.94, 0.7))
+		G.fx.emit(Fx.P_SPARK, p.pos, -p.vel.normalized() * 30.0, 0.04, 0.2, 0.1, 0.0, 6.0, Color(1.0, 0.85, 0.5, 1))
+	p.node.position = np
+	if p.vel.length() > 0.01:
+		p.node.look_at(np + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
+	p.pos = np
+	if p.decoy != Vector3.INF and p.pos.distance_to(p.decoy) < 3.0:
+		_air_burst(p.pos, p.big)
+		return true
+	if tgt != null and tgt.alive and p.decoy == Vector3.INF and p.pos.distance_to(tgt.aim_point()) < (3.2 if p.big else 2.2):
+		_air_burst(p.pos, p.big)
+		tgt.take_damage(420.0 if p.big else 260.0, p.src, "sam")
+		return true
+	if p.pos.y < 0.3 or p.t >= p.life:
+		_air_burst(p.pos, p.big)    # kendini imha
+		return true
+	return false
+
+func _air_burst(at: Vector3, big: bool) -> void:
+	G.fx.explosion(at, 1.2 if big else 0.8, "flak")
+	G.fx.flash(at, 8.0, 14.0, 0.12, Color(1.0, 0.75, 0.45))
+	for i in 14:
+		G.fx.emit(Fx.P_SPARK, at, G.fx._rv(14.0), randf_range(0.2, 0.5), 0.12, 0.05, 6.0, 1.5, Color(1.0, 0.8, 0.4, 1))
+	Sfx.play3d("expl_med", at, 0.0)
+
+func _step_flare(p: Proj, dt: float) -> bool:
+	p.t += dt
+	p.vel.y -= 4.5 * dt
+	p.vel *= 1.0 - dt * 1.1
+	p.pos += p.vel * dt
+	p.node.position = p.pos
+	var k := 1.0 - p.t / p.life
+	p.node.scale = Vector3.ONE * (0.6 + 0.6 * k) * (0.85 + 0.3 * randf())
+	p.trail -= dt
+	if p.trail <= 0.0:
+		p.trail = 0.03
+		G.fx.emit(Fx.P_SMOKE, p.pos, G.fx._rv(0.2), randf_range(2.5, 4.0), 0.3, 1.3, -0.04, 1.2, Color(0.96, 0.96, 0.95, 0.6))
+		G.fx.emit(Fx.P_SPARK, p.pos, G.fx._rv(2.0), 0.12, 0.25, 0.05, 2.0, 1.0, Color(1.0, 0.95, 0.8, 1))
+	return p.t >= p.life or p.pos.y < 0.2
 
 func _step_grenade(p: Proj, dt: float) -> bool:
 	p.t += dt

@@ -68,6 +68,14 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	rng.randomize()
 	RenderingServer.global_shader_parameter_add("game_time", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	# ağaç/çalı şok dalgası için son 4 büyük patlama: (x, z, başlangıç, güç)
+	for i in 4:
+		RenderingServer.global_shader_parameter_add("blast%d" % i, RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, -100, 0))
+
+var _blast_i := 0
+func push_blast(p: Vector3, power: float) -> void:
+	RenderingServer.global_shader_parameter_set("blast%d" % _blast_i, Vector4(p.x, p.z, time, power))
+	_blast_i = (_blast_i + 1) % 4
 
 func reset() -> void:
 	units.clear()
@@ -75,6 +83,8 @@ func reset() -> void:
 	smokes.clear()
 	ais.clear()
 	time = 0.0
+	for i in 4:
+		RenderingServer.global_shader_parameter_set("blast%d" % i, Vector4(0, 0, -100, 0))
 	supply = [600.0, 600.0]
 	cap_max = [0, 0]
 	cap_used = [0, 0]
@@ -170,7 +180,7 @@ func _update_visibility() -> void:
 			# gece/kötü havada ateş eden birim yine de görünür
 			if wm < 1.0 and u is Soldier and time - u.fired_t < 1.5:
 				wm = maxf(wm, 1.0)
-			for f in near(u.position, 85.0):
+			for f in near(u.position, 125.0):
 				if s:
 					break
 				if f.team == t and f.alive and f.position.distance_to(u.position) <= f.sight * (wm if not (f is Building) else maxf(wm, 0.75)):
@@ -253,6 +263,9 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 				if u is Vehicle:
 					Vehicle.shot_from = p
 				u.take_damage(dmg * f, src, kind)
+	for st in DroneStation.all:
+		if is_instance_valid(st) and st.alive and st.position.distance_to(p) < radius * 1.3:
+			st.take_blast(dmg * (1.0 - clampf(st.position.distance_to(p) / (radius * 1.3), 0.0, 0.8)))
 	for s in near(p, radius * 4.0):
 		if s is Soldier and s.alive:
 			s.add_suppression(30.0 * size * (1.0 - clampf(s.position.distance_to(p) / (radius * 4.0), 0.0, 1.0)), p)

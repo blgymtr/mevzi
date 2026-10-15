@@ -9,6 +9,7 @@ var bodies: Array = []
 var shot_dir := ""
 var shot_scene := ""
 var autoplay := 0.0
+var _t07: Tests07 = null
 var ambience: AudioStreamPlayer
 var ambience2: AudioStreamPlayer
 var cfg := {"volume": 0.8, "difficulty": 1, "lang": "", "fullscreen": true, "shadows": true, "edge_scroll": true}
@@ -33,7 +34,10 @@ func _ready() -> void:
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
 	apply_video()
-	if shot_dir != "" and shot_scene == "scentest":
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest"]:
+		_t07 = Tests07.new(self)
+		_t07.run(shot_scene)
+	elif shot_dir != "" and shot_scene == "scentest":
 		_run_scen_test()
 	elif shot_dir != "" and shot_scene == "orders":
 		_run_orders_test()
@@ -226,6 +230,7 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	var bal := Ballistics.new()
 	world.add_child(bal)
 	G.bal = bal
+	world.add_child(FogOfWar.new())
 	var ground := StaticBody3D.new()
 	ground.collision_layer = 1
 	var gs := CollisionShape3D.new()

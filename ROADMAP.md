@@ -145,8 +145,41 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 - [x] Gerçekçi inşaat: 4-6 işçi farklı yerlerde farklı işler (çakma, yukarı çakma, malzeme taşıma), iskele, alttan yukarı örülen duvar
 - [x] ABD/Rusya kargo helikopteri (CH-47F tipi, Mi-26 tipi; Blender): asker indirme/bindirme, araç askıya alma/bırakma, havadan ikmal
 - [x] Bekleme tutuşuyla koşu (2. foto), nişana kalkıp geri inme, tabancayı kılıftan çekme/ateş/geri takma
-- [ ] Hava indirme tugayı: paraşütçü birlikleri, büyük harita (helikopter menzili için)
-- [ ] Faction yapılarının özgün Blender modelleri (fabrika/kışla/pist hâlâ basit)
+- [~] Hava indirme tugayı: paraşütçü timi ✅ (0.0.7), halatla iniş/çekme ✅ — kalan: 4×4 km harita (aşağıda)
+- [~] Faction yapılarının özgün Blender modelleri — 0.0.7'de ayrı dalda yapılıyor
+
+## Hotfix 0.0.7 — kullanıcı listesi
+- [x] Hiçbir araç askeri itmez: araç şeridindeki piyade için yavaşlar/durur ("YOLU AÇIN!"), asker kendi adımlarıyla kenara çekilir (septest)
+- [x] Patlamada çift ragdoll: ceset bir kez savrulur, sonraki patlamalar yalnız hafif sarsar; canlı asker 3 sn içinde ikinci kez uçmaz
+- [x] Ağaçlar: gerçek modeller (ez-tree, MIT) — meşe, dişbudak, kavak, huş, söğüt, çam (S/M/L, 3'er tohum), kış için yaprağı dökülmüş ikizleri, 3 çalı türü; gerçek kabuk/yaprak dokuları (Poly Haven/TextureCan, CC0); kışta karlı tepe; rüzgâr salınımı (treetest)
+- [x] Büyük patlamada ağaçlar şok dalgasıyla (ses hızı gecikmeli) yatıp sönümlenerek sallanır; yapraklar titrer (son 4 patlama, global shader halkası)
+- [x] Drone operatörü kendiliğinden drone kaldırmaz: "Mini Drone Kaldır" (L, çantadan elden kaldırma, 3 adet, hedef yoksa noktada asılı kalıp tarar) ve "Drone İstasyonu Kur" (O, 16 sn kurulum: Pelican çanta+dizüstü, tripod anten, jeneratör, mancınık rampası, kamuflaj ağı → yüksek irtifa keşif İHA'sı, 120 m görüş, vurulması zor; operatör/istasyon kaybında bağ kopar ve İHA düşer) (dronetest)
+- [x] Bölgesel yara: bacak (topallar, kanlı sargı), kol (alçı + boyun askısı, tek el; ağır silahta tabancaya geçer), omuz (yavaş), kafa (bandaj, kask altında), gövde; hastanede tedavi sonrası etkiler zamanla geçer (woundtest)
+- [x] Lideri ölen / eriyen tim yakındaki liderli time katılır; tedavi gereken yaralılar sahra hastanesine kendileri yürür
+- [x] Karadan havaya güdümlü füze (SAM/MANPADS ailesine göre sayı/menzil), yakınlık tapası; helikopter fişek atıp yana kırarak alçalır, kızılötesi arayıcı fişeğe kanabilir; İHA manevra yapar (evadetest)
+- [x] Detaylı hava füzeleri: Hellfire (ABD) / Vikhr (RU) güdümlü tanksavar, Hydra/S-8 roket, SAM; motor alevi + keskin beyaz duman
+- [x] Halatla iniş (fast-rope): helikopter 8 m'de asılı kalır, iki halat sarkar; asker tüfeği sırta atar, iki elle tutunup bacaklarını sarar, kayar, çömelip tüfeği alır ve açılır; halatlar bırakılır. Halatla çekme (SPIES) (ropetest)
+- [x] Araca kapıdan binme/inme: arka kapıya yürür, eğilerek girer; inerken sırayla kapıdan çömelerek çıkar ve yelpaze açılır (crewtest)
+- [x] Çekili top mürettebatı: atışta kulak kapatma, kovan atma, cephaneci sandıktan mermi taşır, doldurucu kamaya sürer, nişancı volan çevirir; havanda mermi ağızdan bırakılır (crewtest)
+- [x] Paraşütçü timi (pistten): C-130 / Il-76 tipi uçak geçer, statik hatla atlama, kubbe paraşüt, süzülme, iniş yuvarlanması, kubbe çöker (paratest)
+- [x] Görsel savaş sisi: keşfedilmemiş alan koyu, görülmüş ama görüş dışı soluk, görüş içi açık (fowtest)
+- [ ] 4×4 km harita: mevcut 0,5 m ızgara 4 km'de 67 M hücre → bölgesel (chunk) ızgara, hiyerarşik yol bulma, arazi parçaları, ağaç impostor'ları gerekiyor (aşağıda plan)
+- [ ] 100+ bina türü (prosedürel varyant üreteci), çimen/patika/taş yol çeşitliliği
+- [ ] Piyade YZ beyni (mermiden kaçınma, kanat, bina temizleme, plan) — tim birleştirme ilk adım
+- [ ] İskeletli (Blender) animasyon kütüphanesi: koşu/nişan/binme/halat/paraşüt pozlarının keyframe klipleri (şu an kodla poz + IK)
+- [ ] Efektler: Blender Mantaflow/EmberGen ile flipbook (sprite sheet) patlama, duman, sekme
+
+### Unreal Engine kararı
+Niagara efektleri Godot'a "export" edilemez: Niagara yalnız UE çalışma zamanında çalışır. Taşınabilen tek şey
+efektin **flipbook** (sprite sheet) olarak pişirilmiş görüntüsüdür; bunu Blender Mantaflow ile de üretebiliriz.
+Oyunu UE'ye taşımak ~21 bin satırlık GDScript'in sıfırdan yazılması demek. Karar: **Godot + Blender** devam;
+UE yalnız istenirse bir "efekt pişirme istasyonu" olarak (flipbook PNG) kullanılır.
+
+### 4×4 km harita planı
+1. Izgara parçalara (64 m chunk) bölünür; yalnız dolu/kentsel parçalar 0,5 m ince ızgara tutar, açık arazi 2 m.
+2. Yol bulma iki katman: 8 m kaba ızgara (bölgeler arası) + 1 m yerel (birlik çevresi).
+3. Arazi: parça başına mesh + LOD, uzak ağaçlar impostor (kart), MultiMesh bitki örtüsü.
+4. Önce 1 km (orta ölçek) harita ile ölçekleme testi, sonra 2 km, en son 4 km.
 
 ## Sıradaki adımlar (sıra)
 1. **Görsel polish (Blender):** binalar → üs yapıları → harita öğeleri (ağaç, çit, direk, köprü) — hepsi yeniden, faset/temiz stil, asker v3 ile uyumlu

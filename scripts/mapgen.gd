@@ -47,6 +47,7 @@ func build(id: String, seed_v: int) -> void:
 	P = G.props
 	T = G.terrain
 	P.winter = kind == "winter"
+	P.biome_id = kind
 	ops.clear()
 	if id == "custom":
 		build_ops(data_in)

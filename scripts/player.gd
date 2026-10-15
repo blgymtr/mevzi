@@ -310,6 +310,42 @@ func exec_order(id: String, gp: Vector3) -> void:
 			if best == null and not popped:
 				G.say("Sis atar boş" if sm and not veh.is_empty() else ("Sis bombası yok" if sm else "El bombası yok"), Vector3.ZERO, team)
 				Sfx.play2d("ui_error", -6.0)
+		"fastrope", "ropepick":
+			var hs: Array = veh.filter(func(v): return v.vtype == "transport")
+			var n := 0
+			for i in hs.size():
+				var off := Vector3((i % 3 - 1) * 14.0, 0, (i / 3) * 14.0)
+				if id == "fastrope" and not hs[i].cargo.is_empty():
+					hs[i].cmd_fastrope(gp + off)
+					n += 1
+				elif id == "ropepick":
+					hs[i].cmd_rope_pick(gp + off)
+					n += 1
+			if n > 0:
+				markers.append([gp, G.time, Color(0.4, 0.9, 1.0)])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				Sfx.play2d("ui_error", -6.0)
+		"minidrone", "dronestation":
+			var ops: Array = sol.filter(func(u): return u.role == "drone" and u.can_fight())
+			if ops.is_empty() or gp == Vector3.INF:
+				Sfx.play2d("ui_error", -6.0)
+				return
+			if id == "minidrone":
+				var tu := unit_at(get_viewport().get_mouse_position())
+				if tu != null and not tu.is_enemy(ops[0]):
+					tu = null
+				# en uygun operatör: drone'u olan, en yakın
+				ops.sort_custom(func(a, b): return a.dist2_p(gp) < b.dist2_p(gp))
+				for o in ops:
+					if o.fpv_left > 0 and o.drone_cd <= 0.0:
+						o.cmd_minidrone(gp, tu)
+						break
+				markers.append([gp, G.time, Color(1.0, 0.45, 0.3)])
+			else:
+				ops[0].cmd_station(gp)
+				markers.append([gp, G.time, Color(0.4, 0.9, 1.0)])
+			Sfx.play2d("ui_move", -8.0)
 		"suppress":
 			for u in mobile:
 				u.cmd_suppress(gp)

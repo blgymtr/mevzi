@@ -82,6 +82,7 @@ var lean_cur := Vector3.ZERO
 var fly_vel := Vector3.ZERO
 var fly_spin := 0.0
 var fly_ang := 0.0
+var fly_end := -99.0      # son savrulmanın yere iniş anı (tekrar savrulmayı engeller)
 var state_t := 0.0
 var throw_to := Vector3.ZERO
 var throw_smoke := false
@@ -140,8 +141,13 @@ func led() -> bool:
 var accuracy_bonus := 0.0
 var mortar_rounds := 0
 var mortar_cd := 0.0
-var drone_cd := 6.0
+var drone_cd := 0.0
 var my_drone = null
+var fpv_left := 3            # sırt çantasındaki mini drone sayısı
+var drone_job := ""          # "launch": mini drone kaldırıyor, "station": istasyon kuruyor
+var job_pt := Vector3.INF
+var job_tgt: Unit = null
+var station: DroneStation = null
 var repair_target: Unit = null
 var vehicle_in: Vehicle = null
 var board_target: Vehicle = null
@@ -170,6 +176,10 @@ var body_lift := 0.0
 var surrender_chk := 0.0
 var low_ammo_said := false
 var hosp_b: Building = null
+# bölgesel yara: "" | leg | arm | shoulder | head | torso — tedavi (sahra/hastane) görseli + etkisi
+var injury := ""
+var injury_t := -1.0          # >0: hastane sonrası iyileşme süresi; -1: hastaneye kadar kalıcı
+const INJ_TXT := {"leg": "BACAĞIMDAN VURULDUM!", "arm": "KOLUM!", "shoulder": "OMZUM!", "head": "KAFAMA SIYIRDI!", "torso": "KARNIMA ALDIM!"}
 
 func setup(t: int, rl: String) -> void:
 	team = t
@@ -207,7 +217,7 @@ func weapon() -> Dictionary:
 	return WPN[role]
 
 func can_fight() -> bool:
-	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "prisoner", "dive", "aboard", "stretchered", "hospital", "stretcher", "slide"])
+	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "prisoner", "dive", "aboard", "stretchered", "hospital", "stretcher", "slide", "rope", "rope_up", "rope_wait", "exiting", "entering", "para"])
 
 func incapacitated() -> bool:
 	return state in ["wounded", "dragged", "healing", "stretchered"]
@@ -283,9 +293,10 @@ func cmd_stop() -> void:
 	amove_dest = Vector3.INF
 	suppress_until = 0.0
 	build_site = null
+	drone_job = ""
 	dest = position
 	path = PackedVector3Array()
-	if state in ["move", "build", "rescue"]:
+	if state in ["move", "build", "rescue", "setup", "launch"]:
 		state = "idle"
 
 func cmd_attack_move(p: Vector3) -> void:
@@ -472,15 +483,310 @@ func board(v: Vehicle) -> void:
 	if selected and G.player and not v.riders_visible():
 		G.player.deselect(self)
 
-func dismount(p: Vector3) -> void:
+# ------------------------------------------------------------ halatla iniş (fast-rope) / çekilme (SPIES)
+# Kapıda: tüfeği sırta atar (0-0.7 sn) → iki elle halatı kavrar, bacaklarını sarar (0.7-1.0) →
+# kayar (hızlanır, dibe yakın frenler) → yere basınca çömelir, halatı bırakır, tüfeği sırttan alır → açılır.
+var rope_heli: Vehicle = null
+var rope_i := 0
+var rope_h := 0.0
+var rope_v := 0.0
+var rope_phase := 0          # 0 kapı/silah sırta, 1 kavrama, 2 kayma, 3 yere iniş, 4 silahı al
+
+func start_rope_down(v: Vehicle, idx: int) -> void:
+	vehicle_in = null
+	rope_heli = v
+	rope_i = idx
+	state = "rope"
+	state_t = 0.0
+	rope_phase = 0
+	rope_v = 0.0
+	visible = true
+	var a := v.rope_anchor(idx)
+	rope_h = a.y - 1.25
+	position = Vector3(a.x, rope_h, a.z)
+	rotation.y = v.heading + (PI * 0.5 if idx % 2 == 0 else -PI * 0.5)
+	path = PackedVector3Array()
+
+func start_rope_up(v: Vehicle) -> void:
+	rope_heli = v
+	rope_i = 0
+	state = "move"
+	order = "rope_up"
+	_set_path(G.grid.nearest_free(v.rope_pt + Vector3(randf_range(-0.6, 0.6), 0, randf_range(-0.6, 0.6)), Grid.M_INF))
+	say("HALATA!", 2.0)
+
+func rope_fall() -> void:
+	var h := position.y
+	state = "fly"
+	state_t = 0.0
+	fly_vel = Vector3(randf_range(-1, 1), 0.0, randf_range(-1, 1))
+	position.y = maxf(h, 0.1)
+	hp -= h * 14.0
+	if hp <= 0.0:
+		die(null, true)
+
+func _rope_process(dt: float) -> void:
+	var v := rope_heli
+	var ok := v != null and is_instance_valid(v) and v.alive and not v.ropes.is_empty()
+	match state:
+		"rope":
+			if not ok and rope_phase < 3:
+				rope_fall()
+				return
+			if ok:
+				var a := v.rope_anchor(rope_i % v.ropes.size())
+				position.x = a.x
+				position.z = a.z
+			if rope_phase == 0:
+				body.animate(dt, "sling", 0.0, clampf(state_t / 0.7, 0.0, 1.0))
+				if state_t > 0.7:
+					rope_phase = 1
+					state_t = 0.0
+			elif rope_phase == 1:
+				body.animate(dt, "rope", 0.0, 0.0)
+				if state_t > 0.3:
+					rope_phase = 2
+					state_t = 0.0
+			elif rope_phase == 2:
+				var gh := G.terrain.ground_h(position) if G.terrain else 0.0
+				var left := position.y - gh
+				var vmax := 5.0 if left > 2.0 else maxf(1.2, left * 2.0)
+				rope_v = move_toward(rope_v, vmax, dt * 9.0)
+				position.y = maxf(gh, position.y - rope_v * dt)
+				body.animate(dt, "rope", rope_v, 1.0)
+				if position.y <= gh + 0.01:
+					rope_phase = 3
+					state_t = 0.0
+					G.fx.dust_burst(position, 0.6)
+			elif rope_phase == 3:
+				body.animate(dt, "crouch", 0.0)
+				if state_t > 0.35:
+					rope_phase = 4
+					state_t = 0.0
+			else:
+				body.animate(dt, "unsling", 0.0, clampf(state_t / 0.55, 0.0, 1.0))
+				if state_t > 0.55:
+					# halattan uzaklaş: iniş noktası çevresinde çember emniyet
+					state = "idle"
+					stance = CROUCH
+					position.y = 0.0
+					var out := Vector3(cos(randf() * TAU), 0, sin(randf() * TAU)) * randf_range(5.0, 9.0)
+					cmd_move(G.grid.nearest_free(position + out, Grid.M_INF))
+		"rope_wait":
+			# kancalandı: iki elle halatı tutar, çekilmeyi bekler
+			if not ok:
+				state = "idle"
+				return
+			body.animate(dt, "rope", 0.0, 0.0)
+			position.x = lerpf(position.x, v.rope_anchor(0).x, dt * 4.0)
+			position.z = lerpf(position.z, v.rope_anchor(0).z, dt * 4.0)
+		"rope_up":
+			if not ok:
+				rope_fall()
+				return
+			var a2 := v.rope_anchor(0)
+			position.x = lerpf(position.x, a2.x, dt * 3.0)
+			position.z = lerpf(position.z, a2.z, dt * 3.0)
+			position.y = move_toward(position.y, a2.y - 1.3, dt * 2.2)
+			body.animate(dt, "rope", 0.0, 0.0)
+			if position.y >= a2.y - 1.35:
+				position.y = 0.0
+				board(v)
+				v.rope_riders.erase(self)
+	body.position = Vector3.ZERO
+
+# araçtan iniş: kapı içinden eğilerek çıkar (sıradaki bekler), dışarıda çömelip mevziye açılır
+var door_a := Vector3.ZERO
+var door_b := Vector3.ZERO
+var door_c := Vector3.ZERO
+var door_wait := 0.0
+var door_veh: Vehicle = null
+
+# ------------------------------------------------------------ paraşüt (hava indirme)
+# statik hat 0.9 sn serbest düşüş → kubbe açılır (0.7 sn) → 5 m/sn süzülme, hedefe doğru
+# yönlendirme → yere değince yuvarlanma (PLF) → kubbe çöker → tüfeği alıp toplanma noktasına
+var para_vel := Vector3.ZERO
+var para_goal := Vector3.ZERO
+var para_phase := 0
+var canopy: Node3D = null
+static var _canopy_m: Mesh = null
+
+func start_para(p: Vector3, v0: Vector3, goal: Vector3) -> void:
+	state = "para"
+	state_t = 0.0
+	para_phase = 0
+	position = p
+	para_vel = v0
+	para_goal = G.grid.nearest_free(G.on_ground(goal), Grid.M_INF)
+	path = PackedVector3Array()
+
+func _canopy_mesh() -> Mesh:
+	if _canopy_m != null:
+		return _canopy_m
+	# yuvarlak kubbe (T-11 / D-10): dilimli kubbe + etek + askı ipleri
+	var mb := MB.new()
+	var R := 3.4
+	var segs := 16
+	var olive := Color(0.36, 0.4, 0.27)
+	for i in segs:
+		var a0 := TAU * i / segs
+		var a1 := TAU * (i + 1) / segs
+		var col := olive if i % 2 == 0 else olive.darkened(0.12)
+		for r in 4:
+			var t0 := float(r) / 4.0
+			var t1 := float(r + 1) / 4.0
+			var p00 := Vector3(cos(a0) * R * sin(t0 * PI * 0.5), cos(t0 * PI * 0.5) * R * 0.55, sin(a0) * R * sin(t0 * PI * 0.5))
+			var p01 := Vector3(cos(a1) * R * sin(t0 * PI * 0.5), cos(t0 * PI * 0.5) * R * 0.55, sin(a1) * R * sin(t0 * PI * 0.5))
+			var p10 := Vector3(cos(a0) * R * sin(t1 * PI * 0.5), cos(t1 * PI * 0.5) * R * 0.55, sin(a0) * R * sin(t1 * PI * 0.5))
+			var p11 := Vector3(cos(a1) * R * sin(t1 * PI * 0.5), cos(t1 * PI * 0.5) * R * 0.55, sin(a1) * R * sin(t1 * PI * 0.5))
+			mb.quad(p00, p01, p11, p10, col.lightened(0.05 * (3 - r)))
+		# askı ipi: etekten omuza
+		mb.cyl_between(Vector3(cos(a0) * R, 0.0, sin(a0) * R), Vector3(cos(a0) * 0.25, -5.2, sin(a0) * 0.2), 0.012, 0.012, 3, Color(0.75, 0.74, 0.68), false)
+	_canopy_m = mb.commit(Mats.vc2())
+	return _canopy_m
+
+func _para_process(dt: float) -> void:
+	var gh := G.terrain.ground_h(position) if G.terrain else 0.0
+	match para_phase:
+		0:
+			# serbest düşüş (statik hat çekiyor)
+			para_vel.y -= 9.8 * dt
+			para_vel.x *= 1.0 - dt * 0.8
+			para_vel.z *= 1.0 - dt * 0.8
+			position += para_vel * dt
+			body.animate(dt, "fly", 0.0, 0.4)
+			if state_t > 0.9:
+				para_phase = 1
+				state_t = 0.0
+				canopy = MeshInstance3D.new()
+				(canopy as MeshInstance3D).mesh = _canopy_mesh()
+				add_child(canopy)
+				canopy.position = Vector3(0, 6.6, 0)
+				canopy.scale = Vector3(0.1, 0.6, 0.1)
+		1, 2:
+			if para_phase == 1:
+				var k := clampf(state_t / 0.7, 0.0, 1.0)
+				canopy.scale = Vector3(lerpf(0.1, 1.0, k * k), lerpf(0.6, 1.0, k), lerpf(0.1, 1.0, k * k))
+				if k >= 1.0:
+					para_phase = 2
+			# süzülme: dikey 5 m/sn, hedefe yatay yönlenme + rüzgâr salınımı
+			var to := para_goal - position
+			to.y = 0.0
+			var hv := to.normalized() * minf(to.length() * 0.35, 3.2) if to.length() > 0.3 else Vector3.ZERO
+			para_vel.x = lerpf(para_vel.x, hv.x + sin(G.time * 0.7 + position.x) * 0.5, dt * 1.5)
+			para_vel.z = lerpf(para_vel.z, hv.z, dt * 1.5)
+			para_vel.y = lerpf(para_vel.y, -5.0, dt * 3.0)
+			position += para_vel * dt
+			if hv.length() > 0.2:
+				rotation.y = lerp_angle(rotation.y, _yaw_of(hv), dt * 1.5)
+			canopy.rotation.z = sin(G.time * 1.3 + position.z) * 0.08
+			canopy.rotation.x = cos(G.time * 1.1) * 0.06
+			body.animate(dt, "para", 0.0, 0.0)
+			if position.y <= gh + 0.02:
+				position.y = gh
+				para_phase = 3
+				state_t = 0.0
+				G.fx.dust_burst(position, 0.8)
+				_drop_canopy()
+		3:
+			# iniş yuvarlanması: yan yatıp kalkar
+			body.animate(dt, "prone" if state_t < 0.7 else "crouch", 0.0)
+			if state_t > 1.1:
+				para_phase = 4
+				state_t = 0.0
+		4:
+			body.animate(dt, "unsling", 0.0, clampf(state_t / 0.55, 0.0, 1.0))
+			if state_t > 0.55:
+				state = "idle"
+				position.y = 0.0
+				stance = CROUCH
+				cmd_move(para_goal)
+	body.position = Vector3.ZERO
+
+func _drop_canopy() -> void:
+	if canopy == null:
+		return
+	var c := canopy
+	var gp := c.global_position
+	remove_child(c)
+	G.main.world.add_child(c)
+	c.global_position = gp
+	var side := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+	var tw := c.create_tween()
+	tw.tween_property(c, "global_position", Vector3(gp.x, 0.4, gp.z) + side * 3.0, 1.4).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(c, "scale", Vector3(1.1, 0.12, 0.8), 1.4)
+	tw.parallel().tween_property(c, "rotation:z", 1.2, 1.4)
+	tw.tween_interval(40.0)
+	tw.tween_callback(c.queue_free)
+	canopy = null
+
+func dismount(p: Vector3, from_v: Vehicle = null, delay := 0.0) -> void:
 	if vehicle_in:
 		vehicle_in.cargo.erase(self)
+	var v := from_v if from_v != null else vehicle_in
 	vehicle_in = null
-	position = G.grid.nearest_free(G.on_ground(p), Grid.M_INF)
+	var dst := G.grid.nearest_free(G.on_ground(p), Grid.M_INF)
+	if v != null and is_instance_valid(v) and v.alive and not (v.is_air() and v.hull.position.y > 1.2) and not v.riders_visible():
+		door_veh = v
+		door_a = v.inside_point()
+		door_b = v.entry_point(randi() % 2)
+		door_c = dst
+		door_wait = delay
+		state = "exiting"
+		state_t = 0.0
+		position = door_a
+		visible = false
+		stance = CROUCH
+		dest = dst
+		return
+	position = dst
 	state = "idle"
 	stance = CROUCH
 	dest = position
 	visible = true
+
+func _door_process(dt: float) -> void:
+	# exiting: bekle → kapıdan çık (0.55 sn eğik) → hedefe yürü; entering: tersi
+	if state == "exiting":
+		if door_wait > 0.0:
+			door_wait -= dt
+			state_t = 0.0
+			body.animate(dt, "crouch", 0.0)
+			return
+		visible = true
+		if state_t < 0.55:
+			var k := state_t / 0.55
+			var np := door_a.lerp(door_b, k)
+			_face_to(door_b + (door_b - door_a))
+			rotation.y = face_yaw
+			position = Vector3(np.x, 0.0, np.z)
+			body.animate(dt, "crouch", 2.0)
+		else:
+			state = "idle"
+			cmd_move(door_c)
+			stance = CROUCH
+		return
+	# entering
+	var v := door_veh
+	if v == null or not is_instance_valid(v) or not v.alive:
+		state = "idle"
+		visible = true
+		return
+	var k2 := clampf(state_t / 0.6, 0.0, 1.0)
+	var a := v.entry_point(0)
+	var np2 := a.lerp(v.inside_point(), k2)
+	position = Vector3(np2.x, 0.0, np2.z)
+	_face_to(v.inside_point() + (v.inside_point() - a))
+	rotation.y = face_yaw
+	body.animate(dt, "crouch", 2.0)
+	if k2 >= 1.0:
+		if v.needs_crew():
+			v.add_crew(self)
+		elif v.can_load():
+			board(v)
+		else:
+			state = "idle"
+			say("ARAÇ DOLU!")
 
 func cmd_build(site: Node3D) -> void:
 	if not alive or incapacitated():
@@ -532,6 +838,15 @@ func _process(dt: float) -> void:
 	if state == "aboard":
 		_aboard(dt)
 		return
+	if state in ["rope", "rope_up", "rope_wait"]:
+		_rope_process(dt)
+		return
+	if state in ["exiting", "entering"]:
+		_door_process(dt)
+		return
+	if state == "para":
+		_para_process(dt)
+		return
 	if state == "hospital":
 		return
 	if state == "stretchered":
@@ -552,8 +867,9 @@ func _process(dt: float) -> void:
 		_pistol()
 	var sp := vel.length()
 	body.move_yaw = angle_difference(rotation.y, _yaw_of(vel)) if sp > 0.3 else 0.0
-	body.pistol = G.time - pistol_t < 2.5
-	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if state == "build" else ""))
+	body.pistol = G.time - pistol_t < 2.5 or (one_armed() and G.time - threat_time < 10.0)
+	body.limp = injury == "leg"
+	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if state == "build" else ("drone" if state == "launch" and state_t < 1.4 else "")))
 	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
 	body.position = Vector3(lean_cur.x, body_lift, lean_cur.z).rotated(Vector3.UP, -rotation.y)
@@ -578,6 +894,25 @@ func _timers(dt: float) -> void:
 	gren_cd -= dt
 	mortar_cd -= dt
 	drone_cd -= dt
+	if injury_t > 0.0:
+		injury_t -= dt
+		if injury_t <= 0.0:
+			injury_t = -1.0
+			if injury != "head":
+				body.set_injury("")
+			injury = ""
+	if state == "setup":
+		if station != null and is_instance_valid(station) and station.alive and not station.done and dist2_p(station.position) < 3.4:
+			station.add_work(dt)
+			if randf() < dt * 1.5:
+				Sfx.play3d("hammer", position, -14.0, 0.15, 0.2)
+		else:
+			state = "idle"
+			if station != null and is_instance_valid(station) and station.done:
+				drone_job = ""
+				order = ""
+	elif state == "launch":
+		_launch_tick()
 	cover_cd -= dt
 	popup_t -= dt
 	blind_t -= dt
@@ -650,6 +985,12 @@ func _think() -> void:
 	match state:
 		"fly", "dive", "dragged", "healing", "aboard", "slide", "stretcher", "stretchered", "hospital", "melee":
 			return
+		"launch":
+			return
+		"setup":
+			if G.time - last_hit < 1.0 or suppression > 70.0:
+				state = "idle"     # ateş altında kurulumu bırakır (sonra döner)
+			return
 		"surrender":
 			_think_surrender_wait()
 			return
@@ -696,6 +1037,19 @@ func _think() -> void:
 				if not is_instance_valid(board_target) or not board_target.alive:
 					board_target = null
 					order = ""
+				elif not board_target.is_air() and not board_target.riders_visible() and dist2_p(board_target.entry_point(0)) < 1.3 and (board_target.needs_crew() or board_target.can_load()):
+					# kapıya vardı: eğilerek içeri gir
+					door_veh = board_target
+					board_target = null
+					order = ""
+					state = "entering"
+					state_t = 0.0
+					path = PackedVector3Array()
+					return
+				elif not board_target.is_air() and not board_target.riders_visible() and dist2(board_target) < board_target.radius + 4.0:
+					if path_i >= path.size() or randf() < 0.3:
+						_set_path(board_target.entry_point(0))
+					return
 				elif dist2(board_target) < board_target.radius + 2.0:
 					if board_target.needs_crew():
 						board_target.add_crew(self)
@@ -755,6 +1109,18 @@ func _arrive() -> void:
 		return
 	if order == "refund":
 		_refund_check()
+		return
+	if order == "rope_up":
+		order = ""
+		if rope_heli != null and is_instance_valid(rope_heli) and rope_heli.alive and dist2_p(rope_heli.rope_pt) < 3.0:
+			state = "rope_wait"
+			state_t = 0.0
+			_face_to(rope_heli.position)
+		return
+	if order == "hospital":
+		order = ""
+		if hosp_b != null and is_instance_valid(hosp_b) and hosp_b.alive and dist2_p(hosp_b.door_pos()) < 4.0:
+			hosp_b.admit(self)
 		return
 	if order == "follow_veh":
 		return
@@ -926,13 +1292,81 @@ func _think_repair() -> void:
 	if randf() < 0.3:
 		Sfx.play3d("hammer", position, -10.0, 0.15, 0.2)
 
-func _think_drone() -> void:
-	if my_drone != null and is_instance_valid(my_drone) and my_drone.alive:
+func _ai_ctrl() -> bool:
+	return G.spectate or team != G.player_team
+
+# Drone operatörü artık kendiliğinden drone kaldırmaz: oyuncu "Mini Drone" (anında, sırt
+# çantasından) ya da "Drone İstasyonu" (kurulum → mancınıkla yüksek irtifa keşif İHA'sı) emri verir.
+# YZ tarafı aynı iki eylemi kendi kararıyla kullanır.
+func cmd_minidrone(p: Vector3, tgt: Unit = null) -> void:
+	if not alive or not can_fight() or role != "drone":
 		return
+	if fpv_left <= 0:
+		say("DRONE KALMADI")
+		return
+	if my_drone != null and is_instance_valid(my_drone) and my_drone.alive:
+		# havadaki drone'u yeni hedefe yönlendir
+		my_drone.forced_target = tgt
+		my_drone.loiter_pt = G.on_ground(p)
+		return
+	if drone_cd > 0.0:
+		say("DRONE HAZIRLANIYOR")
+		return
+	drone_job = "launch"
+	job_pt = G.on_ground(p)
+	job_tgt = tgt
+	path = PackedVector3Array()
+	state = "launch"
+	state_t = 0.0
+	_face_to(job_pt)
+	say("DRONE HAZIRLIYORUM")
+
+func cmd_station(p: Vector3) -> void:
+	if not alive or not can_fight() or role != "drone":
+		return
+	if station != null and is_instance_valid(station) and station.alive:
+		if station.done:
+			say("İSTASYON ZATEN KURULU")
+			return
+		station.destroy()
+	var gp := G.grid.nearest_free(G.on_ground(p), Grid.M_INF)
+	station = DroneStation.new()
+	station.team = team
+	station.operator = self
+	station.position = gp
+	station.rotation.y = rotation.y
+	G.main.world.add_child(station)
+	drone_job = "station"
+	job_pt = gp
+	order = "station"
+	_set_path(gp + Vector3(-0.9, 0, 1.6).rotated(Vector3.UP, rotation.y))
+	state = "move"
+	say("İSTASYON KURMAYA GİDİYORUM")
+
+func _think_drone() -> void:
+	if station != null and (not is_instance_valid(station) or not station.alive):
+		station = null
+	if drone_job == "station" and station != null:
+		if dist2_p(station.position) > 3.2:
+			if state == "idle":
+				_set_path(station.position + Vector3(-0.9, 0, 1.6).rotated(Vector3.UP, station.rotation.y))
+				state = "move"
+		else:
+			state = "setup"
+			state_t = 0.0
+		return
+	if not _ai_ctrl():
+		return
+	# --- YZ operatörü
 	if G.weather != null and G.weather.no_air():
 		return
+	if station == null and G.time - threat_time > 8.0 and suppression < 10.0 and randf() < 0.25:
+		cmd_station(position + Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)))
+		return
+	if my_drone != null and is_instance_valid(my_drone) and my_drone.alive:
+		return
 	my_drone = null
-	if drone_cd > 0.0:
+	if drone_cd > 0.0 or fpv_left <= 0:
 		return
 	var best: Unit = null
 	var bs := 1e9
@@ -947,14 +1381,29 @@ func _think_drone() -> void:
 		if sc < bs:
 			bs = sc
 			best = e
-	if best == null:
-		return
-	drone_cd = 24.0
-	var dr: Vehicle = G.main.spawn_vehicle(team, "fpv", position + Vector3(0, 0, 0), rotation.y)
-	dr.forced_target = best
-	dr.operator = self
-	my_drone = dr
-	say("DRONE HAVADA!")
+	if best != null:
+		cmd_minidrone(best.position, best)
+
+func dist2_p(p: Vector3) -> float:
+	return Vector2(p.x - position.x, p.z - position.z).length()
+
+# mini drone kaldırma: diz çök, çantadan çıkar, kollarını aç, elden havalanır
+func _launch_tick() -> void:
+	if state_t >= 1.4 and drone_job == "launch":
+		drone_job = ""
+		fpv_left -= 1
+		drone_cd = 18.0
+		var hp0 := position + Vector3(0, 1.0, 0) + (-basis.z) * 0.45
+		var dr: Vehicle = G.main.spawn_vehicle(team, "fpv", Vector3(hp0.x, 0, hp0.z), rotation.y)
+		dr.hull.position.y = 1.0
+		dr.forced_target = job_tgt if job_tgt != null and is_instance_valid(job_tgt) and job_tgt.alive else null
+		dr.loiter_pt = job_pt
+		dr.operator = self
+		my_drone = dr
+		say("DRONE HAVADA!")
+		Sfx.play3d("drone", position, -8.0)
+	if state_t >= 2.0:
+		state = "idle"
 
 func _think_grenade() -> void:
 	if grenades <= 0 or gren_cd > 0.0 or state != "idle" or suppression > 75 or fire_mode != 0:
@@ -1119,6 +1568,8 @@ func _movement(dt: float) -> void:
 				spd = RUN_SPEED * 1.05
 			if limp_t > 0.0:
 				spd = minf(spd, 1.5)
+			if injury != "":
+				spd = minf(spd, injury_speed())
 			if flinch_t > 0.0:
 				spd *= 0.4
 			if body_lift > 0.2:
@@ -1168,6 +1619,7 @@ func _movement(dt: float) -> void:
 			_throw(dt)
 	# ayrışma
 	var sep := Vector3.ZERO
+	var veh_step := Vector3.ZERO
 	if state != "dragged" and state != "drag":
 		for o in G.near(position, 1.6):
 			if o == self or o == patient:
@@ -1184,12 +1636,16 @@ func _movement(dt: float) -> void:
 					sep += Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
 			elif o is Vehicle and o.alive:
 				pass
+		# araç izi içindeysek araç itmez: asker kendi adımlarıyla izin dışına yürür
 		for o in G.near(position, 8.0):
 			if o is Vehicle and (o.alive or o.wreck) and not o.is_air() and state != "aboard":
 				var pv: Vector3 = o.obb_push(position, 0.35)
 				if pv != Vector3.ZERO:
-					position += pv * 0.6
-					sep += pv * 8.0
+					veh_step += pv.normalized() * clampf(pv.length() * 6.0, 1.2, 2.6)
+		if G.time < yield_until and yield_veh != null and is_instance_valid(yield_veh) and state in ["idle", "move", "escort", "build"]:
+			veh_step += _yield_step()
+		if veh_step != Vector3.ZERO:
+			want = (want + veh_step).limit_length(RUN_SPEED)
 	vel = want
 	var mv := (want + sep) * dt
 	if mv.length_squared() > 0.0:
@@ -1266,6 +1722,7 @@ func _fly(dt: float) -> void:
 	if position.y <= 0.0 and fly_vel.y < 0.0:
 		position.y = 0.0
 		fly_ang = 0.0
+		fly_end = G.time
 		G.fx.impact(position, "dirt")
 		if not alive:
 			state = "dead"
@@ -1296,6 +1753,11 @@ func _throw(_dt: float) -> void:
 func _combat(_dt: float) -> void:
 	if G.deploy_t > 0.0 or not can_fight() or state in ["throw", "drag", "heal", "build", "dazed", "rescue", "melee"] or flinch_t > 0.0 or bearer:
 		popped = false
+		return
+	if one_armed():
+		popped = false
+		if state in ["idle", "move"]:
+			_pistol()
 		return
 	if role == "mortar" and state == "idle":
 		_mortar_fire()
@@ -1548,6 +2010,7 @@ func _hit_chance(t: Unit, d: float) -> float:
 	if cold > 50.0:
 		c *= 0.8
 	c *= 1.0 + accuracy_bonus
+	c *= injury_acc()
 	return clampf(c, 0.02, 0.95)
 
 # araç arkası siper: atıcı ile aramızda bir araç varsa koruma
@@ -1648,8 +2111,10 @@ func on_blast(p: Vector3, r: float, dmg: float, d: float, src) -> void:
 	var al := away.length()
 	away = away / al if al > 0.01 else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 	if not alive:
-		if d < r * 0.9 and not carried and rag != null:
-			rag.push(away * randf_range(3.0, 6.0) * (1.3 - d / r) + Vector3(0, randf_range(3.0, 5.5), 0))
+		# ceset bir kez savrulur; sonraki patlamalar (ikincil infilak, salvo) yalnızca hafifçe sarsar
+		if d < r * 0.6 and not carried and rag != null and rag.pushes < 1 and G.time - died_at > 2.5:
+			rag.pushes += 1
+			rag.push(away * randf_range(0.8, 1.6) * (1.0 - d / r) + Vector3(0, randf_range(0.4, 0.9), 0))
 			set_process(true)
 			dead_t = 0.0
 		return
@@ -1674,7 +2139,7 @@ func on_blast(p: Vector3, r: float, dmg: float, d: float, src) -> void:
 	if src != null and is_instance_valid(src):
 		threat_pos = src.position
 		threat_time = G.time
-	if not blocked and k > 0.2 and alive and state != "fly":
+	if not blocked and k > 0.2 and alive and state != "fly" and G.time - fly_end > 3.0:
 		_release_patient()
 		state = "fly"
 		state_t = 0.0
@@ -1700,6 +2165,7 @@ func _down(src, explosive := false) -> void:
 	downs += 1
 	hp = 1.0
 	_release_patient()
+	_injure(explosive)
 	state = "wounded"
 	state_t = 0.0
 	stance = PRONE
@@ -1711,6 +2177,55 @@ func _down(src, explosive := false) -> void:
 	popped = false
 	say(["SIHHİYE!", "SIHHİYE! VURULDUM!", "YARDIM EDİN!"][randi() % 3], 3.0)
 	G.fx.blood_pool(position)
+
+func _injure(explosive: bool) -> void:
+	# patlamada uzuvlar, kurşunda gövde/kol daha olası
+	var w: Dictionary = {"leg": 3.5, "arm": 2.5, "shoulder": 1.5, "head": 1.0, "torso": 1.5} if explosive else {"leg": 2.5, "arm": 2.0, "shoulder": 2.0, "head": 1.0, "torso": 2.5}
+	var tot := 0.0
+	for k in w:
+		tot += w[k]
+	var r := randf() * tot
+	var pick := "torso"
+	for k in w:
+		r -= w[k]
+		if r <= 0.0:
+			pick = k
+			break
+	# daha ağır yara öncekini ezer (bacak/kol en kalıcı)
+	if injury == "" or ["head", "torso", "shoulder", "arm", "leg"].find(pick) >= ["head", "torso", "shoulder", "arm", "leg"].find(injury):
+		injury = pick
+	injury_t = -1.0
+	if randf() < 0.6:
+		say(INJ_TXT[injury], 2.5)
+
+# yaranın görsel tedavisi (sargı/alçı/askı) — sıhhiye ya da hastane
+func _treat_injury() -> void:
+	if body:
+		body.set_injury(injury)
+
+func injury_speed() -> float:
+	match injury:
+		"leg":
+			return 1.55
+		"shoulder":
+			return 2.3
+		"torso":
+			return 2.9
+	return 99.0
+
+func injury_acc() -> float:
+	match injury:
+		"arm":
+			return 0.55
+		"shoulder":
+			return 0.8
+		"head":
+			return 0.85
+	return 1.0
+
+# ağır silahı (makineli, roketatar, dürbünlü, havan) tek kolla kullanamaz: tabancaya geçer
+func one_armed() -> bool:
+	return injury == "arm" and role in ["mg", "at", "atgm", "sniper", "mortar"]
 
 func die(src, keep_fly := false) -> void:
 	if not alive:
@@ -1869,6 +2384,7 @@ func _process_drag_heal(dt: float) -> void:
 func revive() -> void:
 	state = "idle"
 	state_t = 0.0
+	_treat_injury()
 	max_hp = maxf(40.0, 100.0 - 25.0 * downs)
 	hp = max_hp
 	rescuer = null
@@ -1885,6 +2401,31 @@ func _release_patient() -> void:
 		if patient.alive and patient.state in ["dragged", "healing"]:
 			patient.state = "wounded"
 	patient = null
+
+# yaklaşan araç için kenara çekil (yürüyerek; koşu hızını geçmez)
+var yield_veh: Vehicle = null
+var yield_until := 0.0
+func give_way(v: Vehicle) -> void:
+	if not can_fight() and state != "move":
+		return
+	yield_veh = v
+	yield_until = G.time + 0.6
+
+func _yield_step() -> Vector3:
+	var v := yield_veh
+	var d := position - v.position
+	d.y = 0.0
+	var side: float = d.dot(v.right())
+	var lat: Vector3 = v.right() * (1.0 if side >= 0.0 else -1.0)
+	# şerit dışındaysak kımıldama
+	if absf(side) > v.ext.x + 0.9:
+		return Vector3.ZERO
+	var ok := lat
+	if G.grid.height_at(position + lat * 1.2) >= 0.45 or G.grid.is_water(position + lat * 1.2):
+		ok = -lat
+	if stance == PRONE and stance_lock != PRONE:
+		stance = CROUCH
+	return ok * 2.6
 
 func on_drone(p: Vector3) -> void:
 	if not can_fight() or state in ["throw", "drag", "heal", "dive", "aboard"]:
@@ -1966,6 +2507,10 @@ func _pose() -> String:
 			return "build"
 		"build":
 			return "build_hi" if build_slot >= 0 and build_slot % 3 == 1 else "build"
+		"setup":
+			return "build_hi" if fmod(state_t, 7.0) > 4.5 else "build"
+		"launch":
+			return "crouch" if state_t < 1.0 else "stand"
 		"surrender":
 			return "surrender"
 	if haul and order == "build" and state == "move":
@@ -2313,6 +2858,16 @@ func _think_ammo() -> void:
 		order = "resupply"
 
 # ------------------------------------------------------------ hastane
+# yürüyebilen yaralı kendisi hastaneye gider (kapıya varınca yatırılır)
+func cmd_hospital(b: Building) -> void:
+	if not alive or not can_fight():
+		return
+	hosp_b = b
+	order = "hospital"
+	_set_path(G.grid.nearest_free(b.door_pos(), Grid.M_INF))
+	state = "move"
+	say("TEDAVİYE GİDİYORUM", 2.5)
+
 func enter_hospital(b: Building) -> void:
 	hosp_b = b
 	carried = false
@@ -2336,6 +2891,10 @@ func leave_hospital(door: Vector3) -> void:
 	stance = STAND
 	limp_t = 16.0
 	body.dead_pose = {}
+	# hastanede tedavi: alçı/bandaj kalır, etkiler bir süre sonra geçer (kafa bandajı kalıcı görünür)
+	if injury != "":
+		injury_t = {"arm": 90.0, "leg": 45.0, "shoulder": 45.0, "torso": 30.0, "head": 20.0}.get(injury, 30.0)
+		_treat_injury()
 	body.weapon.visible = true
 	hosp_b = null
 	var b := nearest_base()

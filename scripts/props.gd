@@ -86,8 +86,98 @@ func _palm_mesh(seed_v: int) -> ArrayMesh:
 	var m := trunk.commit(Mats.vc())
 	return leaves.commit(Mats.vc2(), m)
 
+# ------------------------------------------------------------ gerçek ağaç modelleri (tools/trees: ez-tree + CC0 kabuk/yaprak)
+# tür kimliği -> [kabuk dokusu uv ölçeği]; GLB yoksa eski prosedürel ağaca düşer
+const TREE_DIR := "res://assets/trees/"
+const TREE_SETS := {
+	"green": ["oak_s", "oak_m", "oak_l", "oak_m", "ash_s", "ash_m", "ash_l", "aspen_m", "aspen_l", "birch_m", "willow_m"],
+	"desert": ["ash_s", "oak_s", "ash_s", "willow_m"],
+	"pine": ["pine_s", "pine_m", "pine_l", "pine_m"],
+	"bush": ["bush_1", "bush_2", "bush_3", "bush_2"],
+}
+var biome_id := "green"
+
+func _tree_shader_mat(surf_name: String, h: float, crown: float) -> ShaderMaterial:
+	var key := "tm_%s_%d_%s_%s" % [surf_name, int(h * 10.0), biome_id, str(winter)]
+	if _cache.has(key):
+		return _cache[key]
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/tree.gdshader")
+	var leaf := surf_name.begins_with("leaf_")
+	var tex_id := surf_name.substr(5) if leaf else surf_name.substr(5)
+	m.set_shader_parameter("leaf", leaf)
+	m.set_shader_parameter("tree_h", h)
+	m.set_shader_parameter("crown_y", crown)
+	if leaf:
+		m.set_shader_parameter("albedo_tex", load(TREE_DIR + "tex/leaf_%s.png" % tex_id))
+		var tint := Color(0.86, 0.92, 0.74)
+		if biome_id == "desert":
+			tint = Color(0.82, 0.84, 0.62)      # tozlu, solgun zeytin yeşili
+		elif tex_id == "pine":
+			tint = Color(0.78, 0.86, 0.72)
+		elif tex_id == "aspen":
+			tint = Color(0.52, 0.84, 0.42)      # yaz kavağı: sarıya değil yeşile
+		m.set_shader_parameter("tint", tint)
+	else:
+		m.set_shader_parameter("albedo_tex", load(TREE_DIR + "tex/bark_%s_color.jpg" % tex_id))
+		m.set_shader_parameter("normal_tex", load(TREE_DIR + "tex/bark_%s_normal.jpg" % tex_id))
+		m.set_shader_parameter("has_normal", true)
+		m.set_shader_parameter("uv_scale", Vector2(1.0, 0.35) if tex_id != "birch" else Vector2(1.0, 0.25))
+		m.set_shader_parameter("tint", Color(0.92, 0.9, 0.86) if tex_id != "birch" else Color(0.95, 0.95, 0.93))
+	if winter:
+		m.set_shader_parameter("snow", 0.85 if leaf else 0.55)
+	m.set_shader_parameter("sway_amp", 0.5 if surf_name.contains("pine") else 1.0)
+	_cache[key] = m
+	return m
+
+func _tree_model(id: String) -> Mesh:
+	var key := "glb_" + id
+	if _cache.has(key):
+		return _cache[key]
+	var path := TREE_DIR + id + ".glb"
+	if not ResourceLoader.exists(path):
+		_cache[key] = null
+		return null
+	var sc: Node = (load(path) as PackedScene).instantiate()
+	var src: MeshInstance3D = sc.find_children("*", "MeshInstance3D", true, false)[0] if not sc is MeshInstance3D else sc
+	var mesh: Mesh = src.mesh.duplicate()
+	sc.free()
+	var aabb := mesh.get_aabb()
+	var h := maxf(aabb.end.y, 0.5)
+	var crown := 0.45 if id.begins_with("bush") else (0.55 if id.begins_with("pine") else 0.68)
+	for i in mesh.get_surface_count():
+		var mat := mesh.surface_get_material(i)
+		var nm := mat.resource_name if mat != null else ("leaf_oak" if i > 0 else "bark_oak")
+		mesh.surface_set_material(i, _tree_shader_mat(nm, h, crown))
+	_cache[key] = mesh
+	return mesh
+
+func _real_tree(p: Vector3, set_name: String, sc := 1.0) -> bool:
+	var ids: Array = TREE_SETS[set_name]
+	var id: String = ids[rng.randi() % ids.size()]
+	if winter and not id.begins_with("pine") and not id.begins_with("bush"):
+		id += "_bare"
+	var mesh := _tree_model("%s_%d" % [id, rng.randi() % 3])
+	if mesh == null:
+		return false
+	var mi := _place(mesh, p, rng.randf() * TAU, sc * rng.randf_range(0.85, 1.15))
+	if set_name == "bush":
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		items.append({"node": mi, "pos": p, "kind": "bush", "hp": 20.0, "alive": true, "r": 0.6})
+		return true
+	var big := id.contains("_l")
+	items.append({"node": mi, "pos": p, "kind": "tree", "hp": (110.0 if big else 75.0) * sc, "alive": true, "r": 0.5 if big else 0.4})
+	G.grid.set_static_circle(p, 0.35 if big else 0.3, 3.0, Grid.K_TREE)
+	return true
+
+# patlama şok dalgası: ağaç shader'ı son 4 büyük patlamayı (global) okuyup uzaktan yatar/sallanır
+func shake_trees(center: Vector3, power: float) -> void:
+	G.push_blast(center, power)
+
 # ------------------------------------------------------------ yapraklı ağaç (kış: sarı kuru yaprak + kar, çöl: koyu yeşil)
 func tree(p: Vector3) -> void:
+	if _real_tree(p, "desert" if biome_id == "desert" else "green"):
+		return
 	var v := rng.randi() % 5
 	var key := ("wtree%d" if winter else "dtree%d") % v
 	var mesh := _cached(key, func(): return _tree_mesh(v, winter))
@@ -491,6 +581,8 @@ func shed(p: Vector3, rot: float) -> void:
 
 # ------------------------------------------------------------ hasar
 func blast(center: Vector3, radius: float, dmg: float) -> void:
+	if radius >= 2.5:
+		shake_trees(center, radius / 3.0)
 	for it in items:
 		if not it["alive"]:
 			continue
@@ -615,6 +707,8 @@ func clear_area(c: Vector3, r: float) -> void:
 
 # ------------------------------------------------------------ bitki örtüsü (çam, çalı, kaya, saman, ot, kamış)
 func pine(p: Vector3) -> void:
+	if _real_tree(p, "pine"):
+		return
 	var v := rng.randi() % 4
 	var key := ("pine_w%d" if winter else "pine%d") % v
 	var mesh := _cached(key, func(): return _pine_mesh(v, winter))
@@ -648,6 +742,8 @@ func _pine_mesh(seed_v: int, win: bool) -> ArrayMesh:
 	return nd.commit(Mats.vc2(), m)
 
 func bush(p: Vector3, big := false) -> void:
+	if not winter and _real_tree(p, "bush", 1.5 if big else 1.0):
+		return
 	var v := rng.randi() % 5
 	var key := ("bushw%d" if winter else "bush%d") % v
 	var mesh := _cached(key, func(): return _bush_mesh(v))

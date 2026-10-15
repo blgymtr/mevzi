@@ -12,6 +12,7 @@ var t := 0.0
 var rest_t := 0.0
 var asleep := false
 var spine_len := 0.55
+var pushes := 0
 
 func start(body: SoldierBody, vel: Vector3, spin := 0.0) -> void:
 	b = body

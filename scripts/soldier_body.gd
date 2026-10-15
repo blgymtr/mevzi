@@ -91,6 +91,75 @@ func build(team: int, rl: String, winter: bool) -> void:
 
 var rest := {}
 
+# ------------------------------------------------------------ yara görselleri
+# arm: sol ön kolda alçı + boyun askısı (kol göğüste, silah tek elle) · leg: sağ uylukta kanlı sargı
+# (topallama) · shoulder: sağ omuzda sargı · head: kask altından alna sarılı bandaj · torso: karın sargısı
+var injury := ""
+var limp := false
+var _inj_nodes: Array = []
+static var _inj_mesh := {}
+
+func set_injury(kind: String) -> void:
+	if kind == injury:
+		return
+	injury = kind
+	for n in _inj_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_inj_nodes.clear()
+	if kind == "" or spine == null:
+		return
+	var gauze := Color(0.9, 0.88, 0.82)
+	var blood := Color(0.42, 0.05, 0.04)
+	var cast := Color(0.95, 0.94, 0.9)
+	if not _inj_mesh.has(kind):
+		var mb := MB.new()
+		match kind:
+			"arm":
+				# alçı (ön kol + bilek), kenarında pamuk
+				mb.cyl(Vector3(0, -0.16, 0), 0.058, 0.05, 0.26, 10, cast)
+				mb.cyl(Vector3(0, -0.035, 0), 0.062, 0.062, 0.02, 10, gauze.darkened(0.08))
+				mb.cyl(Vector3(0, -0.29, 0), 0.052, 0.052, 0.02, 10, gauze.darkened(0.08))
+			"leg":
+				mb.cyl(Vector3(0, -0.2, 0), 0.088, 0.085, 0.13, 10, gauze)
+				mb.box(Vector3(0, -0.2, 0.082), Vector3(0.06, 0.07, 0.012), blood)
+			"shoulder":
+				mb.cyl(Vector3(0, -0.06, 0), 0.075, 0.072, 0.11, 10, gauze)
+				mb.box(Vector3(-0.03, -0.05, 0.07), Vector3(0.05, 0.05, 0.012), blood)
+			"head":
+				mb.cyl(Vector3(0, 0.0, 0), 0.118, 0.118, 0.05, 14, gauze)
+				mb.box(Vector3(0.05, -0.005, 0.105), Vector3(0.05, 0.04, 0.02), blood.lightened(0.15))
+			"torso":
+				mb.cyl(Vector3(0, 0.0, 0), 0.19, 0.19, 0.09, 14, gauze)
+				mb.box(Vector3(0.06, 0.0, 0.185), Vector3(0.07, 0.06, 0.015), blood)
+		_inj_mesh[kind] = mb.commit(Mats.vcs())
+		if kind == "arm":
+			# üçgen kol askısı: boyundan göğse
+			var sl := MB.new()
+			sl.quad(Vector3(-0.12, 0.56, 0.08), Vector3(0.14, 0.56, 0.06), Vector3(0.1, 0.28, 0.17), Vector3(-0.06, 0.3, 0.17), gauze.darkened(0.05), Vector3(0, 0, 1))
+			sl.tri(Vector3(-0.06, 0.3, 0.17), Vector3(0.1, 0.28, 0.17), Vector3(0.05, 0.22, 0.15), gauze.darkened(0.1), Vector3(0, 0, 1))
+			_inj_mesh["sling"] = sl.commit(Mats.vc2())
+	var mi := MeshInstance3D.new()
+	mi.mesh = _inj_mesh[kind]
+	match kind:
+		"arm":
+			fore_l.add_child(mi)
+			var s2 := MeshInstance3D.new()
+			s2.mesh = _inj_mesh["sling"]
+			spine.add_child(s2)
+			_inj_nodes.append(s2)
+		"leg":
+			leg_r.add_child(mi)
+		"shoulder":
+			arm_r.add_child(mi)
+		"head":
+			spine.add_child(mi)
+			mi.position = Vector3(0, 0.715, 0.005)
+		"torso":
+			spine.add_child(mi)
+			mi.position = Vector3(0, 0.1, 0)
+	_inj_nodes.append(mi)
+
 # el aletleri: çekiç (sağ el), kutu (göğüs önü)
 var _tool := ""
 var _tool_mi: MeshInstance3D = null
@@ -111,6 +180,22 @@ func set_tool(kind: String) -> void:
 		if kind == "hammer":
 			mb.box(Vector3(0, 0, -0.12), Vector3(0.028, 0.028, 0.32), Color(0.45, 0.32, 0.2))
 			mb.box(Vector3(0, 0.0, -0.28), Vector3(0.04, 0.13, 0.045), Color(0.25, 0.25, 0.26))
+		elif kind == "shell":
+			# top mermisi: kovanlı, sarı tapalı (göğüs önünde iki elle)
+			mb.cyl(Vector3(0, 0, 0), 0.07, 0.07, 0.5, 10, Color(0.75, 0.58, 0.24), Basis(Vector3.FORWARD, PI * 0.5))
+			mb.cyl(Vector3(-0.35, 0, 0), 0.07, 0.0, 0.22, 10, Color(0.32, 0.35, 0.26), Basis(Vector3.FORWARD, PI * 0.5))
+		elif kind == "drone":
+			# FPV quad: X gövde, 4 motor + pervane, kamera, sırtında patlayıcı
+			var dk := Color(0.12, 0.12, 0.13)
+			mb.box(Vector3(0, 0, 0), Vector3(0.09, 0.035, 0.14), dk)
+			for sx in [-1.0, 1.0]:
+				for sz in [-1.0, 1.0]:
+					var e := Vector3(sx * 0.13, 0.0, sz * 0.13)
+					mb.cyl_between(Vector3.ZERO, e, 0.012, 0.012, 4, dk, false)
+					mb.cyl(e + Vector3(0, 0.02, 0), 0.018, 0.018, 0.03, 6, Color(0.3, 0.3, 0.32))
+					mb.cyl(e + Vector3(0, 0.04, 0), 0.075, 0.075, 0.004, 10, Color(0.2, 0.2, 0.22, 0.6))
+			mb.box(Vector3(0, -0.03, -0.08), Vector3(0.03, 0.03, 0.03), Color(0.05, 0.05, 0.05))
+			mb.cyl(Vector3(0, 0.045, 0.02), 0.03, 0.03, 0.14, 8, Color(0.3, 0.34, 0.22), Basis(Vector3.RIGHT, PI * 0.5))
 		else:
 			mb.box(Vector3(0, 0, 0), Vector3(0.5, 0.3, 0.36), Color(0.36, 0.38, 0.24))
 			mb.box(Vector3(0, 0.155, 0), Vector3(0.42, 0.02, 0.08), Color(0.2, 0.2, 0.16))
@@ -122,6 +207,15 @@ func set_tool(kind: String) -> void:
 		fore_r.add_child(_tool_mi)
 		_tool_mi.position = Vector3(0, -0.3, 0)
 		_tool_mi.rotation.x = -0.4
+	elif kind == "shell":
+		spine.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, 0.3, -0.3)
+		weapon.visible = false
+	elif kind == "drone":
+		# iki elle göğüs önünde tutulur; tüfek askıda
+		spine.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, 0.3, -0.38)
+		weapon.visible = false
 	else:
 		spine.add_child(_tool_mi)
 		_tool_mi.position = Vector3(0, 0.22, -0.34)
@@ -516,6 +610,117 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["alz"] = 0.4
 				T["flx"] = 0.2
 				wpn = 9
+		"cover", "lay", "ram", "drop":
+			# top başında: çömelik taban
+			T["py"] = 0.6
+			T["srx"] = 0.35
+			T["lrx"] = 1.45
+			T["krx"] = -1.5
+			T["llx"] = -0.05
+			T["klx"] = -1.62
+			wpn = 4
+			match pose:
+				"cover":
+					# atış anı: iki el kulakta, baş öne eğik
+					T["srx"] = 0.6
+					T["arx"] = 2.3
+					T["arz"] = 0.75
+					T["frx"] = 2.5
+					T["alx"] = 2.3
+					T["alz"] = -0.75
+					T["flx"] = 2.5
+				"lay":
+					# nişancı: sağ el volanı döndürür, sol el nişangâha yakın
+					var w := G.time * 4.0
+					T["srx"] = 0.25
+					T["arx"] = 1.25 + sin(w) * 0.25
+					T["arz"] = 0.1 + cos(w) * 0.12
+					T["frx"] = 0.7 + cos(w) * 0.25
+					T["alx"] = 1.6
+					T["alz"] = -0.3
+					T["flx"] = 0.9
+				"ram":
+					# mermiyi kamaya sür: iki kol öne uzanır, gövde ileri itilir
+					var k := clampf(extra, 0.0, 1.0)
+					T["py"] = 0.66
+					T["srx"] = 0.55 + k * 0.25
+					T["arx"] = lerpf(1.0, 1.55, k)
+					T["alx"] = lerpf(1.0, 1.55, k)
+					T["arz"] = 0.05
+					T["alz"] = -0.05
+					T["frx"] = lerpf(1.2, 0.15, k)
+					T["flx"] = lerpf(1.2, 0.15, k)
+					T["lrx"] = 1.1
+					T["llx"] = -0.35
+				"drop":
+					# havan: mermiyi namlu ağzına kaldır, bırak, eğil
+					var k2 := clampf(extra, 0.0, 1.0)
+					T["py"] = lerpf(HIP - 0.05, 0.6, maxf(0.0, k2 - 0.7) / 0.3)
+					T["srx"] = lerpf(0.1, 0.7, maxf(0.0, k2 - 0.7) / 0.3)
+					T["arx"] = lerpf(1.2, 2.2, minf(k2 / 0.6, 1.0))
+					T["alx"] = lerpf(1.2, 2.2, minf(k2 / 0.6, 1.0))
+					T["frx"] = 0.6
+					T["flx"] = 0.6
+					T["lrx"] = 0.1
+					T["llx"] = 0.0
+					T["krx"] = -0.1
+					T["klx"] = -0.1
+		"sling", "unsling":
+			# tüfeği sağ omuz üstünden sırta atma / sırttan alma (extra: 0..1 ilerleme)
+			var k := clampf(extra, 0.0, 1.0)
+			if pose == "unsling":
+				k = 1.0 - k
+			var reach := sin(k * PI)
+			T["py"] = HIP - 0.03
+			T["srx"] = 0.12 - reach * 0.1
+			T["sry"] = reach * 0.25
+			T["arx"] = lerpf(0.7, 2.7, reach)
+			T["arz"] = lerpf(0.1, 0.35, reach)
+			T["frx"] = lerpf(1.1, 1.7, reach)
+			T["alx"] = lerpf(0.9, 0.3, k)
+			T["alz"] = -0.25
+			T["flx"] = lerpf(0.9, 0.4, k)
+			T["lrx"] = 0.0
+			T["llx"] = 0.0
+			T["krx"] = -0.05
+			T["klx"] = -0.05
+			wpn = 4 if k > 0.55 else 2
+		"para":
+			# paraşütte asılı: eller askı kayışlarında (omuz üstü), bacaklar bitişik, dizler hafif bükük
+			T["py"] = HIP
+			T["srx"] = -0.05
+			T["arx"] = 2.6
+			T["arz"] = -0.25
+			T["frx"] = 1.0
+			T["alx"] = 2.6
+			T["alz"] = 0.25
+			T["flx"] = 1.0
+			T["lrx"] = 0.25
+			T["llx"] = 0.25
+			T["krx"] = -0.35
+			T["klx"] = -0.35
+			wpn = 4
+		"rope":
+			# iki el başın üstünde halatta (el ele kayarak), bacaklar halata sarılı: sağ diz önde
+			# bükük, sol ayak çaprazda halatı ayak üstüyle kilitler; kayarken gövde hafif geride
+			var sl := clampf(speed / 5.0, 0.0, 1.0)
+			var hw := sin(G.time * 9.0) * 0.06 * (1.0 - sl)
+			T["py"] = HIP + 0.04
+			T["prx"] = -0.08
+			T["srx"] = -0.12 + sl * 0.05
+			T["arx"] = 2.95 + hw
+			T["arz"] = -0.12
+			T["frx"] = 0.35 - hw
+			T["alx"] = 2.8 - hw
+			T["alz"] = 0.12
+			T["flx"] = 0.45 + hw
+			T["lrx"] = 0.55
+			T["lrz"] = -0.12
+			T["krx"] = -1.0
+			T["llx"] = 0.25
+			T["llz"] = 0.16
+			T["klx"] = -0.55 - sl * 0.2
+			wpn = 4
 		"crouch", "crouch_aim":
 			T["py"] = 0.6
 			T["prx"] = 0.0
@@ -671,7 +876,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	elif _pistol_mi:
 		_pistol_mi.visible = false
 	# nişan / taşıma / yüzüstü: eller silaha IK ile oturur
-	if wpn in [1, 2, 3] and not pistol and pistol_k <= 0.0 and arm_r and rest.has(arm_r):
+	if wpn in [1, 2, 3] and not pistol and pistol_k <= 0.0 and arm_r and rest.has(arm_r) and not (pose in ["sling", "unsling"]):
 		var ik := _ik_pose(wpn)
 		T["arx"] = ik[0].x
 		T["arz"] = ik[0].y
@@ -679,6 +884,19 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		T["alx"] = ik[1].x
 		T["alz"] = ik[1].y
 		T["flx"] = ik[1].z
+	# kol alçıda: destek kolu askıda göğse katlı, silah yalnız sağ elde
+	if injury == "arm" and pose in ["stand", "aim", "walk", "run", "crouch", "crouch_aim", "build", "build_hi", "carry", "throw"]:
+		T["alx"] = 0.45
+		T["alz"] = -0.55
+		T["flx"] = 1.95
+	# topallama: sağ bacak kilitli, o adımda kalça düşer ve gövde yana kayar
+	if limp and moving and pose in ["stand", "aim", "walk", "run"]:
+		T["krx"] = float(T.get("krx", 0.0)) * 0.25
+		T["lrx"] = float(T.get("lrx", 0.0)) * 0.55
+		var st := maxf(0.0, -s)
+		T["py"] = float(T.get("py", HIP)) - st * 0.06
+		T["prz"] = float(T.get("prz", 0.0)) + st * 0.1
+		T["srx"] = float(T.get("srx", 0.0)) + 0.08
 	var rate := clampf(dt * (14.0 if pose != "fly" else 30.0), 0.0, 1.0)
 	for k in T:
 		j[k] = lerpf(j[k], T[k], rate)

@@ -58,7 +58,7 @@ const PEN := {
 	"crush": [0, 0, 0, false], "melee": [0, 0, 0, false], "blast": [1, 2, 2, false],
 	"ap": [0, 28, 23, false], "he": [1, 7, 7, false], "rpg": [1, 17, 17, false], "atgm": [1, 27, 27, false],
 	"topatk": [1, 24, 24, true], "grenade": [1, 2, 2, false], "shell": [1, 6, 6, true], "big": [1, 9, 9, true],
-	"mortar": [1, 4, 4, true], "mine": [0, 12, 12, true], "fpv": [1, 10, 10, true],
+	"mortar": [1, 4, 4, true], "mine": [0, 12, 12, true], "fpv": [1, 10, 10, true], "sam": [1, 12, 12, false],
 }
 const SIDE_NAME := ["ÖN", "YAN", "ARKA", "ÜST"]
 static var shot_from := Vector3.INF
@@ -250,6 +250,20 @@ func request_land() -> void:
 	path_i = 0
 	say("İNİŞE GEÇİYORUZ")
 
+# binme/inme kapısı: zırhlılarda arka rampa/kapı, kamyonda arka kasa, helikopterde rampa/yan kapı
+func entry_point(k := 0) -> Vector3:
+	var side := ((k % 2) - 0.5) * 0.9
+	if is_air():
+		if is_cargo():
+			return position - forward() * (ext.y + 0.8) + right() * side
+		return position + right() * (ext.x + 0.9) * (1.0 if k % 2 == 0 else -1.0)
+	return position - forward() * (ext.y + 0.7) + right() * side
+
+func inside_point() -> Vector3:
+	if is_air() and not is_cargo():
+		return position
+	return position - forward() * maxf(ext.y - 1.0, 0.3)
+
 func can_load() -> bool:
 	return alive and cargo.size() < capacity() and (not is_air() or hull.position.y < 2.5)
 
@@ -283,7 +297,8 @@ func unload() -> void:
 	for k in n:
 		var s = cargo[0]
 		if is_instance_valid(s):
-			s.dismount(position + back * (D["len"] * 0.5 + 1.0) + side * ((k % 3) - 1) * 1.3 - back * (k / 3) * 1.2)
+			# kapıdan tek tek çıkar, sonra arkada yelpaze şeklinde açılır
+			s.dismount(position + back * (D["len"] * 0.5 + 1.6) + side * ((k % 3) - 1) * 1.5 - back * (k / 3) * 1.3, self, k * 0.38)
 		else:
 			cargo.remove_at(0)
 	landing = false
@@ -445,6 +460,34 @@ var drop_pt := Vector3.INF      # havadan ikmal noktası
 var crates := 0
 var top_h := 2.0
 var _cables: Array = []
+var station = null              # İHA: bağlı yer istasyonu (DroneStation)
+var high_alt := false           # yüksek irtifa keşif İHA'sı: geniş görüş, vurulması zor
+var link_lost := false
+var link_t := 0.0
+var loiter_pt := Vector3.INF    # mini drone: hedef yoksa bu noktada asılı kalır
+var battery := 70.0             # mini drone uçuş süresi (sn)
+const HIGH_ALT := 24.0
+# hava savunma füzesi / fişek / kaçış
+var sams := 0
+var sam_cd := 0.0
+var sam_big := false
+var sam_range := 0.0
+var flares := 0
+var flare_q := 0                # kuyruktaki fişek çifti
+var flare_t := 0.0
+var evade_t := 0.0
+var evade_side := 1.0
+var hf_left := 0                # helikopter güdümlü füzesi (Hellfire / Vikhr)
+var hf_cd := 3.0
+# halatla iniş (fast-rope) / halatla çekme (SPIES)
+var rope_pt := Vector3.INF
+var rope_mode := ""             # "down": asker indir, "up": asker al
+var rope_t := 0.0
+var rope_next := 0.0
+var rope_side := 0
+var ropes: Array = []           # [MeshInstance3D, yerel bağlantı noktası]
+var rope_riders: Array = []     # halattaki askerler
+const ROPE_ALT := 8.0
 static var _disc_mat: ShaderMaterial
 
 func setup(t: int, vt: String) -> void:
@@ -547,6 +590,7 @@ func setup(t: int, vt: String) -> void:
 	if vt == "loiter":
 		hull.position.y = 18.0
 		Sfx.loop3d("drone", self, -8.0)
+	_setup_air_defense(vt)
 	if vt in ["heli", "transport"]:
 		hull.position.y = ALT
 		rotor = Node3D.new()
@@ -679,6 +723,40 @@ func _sep_vehicles() -> void:
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0, -cos(heading))
 
+# Araç piyadeyi asla itmez: gidiş şeridindeki dost (ve ezilmeyecek yavaşlıktaki düşman)
+# askerler için yavaşlar/durur, askere kenara çekilmesini söyler; asker kendi yürüyerek açılır.
+var _honk_t := 0.0
+func _give_way(dt: float) -> void:
+	_honk_t -= dt
+	var dir := signf(cur_speed)
+	var f := forward() * dir
+	var r := right()
+	var look := ext.y + 1.2 + absf(cur_speed) * 1.1
+	var nearest := 1e9
+	for o in G.near(position + f * (ext.y + look * 0.5), look * 0.5 + ext.x + 1.5):
+		if not (o is Soldier) or not o.alive or o.state in ["aboard", "hospital"] or o.vehicle_in != null:
+			continue
+		if o.team != team and absf(cur_speed) > 2.0 and nav_mode == Grid.M_HEAVY:
+			continue    # düşman piyade: paletli hızla gelir (ezme ayrı denetlenir)
+		var d: Vector3 = o.position - position
+		d.y = 0.0
+		var lz := d.dot(f) - ext.y
+		var lx := absf(d.dot(r))
+		if lz < -ext.y * 2.0 or lz > look or lx > ext.x + 0.7:
+			continue
+		nearest = minf(nearest, maxf(lz, 0.0))
+		o.give_way(self)
+	if nearest > 1e8:
+		return
+	# 0.8 m'de tam dur, ileride kademeli yavaşla
+	var vmax := clampf((nearest - 0.8) / 1.1, 0.0, 1.0) * speed_max
+	if absf(cur_speed) > vmax:
+		cur_speed = dir * vmax
+		if vmax < 0.3 and _honk_t <= 0.0:
+			_honk_t = 6.0
+			if randf() < 0.5:
+				say("YOLU AÇIN!")
+
 func aim_point() -> Vector3:
 	if is_air():
 		return position + Vector3(0, hull.position.y + 0.6, 0)
@@ -709,6 +787,8 @@ func cmd_move(p: Vector3, force := false) -> void:
 	sling_tgt = null
 	sling_drop = false
 	drop_pt = Vector3.INF
+	if rope_pt != Vector3.INF and rope_riders.is_empty():
+		_rope_reset()
 	if is_air():
 		path = PackedVector3Array([dest])
 	else:
@@ -897,6 +977,9 @@ func _process(dt: float) -> void:
 		_scan()
 		_refund_check()
 	atgm_cd -= dt
+	sam_cd -= dt
+	if flare_q > 0:
+		_flares_tick(dt)
 	if vtype in ["uav", "uav_armed"]:
 		_uav(dt)
 		return
@@ -1168,6 +1251,9 @@ func _drive(dt: float) -> void:
 	cur_speed = move_toward(cur_speed, target_speed, D["accel"] * dt * (2.0 if target_speed < cur_speed else 1.0))
 	if absf(cur_speed) < 0.01:
 		return
+	_give_way(dt)
+	if absf(cur_speed) < 0.01:
+		return
 	var f := forward()
 	var np := position + f * cur_speed * dt
 	# engel denetimi (ön nokta)
@@ -1386,20 +1472,24 @@ func _aim_fire(dt: float) -> void:
 					G.bal.rocket(mp, t.aim_point(), team, self, t, "atgm")
 					Sfx.play3d("rpg", mp, 2.0)
 			"aa", "aagun":
-				_fire_flak(t)
+				if not _fire_sam(t):
+					_fire_flak(t)
 			"arty":
 				_fire_arty(t)
 			"fieldgun":
 				_fire_cannon(t)
 				main_cd = 5.0
+				on_crew_fire()
 			"atgun":
 				_fire_atgun(t)
 			"howitzer":
 				_fire_arty(t)
 				main_cd = 11.0
+				on_crew_fire()
 			"mtngun":
 				_fire_arty(t)
 				main_cd = 7.0
+				on_crew_fire()
 			"hmortar":
 				_fire_hmortar(t.position)
 			"mlrs":
@@ -1443,6 +1533,7 @@ func _fire_atgun(t: Unit) -> void:
 	G.fx.cannon_blast(mp, (tp - mp).normalized())
 	Sfx.play3d("tank_fire", mp, 3.0)
 	recoil = 1.0
+	on_crew_fire()
 
 func _fire_hmortar(tp: Vector3) -> void:
 	main_cd = randf_range(4.5, 5.5)
@@ -1453,10 +1544,171 @@ func _fire_hmortar(tp: Vector3) -> void:
 	Sfx.play3d("mortar", mp, 3.0)
 	G.fx.muzzle(mp, Vector3.UP, true)
 	recoil = 0.6
+	on_crew_fire()
+
+# ------------------------------------------------------------ çekili top mürettebatı
+# Döngü (atıştan sonra main_cd boyunca): herkes kulak kapatır → doldurucu kamayı açar, boş kovan
+# geriye fırlar → cephaneci sandık yığınından mermi alıp doldurucuya taşır → doldurucu mermiyi
+# kamaya sürer, kapatır → nişancı yükseliş volanını çevirir → nişancı ipi çeker (atış).
+# Havan: doldurucu mermiyi namlu ağzına bırakır ve eğilir.
+var crew_cycle := 0.0
+var _crew_spots: Array = []
+var _casing_done := false
+var _ammo_pile: Node3D = null
+static var _shell_m: Mesh = null
+static var _case_m: Mesh = null
+
+func _crew_meshes() -> void:
+	if _shell_m != null:
+		return
+	var X := Basis(Vector3.RIGHT, -PI * 0.5)
+	var mb := MB.new()
+	mb.cyl(Vector3(0, 0, -0.32), 0.0, 0.05, 0.12, 10, Color(0.6, 0.5, 0.22), X)
+	mb.cyl(Vector3(0, 0, -0.1), 0.05, 0.065, 0.32, 10, Color(0.32, 0.35, 0.26), X)
+	mb.cyl(Vector3(0, 0, 0.12), 0.065, 0.065, 0.14, 10, Color(0.32, 0.35, 0.26), X)
+	mb.cyl(Vector3(0, 0, 0.2), 0.068, 0.068, 0.03, 10, Color(0.62, 0.42, 0.22), X)
+	_shell_m = mb.commit(Mats.vc())
+	var cb := MB.new()
+	cb.cyl(Vector3(0, 0, 0), 0.062, 0.066, 0.42, 10, Color(0.78, 0.6, 0.25), X)
+	cb.cyl(Vector3(0, 0, 0.21), 0.072, 0.072, 0.02, 10, Color(0.7, 0.52, 0.2), X)
+	_case_m = cb.commit(Mats.metal())
+
+func _crew_setup_props() -> void:
+	_crew_meshes()
+	# cephane sandıkları: topun arkasında iki sıra, üstte açık kapaklı sandık
+	var mb := MB.new()
+	var od := Color(0.3, 0.33, 0.22)
+	for k in 4:
+		var x := (k % 2) * 0.62
+		var y := (k / 2) * 0.3
+		mb.box(Vector3(x, 0.15 + y, 0), Vector3(0.58, 0.28, 0.42), od.darkened(0.05 * k))
+		mb.box(Vector3(x + 0.3, 0.15 + y, 0), Vector3(0.02, 0.08, 0.2), Color(0.15, 0.15, 0.12))
+	mb.box(Vector3(0.31, 0.68, 0), Vector3(0.58, 0.04, 0.42), od.lightened(0.05), Basis(Vector3.RIGHT, -1.1))
+	for k in 3:
+		mb.cyl(Vector3(0.12 + k * 0.17, 0.62, 0.0), 0.06, 0.06, 0.12, 8, Color(0.6, 0.5, 0.22))
+	_ammo_pile = MeshInstance3D.new()
+	(_ammo_pile as MeshInstance3D).mesh = mb.commit(Mats.vcs())
+	hull.add_child(_ammo_pile)
+	_ammo_pile.position = Vector3(0.9, 0, ext.y + 1.6)
+	for cb in crew:
+		_crew_spots.append(cb.position)
+
+func _breech_local() -> Vector3:
+	if barrel == null:
+		return Vector3(0, 0.9, 0.6)
+	var w := barrel.global_transform * Vector3(0, 0, 0.55)
+	return hull.to_local(w)
+
+func _muzzle_local() -> Vector3:
+	if barrel == null:
+		return Vector3(0, 1.2, -0.6)
+	return hull.to_local(barrel.global_transform * (M["muzzle"] as Vector3))
+
+func on_crew_fire() -> void:
+	crew_cycle = maxf(main_cd, 0.1)
+	_casing_done = false
+
+func _eject_casing() -> void:
+	if vtype in ["hmortar", "aagun"]:
+		return
+	var bw := hull.to_global(_breech_local() + Vector3(0, 0, 0.25))
+	var mi := MeshInstance3D.new()
+	mi.mesh = _case_m
+	G.main.world.add_child(mi)
+	mi.global_position = bw
+	var back := -forward()
+	var land := bw + back * randf_range(0.9, 1.6) + right() * randf_range(-0.5, 0.5)
+	land.y = 0.07
+	var tw := mi.create_tween()
+	var mid := (bw + land) * 0.5 + Vector3(0, 0.5, 0)
+	tw.tween_property(mi, "global_position", mid, 0.18).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(mi, "rotation", Vector3(randf_range(2, 4), randf_range(0, 3), 0), 0.4)
+	tw.tween_property(mi, "global_position", land, 0.22).set_ease(Tween.EASE_IN)
+	tw.tween_property(mi, "rotation:x", PI * 0.5, 0.05)
+	tw.tween_interval(30.0)
+	tw.tween_callback(mi.queue_free)
+	G.fx.exhaust(bw, 0.8)
+	Sfx.play3d("hit_metal", land, -14.0, 0.2, 0.1)
 
 func _crew_anim(dt: float) -> void:
-	for cb in crew:
-		cb.animate(dt, "crouch_aim" if target != null else "crouch", 0.0)
+	if crew.is_empty():
+		return
+	if _crew_spots.is_empty():
+		_crew_setup_props()
+	var busy := crew_cycle > 0.0 and main_cd > 0.0 and alive
+	var p := 1.0 - clampf(main_cd / maxf(crew_cycle, 0.01), 0.0, 1.0) if busy else 1.0
+	var br := _breech_local()
+	var mortar := vtype == "hmortar"
+	var pile: Vector3 = _ammo_pile.position + Vector3(0.3, 0, -0.35) if _ammo_pile else Vector3(1, 0, 3)
+	var load_pt: Vector3 = (_muzzle_local() + Vector3(0.45, -_muzzle_local().y, 0.25)) if mortar else Vector3(br.x + 0.75, 0, br.z + 0.35)
+	if busy and p > 0.14 and not _casing_done:
+		_casing_done = true
+		_eject_casing()
+	for i in crew.size():
+		var cb: SoldierBody = crew[i]
+		var home: Vector3 = _crew_spots[i]
+		var pose := "crouch_aim" if target != null else "crouch"
+		var spd := 0.0
+		var goal := home
+		var face := br
+		var extra := 0.0
+		var tool := ""
+		if busy:
+			if p < 0.12:
+				pose = "cover"          # atış: kulak kapat, başı eğ
+			elif i == 0:
+				# nişancı: yükseliş/yön volanı
+				goal = Vector3(br.x - 0.75, 0, br.z + 0.1)
+				pose = "lay" if p < 0.92 else "crouch_aim"
+			elif i == 1:
+				# doldurucu: kamayı aç → mermiyi al → kamaya sür
+				goal = load_pt
+				if p < 0.3:
+					pose = "ram"
+					extra = 0.3
+				elif p < 0.62:
+					pose = "crouch"
+				elif p < 0.72:
+					pose = "carry"
+					extra = 1.0
+					tool = "shell"
+				elif p < 0.9:
+					pose = "ram" if not mortar else "drop"
+					extra = clampf((p - 0.72) / 0.18, 0.0, 1.0)
+					tool = "shell" if extra < 0.7 else ""
+				else:
+					pose = "crouch"
+			elif i == 2:
+				# cephaneci: yığından mermi al, doldurucuya taşı
+				if p < 0.4:
+					goal = pile
+					face = pile + Vector3(0, 0, 1)
+					pose = "build" if p > 0.3 else "crouch"
+				elif p < 0.62:
+					goal = load_pt + Vector3(0.6, 0, 0.6)
+					pose = "carry"
+					extra = 1.0
+					tool = "shell"
+					face = load_pt
+				else:
+					goal = home
+					pose = "crouch"
+		var cur := cb.position
+		var mv := goal - cur
+		mv.y = 0.0
+		if mv.length() > 0.08:
+			var st := minf(mv.length(), dt * 2.4)
+			cb.position = cur + mv.normalized() * st
+			spd = 2.0
+			face = goal + mv.normalized()
+			if pose == "crouch" or pose == "crouch_aim":
+				pose = "stand"
+		var fd := face - cb.position
+		if fd.length() > 0.05:
+			cb.rotation.y = lerp_angle(cb.rotation.y, atan2(-fd.x, -fd.z), clampf(dt * 6.0, 0.0, 1.0))
+		cb.set_tool(tool)
+		cb.weapon.visible = false
+		cb.animate(dt, pose, spd, extra)
 
 func dist2_p(p: Vector3) -> float:
 	return Vector2(position.x - p.x, position.z - p.z).length()
@@ -1539,6 +1791,8 @@ func _fire_flak(t: Unit) -> void:
 	var c := 0.32 if air else 0.25
 	if t is Vehicle and t.vtype == "fpv":
 		c = 0.45
+	if t is Vehicle and t.high_alt:
+		c *= 0.3     # yüksek irtifa İHA: menzil sınırında, küçük hedef
 	var impact := tp + Vector3(randf_range(-2, 2), randf_range(-1, 2), randf_range(-2, 2))
 	if randf() < c:
 		t.take_damage(26.0, self, "auto")
@@ -1854,6 +2108,8 @@ func _heli(dt: float) -> void:
 			sling_tgt = null
 	if drop_pt != Vector3.INF:
 		goal = drop_pt
+	if rope_pt != Vector3.INF:
+		goal = rope_pt
 	if forced_target != null and is_instance_valid(forced_target) and forced_target.hostile():
 		var off := position - forced_target.position
 		off.y = 0
@@ -1870,7 +2126,10 @@ func _heli(dt: float) -> void:
 			dv.y = 0
 			if dv.length() > 0.1:
 				want += dv.normalized() * 4.0
-	hvel = hvel.move_toward(want, D["accel"] * dt)
+	var ev := _evade_vec(dt)
+	if ev != Vector3.ZERO:
+		want = want * 0.4 + ev
+	hvel = hvel.move_toward(want, D["accel"] * dt * (2.2 if ev != Vector3.ZERO else 1.0))
 	position += hvel * dt
 	position.x = clampf(position.x, 2.0, G.MAP - 2.0)
 	position.z = clampf(position.z, 2.0, G.MAP - 2.0)
@@ -1883,8 +2142,11 @@ func _heli(dt: float) -> void:
 	heading = rotate_toward(heading, face, D["turn"] * dt)
 	if L < 1.5 and order == "move":
 		order = ""
-	var tgt_alt := ALT + (4.5 if sling != null else 0.0)
+	var tgt_alt := ALT + (4.5 if sling != null else 0.0) - (3.5 if evade_t > 0.0 else 0.0)
 	var hover := false
+	if rope_pt != Vector3.INF and L < 6.0:
+		tgt_alt = ROPE_ALT
+		hover = _rope_tick(dt, L) or L < 6.0
 	if landing:
 		tgt_alt = 0.02 if is_cargo() else 0.6
 		if L < 1.5 and hull.position.y < 0.9 and not land_hold:
@@ -1910,10 +2172,11 @@ func _heli(dt: float) -> void:
 				_drop_crate()
 		_cargo_visuals(dt)
 	var local_v := hvel.rotated(Vector3.UP, -heading)
-	hull.rotation = Vector3(lerpf(hull.rotation.x, clampf(local_v.z * 0.025, -0.3, 0.3), dt * 3.0), heading, lerpf(hull.rotation.z, clampf(-local_v.x * 0.025, -0.3, 0.3), dt * 3.0))
+	var bank := 0.55 if evade_t > 0.0 else 0.3
+	hull.rotation = Vector3(lerpf(hull.rotation.x, clampf(local_v.z * 0.025, -0.3, 0.3), dt * 3.0), heading, lerpf(hull.rotation.z, clampf(-local_v.x * 0.035, -bank, bank), dt * 4.0))
 	_hb += dt
 	if landing or hover or absf(hull.position.y - tgt_alt) > 0.4:
-		hull.position.y = move_toward(hull.position.y, tgt_alt, dt * 3.0)
+		hull.position.y = move_toward(hull.position.y, tgt_alt, dt * (5.0 if evade_t > 0.0 else 3.0))
 	else:
 		hull.position.y = tgt_alt + sin(_hb * 1.3) * 0.25
 	rotor.rotation.y += dt * 28.0
@@ -1926,6 +2189,7 @@ func _heli(dt: float) -> void:
 	if randf() < dt * 3.0:
 		G.fx.vehicle_dust(position + Vector3(randf_range(-4, 4), 0.2, randf_range(-4, 4)))
 	rocket_cd -= dt
+	hf_cd -= dt
 	if vtype == "transport":
 		if t != null and is_instance_valid(t) and t.alive and main_cd <= 0.0 and dist2(t) < 30.0 and not landing:
 			if burst <= 0:
@@ -1948,8 +2212,18 @@ func _heli(dt: float) -> void:
 			salvo_t = 0.16
 			var side := 1.6 if salvo % 2 == 0 else -1.6
 			var mp := hull.global_transform * Vector3(side, -0.4, -1.0)
-			G.bal.rocket(mp, t.aim_point(), team, self, t)
+			G.bal.rocket(mp, t.aim_point(), team, self, t, "rpg", "hydra")
 			Sfx.play3d("rpg", mp, 0.0, 0.1, 0.05)
+	elif hf_left > 0 and hf_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air() and dist < 75.0:
+		# kanat altı raydan güdümlü tanksavar füzesi (ABD Hellfire / Rus Vikhr)
+		hf_left -= 1
+		hf_cd = 6.0
+		var hs := 1.9 if hf_left % 2 == 0 else -1.9
+		var hp := hull.global_transform * Vector3(hs, -0.55, -0.6)
+		G.bal.rocket(hp, t.aim_point(), team, self, t, "atgm", "hellfire" if team == 0 else "vikhr")
+		G.fx.flash(hp, 5.0, 8.0, 0.08, Color(1.0, 0.8, 0.5))
+		Sfx.play3d("rpg", hp, 3.0)
+		say("FÜZE ATILDI")
 	elif rocket_cd <= 0.0 and dist < 50.0 and (t is Vehicle or t is Building or randf() < 0.5):
 		salvo = 4
 		salvo_t = 0.0
@@ -1963,13 +2237,260 @@ func _heli(dt: float) -> void:
 		_hitscan_from(gp, t, 28.0, 0.38, 12.0)
 		Sfx.play3d("hmg", gp, 2.0, 0.08, 0.03)
 
+# ------------------------------------------------------------ halatla iniş / çekme
+func can_rope() -> bool:
+	return vtype == "transport" and alive
+
+func cmd_fastrope(p: Vector3) -> void:
+	if not can_rope() or cargo.is_empty():
+		return
+	_rope_reset()
+	rope_pt = G.on_ground(p)
+	rope_mode = "down"
+	dest = rope_pt
+	order = "move"
+	landing = false
+	say("HALATLA İNİŞE GİDİYORUZ")
+
+func cmd_rope_pick(p: Vector3) -> void:
+	if not can_rope() or cargo.size() >= capacity():
+		return
+	_rope_reset()
+	rope_pt = G.on_ground(p)
+	rope_mode = "up"
+	dest = rope_pt
+	order = "move"
+	landing = false
+	say("HALATLA ALIM NOKTASINA")
+
+func rope_anchor(i: int) -> Vector3:
+	# halat kapı üstündeki koldan sarkar (sağ/sol kapı), ağır nakliyede arka rampa ağzı
+	var lp: Vector3
+	if is_cargo():
+		lp = Vector3((-0.7 if i % 2 == 0 else 0.7), 0.6, ext.y * 0.85)
+	else:
+		lp = Vector3((ext.x + 0.35) * (1.0 if i % 2 == 0 else -1.0), 2.0, -ext.y * 0.1)
+	return hull.global_transform * lp
+
+func _rope_mesh(len_m: float) -> MeshInstance3D:
+	var mb := MB.new()
+	var segs := int(len_m / 0.5) + 1
+	var col := Color(0.12, 0.11, 0.1)
+	for k in segs:
+		var y0 := -float(k) * len_m / segs
+		var y1 := -float(k + 1) * len_m / segs
+		mb.cyl_between(Vector3(sin(k * 0.7) * 0.02, y0, 0), Vector3(sin((k + 1) * 0.7) * 0.02, y1, 0), 0.03, 0.03, 5, col, false)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	return mi
+
+func _rope_deploy(n: int) -> void:
+	_free_ropes()
+	for i in n:
+		var a := rope_anchor(i)
+		var L := maxf(a.y + 0.3, 1.0)
+		var mi := _rope_mesh(L)
+		G.main.world.add_child(mi)
+		mi.global_position = a
+		mi.scale = Vector3(1, 0.05, 1)
+		var tw := mi.create_tween()
+		tw.tween_property(mi, "scale:y", 1.0, 0.7).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		ropes.append([mi, i, L])
+	Sfx.play3d("crumble", position, -12.0)
+
+func _ropes_follow() -> void:
+	for r in ropes:
+		var mi: MeshInstance3D = r[0]
+		if is_instance_valid(mi) and mi.get_meta("cut", false) == false:
+			mi.global_position = rope_anchor(r[1])
+
+# iniş bitti: halatlar koldan bırakılır, yere düşüp yığılır
+func _rope_cut() -> void:
+	for r in ropes:
+		var mi: MeshInstance3D = r[0]
+		if not is_instance_valid(mi):
+			continue
+		mi.set_meta("cut", true)
+		var g := mi.global_position
+		var tw := mi.create_tween()
+		tw.tween_property(mi, "global_position:y", r[2] * 0.15, 0.6).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(mi, "scale:y", 0.15, 0.6)
+		tw.parallel().tween_property(mi, "rotation:z", 1.4, 0.6)
+		tw.tween_property(mi, "global_position:y", 0.05, 0.25)
+		tw.tween_interval(25.0)
+		tw.tween_callback(mi.queue_free)
+		mi.global_position = g
+	ropes.clear()
+	say("HALATLAR BIRAKILDI")
+
+func _free_ropes() -> void:
+	for r in ropes:
+		if is_instance_valid(r[0]):
+			(r[0] as Node).queue_free()
+	ropes.clear()
+
+func _rope_reset() -> void:
+	_free_ropes()
+	rope_pt = Vector3.INF
+	rope_mode = ""
+	rope_t = 0.0
+	rope_riders.clear()
+
+# askı noktasında asılı kal; askerleri sırayla halattan indir / topla
+func _rope_tick(dt: float, L: float) -> bool:
+	if rope_pt == Vector3.INF:
+		return false
+	if L > 2.0 or absf(hull.position.y - ROPE_ALT) > 0.6:
+		return false
+	hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt * 2.0)
+	rope_t += dt
+	if ropes.is_empty():
+		if rope_t > 0.8:
+			_rope_deploy(2 if rope_mode == "down" else 1)
+			rope_next = 0.9
+		return true
+	_ropes_follow()
+	rope_next -= dt
+	if rope_mode == "down":
+		rope_riders = rope_riders.filter(func(x): return is_instance_valid(x) and x.alive and x.state == "rope")
+		if rope_next <= 0.0 and not cargo.is_empty():
+			var sd = cargo[0]
+			if is_instance_valid(sd):
+				rope_next = 1.1
+				cargo.erase(sd)
+				sd.start_rope_down(self, rope_side % ropes.size())
+				rope_side += 1
+				rope_riders.append(sd)
+			else:
+				cargo.remove_at(0)
+		if cargo.is_empty() and rope_riders.is_empty():
+			if rope_next < -1.2:
+				_rope_cut()
+				rope_pt = Vector3.INF
+				rope_mode = ""
+				order = ""
+	else:
+		# SPIES: yakındaki dost askerler halata koşar, kancalanır, hep birlikte yukarı çekilir
+		if rope_t < 1.6:
+			for u in G.friends_near(rope_pt, 26.0, team):
+				if u is Soldier and u.can_fight() and u.state in ["idle", "move"] and u.vehicle_in == null and rope_riders.size() + cargo.size() < capacity() and not rope_riders.has(u) and u.order != "hold":
+					if u.selected or u.position.distance_to(rope_pt) < 14.0:
+						rope_riders.append(u)
+						u.start_rope_up(self)
+		rope_riders = rope_riders.filter(func(x): return is_instance_valid(x) and x.alive and x.state in ["rope_wait", "rope_up", "move"] )
+		var ready := rope_riders.filter(func(x): return x.state == "rope_wait")
+		if not rope_riders.is_empty() and ready.size() == rope_riders.size() and rope_t > 2.0:
+			for x in ready:
+				x.state = "rope_up"
+				x.state_t = 0.0
+		if rope_t > 40.0 or (rope_riders.is_empty() and rope_t > 4.0):
+			_rope_cut()
+			rope_pt = Vector3.INF
+			rope_mode = ""
+			order = ""
+	return true
+
+# ------------------------------------------------------------ hava savunması / füze kaçınma
+func _setup_air_defense(vt: String) -> void:
+	var fam: String = cat.get("fam", "")
+	if vt == "aa":
+		if fam in ["sam_long", "sam_ru_long"]:
+			sams = 8; sam_big = true; sam_range = 140.0
+		elif fam in ["sam_mid", "sam_ru_tr", "sam_ru_truck"]:
+			sams = 8; sam_big = true; sam_range = 110.0
+		elif fam == "ciws":
+			sams = 0
+		else:
+			sams = 6 if fam in ["lv_sam", "inf_manpads"] else 4
+			sam_range = 85.0
+	if vt in ["heli", "transport"]:
+		flares = 12 if vt == "heli" else 16
+		hf_left = 8 if vt == "heli" else 0
+
+# gelen güdümlü füze: helikopter fişek atar ve kırar; İHA yalnız manevra yapar
+func on_missile(p) -> void:
+	if not alive:
+		return
+	evade_t = 2.6
+	evade_side = 1.0 if randf() < 0.5 else -1.0
+	if vtype in ["heli", "transport"]:
+		if flares > 0:
+			flare_q += 3
+			say("FÜZE! FİŞEK!", 2.0)
+			# kızılötesi arayıcı fişeğe kanar (büyük radar güdümlüde daha az)
+			if randf() < (0.35 if p.big else 0.62):
+				var tw := create_tween()
+				tw.tween_interval(randf_range(0.35, 0.8))
+				tw.tween_callback(func():
+					if is_instance_valid(self):
+						p.decoy = position + Vector3(0, hull.position.y - 2.0, 0) - hvel * 0.3 + Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)))
+		else:
+			say("FÜZE! FİŞEK BİTTİ!", 2.0)
+	elif is_drone() and vtype != "fpv":
+		if randf() < 0.18:
+			p.decoy = position + Vector3(randf_range(-10, 10), hull.position.y + randf_range(-6, 2), randf_range(-10, 10))
+
+func _flares_tick(dt: float) -> void:
+	if flare_q <= 0 or flares <= 0:
+		return
+	flare_t -= dt
+	if flare_t > 0.0:
+		return
+	flare_t = 0.22
+	flare_q -= 1
+	flares -= 1
+	var base := position + Vector3(0, hull.position.y - 0.4, 0)
+	var r := right()
+	var b := -forward()
+	for sg in [-1.0, 1.0]:
+		G.bal.flare(base + r * sg * 0.9, hvel * 0.6 + r * sg * randf_range(9.0, 13.0) + b * randf_range(3.0, 6.0) + Vector3(0, randf_range(1.0, 4.0), 0))
+	Sfx.play3d("smoke_pop", base, -4.0, 0.2, 0.1)
+
+# kaçış: sert yana kırış + alçalma; yatış açısı artar
+func _evade_vec(dt: float) -> Vector3:
+	if evade_t <= 0.0:
+		return Vector3.ZERO
+	evade_t -= dt
+	return right() * evade_side * speed_max * 1.3
+
+func _fire_sam(t: Unit) -> bool:
+	if sams <= 0 or sam_cd > 0.0 or not (t is Vehicle) or not t.is_air() or not t.alive:
+		return false
+	var d := dist2(t)
+	if d > sam_range or d < 12.0:
+		return false
+	sams -= 1
+	sam_cd = 7.0 if sam_big else 5.0
+	var mp := (turret.global_position if turret else position) + Vector3(0, 1.4, 0)
+	G.bal.sam(mp, t, team, self, sam_big)
+	say("FÜZE ATILDI")
+	return true
+
 # İHA: emir noktası çevresinde yüksekte daire çizer; silahlı olan araçlara üstten füze atar
+func lose_link() -> void:
+	if link_lost or not alive:
+		return
+	link_lost = true
+	link_t = 0.0
+	say("BAĞLANTI KOPTU", 3.0)
+	forced_target = null
+
 func _uav(dt: float) -> void:
+	if link_lost:
+		# bağ koptu: düz uçar, alçalır ve düşer
+		link_t += dt
+		position += hvel * dt
+		hull.position.y = move_toward(hull.position.y, 0.0, dt * (0.6 + link_t * 0.25))
+		hull.rotation = Vector3(-0.12 - link_t * 0.02, heading, -0.1)
+		if hull.position.y <= 0.4 or position.x < 3.0 or position.z < 3.0 or position.x > G.MAP - 3.0 or position.z > G.MAP - 3.0:
+			destroy(null)
+		return
+	var alt := HIGH_ALT if high_alt else UAV_ALT
 	if G.weather != null and G.weather.no_air():
 		hull.position.y = move_toward(hull.position.y, 6.0, dt * 3.0)
 	else:
-		hull.position.y = move_toward(hull.position.y, UAV_ALT, dt * 4.0)
-	var R := 26.0
+		hull.position.y = move_toward(hull.position.y, alt, dt * (2.2 if high_alt else 4.0))
+	var R := 34.0 if high_alt else 26.0
 	var c := dest
 	var to_c := c - position
 	to_c.y = 0.0
@@ -1982,14 +2503,18 @@ func _uav(dt: float) -> void:
 		want = (goal - position)
 		want.y = 0.0
 		want = want.normalized() * speed_max
-	hvel = hvel.move_toward(want, D["accel"] * dt)
+	var ev := _evade_vec(dt)
+	if ev != Vector3.ZERO:
+		want = (want * 0.3 + ev).limit_length(speed_max * 1.3)
+		hull.position.y = move_toward(hull.position.y, alt - 5.0, dt * 6.0)
+	hvel = hvel.move_toward(want, D["accel"] * dt * (2.5 if ev != Vector3.ZERO else 1.0))
 	position += hvel * dt
 	position.x = clampf(position.x, 2.0, G.MAP - 2.0)
 	position.z = clampf(position.z, 2.0, G.MAP - 2.0)
 	cur_speed = hvel.length()
 	if hvel.length() > 0.5:
-		heading = rotate_toward(heading, Soldier._yaw_of(hvel), D["turn"] * 2.0 * dt)
-	hull.rotation = Vector3(0.0, heading, -0.28)
+		heading = rotate_toward(heading, Soldier._yaw_of(hvel), D["turn"] * (5.0 if ev != Vector3.ZERO else 2.0) * dt)
+	hull.rotation = Vector3(0.0, heading, -0.28 - (0.5 * evade_side if evade_t > 0.0 else 0.0))
 	if vtype != "uav_armed":
 		return
 	missile_cd -= dt
@@ -2034,8 +2559,20 @@ func _fpv(dt: float) -> void:
 					t = e
 		forced_target = t
 		if t == null:
+			battery -= dt
+			if loiter_pt != Vector3.INF and vtype == "fpv" and battery > 0.0:
+				# hedef yoksa gösterilen noktada asılı kal, çevreyi tara
+				var to_l := Vector3(loiter_pt.x - position.x, 0.0, loiter_pt.z - position.z)
+				var wv := to_l.normalized() * minf(speed_max, to_l.length() * 1.5) if to_l.length() > 0.5 else Vector3.ZERO
+				hvel = hvel.move_toward(wv, D["accel"] * dt)
+				position += hvel * dt
+				if hvel.length() > 0.5:
+					heading = Soldier._yaw_of(hvel)
+				hull.position.y = move_toward(hull.position.y, 7.0, dt * 3.0)
+				hull.rotation = Vector3(-hvel.length() * 0.02, heading, sin(G.time * 7.0) * 0.04)
+				return
 			hp -= dt * 2.0
-			if hp <= 0.0:
+			if hp <= 0.0 or battery <= -10.0:
 				destroy(null)
 			return
 	var tp := t.aim_point()
@@ -2191,6 +2728,11 @@ func destroy(src) -> void:
 		return
 	_cargo_lost()
 	if vtype in ["heli", "transport"]:
+		for r in rope_riders:
+			if is_instance_valid(r) and r.alive and r.state in ["rope", "rope_up"]:
+				r.rope_fall()
+		rope_riders.clear()
+		_free_ropes()
 		alive = false
 		wreck = true
 		G.credit_kill(src, self)
