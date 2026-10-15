@@ -54,7 +54,7 @@ func _cam(c: Vector3, size: float) -> void:
 
 # ağaç modelleri (yeşil / kış / çöl) + büyük patlamada sallanma
 func tree_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	for mp in ["green_valley", "winter_village", "desert_canal"]:
@@ -80,7 +80,7 @@ func tree_test() -> void:
 
 # drone operatörü: kendiliğinden kaldırmaz; mini drone emri; istasyon kurulumu + İHA fırlatma
 func drone_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
@@ -136,7 +136,7 @@ func drone_test() -> void:
 
 # karadan havaya füze: helikopter fişek atar + kırar; İHA manevra; Hellfire/Vikhr görünümü
 func evade_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
@@ -176,6 +176,8 @@ func evade_test() -> void:
 	var shot_h := false
 	for i in 300:
 		await m._wait(0.05)
+		if i % 40 == 0:
+			print("EVADE dbg t=%.1f tgt=%s hf=%d cd=%.1f dist=%.0f alive=%s" % [G.time, h2.target, h2.hf_left, h2.hf_cd, h2.dist2(tk), h2.alive])
 		var ms: Array = G.bal.projs.filter(func(p): return p.kind == "atgm" and p.src == h2)
 		if not ms.is_empty() and not shot_h and ms[0].t > 0.35:
 			shot_h = true
@@ -191,7 +193,7 @@ func evade_test() -> void:
 
 # bölgesel yaralar (görsel + yürüyüş) ve tim dağılıp başka time katılma
 func wound_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
@@ -240,7 +242,7 @@ func wound_test() -> void:
 
 # halatla iniş: kargo helikopteri 8 askeri iki halattan indirir, halatlar bırakılır; sonra SPIES ile geri alır
 func rope_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
@@ -294,7 +296,7 @@ func rope_test() -> void:
 
 # top mürettebatı döngüsü + araca kapıdan binme/inme
 func crew_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
@@ -362,7 +364,7 @@ func crew_test() -> void:
 
 # görsel savaş sisi: başlangıçta yalnız karargâh çevresi açık; ilerleyen tim yolu açar
 func fow_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, false)
@@ -388,7 +390,7 @@ func fow_test() -> void:
 
 # hava indirme: uçak geçer, 8 paraşütçü atlar, kubbeler açılır, iner ve toplanır
 func para_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
@@ -419,7 +421,7 @@ func para_test() -> void:
 
 # tim beyni: YZ timi uzun çatışmada kanattan dolanır, taban kolu baskı ateşi açar
 func tac_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
@@ -455,7 +457,7 @@ func tac_test() -> void:
 
 # 1 km harita: üretim süresi, ağaç/bina sayısı, genel ve yakın görünüm, uzun yol bulma
 func large_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	var t0 := Time.get_ticks_msec()
@@ -483,7 +485,7 @@ func large_test() -> void:
 
 # 2 km ve 4 km haritalar: yükleme süresi, bellek, ağaç/bina sayısı, uçtan uca yol bulma
 func huge_test() -> void:
-	m.get_window().size = Vector2i(1920, 1080)
+	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
 	for id in ["front_2k", "airborne_4k"]:

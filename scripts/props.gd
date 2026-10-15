@@ -881,6 +881,73 @@ func _hay_mesh() -> ArrayMesh:
 	mb.cyl(Vector3(-0.6, 0.6, 0), 0.6, 0.6, 1.2, 12, Color(0.86, 0.68, 0.3), Basis(Vector3.FORWARD, PI * 0.5))
 	return mb.commit(Mats.vc())
 
+# ot çeşitleri: 1 uzun kuru ot + başak, 2 kır çiçekleri (renk dokuda), 3 geniş yapraklı yabani ot
+func _grass_variant_material(kind: int) -> StandardMaterial3D:
+	var key := "grassmat_v%d" % kind
+	if _cache.has(key):
+		return _cache[key]
+	var S := 128
+	var im := Image.create(S, S, false, Image.FORMAT_RGBA8)
+	im.fill(Color(0, 0, 0, 0))
+	var r := RandomNumberGenerator.new()
+	r.seed = 50 + kind
+	var blades: int = [0, 18, 16, 6][kind]
+	for b in blades:
+		var x0 := r.randf_range(12, S - 12)
+		var lean := r.randf_range(-26, 26)
+		var hgt := r.randf_range(0.6, 1.0) * S if kind == 1 else r.randf_range(0.35, 0.75) * S
+		var w := r.randf_range(1.2, 2.6) if kind == 1 else r.randf_range(2.0, 3.6)
+		var shade := r.randf_range(0.75, 1.0)
+		for y in int(hgt):
+			var t := float(y) / hgt
+			var cx := x0 + lean * t * t
+			var ww := w * (1.0 - t * 0.8)
+			for x in range(int(cx - ww), int(cx + ww) + 1):
+				if x >= 0 and x < S:
+					var c := Color(shade * (0.62 + 0.38 * t), shade * (0.72 + 0.28 * t), shade * 0.48, 1)
+					if kind == 2:
+						c = Color(0.28 * shade, 0.45 * shade, 0.16 * shade, 1)     # çiçek sapı (renk dokuda, örnek rengi beyaz)
+					im.set_pixel(x, S - 1 - y, c)
+		# başak / çiçek
+		var tx := int(x0 + lean)
+		var ty := S - 1 - int(hgt)
+		if kind == 1:
+			for k in 10:
+				var px := tx + r.randi_range(-2, 2)
+				var py := ty + k
+				if px >= 0 and px < S and py >= 0 and py < S:
+					im.set_pixel(px, py, Color(0.95, 0.85, 0.6, 1))
+		elif kind == 2:
+			var pal := [Color(0.95, 0.92, 0.85), Color(0.95, 0.85, 0.2), Color(0.75, 0.25, 0.85), Color(0.95, 0.3, 0.25), Color(0.45, 0.55, 0.95)]
+			var fc: Color = pal[r.randi() % pal.size()]
+			for dy in range(-4, 5):
+				for dx in range(-4, 5):
+					var d2 := dx * dx + dy * dy
+					if d2 <= 16 and tx + dx >= 0 and tx + dx < S and ty + dy >= 0 and ty + dy < S:
+						im.set_pixel(tx + dx, ty + dy, Color(0.95, 0.85, 0.3) if d2 <= 2 else fc)
+	if kind == 3:
+		# yuvarlak geniş yapraklar
+		for k in 9:
+			var cx2 := r.randf_range(25, S - 25)
+			var cy2 := r.randf_range(S * 0.35, S - 15)
+			var rr := r.randf_range(9, 16)
+			for y in range(int(cy2 - rr), int(cy2 + rr)):
+				for x in range(int(cx2 - rr), int(cx2 + rr)):
+					var dd := Vector2(x - cx2, (y - cy2) * 1.6).length()
+					if dd < rr and x >= 0 and x < S and y >= 0 and y < S:
+						var sh := 0.65 + 0.35 * (1.0 - dd / rr)
+						im.set_pixel(x, y, Color(0.5 * sh, 0.72 * sh, 0.38 * sh, 1))
+	im.generate_mipmaps()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = ImageTexture.create_from_image(im)
+	m.vertex_color_use_as_albedo = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.alpha_scissor_threshold = 0.45
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.roughness = 0.95
+	_cache[key] = m
+	return m
+
 func _grass_material() -> StandardMaterial3D:
 	if not _cache.has("grassmat"):
 		var S := 128
@@ -931,6 +998,16 @@ func _grass_card() -> ArrayMesh:
 	return m
 
 func grass_field(n: int, col: Color, region := Rect2(2, 2, 252, 252), size := 0.55, avoid_fn: Callable = Callable()) -> void:
+	_grass_field_v(n, col, region, size, avoid_fn, 0)
+	if biome_id == "green" and not winter:
+		# çeşit: uzun kuru ot + başak, kır çiçekleri, geniş yapraklı yabani ot
+		_grass_field_v(int(n * 0.22), Color(0.82, 0.76, 0.5), region, size * 1.5, avoid_fn, 1)
+		_grass_field_v(int(n * 0.1), Color(1, 1, 1), region, size * 0.9, avoid_fn, 2)
+		_grass_field_v(int(n * 0.08), col.lightened(0.1), region, size * 0.8, avoid_fn, 3)
+	elif biome_id == "desert":
+		_grass_field_v(int(n * 0.3), Color(0.78, 0.7, 0.45), region, size * 1.3, avoid_fn, 1)
+
+func _grass_field_v(n: int, col: Color, region: Rect2, size: float, avoid_fn: Callable, kind: int) -> void:
 	# çapraz kartlı ot öbekleri (tek MultiMesh, gölge atmaz)
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -955,7 +1032,7 @@ func grass_field(n: int, col: Color, region := Rect2(2, 2, 252, 252), size := 0.
 		mm.set_instance_color(i, cs[i])
 	var m := MultiMeshInstance3D.new()
 	m.multimesh = mm
-	m.material_override = _grass_material()
+	m.material_override = _grass_material() if kind == 0 else _grass_variant_material(kind)
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(m)
 
