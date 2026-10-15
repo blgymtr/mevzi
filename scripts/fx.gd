@@ -265,6 +265,17 @@ func _run_emitter(e: Array, dt: float) -> void:
 					emit(P_FIRE, p + _rv(0.6 * pw, 0.2), Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(2.0, 4.0), rng.randf_range(-0.4, 0.4)), rng.randf_range(0.5, 1.0), 0.9 * pw, 1.8 * pw, -1.0, 1.0, Color(1, 1, 1, 0.95))
 				var g := rng.randf_range(0.03, 0.09)
 				emit(P_SMOKE, p + _rv(0.5 * pw, 0.3) + Vector3(0, 1.0, 0), Vector3(rng.randf_range(0.2, 1.0), rng.randf_range(4.0, 7.0), rng.randf_range(-0.5, 0.3)), rng.randf_range(6.0, 9.0), 1.4 * pw, 6.5 * pw, -0.1, 0.25, Color(g, g, g, 0.92))
+		"jet":
+			var fade3 := clampf(left / 6.0, 0.0, 1.0)
+			var pulse := 0.6 + 0.4 * sin(G.time * 7.0 + p.x)
+			while e[4] > 0.03:
+				e[4] -= 0.03
+				if rng.randf() < fade3:
+					emit(P_FIRE, p + _rv(0.25 * pw, 0.1), Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(7.0, 12.0) * pulse, rng.randf_range(-0.6, 0.6)), rng.randf_range(0.35, 0.6), 0.6 * pw, 1.3 * pw, -2.0, 0.6, Color(1.15, 0.85, 0.45, 1))
+					if rng.randf() < 0.3:
+						emit(P_SPARK, p, Vector3(rng.randf_range(-4, 4), rng.randf_range(6, 14), rng.randf_range(-4, 4)), rng.randf_range(0.6, 1.2), 0.06, 0.04, 9.8, 0.2, Color(1, 0.8, 0.4, 1))
+				var c := rng.randf_range(0.62, 0.8)
+				emit(P_SMOKE, p + Vector3(0, 4.5 * pw * pulse, 0) + _rv(0.6 * pw, 0.4), Vector3(rng.randf_range(0.1, 0.8), rng.randf_range(3.0, 5.0), rng.randf_range(-0.4, 0.3)), rng.randf_range(4.0, 6.5), 1.2 * pw, 5.0 * pw, -0.15, 0.3, Color(c, c, c * 0.97, 0.7))
 		"smolder":
 			while e[4] > 0.25:
 				e[4] -= 0.25
@@ -364,6 +375,9 @@ func mushroom(p: Vector3, s: float) -> void:
 		emit(P_SMOKE, p + Vector3(0, 9.0 * s, 0), Vector3(cos(a) * rng.randf_range(2.0, 4.0), rng.randf_range(1.0, 2.5), sin(a) * rng.randf_range(2.0, 4.0)) * s, rng.randf_range(6.0, 9.0), 2.5 * s, rng.randf_range(6.0, 9.0) * s, -0.15, 0.8, Color(g, g, g, 0.9), rng.randf_range(0.6, 1.2))
 
 # uzun süren yangın + kara duman sütunu (yanan araç)
+func cookoff(p: Vector3, dur: float, pw := 1.0) -> void:
+	emitters.append([p, G.time + dur, "jet", pw, 0.0])
+
 func fire_column(p: Vector3, dur: float, pw := 1.0) -> void:
 	emitters.append([p, G.time + dur, "column", pw, 0.0])
 

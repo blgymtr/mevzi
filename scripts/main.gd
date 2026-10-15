@@ -69,6 +69,8 @@ func _ready() -> void:
 		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
 		_run_weather_test()
+	elif shot_dir != "" and shot_scene == "battletest":
+		_run_battle_test()
 	elif shot_dir != "" and shot_scene == "holdtest":
 		_run_hold_test()
 	elif shot_dir != "" and shot_scene == "buildtest":
@@ -1231,6 +1233,48 @@ func _run_weather_test() -> void:
 	if W.sight_mult() >= 1.0:
 		fails += 1
 	print("WEATHERTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_battle_test() -> void:
+	# yoğun çatışma görünümü: karşılıklı roket yaylımları (asılı beyaz iz kavisleri), yanan/cephanesi patlayan tanklar
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	start_game("desert_town")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var c: Vector3 = G.hq_pos[0].lerp(G.hq_pos[1], 0.5)
+	var ml0 := spawn_vehicle(0, "mlrs", G.grid.nearest_free(c + Vector3(-60, 0, -30), Grid.M_HEAVY), 0.0)
+	var ml1 := spawn_vehicle(1, "mlrs", G.grid.nearest_free(c + Vector3(60, 0, 25), Grid.M_HEAVY), 0.0)
+	var tks: Array = []
+	for i in 5:
+		tks.append(spawn_vehicle(i % 2, "tank", G.grid.nearest_free(c + Vector3(-18 + i * 9, 0, randf_range(-8, 8)), Grid.M_HEAVY), randf() * TAU))
+	for i in 8:
+		var s := spawn_soldier(i % 2, "rifle", G.grid.nearest_free(c + Vector3(randf_range(-25, 25), 0, randf_range(-18, 18)), Grid.M_INF), null)
+		s.cmd_hold()
+	ml0.mlrs_aim = c + Vector3(15, 0, 10)
+	ml0.mlrs_left = 12
+	ml1.mlrs_aim = c + Vector3(-15, 0, -8)
+	ml1.mlrs_left = 12
+	await _wait(1.2)
+	for k in 3:
+		tks[k].destroy(null)
+		await _wait(0.6)
+	await _wait(1.5)
+	var mid := Vector3.ZERO
+	for t in tks:
+		mid += t.position / tks.size()
+	print("BATTLE mid=%s c=%s ml0=%s ml1=%s" % [mid, c, ml0.position, ml1.position])
+	G.cam.size = 58.0
+	G.cam.target_size = 58.0
+	G.cam.jump_to(mid, true)
+	await _wait(0.6)
+	await _shot("battle_01")
+	ml0.mlrs_aim = c + Vector3(25, 0, -6)
+	ml0.mlrs_left = 12
+	await _wait(2.0)
+	await _shot("battle_02")
+	print("BATTLETEST DONE")
 	get_tree().quit()
 
 func _run_hold_test() -> void:

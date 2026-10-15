@@ -1419,7 +1419,7 @@ func _mlrs_tick(dt: float) -> void:
 	var mp := muzzle_world() + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.2), 0)
 	var d := dist2_p(mlrs_aim)
 	var err := d * 0.07 + 4.0
-	G.bal.artillery(mp, mlrs_aim + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self)
+	G.bal.mlrs_rocket(mp, mlrs_aim + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self)
 	Sfx.play3d("rpg", mp, 3.0, 0.15, 0.05)
 	var back := -(mlrs_aim - position).normalized()
 	for i in 3:
@@ -2243,6 +2243,8 @@ func destroy(src) -> void:
 			G.explode(cp, 4.5, 70.0, "big", team, self)
 			G.fx.fireball(cp + Vector3(0, 0.8, 0), 1.5)
 			G.fx.fire_column(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.2)
+			# taret ambarından yükselen cephane alevi jeti (birkaç saniye, aralıklı)
+			G.fx.cookoff(position + Vector3(0, 2.0, 0), randf_range(6.0, 11.0), 1.0)
 			G.fx.crater(position, D["len"] * 0.55)
 			_debris(4, 6.0)
 			G.fx.burn(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.6)

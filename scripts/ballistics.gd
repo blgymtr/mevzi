@@ -141,6 +141,14 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -
 func mortar(from: Vector3, to: Vector3, team: int, src) -> void:
 	_lob(from, to, team, src, "mortar", 2.2 + from.distance_to(to) * 0.02)
 
+func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
+	_lob(from, to, team, src, "rkt", 3.2 + from.distance_to(to) * 0.018)
+	var p: Proj = projs[projs.size() - 1]
+	p.node.queue_free()
+	p.node = _node(_rmesh)
+	p.node.scale = Vector3.ONE * 1.6
+	p.node.position = from
+
 func artillery(from: Vector3, to: Vector3, team: int, src) -> void:
 	_lob(from, to, team, src, "arty", 2.5 + from.distance_to(to) * 0.025)
 
@@ -163,7 +171,13 @@ func _step_lob(p: Proj, dt: float) -> bool:
 	p.vel.y -= 9.8 * dt
 	var np := p.pos + p.vel * dt
 	p.trail -= dt
-	if p.trail <= 0.0:
+	if p.kind == "rkt":
+		# kavis boyunca boncuk boncuk beyaz iz: saniyelerce asılı kalır, yavaşça genişler
+		if p.trail <= 0.0:
+			p.trail = 0.035
+			G.fx.emit(Fx.P_SMOKE, p.pos, Vector3(randf_range(-0.15, 0.15), randf_range(0.0, 0.2), randf_range(-0.15, 0.15)), randf_range(5.0, 7.5), 0.35, 1.5, -0.02, 0.4, Color(0.95, 0.94, 0.92, 0.6))
+			G.fx.emit(Fx.P_SPARK, p.pos, -p.vel.normalized() * 30.0, 0.05, 0.16, 0.1, 0.0, 6.0, Color(1.0, 0.78, 0.4, 1))
+	elif p.trail <= 0.0:
 		p.trail = 0.05
 		G.fx.emit(Fx.P_SMOKE, p.pos, Vector3.ZERO, 0.6, 0.15, 0.4, 0.0, 1.0, Color(0.8, 0.8, 0.78, 0.35))
 	# düşüş ıslığı
@@ -215,7 +229,7 @@ func _process(dt: float) -> void:
 				done = _step_rocket(p, dt)
 			"grenade":
 				done = _step_grenade(p, dt)
-			"mortar", "arty":
+			"mortar", "arty", "rkt":
 				done = _step_lob(p, dt)
 		if done:
 			if p.node:
