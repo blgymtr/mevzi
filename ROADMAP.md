@@ -127,16 +127,26 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 - [x] Derin kraterler (askerler içine girer, siper)
 - [x] Yarı saydam duman, canlı renk ayarı; koşu döngüsü; tabanca/bıçak/sargı (kendi kendine sargı); nadir teslim olma
 - [ ] Araç modelleri: daha keskin, detaysız araçlara detay (tüm katalog)
-- [ ] Asker: daha hatlı insan modeli, silah tutuşu, nişan/yüzüstü pozları (Blender animasyonları)
-- [ ] Her olay için animasyon: araca binme/inme, ikmal kamyonu yükleme animasyonu
-- [ ] Patlama: mermi türü/açı/zırha göre değişken; tank imhasında daha fazla tür
-- [ ] Piyade-tank birlikte ilerleme (tank arkası siper takip)
-- [ ] 100+ farklı bina türü, farklı ağaç/çalı/çiçek/kaldırım/araç/direk; yıkılabilir köprüler
+- [~] Asker: IK ile iki elle silah tutuşu, bekleme (low ready) tutuşu, tabanca kılıftan çek/geri tak — kalan: daha hatlı insan modeli, Blender animasyonları
+- [~] Her olay için animasyon: ikmal kamyonu yükleme/boşaltma (hamallar kutu taşır) ✅, inşaat işçileri ✅ — kalan: araca binme/inme
+- [x] Patlama: mermi türü/açı/zırha göre değişken; tank imhasında daha fazla tür (cephane alev jeti dahil)
+- [x] Piyade-tank birlikte ilerleme (Ctrl+sağ tık: tank arkası siper takip)
+- [~] Yıkılabilir köprüler ✅ — kalan: 100+ farklı bina türü, çiçek/kaldırım/araç/direk çeşitliliği
 - [ ] Faction yapılarının modelleri (sağ alt menü), özgün tasarım
 - [ ] Sis efekti (5. foto), daha gerçekçi yeşillik, orman haritası
-- [ ] Nehir/deniz suyu efekti; suya düşen aracın batması
+- [~] Suya düşen/suda vurulan araç batar ✅ — kalan: nehir/deniz suyu görseli
 - [ ] YZ komutan: planlama, takılmadan ilerleme
-- [ ] El bombası düşüşünde yüzeye göre farklı efekt
+- [x] El bombası düşüşünde yüzeye göre farklı efekt
+
+## Hotfix 0.0.6 — kullanıcı listesi
+- [x] Çatışma sahası canlı/yoğun (1. foto): asılı beyaz roket izi kavisleri, cephane alev jetleri, yanan enkazlar
+- [x] İHA/helikopter/hava araçlarına irtifaya göre değişen yer gölgesi
+- [x] Bina yerleştirmede döndürme (R / Shift+R, 45°) + gerçek model önizlemesi
+- [x] Gerçekçi inşaat: 4-6 işçi farklı yerlerde farklı işler (çakma, yukarı çakma, malzeme taşıma), iskele, alttan yukarı örülen duvar
+- [x] ABD/Rusya kargo helikopteri (CH-47F tipi, Mi-26 tipi; Blender): asker indirme/bindirme, araç askıya alma/bırakma, havadan ikmal
+- [x] Bekleme tutuşuyla koşu (2. foto), nişana kalkıp geri inme, tabancayı kılıftan çekme/ateş/geri takma
+- [ ] Hava indirme tugayı: paraşütçü birlikleri, büyük harita (helikopter menzili için)
+- [ ] Faction yapılarının özgün Blender modelleri (fabrika/kışla/pist hâlâ basit)
 
 ## Sıradaki adımlar (sıra)
 1. **Görsel polish (Blender):** binalar → üs yapıları → harita öğeleri (ağaç, çit, direk, köprü) — hepsi yeniden, faset/temiz stil, asker v3 ile uyumlu
