@@ -20,6 +20,7 @@ class Proj:
 	var big := false
 	var spd := 0.0
 	var aid := ""          # mühimmat kimliği (data/ammo.json)
+	var glow := false      # motor ışığı taşıyor (eşzamanlı ışık sınırı için)
 
 var projs: Array = []
 var _gmesh: Mesh
@@ -184,14 +185,50 @@ func _air_models(X: Basis) -> void:
 	fs.material = flm
 	_flare_m = fs
 
-func _flame(p: Proj, length := 1.0) -> void:
+func _flame(p: Proj, length := 1.0, width := 1.0) -> void:
 	var f := MeshInstance3D.new()
 	f.mesh = _flame_m
 	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	f.scale = Vector3(1.0, 1.0, length)
+	f.scale = Vector3(width, width, length)
 	p.node.add_child(f)
 	var bounds: AABB = p.node.mesh.get_aabb() if p.node is MeshInstance3D and p.node.mesh else AABB()
 	f.position = Vector3(0, 0, bounds.end.z)
+
+# roket/füze kuyruğunda iz fişeği (eklemeli küçük küre)
+func _tail_flare(p: Proj, size: float, col: Color) -> void:
+	var f := MeshInstance3D.new()
+	f.mesh = _flare_m
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	f.scale = Vector3.ONE * size
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.albedo_color = col
+	f.material_override = m
+	p.node.add_child(f)
+	var bounds: AABB = p.node.mesh.get_aabb() if p.node is MeshInstance3D and p.node.mesh else AABB()
+	f.position = Vector3(0, 0, bounds.end.z)
+
+# motor ışığı: uçan roket çevresini (yer, duvar, duman) aydınlatır. Eşzamanlı ışık sayısı sınırlı
+# (yaylım ateşinde her rokete değil); ışık roketle birlikte silinir.
+const GLOW_MAX := 24
+func _glow(p: Proj, energy: float, rng_m: float, col: Color) -> void:
+	var n := 0
+	for q in projs:
+		if q.glow:
+			n += 1
+	if n >= GLOW_MAX:
+		return
+	var l := OmniLight3D.new()
+	l.light_energy = energy
+	l.omni_range = rng_m
+	l.omni_attenuation = 1.6
+	l.light_color = col
+	l.shadow_enabled = false
+	p.node.add_child(l)
+	var bounds: AABB = p.node.mesh.get_aabb() if p.node is MeshInstance3D and p.node.mesh else AABB()
+	l.position = Vector3(0, 0, bounds.end.z + 0.4)
+	p.glow = true
 
 func _node(m: Mesh) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -221,9 +258,11 @@ func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String, aid
 		p.node.position = from
 		p.node.look_at(from + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
 	projs.append(p)
-	# iz rengi ulusa göre (NATO kırmızı-turuncu, doğu bloku yeşil); büyük kalibre daha kalın/parlak
+	# iz rengi ulusa göre (NATO kırmızı-turuncu, doğu bloku yeşil); kalınlık ve kuyruk kalibreden
+	# (25-30 mm otomatik top orta, 100-125 mm tank topu kalın, uzun ve parlak)
 	var tc := Ammo.team_tracer(team)
-	G.fx.tracer(from, from + p.vel * p.life, sp, tc.lightened(0.25) if mode != "auto" else tc, 0.16 if mode != "auto" else 0.1, 6.0 if mode != "auto" else 3.0)
+	var cal := float(Ammo.get_def(aid).get("cal", 120.0 if mode != "auto" else 30.0))
+	G.fx.tracer_cal(from, from + p.vel * p.life, sp, tc.lightened(0.25) if mode != "auto" else tc, cal)
 
 func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", model := "") -> void:
 	var p := Proj.new()
@@ -255,12 +294,22 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", m
 			mm = _hydra_m
 	p.node = _node(mm)
 	p.node.position = from
+	p.node.look_at(from + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
 	if model != "":
-		p.node.look_at(from + p.vel, Vector3.UP)
 		_flame(p, 1.4 if model == "hydra" else 1.0)
+		_glow(p, 2.2, 6.0, Color(1.0, 0.7, 0.35))
 		if model in ["hellfire", "vikhr"]:
 			p.vel = p.vel.normalized() * 48.0
 			p.life = 7.0
+	elif guided:
+		# tanksavar füzesi: küçük motor alevi + kuyrukta parlak iz fişeği (nişancı füzeyi bununla izler)
+		_flame(p, 0.45, 0.7)
+		_tail_flare(p, 0.3, Color(1.0, 0.9, 0.75))
+		_glow(p, 1.4, 4.5, Color(1.0, 0.85, 0.65))
+	else:
+		# RPG: roket motoru namludan ~10 m sonra ateşlenir, kısa ve parlak alev
+		_flame(p, 0.6, 0.85)
+		_glow(p, 1.8, 5.0, Color(1.0, 0.68, 0.3))
 	projs.append(p)
 
 # karadan havaya güdümlü füze: hedefe orantılı seyrüsefer, yakınlık tapası, fişeğe kanabilir
@@ -317,6 +366,9 @@ func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
 	p.node = _node(_rmesh)
 	p.node.scale = Vector3.ONE * 1.6
 	p.node.position = from
+	# roketatar roketi: uzun motor alevi + ışık (yaylımda ışık sayısı sınırlı)
+	_flame(p, 1.5, 1.2)
+	_glow(p, 2.6, 7.0, Color(1.0, 0.7, 0.35))
 
 func artillery(from: Vector3, to: Vector3, team: int, src, aid := "") -> void:
 	_lob(from, to, team, src, "arty", _flight_t(from.distance_to(to), 0.7, 60.0, 180.0), aid)

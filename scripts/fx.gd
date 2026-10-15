@@ -258,6 +258,11 @@ func tracer(a: Vector3, b: Vector3, speed: float, col := Color(1.0, 0.62, 0.25),
 	tr_mm.set_instance_transform(i, Transform3D(Basis(b - a, Vector3(G.time, life, width), Vector3(tail, 0, 0.001)), a))
 	tr_mm.set_instance_color(i, col)
 
+# kalibreye göre iz: kalınlık ve kuyruk boyu Ammo.tracer_dims'ten
+func tracer_cal(a: Vector3, b: Vector3, speed: float, col: Color, cal: float) -> void:
+	var d := Ammo.tracer_dims(cal)
+	tracer(a, b, speed, col, d.x, d.y)
+
 func flash(p: Vector3, energy: float, rng_m: float, dur: float, col := Color(1.0, 0.62, 0.28)) -> void:
 	var L: Array = lights[_light_i]
 	_light_i = (_light_i + 1) % lights.size()

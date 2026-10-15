@@ -1199,7 +1199,7 @@ func _mg(dt: float) -> void:
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(11.0, position)
 	if randi() % 2 == 0:
-		G.fx.tracer(mp, impact, 250.0, Ammo.team_tracer(team))
+		G.fx.tracer_cal(mp, impact, 250.0, Ammo.team_tracer(team), 7.62)
 
 # ------------------------------------------------------------ hasar
 func take_damage(amount: float, src, k := "bullet") -> void:

@@ -81,12 +81,22 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Değişti:** Tüm hava araçları gerçek boyutta (`data/real_dims.json` + `tools/size_audit.gd`; helikopterlerde rotor çapına göre, İHA/dolanan mühimmatta kanat açıklığı ve boya göre)
 - **Düzeltildi (6/26):** Topçu/havan mermisi alçak yayla "taş atar gibi" uçuyordu → yüksek gerçekçi yörünge + hareket bulanıklığı izi; patlama molozu yuvarlak top değil köşeli parça
 - **Test altyapısı:** testler oyun süresiyle sınırlı (hugetest, crewtest...), `shots/.gdignore`, yeni testler: para2test, ammotest, structtest denetimi, evadetest "engel halkası"; GPU'da tam paket (13 sahne) + arch/map/garrison/editor/roundtrip/cat testleri geçiyor
+- **Kaldırıldı (34):** Tüm dini yapılar (8 arketip; minare, çan kulesi, alem, haç, apsis, soğan kubbe üreticileri) — bundan sonra oyunda hiçbir dini yapı yok
+- **Değişti (34):** Avlu duvarları gelişigüzel: her binada değil (kasaba %22, çöl %25, sanayi %35, bazı evlerde hiç yok), kayık köşe, L/U biçim, gedik, yıkık bölüm, ara sıra çit
+- **Düzeltildi (20):** Garnizondaki askerler pencere yuvalarına ulaşamıyordu (kapı boşluğu hücreleri piyadeye kapalıydı) → kapı yol hücreleri; erişilemeyen yuva 1006 → 65 (archtest garnizon denetimi)
+- **Eklendi (Faz 0 ✅):** Takılma bekçisi — asker (8 sn'de yeniden yol, 30 sn'de emri bırakır), araç (15 sn'de geri çekilip yeniden yol, 45 sn'de bırakır), sedye (hastane yıkılır/ele geçirilirse yaralı bırakılır, 150 sn sınırı) (stucktest)
+- **Eklendi:** Yapılamayan saldırı emrinde sesli uyarı + neden (menzil dışı, asgari menzil, görüş yok); kundağı motorlu top asgari menzilde geri çekilir, çekili top emri bırakır
+- **Eklendi:** Ekransız test modu (`-Headless`, `tools/run_tests.sh`)
+- **Düzeltildi (27):** Kendi aracının patlaması ve helikopterin düşüşü kendi askerine hasar veriyordu → yalnız bastırır; bina patlaması iki tarafa da hasar verir (fftest)
+- **Eklendi (2):** Araç başına gerçek performans (`data/real_perf.json`): yol/arazi hızı, 0→32 km/h ivme (tekerlekli araç yolda hızlı), ana silah dolum süresi, otomatik top dakikada atım + seri boyu, roketatar salvosu, hava aracı seyir hızı (perftest)
+- **Eklendi (6):** Mühimmat tablosu (`data/ammo.json`): kalibre başına gerçek namlu çıkış hızı, kütle, yakın/uzak delme, doğrudan hasar, patlama yarıçapı ve hasarı; ulusa göre iz rengi (NATO kırmızı-turuncu, Rus yeşil). 120 mm APFSDS T-72'nin önünü deler, 30 mm M1'in önünü delemez, 203 mm 9 m patlama (ammotest)
+- **Eklendi (26):** İz kalınlığı ve kuyruk boyu kalibreye göre (tüfek ince/kısa, makineli orta, 12,7 mm ve otomatik top kalın, tank topu kalın/uzun/parlak; nişancı izi soluk). Yerden atılan RPG, tanksavar füzesi ve roketatar roketinde motor alevi + çevreyi aydınlatan ışık, tanksavar füzesinde kuyruk iz fişeği — kurşun ve roket artık açıkça farklı (ammotest gece görüntüsü)
 
 ---
 
 ## 🎯 0.0.8 — 32 maddelik büyük güncelleme (kullanıcı listesi, 15 Ekim)
 Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) · ⏳ yapılacak · 🔄 şu an çalışılıyor.
-(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu. 33–41: 15 Ekim yerel oturumunda kullanıcının ek istekleri.)
+(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu. 33–48: 15 Ekim yerel oturumunda kullanıcının ek istekleri.)
 
 | # | İstek (özet) | Durum | Mevcut durum → yapılacak |
 |---|---|---|---|
@@ -94,7 +104,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 2 | Her aracın hızı farklı ve gerçekçi; hava araçları; atış hızları | ✅ | `data/real_perf.json`: araç başına gerçek yol/arazi hızı, 0→32 km/h ivme, ana silah dolumu, otomatik top dakikada atım/seri, roketatar salvosu, hava aracı seyir hızı (kara ×0,5, hava ×0,25 ölçek); tekerlekli araç yolda hızlı (perftest) |
 | 3 | Palet/teker/motor arızası + istihkâm tamir animasyonu; daha önce hasar alan daha kolay hasar alır (dengeli) | 🟡 | Palet/teker kopması ve onarım var. → Motor arızası, birikimli yıpranma katsayısı, istihkâm tamir animasyonu (alet, eğilme, kıvılcım) |
 | 5 | Seçim göstergesi: daha küçük, estetik, kendi tarzımız | 🟡 | Kompakt halka var. → Özgün tasarım (köşeli parantez + rol işareti, takım rengi), RA/SS/CoH analiziyle |
-| 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | 🟡 | Mermi modelleri var. → Kalibre bazlı mühimmat veri tablosu (namlu çıkış hızı, kütle, iz rengi, patlama yarıçapı) |
+| 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | ✅ | `data/ammo.json`: kalibre başına namlu çıkış hızı, kütle, delme, hasar, patlama yarıçapı; ulusa göre iz rengi; araç → mühimmat eşlemesi (ammotest) |
 | 7 | Havan, top, obüs ve kurmalı ekip animasyonları | 🟡 | Çekili top dolum döngüsü var (doğrulama sürüyor). → Havan timi, obüs, ağır silah kurma/sökme/dolum animasyonları |
 | 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Mini drone + istasyon var; istasyon artık gerçek ölçekte küçük taktik İHA kaldırıyor ✅. → Ses, pervane, 2 kişilik ekip, türe göre görüş/tespit |
 | 9 | Vurulma yerine göre kan, patlamada uzuv kopması, sağlık çadırı/hastane/paramedikte ilk yardım, timleri isteğe göre birleştirme (tim+tim=manga) | 🟡 | Kan, bölgesel yara, hastane var. → İsabet bölgesine göre kan, uzuv kopması, ilk yardım animasyonu, oyuncu kontrollü tim birleştirme |
@@ -109,12 +119,12 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 18 | Araçlar 3. fotoğraftaki gibi gerçekçi (mürettebat görünür, açık bölme) | ⏳ | → Kundağı motorlu topçuda açık bölme + içeride çalışan mürettebat |
 | 19 | Animasyon için kendi sistemimiz (Unreal ile) | ⏳ | → Bkz. teknik not: Blender + mocap tabanlı kendi animasyon hattımız |
 | 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🟡 | Çatı eşyaları var; girilebilirlik düzeltildi (kapı yol hücreleri: erişilemeyen pencere yuvası 1006 → 65). → Kalan 10 tür (istasyon, kültür merkezi, karakol kulesi...), fotoğraftan farklılaştırma (35) |
-| 21 | Harita boyutları en son büyütülecek | ⏳ | En sona alındı |
+| 21 | Harita boyutları büyütülecek — **öne alındı:** gerçek muharebeye yetecek büyüklükte, büyük savaş mekanizmasına uygun harita; bundan sonra her şey bu haritada test edilecek, ardından özel haritalar (48) | 🔄 | 1/2/4 km haritalar var. → Büyük muharebe haritası (birden çok kasaba, nehir ve köprüler, orman, tepe, yol ağı, cephe hattı); ızgara/yol bulma/sis/mini harita/kamera ölçeklemesi ve performans |
 | 22 | Helikopter alçaldıkça pervane sesi artsın, rotor rüzgârı ağaç/çimen sallasın | ⏳ | → Global shader rüzgâr kaynağı (patlama dalgası sistemi gibi), irtifaya bağlı ses |
 | 23 | Palet izi; iklime göre kalıcı/kaybolan; savaş sisine uyumlu | ⏳ | → Arazi iz dokusu, biyoma göre sönüm, görülmeyen izler gizli |
 | 24 | Gerçekçi 3B alev, roketin poddan çıkışı vb. (dengeli) | 🟡 | → Hacimli alev flipbook'u, pod çıkış duman/alev |
 | 25 | Tüm asker animasyonları: tutuş, ateş, şarjör, silah değiştirme, siper, sürünme, atlama, depar, tetikte yürüme, araç arkasında yürüme | 🟡 | Kodla poz + IK var. → Keyframe/mocap klipleri |
-| 26 | Mühimmat efektleri için gerekli programları kur, test et; kurşun ve roket farklı görünsün | 🟡 | Blender + numpy simülasyon kurulu. → Mühimmat başına iz/duman/parlama |
+| 26 | Mühimmat efektleri için gerekli programları kur, test et; kurşun ve roket farklı görünsün | ✅ | İz boyutu kalibreye göre; yerden atılan roket/füzede motor alevi + ışık, füzede iz fişeği (ammotest) |
 | 27 | Kendi araç patlaması/düşüşü kendi askerine zarar vermesin; bina patlaması iki tarafa da zarar verir | ✅ | G.explode spare: araç imhası / helikopter düşüşü kendi askerine hasar vermez (bastırır); bina patlaması herkese (fftest) |
 | 28 | İnşaatta her asker kutudan malzeme alıp taşır, bırakır, farklı animasyonla çalışır | 🟡 | 6 işçi yeri var. → Kutu alma/taşıma/bırakma döngüsü |
 | 29 | Bazı İHA/drone'lar görünmüyor; özel sesler; yüksek irtifa | 🟡 | → 8 ile birlikte |
@@ -130,15 +140,24 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 39 | Helikopter pervaneleri gerçekçi, detay dokulu | ⏳ | → Kanat profili, uç bandı, hub; dönüşte hareket bulanıklığı diski |
 | 40 | Hiçbir mermi yuvarlak top/taş gibi görünmesin | ✅ | Topçu/havan yüksek yörünge + iz, moloz köşeli parça (ammotest) |
 | 41 | Köprüler gerçekçi olsun ve hasar alsın; uzaklaşınca (zoom out) gölgeler kayıyor/parlıyor | ⏳ | → Köprü modeli (ayak, kiriş, korkuluk, hasar durumları); yönlü gölge mesafesi yakınlaştırmaya göre basamaklı + sapma ayarı |
+| 42 | Harita başlayınca nehirde durduk yere duman çıkıyor → kaldırılacak; nehre gerçekçi akış | ⏳ | → Duman kaynağı bulunup kaldırılacak; su shader'ında akış yönünde kayan dalga/köpük, kıyı köpüğü, köprü ayağında girdap |
+| 43 | Savaş sisi gerçekçi: karemsi değil, birliklerin görüşüne göre değişsin | ⏳ | → Yumuşak kenarlı, yüksek çözünürlüklü sis dokusu; birim başına görüş hattı ve yükseltiye göre gölgeleme |
+| 44 | Helikopter pervaneleri mutlaka görünsün (sesler en son, ama sistem buna uygun) | ⏳ | → 39 ile birlikte: dönen kanat her zaman görünür (kanat + bulanık disk), rotor devri ses için hazır değişken |
+| 45 | Soldaki bilgilendirmeler daha estetik | ⏳ | → Bilgi/olay paneli yeniden tasarım (tipografi, ikon, kart, solma) |
+| 46 | Harita daha estetik | ⏳ | → Arazi dokusu ve renk paleti, kıyılar, yol kenarları, bitki dağılımı, ışık/atmosfer |
+| 47 | Roadmap bitince genel kalite turu: grafik ayarlarıyla hata kontrolü, sandbox'ta tüm yapılar, tüm animasyonlar (model güncellemesi sonrası), büyük haritada oyuncu gibi uzun ve gerçekçi maç (maç süresi ölçülür), olası hataların bulunup engellenmesi | ⏳ | → Faz 7 |
+| 48 | Büyük haritadan sonra özel (custom) haritalar | ⏳ | → Faz 6: editörle yeni haritalar |
 
 ### Uygulama sırası (fazlar)
 - **Faz 0 — Stabilite ✅:** yamalar + test bekçisi, crewtest/paratest/SPIES/evade; takılma bekçisi (asker/araç/sedye, stucktest); yapılamayan emirde sesli uyarı; ekransız test (-Headless, run_tests.sh)
-- **Faz 1 — Veri gerçekçiliği (🔄):** 2 ✅, 27 ✅, 6, 26, 15, 31, 38
-- **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 39, 8/29, 18, 7
+- **Faz 1 — Veri gerçekçiliği (🔄):** 2 ✅, 27 ✅, 6 ✅, 26 ✅, 15, 31, 38
+- **Faz 1B — Büyük muharebe haritası (öne alındı, 🔄):** 21 — bundan sonra her madde bu haritada da test edilir
+- **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 39/44, 8/29, 18, 7
 - **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28/37, 5
-- **Faz 4 — Dünya ve görsel:** 34 ✅ (öne alındı), 10, 16, 20, 35, 36, 33, 14, 24, 41
+- **Faz 4 — Dünya ve görsel:** 34 ✅ (öne alındı), 42, 43, 46, 45, 10, 16, 20, 35, 36, 33, 14, 24, 41
 - **Faz 5 — Menü ve çekirdek:** 32, 30 (Mevzi-Core, radar/S-300)
-- **Faz 6 — En son:** 21 / 30 harita büyütme (9×9 km, seyrek ızgara, akışlı yükleme)
+- **Faz 6 — Haritalar:** 30 (9×9 km ve 30+ harita), 48 özel haritalar
+- **Faz 7 — Genel kalite turu (roadmap bitince):** 47 — grafik ayarları × hata kontrolü, sandbox'ta tüm yapılar, tüm animasyonlar, büyük haritada uzun gerçekçi maç ve süre ölçümü
 
 ### Teknik not: Unreal Engine ve animasyon hattı (dürüst değerlendirme)
 - Bu bulut ortamında Unreal Engine kurulamaz: Epic hesabı ile indirme gerekiyor, ağ yalnız GitHub/npm/PyPI'ye açık, GPU yok. Kurulsaydı bile Niagara efektleri ve UE animasyon sistemi Godot'a taşınamaz; yalnız pişirilmiş çıktı (flipbook PNG, FBX/GLB animasyon klibi) taşınabilir.

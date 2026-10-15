@@ -894,6 +894,37 @@ func ammo_test() -> void:
 	print("AMMO m110=%s blast=%.1f" % [m110.ammo_he, blast])
 	if blast < 8.0:
 		fails += 1
+	# roadmap 26: iz kalınlığı kalibreyle artar; yerden atılan roket/füzede motor alevi + ışık
+	var cals := [5.56, 7.62, 12.7, 30.0, 125.0]
+	var ws: Array = cals.map(func(k): return Ammo.tracer_dims(k).x)
+	print("AMMO tracer_w %s" % str(ws))
+	for i in range(1, ws.size()):
+		if ws[i] <= ws[i - 1]:
+			fails += 1
+	var W: Weather = G.weather
+	W.night = true
+	W.set_kind_silent("clear")
+	var rc := G.grid.nearest_free(c + Vector3(-40, 0, -20), Grid.M_INF)
+	G.bal.rocket(rc + Vector3(0, 1.4, 0), rc + Vector3(0, 1.0, -70), 0, null, null, "rpg")
+	G.bal.rocket(rc + Vector3(6, 1.0, 0), rc + Vector3(6, 1.0, -70), 1, null, ru, "atgm")
+	G.bal.mlrs_rocket(rc + Vector3(-8, 2.5, 6), rc + Vector3(-8, 0, -160), 0, null)
+	var lit := 0
+	var flamed := 0
+	for p in G.bal.projs:
+		if p.kind in ["rpg", "atgm", "rkt"]:
+			for ch in p.node.get_children():
+				if ch is OmniLight3D:
+					lit += 1
+				elif ch is MeshInstance3D and (ch as MeshInstance3D).mesh == G.bal._flame_m:
+					flamed += 1
+	print("AMMO rockets flame=%d light=%d" % [flamed, lit])
+	if flamed < 3 or lit < 3:
+		fails += 1
+	_cam(rc + Vector3(0, 0, -20), 34.0)
+	await m._wait(0.35)
+	await m._shot("ammo_20_rockets_night")
+	W.night = false
+	W.set_kind_silent("clear")
 	print("AMMOTEST RESULT fails=%d" % fails)
 
 # tim beyni: YZ timi uzun çatışmada kanattan dolanır, taban kolu baskı ateşi açar

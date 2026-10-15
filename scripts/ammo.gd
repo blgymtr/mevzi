@@ -42,6 +42,21 @@ static func tracer(nation: String) -> Color:
 	var tr: Dictionary = _d.get("tracer", {})
 	return Color.html(String(tr.get(nation, tr.get("default", "ffb04a"))))
 
+# iz boyutu kalibreden (roadmap 26): (kalınlık m, kuyruk boyu m). Tüfek ince ve kısa, makineli orta,
+# 12,7 mm kalın, otomatik top ve tank topu kalın/uzun ve parlak.
+static func tracer_dims(cal: float) -> Vector2:
+	if cal <= 6.0:
+		return Vector2(0.028, 3.2)
+	if cal <= 8.0:
+		return Vector2(0.042, 5.0)
+	if cal <= 15.0:
+		return Vector2(0.075, 7.5)
+	if cal <= 40.0:
+		return Vector2(0.12, 6.5)
+	if cal <= 60.0:
+		return Vector2(0.15, 7.5)
+	return Vector2(0.22, 10.0)
+
 # takımın iz rengi (NATO kırmızı-turuncu, doğu bloku yeşil)
 static func team_tracer(team: int) -> Color:
 	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else ""

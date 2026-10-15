@@ -1976,7 +1976,7 @@ func _fire_ground() -> void:
 				if o is Soldier and o.team != team and o.alive:
 					o.add_suppression(12.0, position)
 			if shots % 2 == 0:
-				G.fx.tracer(mp, p, 260.0, Ammo.team_tracer(team), 0.09)
+				G.fx.tracer_cal(mp, p, 260.0, Ammo.team_tracer(team), 12.7)
 		"arty":
 			main_cd = _rl(9.0)
 			G.bal.artillery(mp, p, team, self, ammo_he)
@@ -2035,7 +2035,7 @@ func _fire_flak(t: Unit) -> void:
 		for o in G.near(impact, 3.0):
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(12.0, position)
-	G.fx.tracer(mp, impact, 300.0, Ammo.team_tracer(team).lightened(0.2), 0.1)
+	G.fx.tracer_cal(mp, impact, 300.0, Ammo.team_tracer(team).lightened(0.2), 30.0)
 
 func _fire_arty(t: Unit) -> void:
 	main_cd = _rl(9.0)
@@ -2130,7 +2130,7 @@ func _hitscan(t: Unit, dmg: float, acc: float, sup: float, k: String, from_barre
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(sup, position)
 	if shots % 2 == 0:
-		G.fx.tracer(mp, impact, 260.0, Ammo.team_tracer(team), 0.09)
+		G.fx.tracer_cal(mp, impact, 260.0, Ammo.team_tracer(team), 12.7 if k == "hmg" else 7.62)
 
 func _visuals(dt: float) -> void:
 	hull.rotation.y = heading
@@ -2885,7 +2885,7 @@ func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> 
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(sup, position)
 	if shots % 2 == 0:
-		G.fx.tracer(mp, impact, 260.0, Ammo.team_tracer(team), 0.09)
+		G.fx.tracer_cal(mp, impact, 260.0, Ammo.team_tracer(team), 12.7)
 
 static func _rotor_disc_mat() -> ShaderMaterial:
 	if _disc_mat == null:
