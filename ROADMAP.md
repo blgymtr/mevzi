@@ -1,4 +1,6 @@
-# MEVZİ — Steam'e hazır oyun yol haritası (eksiksiz)
+# MEVZİ — Yol Haritası ve Değişiklik Günlüğü
+
+> Bu dosya projenin tek kaynağıdır: en üstte **yapılanların madde madde günlüğü**, ardından **0.0.8 (32 maddelik liste)** durumu ve fazları, en altta Steam'e hazırlık tabloları.
 
 Ana test aracı: **Sandbox** (her yeni birim/yapı otomatik listelenir, sınırsız çıkarılır).
 Takımlar: **Müttefikler vs Mihver** — uluslar: ABD, Rusya, Almanya, Birleşik Krallık, Türkiye. Şu an odak: **ABD vs Rusya**.
@@ -8,13 +10,127 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 
 ---
 
+## 📒 Değişiklik günlüğü — yapılanlar (madde madde)
+Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = yeni özellik, **Düzeltildi** = hata giderimi, **Değişti** = mevcut özelliğin yenilenmesi.
+
+### Temel sürüm (0.0.1 – 0.0.4) — 14 Ekim
+- **Eklendi:** Kompakt alt panel (harita, seçim+emir, üretim), İngilizce dil, ayarlar menüsü
+- **Eklendi:** CoH2/SS5/BA tarzı emirler — saldırı hareketi, hızlı hareket, geri vites, mevzi tut, geri çekil, ateş modu, duruş, el bombası, sis, baskı ateşi
+- **Eklendi:** Ragdoll ölüm (verlet, silah ayrı düşer, patlamada savrulur)
+- **Eklendi:** Teslim olma / esir alma / yürüyüşte istihbarat, sürüklenirken tabanca, sedyeciler (ölüleri de toplar), yakın dövüş, irkilme, alçak duvar atlama, kayarak siper, mermi için üsse dönme, zırhtan sekme
+- **Eklendi:** Sandbox modu (sınırsız ikmal, birlik sınırı yok, imleçte birim/yapı/efekt, geliştirici konsolu), ekip lideri sınıfı
+- **Eklendi:** Topçu sınıfları — sahra topu, çekili obüs, tanksavar topu, uçaksavar topu, ağır havan, dağ topu, roketatar, sahil topçusu, kundağı motorlu obüs; TOPÇU sekmesi, dolaylı atış
+- **Eklendi:** Araç hasar modeli — palet kopması, teker patlaması, nişancı/sürücü vurulması (piyade yerine geçer), mürettebat kaybı, terk et + kendini imha; mürettebat/istihkâm onarımı
+- **Düzeltildi:** Araçların köprüde takılması (eksene hizalanma), suya itilme
+- **Eklendi:** Zırh 4 yön × kinetik/HEAT tablosu, silah delme profilleri, sekme, güdümlü tanksavar (ATGM), armortest
+- **Eklendi:** Stres sistemi (sarsılmış/panik) + araç kritikleri (hareket/optik/nişan/dolum); oyun modları Fetih ve Savaş Hedefleri
+- **Eklendi:** Lojistik — ileri üste kg ikmal stoğu, kamyon hattı, üste onarım, Üsse Dön (iade), konuşlanma aşaması
+- **Eklendi:** Hava durumu + gece (yağmur, sağanak/nehir taşması, kum fırtınası, kar fırtınası/üşüme, gece görüşü)
+- **Eklendi:** Gerçekçilik 1-3 — CC0 PBR araç/asker malzemeleri, bina sıva/tuğla/beton shader'ı, kiremit + kar, sivil araç modelleri, kış ağaçları
+- **Eklendi:** Asker v3 / Blender asker üretici / iskeletli tek parça askerler (ABD OCP, Rus EMR)
+- **Eklendi:** Araç kataloğu (ABD 87 + Rusya 83 birim), Blender araç üreticisi (palet baklaları, yürüyen aksam, RWS, APS, reaktif zırh)
+- **Eklendi:** İHA keşif/silahlı/kamikaze, güdümlü tanksavar timi; her araç farklı imha (taret fırlaması, ikincil patlamalar, enkaz, krater); kör ateş, araç arkası siper
+
+### 0.0.4 – 0.0.5 — 15 Ekim
+- **Eklendi:** Girilebilir binalar (kapı/pencere, pencere başında siper, çatı kesiti, çökmede enkaz hasarı), garnizon
+- **Eklendi:** Dinamik harita boyutu, Büyük Şehir haritası (512 m, ~110 girilebilir bina)
+- **Eklendi:** Asker v4 (yumuşak gövde, açık yüz, kask, yelek)
+- **Düzeltildi:** Araç–araç ve asker–araç iç içe girmesi (yönlü dikdörtgen ayrışma)
+- **Eklendi:** Patlama/mermi efektleri (toprak tacı, ateş topu, mantar duman, yangın sütunu, roket izi)
+- **Eklendi:** Kademeli kazılan siperler (kalas perde, kum torbası, toprak set)
+- **Eklendi:** Avrupa cephe paleti, sıra evler, hasarlı çatılar, demiryolu, meydan, sokak lambaları (~190 bina)
+- **Eklendi (hotfix 0.0.5):** Gerçek mermi modelleri (APFSDS/HE/havan/155/RPG/ATGM/el bombası), kan püskürmesi/lekesi, kompakt seçim halkası, büyük mini harita, görünür İHA, ağırlığa göre araç hızı, kurma-toplama süreleri, derin kraterler, tabanca/bıçak/sargı
+- **Eklendi:** Yüzeye göre patlama çeşitliliği (su sütunu, kar/kum/beton), zırh içi kıvılcım, HEAT jeti; suda araç batar; piyade tank arkasında ilerler
+- **Eklendi:** Yıkılabilir köprüler, IK ile iki elle silah tutuşu, ikmal kamyonunda hamallar
+- **Eklendi:** Kargo helikopterleri (CH-47F / Mi-26 tipi), askıya alma, havadan ikmal paleti, irtifaya göre yer gölgesi
+- **Eklendi:** Gerçekçi inşaat (alttan örülen duvar, iskele, 6 işçi yeri), bina döndürme (R / Shift+R)
+- **Eklendi:** Bekleme (low ready) tutuşu, tabancayı kılıftan çekme/geri takma
+- **Eklendi:** Roket topçusu kavisli izleri, cephane alev jeti
+
+### 0.0.7 — 15 Ekim
+- **Düzeltildi:** Araçlar askeri itmez (yavaşlar/durur, asker kenara çekilir)
+- **Düzeltildi:** Patlamada çift ragdoll
+- **Eklendi:** Gerçek ağaç modelleri (meşe, dişbudak, kavak, huş, söğüt, çam + kış ikizleri, 3 çalı), patlama şok dalgasında sallanma
+- **Eklendi:** Drone operatörü — Mini Drone Kaldır (L) ve Drone İstasyonu Kur (O); operatör kendiliğinden drone kaldırmaz
+- **Eklendi:** Bölgesel yaralar (bacak/kol/omuz/kafa/gövde) + hastaneye yürüme; lideri ölen tim başka time katılır
+- **Eklendi:** SAM füzesi, fişek + kaçış manevrası; Hellfire / Vikhr / Hydra / SAM modelleri
+- **Eklendi:** Halatla iniş (fast-rope) ve halatla çekme (SPIES)
+- **Eklendi:** Araca kapıdan binme/inme; çekili top mürettebatı dolum döngüsü
+- **Eklendi:** Paraşütçü timi (C-130/Il-76 tipi uçak, kubbe paraşüt)
+- **Eklendi:** Görsel savaş sisi (keşfedilmemiş / görülmüş / görüş içi)
+- **Eklendi:** Tim beyni (örtme ateşi, kanattan dolanma, binaya el bombası + baskın, roketten yana atılma), patikalar ve taş döşeme yollar
+- **Eklendi:** 1 km / 2 km / 4×4 km haritalar; ağaç MultiMesh bankaları; numpy 3B gaz simülasyonu ile patlama/duman/toz flipbook'ları
+- **Düzeltildi:** Flipbook kenarlarında dikdörtgen kesik görüntü
+- **Eklendi:** Asker v5 (anatomik gövde, yüksek kesim kask, MOLLE, telsiz, turnike...); ot çeşitleri
+- **Eklendi:** Ulus silahları (Blender): M4A1/ACOG/PEQ, M249, AT4, M110, M17 — AK-12, PKP, RPG-7, SV-98, PL-15
+- **Eklendi:** Uzun yol bulma iş parçacığında (2 km+): grup emri 2–8 ms (önce 0,5–0,7 sn donma)
+- **Eklendi:** Gerçek kaya modelleri + üretilmiş kaya dokusu, kışta karlı / yazın yosunlu kayalar; çakıllar da aynı modelden
+- **Doğrulama durumu (dürüst not):** crewtest (top hedef almıyor), paratest (8 askerden 7'si indi) ve SPIES/evadetest testleri takıldı → kök neden ve kalıcı önlem çalışması sürüyor (aşağıda 0.0.8 Faz 0)
+
+---
+
+## 🎯 0.0.8 — 32 maddelik büyük güncelleme (kullanıcı listesi, 15 Ekim)
+Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) · ⏳ yapılacak · 🔄 şu an çalışılıyor.
+(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu.)
+
+| # | İstek (özet) | Durum | Mevcut durum → yapılacak |
+|---|---|---|---|
+| 1 | Asker modelleri 1-2. fotoğraftaki gibi (gerçekçi oran, kıyafet katmanları, teçhizat) | ⏳ | v5 var ama stilize. → Gerçek insan taban modeli (MakeHuman CC0) + Blender'da katmanlı üniforma/teçhizat, PBR doku |
+| 2 | Her aracın hızı farklı ve gerçekçi; hava araçları; atış hızları | 🟡 | Hız ağırlıktan türetiliyor. → Araç başına gerçek veri tablosu (yol/arazi hızı, ivme, dönüş, atış hızı, dolum süresi) |
+| 3 | Palet/teker/motor arızası + istihkâm tamir animasyonu; daha önce hasar alan daha kolay hasar alır (dengeli) | 🟡 | Palet/teker kopması ve onarım var. → Motor arızası, birikimli yıpranma katsayısı, istihkâm tamir animasyonu (alet, eğilme, kıvılcım) |
+| 5 | Seçim göstergesi: daha küçük, estetik, kendi tarzımız | 🟡 | Kompakt halka var. → Özgün tasarım (köşeli parantez + rol işareti, takım rengi), RA/SS/CoH analiziyle |
+| 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | 🟡 | Mermi modelleri var. → Kalibre bazlı mühimmat veri tablosu (namlu çıkış hızı, kütle, iz rengi, patlama yarıçapı) |
+| 7 | Havan, top, obüs ve kurmalı ekip animasyonları | 🟡 | Çekili top dolum döngüsü var (doğrulama sürüyor). → Havan timi, obüs, ağır silah kurma/sökme/dolum animasyonları |
+| 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Mini drone + istasyon var. → Görünürlük düzeltmesi, ses, pervane, 2 kişilik ekip, türe göre görüş/tespit |
+| 9 | Vurulma yerine göre kan, patlamada uzuv kopması, sağlık çadırı/hastane/paramedikte ilk yardım, timleri isteğe göre birleştirme (tim+tim=manga) | 🟡 | Kan, bölgesel yara, hastane var. → İsabet bölgesine göre kan, uzuv kopması, ilk yardım animasyonu, oyuncu kontrollü tim birleştirme |
+| 10 | Araç modelleri çok detaylı (teker, kapak, yakıt deposu, namlu, zırh, renk) — EN KRİTİK KURAL | 🔄 | Araç detay geçişi ayrı dalda çalışıyor. → Tüm katalog için detay standardı |
+| 11 | Tank mürettebatı inip binebilsin (dismount/mount) | ⏳ | → Mürettebat ayrı askerler olarak iner/biner, araç mürettebatsız hareket etmez |
+| 12 | İmha mermi türüne göre değişsin: yan yatma, farklı yönde taret fırlaması, çakılma | 🟡 | Taret fırlaması, ikincil patlama var. → Fizik tabanlı imha (devrilme, taret yörüngesi, mermi türü/açıya göre) |
+| 13 | Nadir teslim olma: beyaz bayrak, silah zoruyla karargâha götürülme | 🟡 | Teslim olma/esir var. → Beyaz bayrak modeli, eller havada yürüme, muhafız silahı doğrultarak eşlik |
+| 14 | Patlama bulutu yarı saydam; suya düşüşte araç boyutuna göre dalga | 🟡 | Yarı saydam duman var. → Bulut saydamlığı, boyuta göre dalga halkası (su shader'ı) |
+| 15 | Hava araçları füzeden kaçınsın; gerçek füze türleri ve atış mekanizmaları | 🟡 | SAM + fişek + kaçış var. → Stinger/Igla/Verba/Javelin/Kornet/TOW vb. arayıcı türleri, kilitlenme süresi, atış prosedürü |
+| 16 | 100+ farklı bina, yıkılabilir köprüler, ağaç/çiçek/kaldırım/kapı/pencere/sokak/başıboş araç/direk — tam detay | 🔄 | 100+ bina türü ayrı dalda çalışıyor; köprüler var |
+| 17 | Asker modeli fotoğraftaki gibi + her eylem için animasyon (düşme, eğilme, zıplama, koşma...) | ⏳ | → 1 ve 25 ile birlikte: iskeletli animasyon kütüphanesi |
+| 18 | Araçlar 3. fotoğraftaki gibi gerçekçi (mürettebat görünür, açık bölme) | ⏳ | → Kundağı motorlu topçuda açık bölme + içeride çalışan mürettebat |
+| 19 | Animasyon için kendi sistemimiz (Unreal ile) | ⏳ | → Bkz. teknik not: Blender + mocap tabanlı kendi animasyon hattımız |
+| 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🔄 | Bina işi ayrı dalda; çatı eşyaları (klima, su deposu, boru, anten) eklenecek |
+| 21 | Harita boyutları en son büyütülecek | ⏳ | En sona alındı |
+| 22 | Helikopter alçaldıkça pervane sesi artsın, rotor rüzgârı ağaç/çimen sallasın | ⏳ | → Global shader rüzgâr kaynağı (patlama dalgası sistemi gibi), irtifaya bağlı ses |
+| 23 | Palet izi; iklime göre kalıcı/kaybolan; savaş sisine uyumlu | ⏳ | → Arazi iz dokusu, biyoma göre sönüm, görülmeyen izler gizli |
+| 24 | Gerçekçi 3B alev, roketin poddan çıkışı vb. (dengeli) | 🟡 | → Hacimli alev flipbook'u, pod çıkış duman/alev |
+| 25 | Tüm asker animasyonları: tutuş, ateş, şarjör, silah değiştirme, siper, sürünme, atlama, depar, tetikte yürüme, araç arkasında yürüme | 🟡 | Kodla poz + IK var. → Keyframe/mocap klipleri |
+| 26 | Mühimmat efektleri için gerekli programları kur, test et; kurşun ve roket farklı görünsün | 🟡 | Blender + numpy simülasyon kurulu. → Mühimmat başına iz/duman/parlama |
+| 27 | Kendi araç patlaması/düşüşü kendi askerine zarar vermesin; bina patlaması iki tarafa da zarar verir | ⏳ | → Hasar kaynağı takım filtresi |
+| 28 | İnşaatta her asker kutudan malzeme alıp taşır, bırakır, farklı animasyonla çalışır | 🟡 | 6 işçi yeri var. → Kutu alma/taşıma/bırakma döngüsü |
+| 29 | Bazı İHA/drone'lar görünmüyor; özel sesler; yüksek irtifa | 🟡 | → 8 ile birlikte |
+| 30 | 9×9 / 9×6 km haritalar, 30+ harita, Senaryo; radar araçları, S-300 tipi radar+SAM, uçaklar; **Mevzi-Core**: oyuncu kontrolünde olmayan birimlerin gerçekçi doktrinle davranışı | 🟡 | 4 km harita, tim beyni var. → Mevzi-Core tasarımı (bölgesel komuta, birim rolleri, angajman kuralları), radar/SAM katmanı |
+| 31 | Roketler havada önlenebilsin (dengeli) | ⏳ | → APS / C-RAM tipi önleme, düşük olasılıklı |
+| 32 | Ana menü: Masaüstüne Çık · Ayarlar (Grafik, Ses, Oynanış, Klavye) · Senaryo Oluşturucu · Kampanya · Klasik Harita · Sandbox Test | ⏳ | → Menü yeniden düzenlenecek (şimdilik bu düzen) |
+
+### Uygulama sırası (fazlar)
+- **Faz 0 — Stabilite (🔄 şu an):** test zaman aşımı bekçisi + hata dökümü, ekransız hızlı test modu, `tools/run_tests.sh`; crewtest/paratest/SPIES/evade kök nedenleri; oyunda takılabilecek her geçici duruma süre sınırı + güvenli çıkış; yapılamayan emirde birimin sesli geri bildirimi
+- **Faz 1 — Veri gerçekçiliği:** 2, 6, 26, 15, 27, 31
+- **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 8/29, 18, 7
+- **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28, 5
+- **Faz 4 — Dünya ve görsel:** 10, 16, 20, 14, 24
+- **Faz 5 — Menü ve çekirdek:** 32, 30 (Mevzi-Core, radar/S-300)
+- **Faz 6 — En son:** 21 / 30 harita büyütme (9×9 km, seyrek ızgara, akışlı yükleme)
+
+### Teknik not: Unreal Engine ve animasyon hattı (dürüst değerlendirme)
+- Bu bulut ortamında Unreal Engine kurulamaz: Epic hesabı ile indirme gerekiyor, ağ yalnız GitHub/npm/PyPI'ye açık, GPU yok. Kurulsaydı bile Niagara efektleri ve UE animasyon sistemi Godot'a taşınamaz; yalnız pişirilmiş çıktı (flipbook PNG, FBX/GLB animasyon klibi) taşınabilir.
+- **Kendi sistemimiz:** Blender (kurulu, Python ile otomatik) + MakeHuman CC0 insan taban modeli + CMU hareket yakalama verisi (ticari kullanım serbest, BVH) → iskelete yeniden hedefleme → GLB animasyon klipleri → Godot AnimationTree (karıştırma, katman: üst gövde silah / alt gövde hareket). Bu hat 1, 17, 19, 25 maddelerinin omurgası.
+- İstenirse UE senin Windows makinende "pişirme istasyonu" olarak kullanılabilir (efekt flipbook'u veya animasyon FBX'i dışa aktarıp depoya koyarsın, biz entegre ederiz).
+
+---
+
+
 ## A. Çekirdek oynanış
 | | Öğe | Durum |
 |---|---|---|
 | P0 | Seçim, sürükle-seç, kontrol grupları (Ctrl+1-9), çift tık ile aynı türü seç | 🟡 (kontrol grupları kontrol edilecek) |
 | P0 | Emirler: hareket, hızlı, saldırı hareketi, geri vites, dur, mevzi tut, geri çekil, ateş modu, duruş, indir, el bombası, sis, baskı ateşi, terk et, iade | ✅ |
 | P0 | Formasyonlar (hat, kol, kama) + sağ tık sürükleyerek yön/genişlik (CoH/SS5) | ⏳ |
-| P0 | **Binaya girme / garnizon** (pencereden ateş, kat bonusu, bina yıkılınca dışarı) | ⏳ |
+| P0 | **Binaya girme / garnizon** (pencereden ateş, kat bonusu, bina yıkılınca dışarı) | ✅ |
 | P0 | Araçlara binme/inme, yolcu taşıma | ✅ |
 | P0 | Siper, örtü, baskı, stres (sarsılmış/panik) | ✅ |
 | P0 | Zırh 4 yön × kinetik/HEAT, delme, kritik hasar | ✅ |
@@ -22,7 +138,7 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 | P1 | Gizlilik: hareketsiz/çalılıkta görünmezlik, ateş edince açığa çıkma (BA optik/stealth) | 🟡 (gece/havada var) |
 | P1 | Keşif birimleri, dürbünlü gözcü, yüksek zemin görüş bonusu | ⏳ |
 | P1 | Topçu çağrısı / hava desteği (yetenek ağacı, puanla) | ⏳ |
-| P1 | Havadan ikmal + paraşütçüler | ⏳ |
+| P1 | Havadan ikmal + paraşütçüler | 🟡 (paratest doğrulaması sürüyor) |
 | P1 | Mayın döşeme/temizleme, istihkâm köprü kurma | 🟡 (tank tuzağı var) |
 | P2 | Kuşatma/teslim alma, esir değişimi | 🟡 |
 
@@ -32,7 +148,7 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 | P0 | Piyade sınıfları: tüfekçi, lider, makineli, tanksavar, sıhhiye, keskin nişancı, istihkâm, havan, drone, mürettebat | ✅ |
 | P0 | Tim şablonları: kışlada "TİM" sekmesi, kendi timini tasarla, hazır timler | ⏳ |
 | P0 | ABD ve Rusya için ayrı asker modelleri (üniforma, yelek, kask) | ✅ (v3 faset) |
-| P0 | Ulusa özel silahlar (M4/AK-12, M249/PKP, AT4/RPG, M2/Kord, tabanca) — Blender | ⏳ |
+| P0 | Ulusa özel silahlar (M4/AK-12, M249/PKP, AT4/RPG, M2/Kord, tabanca) — Blender | ✅ (M2/Kord hariç) |
 | P1 | Araç listeleri: 50+ kara, 50+ hava (veri kataloğu: DEF + zırh + delme + maliyet) | ⏳ |
 | P1 | 14 helikopter tipi (jenerik adlar) | ⏳ |
 | P1 | Uçaklar: yakın hava desteği, keşif, kargo | ⏳ |
@@ -41,7 +157,7 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 ## C. Harita ve dünya
 | | Öğe | Durum |
 |---|---|---|
-| P0 | **Büyük harita** (≥ 1 km, MP'de ≥ 20 dk) — ızgara/yol bulma/arazi akışı ölçeklenecek | ⏳ |
+| P0 | **Büyük harita** (≥ 1 km, MP'de ≥ 20 dk) — ızgara/yol bulma/arazi akışı ölçeklenecek | ✅ (1/2/4 km; 9 km en son) |
 | P0 | Binalar Blender'da yeniden: kırsal ev, apartman, dükkân, ahır, cami/kilise, fabrika, benzinlik — iç mekân + kırılabilir parçalar | ⏳ |
 | P0 | Yapılar Blender'da: üs, ileri üs, kışla, fabrika, pist, hastane, MG yuvası, kule, siperler | ⏳ |
 | P0 | Harita öğeleri Blender'da: ağaç, çalı, çit, duvar, elektrik direği, köprü, araç enkazı, saman, kaya | 🟡 |
@@ -156,12 +272,12 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 - [x] Drone operatörü kendiliğinden drone kaldırmaz: "Mini Drone Kaldır" (L, çantadan elden kaldırma, 3 adet, hedef yoksa noktada asılı kalıp tarar) ve "Drone İstasyonu Kur" (O, 16 sn kurulum: Pelican çanta+dizüstü, tripod anten, jeneratör, mancınık rampası, kamuflaj ağı → yüksek irtifa keşif İHA'sı, 120 m görüş, vurulması zor; operatör/istasyon kaybında bağ kopar ve İHA düşer) (dronetest)
 - [x] Bölgesel yara: bacak (topallar, kanlı sargı), kol (alçı + boyun askısı, tek el; ağır silahta tabancaya geçer), omuz (yavaş), kafa (bandaj, kask altında), gövde; hastanede tedavi sonrası etkiler zamanla geçer (woundtest)
 - [x] Lideri ölen / eriyen tim yakındaki liderli time katılır; tedavi gereken yaralılar sahra hastanesine kendileri yürür
-- [x] Karadan havaya güdümlü füze (SAM/MANPADS ailesine göre sayı/menzil), yakınlık tapası; helikopter fişek atıp yana kırarak alçalır, kızılötesi arayıcı fişeğe kanabilir; İHA manevra yapar (evadetest)
-- [x] Detaylı hava füzeleri: Hellfire (ABD) / Vikhr (RU) güdümlü tanksavar, Hydra/S-8 roket, SAM; motor alevi + keskin beyaz duman
-- [x] Halatla iniş (fast-rope): helikopter 8 m'de asılı kalır, iki halat sarkar; asker tüfeği sırta atar, iki elle tutunup bacaklarını sarar, kayar, çömelip tüfeği alır ve açılır; halatlar bırakılır. Halatla çekme (SPIES) (ropetest)
-- [x] Araca kapıdan binme/inme: arka kapıya yürür, eğilerek girer; inerken sırayla kapıdan çömelerek çıkar ve yelpaze açılır (crewtest)
-- [x] Çekili top mürettebatı: atışta kulak kapatma, kovan atma, cephaneci sandıktan mermi taşır, doldurucu kamaya sürer, nişancı volan çevirir; havanda mermi ağızdan bırakılır (crewtest)
-- [x] Paraşütçü timi (pistten): C-130 / Il-76 tipi uçak geçer, statik hatla atlama, kubbe paraşüt, süzülme, iniş yuvarlanması, kubbe çöker (paratest)
+- [~] Karadan havaya güdümlü füze (SAM/MANPADS ailesine göre sayı/menzil), yakınlık tapası; helikopter fişek atıp yana kırarak alçalır, kızılötesi arayıcı fişeğe kanabilir; İHA manevra yapar (evadetest — test sonu takıldı, Faz 0)
+- [~] Detaylı hava füzeleri: Hellfire (ABD) / Vikhr (RU) güdümlü tanksavar, Hydra/S-8 roket, SAM; motor alevi + keskin beyaz duman
+- [~] Halatla iniş (fast-rope ✅ 8/8 indi; SPIES çekme doğrulanamadı, Faz 0): helikopter 8 m'de asılı kalır, iki halat sarkar; asker tüfeği sırta atar, iki elle tutunup bacaklarını sarar, kayar, çömelip tüfeği alır ve açılır; halatlar bırakılır. Halatla çekme (SPIES) (ropetest)
+- [~] Araca kapıdan binme/inme: arka kapıya yürür, eğilerek girer; inerken sırayla kapıdan çömelerek çıkar ve yelpaze açılır (crewtest — test topa takıldığı için bu bölüm doğrulanamadı, Faz 0)
+- [~] Çekili top mürettebatı (crewtest'te top hedef almadı, Faz 0'da düzeltiliyor): atışta kulak kapatma, kovan atma, cephaneci sandıktan mermi taşır, doldurucu kamaya sürer, nişancı volan çevirir; havanda mermi ağızdan bırakılır (crewtest)
+- [~] Paraşütçü timi (paratest: 8'den 7'si indi, Faz 0'da düzeltiliyor) (pistten): C-130 / Il-76 tipi uçak geçer, statik hatla atlama, kubbe paraşüt, süzülme, iniş yuvarlanması, kubbe çöker (paratest)
 - [x] Görsel savaş sisi: keşfedilmemiş alan koyu, görülmüş ama görüş dışı soluk, görüş içi açık (fowtest)
 - [x] Büyük haritalar: Geniş Cephe 1 km, Kuzey Cephesi 2 km, Hava İndirme Bölgesi 4×4 km — ızgara/yol bulma hücresi haritaya göre ölçeklenir, ağaçlar karo karo MultiMesh, yol önbelleği (largetest, hugetest)
 - [x] Tim beyni: ilerlerken örtme ateşi, YZ timi kanattan dolanır (taban kolu baskı ateşi), düşmanın tuttuğu binaya el bombası + baskın, gelen roketten yana atılma (tactest)
