@@ -71,6 +71,42 @@ func build(team: int, rl: String, winter: bool) -> void:
 
 var rest := {}
 
+# el aletleri: çekiç (sağ el), kutu (göğüs önü)
+var _tool := ""
+var _tool_mi: MeshInstance3D = null
+static var _tool_mesh := {}
+
+func set_tool(kind: String) -> void:
+	if kind == _tool:
+		return
+	_tool = kind
+	if _tool_mi:
+		_tool_mi.queue_free()
+		_tool_mi = null
+	if kind == "" or fore_r == null:
+		weapon.visible = true
+		return
+	if not _tool_mesh.has(kind):
+		var mb := MB.new()
+		if kind == "hammer":
+			mb.box(Vector3(0, 0, -0.12), Vector3(0.028, 0.028, 0.32), Color(0.45, 0.32, 0.2))
+			mb.box(Vector3(0, 0.0, -0.28), Vector3(0.04, 0.13, 0.045), Color(0.25, 0.25, 0.26))
+		else:
+			mb.box(Vector3(0, 0, 0), Vector3(0.5, 0.3, 0.36), Color(0.36, 0.38, 0.24))
+			mb.box(Vector3(0, 0.155, 0), Vector3(0.42, 0.02, 0.08), Color(0.2, 0.2, 0.16))
+			mb.box(Vector3(0.255, 0, 0), Vector3(0.02, 0.07, 0.22), Color(0.85, 0.75, 0.2))
+		_tool_mesh[kind] = mb.commit(Mats.vcs())
+	_tool_mi = MeshInstance3D.new()
+	_tool_mi.mesh = _tool_mesh[kind]
+	if kind == "hammer":
+		fore_r.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, -0.3, 0)
+		_tool_mi.rotation.x = -0.4
+	else:
+		spine.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, 0.22, -0.34)
+		weapon.visible = true
+
 # ------------------------------------------------------------ iskeletli (Blender) gövde
 var skel: Skeleton3D = null
 var bone_map: Array = []       # [kemik indeksi, pivot düğümü, dinlenme farkı D]
@@ -250,7 +286,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	var s := sin(phase)
 	var c := cos(phase)
 	match pose:
-		"stand", "aim", "run", "walk", "throw", "dragging", "surrender", "build", "dazed", "carry", "melee":
+		"stand", "aim", "run", "walk", "throw", "dragging", "surrender", "build", "build_hi", "dazed", "carry", "melee":
 			var sw := clampf(speed / 3.5, 0.0, 1.0)
 			var run := clampf((speed - 2.2) / 1.6, 0.0, 1.0)
 			# yürüyüş/koşu: geniş adım, arkadaki bacakta güçlü diz bükümü, adım başına iniş-kalkış, gövde öne eğik
@@ -315,6 +351,24 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["frx"] = 0.3
 				T["flx"] = 0.3
 				wpn = 5
+			elif pose == "build_hi":
+				# ayakta, sol el kalası duvara bastırır, sağ el çekici baş hizasından savurur
+				var sw2 := sin(phase * 3.0 + G.time * 8.0)
+				T["py"] = HIP - 0.02
+				T["srx"] = -0.06 + maxf(0.0, sw2) * 0.08
+				T["lrz"] = 0.12
+				T["llz"] = -0.12
+				T["lrx"] = 0.05
+				T["llx"] = -0.05
+				T["krx"] = -0.08
+				T["klx"] = -0.08
+				T["arx"] = 2.25 + sw2 * 0.65
+				T["arz"] = 0.18
+				T["frx"] = 0.55 - sw2 * 0.35
+				T["alx"] = 1.75
+				T["alz"] = -0.2
+				T["flx"] = 0.35
+				wpn = 4
 			elif pose == "build":
 				T["py"] = 0.62
 				T["lrx"] = 1.4

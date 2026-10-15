@@ -11,6 +11,8 @@ var place_a := Vector3.INF
 var place_rot := 0.0
 var ghost: MeshInstance3D
 var ghost_ok := false
+var ghost_model: Node3D = null      # yerleştirme önizlemesi: gerçek bina modeli, yarı saydam
+var _ghost_mat_ok := -1
 var markers: Array = []     # [konum, zaman, renk]
 var _last_click := 0.0
 var _last_click_unit: Unit = null
@@ -117,7 +119,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
 						G.cam.jump_to(u.position)
 			KEY_R:
-				place_rot += PI * 0.5
+				# 45° adımla döndür (Shift: ters yön)
+				place_rot = wrapf(place_rot + PI * 0.25 * (-1.0 if k.shift_pressed else 1.0), 0.0, TAU)
 			KEY_F1, KEY_F2, KEY_F3:
 				Engine.time_scale = [1.0, 2.0, 3.0][code - KEY_F1]
 			KEY_PAUSE, KEY_P:
@@ -492,12 +495,29 @@ func start_place(bt: String) -> void:
 	place_type = bt
 	place_a = Vector3.INF
 	ghost.visible = true
+	if ghost_model:
+		ghost_model.queue_free()
+		ghost_model = null
+	if not Building.BDEF[bt].get("line", false):
+		ghost_model = Building.preview_model(team, bt)
+		G.world.add_child(ghost_model)
+		_ghost_mat_ok = -1
 	Sfx.play2d("ui_click", -8.0)
 
 func cancel_place() -> void:
 	place_type = ""
 	place_a = Vector3.INF
 	ghost.visible = false
+	if ghost_model:
+		ghost_model.queue_free()
+		ghost_model = null
+
+func _ghost_paint(n: Node, m: Material) -> void:
+	for c in n.get_children():
+		if c is GeometryInstance3D:
+			c.material_override = m
+			c.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_ghost_paint(c, m)
 
 func _update_ghost() -> void:
 	var gp := G.cam.mouse_ground(_vp_mouse())
@@ -522,10 +542,20 @@ func _update_ghost() -> void:
 			ghost_ok = _line_ok(place_a, b2)
 	else:
 		var s: Vector2 = B["size"]
-		bm.size = Vector3(s.x, 1.5, s.y)
-		ghost.position = gp + Vector3(0, 0.75, 0)
-		ghost.rotation.y = place_rot
 		ghost_ok = can_place(place_type, gp, place_rot, team) == ""
+		if ghost_model:
+			# zemin izi ince levha + gerçek model; ön yönü (kapı) için ok
+			bm.size = Vector3(s.x, 0.08, s.y)
+			ghost.position = gp + Vector3(0, 0.05, 0)
+			ghost_model.position = G.on_ground(gp)
+			ghost_model.rotation.y = place_rot
+			if _ghost_mat_ok != int(ghost_ok):
+				_ghost_mat_ok = int(ghost_ok)
+				_ghost_paint(ghost_model, Mats.ghost_model(ghost_ok))
+		else:
+			bm.size = Vector3(s.x, 1.5, s.y)
+			ghost.position = gp + Vector3(0, 0.75, 0)
+		ghost.rotation.y = place_rot
 	ghost.mesh = bm
 	ghost.material_override = Mats.ghost(ghost_ok)
 

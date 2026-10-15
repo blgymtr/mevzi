@@ -88,6 +88,9 @@ var throw_smoke := false
 var throw_released := false
 var covering_until := 0.0
 var build_site: Node3D = null
+var build_slot := -1
+var haul := false           # malzeme taşıyor (inşaat)
+var build_goal := Vector3.INF
 var loot := 0
 var dead_t := 0.0
 var died_at := 0.0
@@ -485,7 +488,13 @@ func cmd_build(site: Node3D) -> void:
 	_release_patient()
 	build_site = site
 	order = "build"
+	haul = false
+	build_slot = -1
 	var p: Vector3 = site.position + (position - site.position).normalized() * (site.radius + 0.8)
+	if site is Building and not site.is_line():
+		build_slot = site.claim_slot(self)
+		p = site.slot_pos(build_slot)
+	build_goal = p
 	dest = p
 	_set_path(p)
 	state = "move"
@@ -541,7 +550,8 @@ func _process(dt: float) -> void:
 	var sp := vel.length()
 	body.move_yaw = angle_difference(rotation.y, _yaw_of(vel)) if sp > 0.3 else 0.0
 	body.pistol = G.time - pistol_t < 0.8
-	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else 0.0)))
+	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if state == "build" else ""))
+	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
 	body.position = Vector3(lean_cur.x, body_lift, lean_cur.z).rotated(Vector3.UP, -rotation.y)
 
@@ -671,9 +681,14 @@ func _think() -> void:
 		"build":
 			if build_site == null or not is_instance_valid(build_site) or build_site.done or not build_site.alive:
 				build_site = null
+				haul = false
+				build_goal = Vector3.INF
 				state = "idle"
 				order = ""
 		"move":
+			if order == "build" and build_goal != Vector3.INF and randf() < 0.06:
+				# yol bina ızgaraya işlenmeden hesaplanmış olabilir: ara sıra yeniden bul
+				_set_path(build_goal)
 			if order == "board" and board_target != null:
 				if not is_instance_valid(board_target) or not board_target.alive:
 					board_target = null
@@ -1944,10 +1959,14 @@ func _pose() -> String:
 			return "throw"
 		"drag":
 			return "dragging"
-		"heal", "build":
+		"heal":
 			return "build"
+		"build":
+			return "build_hi" if build_slot >= 0 and build_slot % 3 == 1 else "build"
 		"surrender":
 			return "surrender"
+	if haul and order == "build" and state == "move":
+		return "carry"
 	if blind_t > 0.0 and state == "idle":
 		return "blind_side" if blind_side else "blind"
 	if bandage_t > 0.0 and state == "idle":
@@ -1964,8 +1983,34 @@ func _physics_process(dt: float) -> void:
 	if alive and (state == "drag" or state == "heal"):
 		_process_drag_heal(dt)
 	if alive and state == "build" and build_site != null and is_instance_valid(build_site):
-		if dist2(build_site) < build_site.radius + 2.5:
-			build_site.add_work(dt * (2.0 if role == "engineer" else (0.7 if role == "medic" else 1.0)))
+		var mult := 1.6 if role == "engineer" else (0.7 if role == "medic" else 1.0)
+		if build_site is Building and not build_site.is_line() and build_slot >= 0:
+			# kalabalık ekipte verim azalır (√n): 6 kişi tek kişinin ~2.4 katı
+			mult /= sqrt(float(maxi(1, build_site.active_workers())))
+			var sp: Vector3 = build_site.slot_pos(build_slot)
+			if build_slot % 3 == 2:
+				# malzeme taşıyıcı: yığından kutu/kalas al, iskeleye götür
+				var tgt: Vector3 = sp if haul else build_site.pile_pos()
+				if Vector2(tgt.x - position.x, tgt.z - position.z).length() > (2.6 if not haul else 1.6):
+					build_goal = tgt
+					_set_path(tgt)
+					state = "move"
+					return
+				if haul:
+					build_site.add_work(2.4 * mult)
+				haul = not haul
+				build_goal = build_site.pile_pos() if not haul else sp
+				_set_path(build_goal)
+				state = "move"
+				return
+			if Vector2(sp.x - position.x, sp.z - position.z).length() > 1.2:
+				build_goal = sp
+				_set_path(sp)
+				state = "move"
+				return
+			build_site.add_work(dt * mult)
+		elif dist2(build_site) < build_site.radius + 2.5:
+			build_site.add_work(dt * mult)
 		else:
 			_set_path(build_site.position + (position - build_site.position).normalized() * (build_site.radius + 0.8))
 			state = "move"

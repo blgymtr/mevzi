@@ -69,6 +69,8 @@ func _ready() -> void:
 		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
 		_run_weather_test()
+	elif shot_dir != "" and shot_scene == "buildtest":
+		_run_build_test()
 	elif shot_dir != "" and shot_scene == "cargotest":
 		_run_cargo_test()
 	elif shot_dir != "" and shot_scene == "supplytest":
@@ -1227,6 +1229,70 @@ func _run_weather_test() -> void:
 	if W.sight_mult() >= 1.0:
 		fails += 1
 	print("WEATHERTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_build_test() -> void:
+	# inşaat: 6 işçi farklı yerlerde (çakan / yukarı çakan / malzeme taşıyan), alttan yukarı örülen duvar, iskele; yerleştirme önizlemesi
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.sandbox = false
+	var c: Vector3 = G.grid.nearest_free(G.hq_pos[0].lerp(G.hq_pos[1], 0.22), Grid.M_HEAVY)
+	G.props.clear_area(c, 16.0)
+	# önizleme
+	G.cam.size = 22.0
+	G.cam.target_size = 22.0
+	G.cam.jump_to(c, true)
+	await _wait(0.5)
+	G.player.start_place("factory")
+	G.player.place_rot = PI * 0.25
+	get_viewport().warp_mouse(Vector2(960, 540))
+	await _wait(0.4)
+	await _shot("build_00_ghost")
+	G.player.cancel_place()
+	var b := place_building(0, "factory", c, PI * 0.25)
+	var ws: Array = []
+	for i in 6:
+		var s := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-12 + i * 1.2, 0, 10), Grid.M_INF), null)
+		ws.append(s)
+		s.cmd_build(b)
+	await _wait(9.0)
+	G.cam.size = 16.0
+	G.cam.target_size = 16.0
+	G.cam.jump_to(c, true)
+	await _wait(0.4)
+	await _shot("build_01_early")
+	var slots := {}
+	var spread := 0.0
+	for s in ws:
+		slots[s.build_slot] = true
+		spread = maxf(spread, Vector2(s.position.x - ws[0].position.x, s.position.z - ws[0].position.z).length())
+	var hauls := 0
+	for k in 40:
+		await _wait(0.25)
+		for s in ws:
+			if s.haul:
+				hauls += 1
+				break
+	print("BUILD slots=%d spread=%.1f progress=%.2f scaffold=%s hauling=%d" % [slots.size(), spread, b.progress, b.scaffold != null, hauls])
+	if slots.size() < 6 or spread < 6.0 or b.scaffold == null or hauls == 0:
+		fails += 1
+	await _wait(4.0)
+	await _shot("build_02_mid")
+	var t0 := 0
+	while t0 < 90 and not b.done:
+		await _wait(1.0)
+		t0 += 1
+	await _wait(1.0)
+	await _shot("build_03_done")
+	print("BUILD done=%s scaffold=%s rot=%.2f" % [b.done, b.scaffold != null, b.rot])
+	if not b.done or b.scaffold != null:
+		fails += 1
+	print("BUILDTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_cargo_test() -> void:

@@ -401,16 +401,203 @@ func _flag(mb: MB, p: Vector3, col: Color, h: float) -> void:
 	mb.quad(p + Vector3(0, h - 0.05, 0), p + Vector3(1.2, h - 0.12, 0.1), p + Vector3(1.2, h - 0.85, 0.1), p + Vector3(0, h - 0.8, 0), col, Vector3(0, 0, 1))
 	mb.quad(p + Vector3(0, h - 0.05, 0), p + Vector3(1.2, h - 0.12, 0.1), p + Vector3(1.2, h - 0.85, 0.1), p + Vector3(0, h - 0.8, 0), col.darkened(0.2), Vector3(0, 0, -1))
 
+# inşaat: duvarlar alttan yukarı örülür (kesme shader'ı), çevrede iskele, yanda malzeme yığını;
+# işçiler çevrede farklı yerlere dağılır (diz çökerek çakan, ayakta yukarı çakan, malzeme taşıyan).
+var scaffold: MeshInstance3D = null
+var pile: Node3D = null
+var model_h := 3.0
+var workers: Array = []
+var _reveal: Array = []
+
+func _model_meshes(n: Node, out: Array) -> void:
+	for c in n.get_children():
+		if c is MeshInstance3D:
+			out.append(c)
+		_model_meshes(c, out)
+
 func _apply_construct_look() -> void:
 	if model == null:
 		return
-	for c in model.get_children():
-		if c is MeshInstance3D:
-			c.material_override = null if done else Mats.construct()
 	var bs := Vector3(1.35, 1.25, 1.35) if btype == "hq" else Vector3.ONE
-	model.scale = bs if done else Vector3(bs.x, bs.y * lerpf(0.25, 1.0, progress), bs.z)
+	model.scale = bs
+	var ms: Array = []
+	_model_meshes(model, ms)
+	if done or is_line():
+		for c in ms:
+			c.material_override = null
+		_reveal.clear()
+		if scaffold:
+			for k in 6:
+				G.fx.vehicle_dust(position + Vector3(randf_range(-size.x, size.x), 0.3, randf_range(-size.y, size.y)) * 0.6)
+			scaffold.queue_free()
+			scaffold = null
+		if pile:
+			pile.queue_free()
+			pile = null
+		if gun_pivot:
+			gun_pivot.visible = done
+		return
+	if _reveal.is_empty():
+		var top := 0.5
+		for c in ms:
+			if c.mesh == null:
+				continue
+			var xf := Transform3D()
+			var n: Node = c
+			while n != model and n is Node3D:
+				xf = (n as Node3D).transform * xf
+				n = n.get_parent()
+			top = maxf(top, (xf * c.mesh.get_aabb()).end.y * bs.y)
+		model_h = top
+		var lin := Mats.reveal(false)
+		var srg := Mats.reveal(true)
+		_reveal = [lin, srg]
+		for c in ms:
+			var m0 = c.mesh.surface_get_material(0) if c.mesh and c.mesh.get_surface_count() > 0 else null
+			var is_s: bool = m0 is StandardMaterial3D and (m0 as StandardMaterial3D).vertex_color_is_srgb
+			c.material_override = srg if is_s else lin
+		_build_scaffold()
+		_build_pile()
+	var cut := lerpf(0.12, model_h + 0.05, progress)
+	for m in _reveal:
+		m.set_shader_parameter("cut", cut)
+		m.set_shader_parameter("base_y", global_position.y if is_inside_tree() else position.y)
+	if scaffold:
+		scaffold.scale.y = clampf(progress * 1.4 + 0.35, 0.35, 1.0)
+	if pile:
+		pile.scale = Vector3.ONE * clampf(1.0 - progress * 0.75, 0.25, 1.0)
 	if gun_pivot:
-		gun_pivot.visible = done
+		gun_pivot.visible = false
+
+func _build_scaffold() -> void:
+	var mb := MB.new()
+	var steel := Color(0.55, 0.56, 0.56)
+	var wood := Color(0.6, 0.47, 0.3)
+	var H := model_h + 0.9
+	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0)
+	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0)
+	for ring in 2:
+		var m := 0.45 + ring * 0.85
+		var ax := hx + m
+		var az := hz + m
+		var corners := [Vector3(-ax, 0, -az), Vector3(ax, 0, -az), Vector3(ax, 0, az), Vector3(-ax, 0, az)]
+		for e in 4:
+			var a: Vector3 = corners[e]
+			var b: Vector3 = corners[(e + 1) % 4]
+			var n := maxi(1, int(ceil(a.distance_to(b) / 2.4)))
+			for i in n + 1:
+				var p := a.lerp(b, float(i) / n)
+				mb.cyl_between(p, p + Vector3(0, H, 0), 0.035, 0.035, 5, steel, false)
+				mb.box(p + Vector3(0, 0.04, 0), Vector3(0.18, 0.04, 0.18), wood.darkened(0.3))
+			var lv := 1.8
+			while lv < H:
+				mb.cyl_between(a + Vector3(0, lv, 0), b + Vector3(0, lv, 0), 0.03, 0.03, 5, steel, false)
+				lv += 1.8
+			# çapraz destek (her yüzde bir)
+			if ring == 1:
+				mb.cyl_between(a + Vector3(0, 0.1, 0), b.lerp(a, 0.5) + Vector3(0, minf(H, 3.6), 0), 0.028, 0.028, 4, steel, false)
+	# kalas döşeme (iki sıra arası), her kat
+	var lv2 := 1.8
+	while lv2 < H:
+		for sx in [-1.0, 1.0]:
+			mb.box(Vector3(sx * (hx + 0.87), lv2 + 0.04, 0), Vector3(0.8, 0.05, hz * 2.0 + 1.7), wood)
+		for sz in [-1.0, 1.0]:
+			mb.box(Vector3(0, lv2 + 0.04, sz * (hz + 0.87)), Vector3(hx * 2.0 + 1.7, 0.05, 0.8), wood.darkened(0.06))
+		lv2 += 1.8
+	scaffold = MeshInstance3D.new()
+	scaffold.mesh = mb.commit(Mats.vcs())
+	scaffold.rotation.y = rot
+	add_child(scaffold)
+
+func _build_pile() -> void:
+	pile = Node3D.new()
+	add_child(pile)
+	pile.position = pile_pos() - position
+	pile.rotation.y = rot
+	var mb := MB.new()
+	var wood := Color(0.6, 0.47, 0.3)
+	# kalas destesi
+	for l in 4:
+		for i in 5:
+			mb.box(Vector3(-0.5 + i * 0.25, 0.08 + l * 0.1, 0), Vector3(0.22, 0.08, 2.4), wood.darkened(0.04 * ((i + l) % 3)))
+	# tuğla / blok paleti
+	for i in 3:
+		mb.box(Vector3(1.4, 0.06, -0.5 + i * 0.5), Vector3(1.1, 0.12, 0.12), wood.darkened(0.2))
+	for lx in 3:
+		for lz in 3:
+			for ly in 3:
+				mb.box(Vector3(1.05 + lx * 0.36, 0.25 + ly * 0.2, -0.4 + lz * 0.4), Vector3(0.34, 0.19, 0.38), Color(0.62, 0.62, 0.6).darkened(0.05 * ((lx + ly + lz) % 2)))
+	# çimento torbaları
+	for i in 4:
+		mb.box(Vector3(-1.5, 0.1 + (i / 2) * 0.17, -0.4 + (i % 2) * 0.55), Vector3(0.8, 0.16, 0.5), Color(0.78, 0.74, 0.62))
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	pile.add_child(mi)
+
+func pile_pos() -> Vector3:
+	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0)
+	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0)
+	return position + Vector3(hx + 3.2, 0, hz * 0.4).rotated(Vector3.UP, rot)
+
+# çevrede en çok 6 işçi yeri: dikdörtgen çevresine eşit aralıklı, iskelenin hemen dışında
+func claim_slot(s: Node) -> int:
+	for i in workers.size():
+		var w = workers[i]
+		if w != null and (not is_instance_valid(w) or not w.alive or w.build_site != self):
+			workers[i] = null
+	var k := workers.find(s)
+	if k >= 0:
+		return k
+	k = workers.find(null)
+	if k < 0:
+		workers.append(s)
+		return workers.size() - 1
+	workers[k] = s
+	return k
+
+func active_workers() -> int:
+	var n := 0
+	for w in workers:
+		if w != null and is_instance_valid(w) and w.alive and w.build_site == self:
+			n += 1
+	return n
+
+func slot_pos(k: int) -> Vector3:
+	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0) + 0.95
+	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0) + 0.95
+	if is_line():
+		return position
+	# öncelik sırası: ön, arka, sağ, sol, ön-sağ, arka-sol ... (farklı yönler)
+	var t: float = [0.08, 0.58, 0.33, 0.83, 0.2, 0.7, 0.45, 0.95][k % 8]
+	var per := 4.0 * (hx + hz)
+	var d := t * per
+	var lp: Vector3
+	if d < 2.0 * hx:
+		lp = Vector3(-hx + d, 0, hz)
+	elif d < 2.0 * hx + 2.0 * hz:
+		lp = Vector3(hx, 0, hz - (d - 2.0 * hx))
+	elif d < 4.0 * hx + 2.0 * hz:
+		lp = Vector3(hx - (d - 2.0 * hx - 2.0 * hz), 0, -hz)
+	else:
+		lp = Vector3(-hx, 0, -hz + (d - 4.0 * hx - 2.0 * hz))
+	return G.grid.nearest_free(position + lp.rotated(Vector3.UP, rot), Grid.M_INF, 4)
+
+# yerleştirme önizlemesi: gerçek model (dünyaya eklenmeyen geçici yapıdan)
+static func preview_model(t: int, bt: String) -> Node3D:
+	var b := Building.new()
+	b.team = t
+	b.btype = bt
+	b.kind = bt
+	b.B = BDEF[bt]
+	b.size = b.B["size"]
+	b.rot = 0.0
+	b.done = true
+	b._build_model()
+	var m := b.model
+	b.remove_child(m)
+	b.free()
+	m.rotation.y = 0.0
+	return m
 
 func occupy_grid() -> void:
 	var h := 2.5
@@ -456,6 +643,10 @@ func add_work(amount: float) -> void:
 		return
 	progress = minf(1.0, progress + amount / build_time())
 	hp = maxf(hp, max_hp * (0.15 + 0.85 * progress))
+	if not is_line() and not _reveal.is_empty():
+		var cut := lerpf(0.12, model_h + 0.05, progress)
+		for m in _reveal:
+			m.set_shader_parameter("cut", cut)
 	_work_flash -= amount
 	if btype == "trench" and is_line():
 		_dig_progress()
@@ -463,7 +654,7 @@ func add_work(amount: float) -> void:
 		_work_flash = 0.6
 		Sfx.play3d("hammer" if btype != "trench" else "crumble", position, -8.0 if btype != "trench" else -14.0, 0.15, 0.2)
 		if not is_line():
-			model.scale = Vector3(1, lerpf(0.25, 1.0, progress), 1)
+			_apply_construct_look()
 	if progress >= 1.0:
 		complete()
 
