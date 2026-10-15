@@ -82,53 +82,60 @@ func _unhandled_input(e: InputEvent) -> void:
 			box_now = (e as InputEventMouseMotion).position
 	elif e is InputEventKey and e.pressed and not e.echo:
 		var k := e as InputEventKey
-		var code := k.keycode
-		if code >= KEY_0 and code <= KEY_9:
-			var n := code - KEY_0
-			if k.ctrl_pressed:
-				groups[n] = selected.duplicate()
-				G.say("Grup %d atandı" % n, Vector3.ZERO, team)
-			elif groups.has(n):
-				var g: Array = groups[n].filter(func(u): return is_instance_valid(u) and u.alive)
-				if not g.is_empty():
-					var same := selected.size() == g.size() and selected.all(func(u): return g.has(u))
-					clear_sel()
-					for u in g:
-						select(u)
-					if same:
-						G.cam.jump_to(_centroid(g))
-			return
-		if Hud.ORDER_KEYS.has(code) and not k.ctrl_pressed and not (code == KEY_R and place_type != ""):
-			order_button(Hud.ORDER_KEYS[code])
-			return
-		match code:
-			KEY_ESCAPE:
-				if pending_order != "":
-					pending_order = ""
-				elif place_type != "":
-					cancel_place()
-				elif not selected.is_empty():
-					clear_sel()
-				else:
-					G.hud.toggle_pause()
-			KEY_ENTER, KEY_KP_ENTER:
-				if G.deploy_t > 0.0:
-					G.deploy_t = 0.01
-			KEY_HOME, KEY_BACKSPACE:
-				for u in G.units:
-					if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
-						G.cam.jump_to(u.position)
-			KEY_R:
-				# 45° adımla döndür (Shift: ters yön)
-				place_rot = wrapf(place_rot + PI * 0.25 * (-1.0 if k.shift_pressed else 1.0), 0.0, TAU)
-			KEY_F1, KEY_F2, KEY_F3:
-				Engine.time_scale = [1.0, 2.0, 3.0][code - KEY_F1]
-			KEY_PAUSE, KEY_P:
+		if k.keycode == KEY_ESCAPE:     # sabit tuş (atanamaz)
+			if pending_order != "":
+				pending_order = ""
+			elif place_type != "":
+				cancel_place()
+			elif not selected.is_empty():
+				clear_sel()
+			else:
 				G.hud.toggle_pause()
-			KEY_Q:
-				_select_type_on_screen("inf")
-			KEY_E:
-				_select_type_on_screen("veh")
+			return
+		# diğer tüm kısayollar tuş atama tablosundan (Ayarlar > Klavye Ayarları)
+		hotkey(Keybinds.action_for(k, place_type != ""), k.shift_pressed)
+
+# tuş eylemini uygula (Keybinds eylem kimliği)
+func hotkey(act: String, shift := false) -> void:
+	if act == "":
+		return
+	if act.begins_with("o."):
+		order_button(act.substr(2))
+		return
+	if act.begins_with("grp."):
+		var n := int(act.get_slice(".", 2))
+		if act.begins_with("grp.set."):
+			groups[n] = selected.duplicate()
+			G.say("Grup %d atandı" % n, Vector3.ZERO, team)
+		elif groups.has(n):
+			var g: Array = groups[n].filter(func(u): return is_instance_valid(u) and u.alive)
+			if not g.is_empty():
+				var same := selected.size() == g.size() and selected.all(func(u): return g.has(u))
+				clear_sel()
+				for u in g:
+					select(u)
+				if same:
+					G.cam.jump_to(_centroid(g))
+		return
+	match act:
+		"deploy":
+			if G.deploy_t > 0.0:
+				G.deploy_t = 0.01
+		"hq":
+			for u in G.units:
+				if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
+					G.cam.jump_to(u.position)
+		"place.rot":
+			# 45° adımla döndür (Shift: ters yön)
+			place_rot = wrapf(place_rot + PI * 0.25 * (-1.0 if shift else 1.0), 0.0, TAU)
+		"speed.1", "speed.2", "speed.3":
+			Engine.time_scale = [1.0, 2.0, 3.0][int(act.substr(6)) - 1]
+		"pause":
+			G.hud.toggle_pause()
+		"sel.inf":
+			_select_type_on_screen("inf")
+		"sel.veh":
+			_select_type_on_screen("veh")
 
 func _process(_dt: float) -> void:
 	if place_type != "":
