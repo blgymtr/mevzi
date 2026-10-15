@@ -498,6 +498,8 @@ func blast(center: Vector3, radius: float, dmg: float) -> void:
 		var d := Vector2(p.x - center.x, p.z - center.z).length()
 		if d > radius + it["r"]:
 			continue
+		if it["kind"] == "bridge" and dmg < 100.0:
+			continue
 		it["hp"] -= dmg * (1.0 - clampf(d / (radius + it["r"]), 0.0, 0.9))
 		if it["hp"] <= 0.0:
 			_destroy(it, center)
@@ -522,12 +524,71 @@ func _destroy(it: Dictionary, center: Vector3) -> void:
 			var tw := create_tween()
 			tw.tween_property(mi, "position:y", 0.6, 0.15).set_ease(Tween.EASE_OUT)
 			tw.tween_property(mi, "position:y", 0.0, 0.25).set_ease(Tween.EASE_IN)
+		"bridge":
+			_collapse_bridge(it)
 		"tree":
 			var away: Vector3 = it["pos"] - center
 			away.y = 0
 			_fell(it, away.normalized() if away.length() > 0.1 else Vector3.RIGHT)
 		_:
 			mi.visible = false
+
+# köprü çöküşü: orta açıklık parçalanıp suya düşer, iki uçta kırık ayaklar kalır
+func _collapse_bridge(it: Dictionary) -> void:
+	var mi: MeshInstance3D = it["node"]
+	var c: Vector3 = it["pos"]
+	var dir: Vector3 = it["dir"]
+	var L: float = it["L"]
+	var W: float = it["W"]
+	var rot: float = it["rot"]
+	mi.visible = false
+	var gap := L * 0.55
+	var stone := Color(0.7, 0.66, 0.6)
+	var bas := Basis(Vector3.UP, rot)
+	# iki uçta kalan kırık köprü parçası (sarkık uç)
+	for sg in [-1.0, 1.0]:
+		var seg := (L - gap) * 0.5
+		var mb := MB.new()
+		mb.box(Vector3(0, 0.15, 0), Vector3(seg, 0.4, W), stone, Basis())
+		mb.box(Vector3(-sg * seg * 0.5 + sg * 0.0, -0.3, 0), Vector3(0.6, 0.9, W * 0.9), stone.darkened(0.2), Basis(Vector3.FORWARD, sg * 0.35))
+		for k in 6:
+			mb.box(Vector3(randf_range(-seg * 0.5, seg * 0.5), 0.4, randf_range(-W * 0.4, W * 0.4)), Vector3(0.4, 0.2, 0.4), stone.darkened(randf_range(0.1, 0.3)), Basis(Vector3.UP, randf() * TAU))
+		var e := MeshInstance3D.new()
+		e.mesh = mb.commit(Mats.vcs())
+		e.position = c + dir * sg * (gap * 0.5 + seg * 0.5)
+		e.rotation.y = rot
+		add_child(e)
+	# düşen parçalar
+	for k in 8:
+		var pc := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(randf_range(1.0, 2.5), 0.4, randf_range(1.2, W))
+		pc.mesh = bm
+		pc.material_override = Mats.vcs()
+		var p0 := c + dir * randf_range(-gap * 0.45, gap * 0.45) + Vector3(0, 0.2, 0)
+		pc.position = p0
+		pc.rotation.y = rot
+		add_child(pc)
+		var tw := pc.create_tween()
+		var dur := randf_range(0.6, 1.1)
+		tw.tween_property(pc, "position:y", -1.6, dur).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(pc, "rotation", Vector3(randf_range(-0.8, 0.8), rot, randf_range(-0.8, 0.8)), dur)
+		tw.tween_callback(func(): G.fx.water_splash(Vector3(p0.x, 0, p0.z), 0.9))
+	G.fx.explosion(c + Vector3(0, 0.5, 0), 2.0, "big")
+	G.fx.dust_burst(c, gap * 0.5)
+	Sfx.play3d("collapse", c, 6.0)
+	G.grid.clear_bridge(c, Vector2(gap, W + 0.5), rot)
+	# üstündekiler suya düşer
+	for u in G.near(c, gap * 0.6 + W):
+		if not u.alive:
+			continue
+		var rel: Vector3 = u.position - c
+		if absf(rel.dot(dir)) < gap * 0.5 and absf(rel.cross(dir).y) < W * 0.5 + 0.5:
+			if u is Vehicle and not u.is_air():
+				u.destroy(null)
+			elif u is Soldier:
+				u.die(null)
+	G.say(I18n.s("KÖPRÜ YIKILDI!"), c, G.player_team)
 
 func _fell(it: Dictionary, dir: Vector3) -> void:
 	it["alive"] = false
@@ -752,6 +813,8 @@ func bridge(center: Vector3, dir: Vector3, length: float, width := 6.5) -> void:
 	var side := Vector3(-dir.z, 0, dir.x)
 	for sg in [-1.0, 1.0]:
 		G.grid.set_static_rect(center + side * sg * (width * 0.5 - 0.15), Vector2(length, 0.3), rot, 0.75, Grid.K_HOUSE)
+	# yıkılabilir: yalnız ağır patlamalar (topçu, tank mermisi, büyük) hasar verir
+	items.append({"node": mi, "pos": Vector3(center.x, 0, center.z), "kind": "bridge", "hp": 1600.0, "alive": true, "r": length * 0.4, "dir": dir, "L": length, "W": width, "rot": rot})
 
 func _bridge_mesh(L: float, W: float) -> ArrayMesh:
 	var mb := MB.new()

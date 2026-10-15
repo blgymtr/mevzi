@@ -432,6 +432,28 @@ func set_bridge(center: Vector3, size: Vector2, rot: float) -> void:
 				changed.append(i)
 	refresh(changed)
 
+# köprünün orta açıklığı çöktü: hücreler yeniden su, araç yönlendirmesi kaldırılır
+func clear_bridge(center: Vector3, size: Vector2, rot: float) -> void:
+	var c := cos(rot)
+	var s := sin(rot)
+	var ext := maxf(size.x, size.y) * 0.75
+	var changed: Array = []
+	for z in range(ci(center.z - ext), ci(center.z + ext) + 1):
+		for x in range(ci(center.x - ext), ci(center.x + ext) + 1):
+			var px := (x + 0.5) * CS - center.x
+			var pz := (z + 0.5) * CS - center.z
+			var lx := px * c - pz * s
+			var lz := px * s + pz * c
+			if absf(lx) <= size.x * 0.5 and absf(lz) <= size.y * 0.5 + 0.6:
+				var i := z * N + x
+				bridge[i] = 0
+				changed.append(i)
+	refresh(changed)
+	flush_nav()
+	for b in bridges.duplicate():
+		if b["c"].distance_to(Vector3(center.x, 0, center.z)) < 1.0:
+			bridges.erase(b)
+
 func add_bridge(c: Vector3, d: Vector3, L: float, w: float) -> void:
 	var dd := Vector3(d.x, 0, d.z).normalized()
 	bridges.append({"c": Vector3(c.x, 0, c.z), "d": dd, "L": L, "w": w})

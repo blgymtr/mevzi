@@ -335,6 +335,15 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["alz"] = -0.12
 				T["frx"] = 0.45
 				T["flx"] = 0.45
+				if extra > 0.5:
+					# kutu: göğüs hizasında iki elle, dirsekler bükük, hafif geriye yaslanma
+					T["srx"] = -0.05
+					T["arx"] = 0.75
+					T["alx"] = 0.75
+					T["arz"] = 0.32
+					T["alz"] = -0.32
+					T["frx"] = 1.25
+					T["flx"] = 1.25
 				wpn = 4
 			elif pose == "melee":
 				# dipçik darbesi: geri çek, ileri savur
@@ -562,6 +571,15 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		T["sry"] = float(T.get("sry", 0.0)) - py_
 	else:
 		T["pry"] = 0.0
+	# nişan / taşıma / yüzüstü: eller silaha IK ile oturur
+	if wpn in [1, 2, 3] and not pistol and arm_r and rest.has(arm_r):
+		var ik := _ik_pose(wpn)
+		T["arx"] = ik[0].x
+		T["arz"] = ik[0].y
+		T["frx"] = ik[0].z
+		T["alx"] = ik[1].x
+		T["alz"] = ik[1].y
+		T["flx"] = ik[1].z
 	var rate := clampf(dt * (14.0 if pose != "fly" else 30.0), 0.0, 1.0)
 	for k in T:
 		j[k] = lerpf(j[k], T[k], rate)
@@ -583,6 +601,64 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	wp_cur = wp_cur.interpolate_with(wt, rate)
 	weapon.transform = wp_cur
 	sync_skin()
+
+# ---------------- silah tutuşu: iki kemikli ters kinematik (önbellekli)
+# Sağ el kabzaya, sol el el kundağına (RPG'de tüpün altına) oturur. Çözüm spine uzayında, poz başına bir kez.
+static var _ik_cache := {}
+const HAND_LEN := 0.31
+
+func _hand_fk(ap: Vector3, fp: Vector3, rx: float, rz: float, fx: float) -> Vector3:
+	var ba := Basis.from_euler(Vector3(rx, 0.0, rz))
+	var bf := Basis.from_euler(Vector3(fx, 0.0, 0.0))
+	return ap + ba * (fp + bf * Vector3(0, -HAND_LEN, 0))
+
+func _solve_arm(ap: Vector3, fp: Vector3, target: Vector3, guess: Vector3, mirror: float) -> Vector3:
+	var x := guess
+	var best := (_hand_fk(ap, fp, x.x, x.y, x.z) - target).length_squared()
+	var step := 0.4
+	for it in 70:
+		var improved := false
+		for k in 3:
+			for sgn in [-1.0, 1.0]:
+				var y := x
+				y[k] += step * sgn
+				y.x = clampf(y.x, -1.2, 3.3)
+				y.y = clampf(y.y * mirror, -0.6, 1.4) * mirror
+				y.z = clampf(y.z, 0.0, 2.6)
+				var e := (_hand_fk(ap, fp, y.x, y.y, y.z) - target).length_squared()
+				if e < best:
+					best = e
+					x = y
+					improved = true
+		if not improved:
+			step *= 0.55
+			if step < 0.002:
+				break
+	return x
+
+func _grip_points() -> Array:
+	# silah mesh sınırlarından kabza ve el kundağı noktaları (silah yerel uzayı, ileri -Z)
+	var a: AABB = weapon.mesh.get_aabb() if weapon and weapon.mesh else AABB(Vector3(-0.03, -0.08, -0.7), Vector3(0.06, 0.16, 1.0))
+	var z0 := a.position.z
+	var L := a.size.z
+	var yc := a.position.y + a.size.y * 0.45
+	if role in ["at", "atgm"]:
+		return [Vector3(0, a.position.y - 0.02, z0 + L * 0.62), Vector3(0, a.position.y - 0.02, z0 + L * 0.38)]
+	return [Vector3(0, yc - a.size.y * 0.25, z0 + L * 0.68), Vector3(0, yc, z0 + L * 0.33)]
+
+func _ik_pose(w: int) -> Array:
+	var key := "%s|%d" % [role, w]
+	if _ik_cache.has(key):
+		return _ik_cache[key]
+	var wt := _weapon_xf(w)
+	var g := _grip_points()
+	var tr: Vector3 = wt * (g[0] as Vector3)
+	var tl: Vector3 = wt * (g[1] as Vector3)
+	var r := _solve_arm(rest[arm_r], rest[fore_r], tr, Vector3(1.3, 0.25, 0.4), 1.0)
+	var l := _solve_arm(rest[arm_l], rest[fore_l], tl, Vector3(1.4, -0.45, 0.2), -1.0)
+	var out := [r, l]
+	_ik_cache[key] = out
+	return out
 
 func _weapon_xf(w: int) -> Transform3D:
 	match w:

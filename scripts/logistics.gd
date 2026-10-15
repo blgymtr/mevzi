@@ -130,6 +130,10 @@ func truck_arrived(tr: Vehicle) -> void:
 	if j.is_empty():
 		return
 	if j["state"] == "out":
+		j["state"] = "unload"
+		j["t"] = 6.0
+		return
+	if j["state"] == "unload":
 		var b = j["to"]
 		if b != null and is_instance_valid(b) and b.alive and b.team == tr.team:
 			G.supply[tr.team] += DELIVERY
@@ -147,6 +151,83 @@ func truck_arrived(tr: Vehicle) -> void:
 	elif j["state"] == "back":
 		j["state"] = "load"
 		j["t"] = 4.0
+
+# yükleme/boşaltma: iki asker kamyonun arkasıyla üs kapısı arasında kutu taşır
+var _crate_mesh: Mesh = null
+
+func _porters(tr: Vehicle, dt: float, j: Dictionary) -> void:
+	var st: String = j.get("state", "")
+	var active := (st == "load" or st == "unload") and tr.cur_speed < 0.2
+	var ps: Array = tr.get_meta("porters", [])
+	if not active:
+		if not ps.is_empty():
+			for p in ps:
+				if is_instance_valid(p[0]):
+					p[0].queue_free()
+			tr.set_meta("porters", [])
+		return
+	var b = j.get("to") if st == "unload" else _hq(tr.team)
+	if b == null or not is_instance_valid(b):
+		return
+	var rear: Vector3 = tr.position - tr.forward() * 4.6
+	rear.y = G.terrain.ground_h(rear)
+	# binanın kenarı (kamyonun arkasına bakan taraf)
+	var to_r: Vector3 = rear - b.position
+	to_r.y = 0.0
+	var door: Vector3 = b.position + to_r.normalized() * maxf(b.radius * 0.85, 2.0)
+	door.y = G.terrain.ground_h(door)
+	if ps.is_empty():
+		if _crate_mesh == null:
+			var mb := MB.new()
+			mb.box(Vector3(0, 0, 0), Vector3(0.55, 0.32, 0.4), Color(0.4, 0.42, 0.26))
+			mb.box(Vector3(0, 0.17, 0), Vector3(0.57, 0.03, 0.12), Color(0.25, 0.25, 0.2))
+			_crate_mesh = mb.commit(Mats.vc())
+		for k in 2:
+			var sb := SoldierBody.new()
+			G.world.add_child(sb)
+			sb.build(tr.team, "crew", G.map_kind == "winter")
+			sb.weapon.visible = false
+			var cr := MeshInstance3D.new()
+			cr.mesh = _crate_mesh
+			cr.position = Vector3(0, 1.12, -0.36)
+			sb.add_child(cr)
+			ps.append([sb, k * 0.5, cr])
+		tr.set_meta("porters", ps)
+	var fw := tr.forward()
+	var side := Vector3(-fw.z, 0, fw.x)
+	for i in ps.size():
+		var p: Array = ps[i]
+		var sb: SoldierBody = p[0]
+		p[1] = fmod(p[1] + dt / 7.0, 1.0)
+		var t: float = p[1]
+		# her hamal kamyonun bir yanından: arka kapak -> yan -> ön -> bina kenarı
+		var sg := 1.0 if i == 0 else -1.0
+		var path: Array[Vector3] = [rear + side * sg * 0.35, rear + side * sg * 1.7, tr.position + fw * 3.4 + side * sg * 1.7, door + side * sg * 0.6]
+		if st == "load":
+			path.reverse()
+		# 0-0.5 dolu gidiş, 0.5-1 boş dönüş
+		var carrying := t < 0.5
+		var k2 := t * 2.0 if carrying else 1.0 - (t - 0.5) * 2.0
+		var L := 0.0
+		for q in range(1, path.size()):
+			L += path[q].distance_to(path[q - 1])
+		var d := k2 * L
+		var pos := path[0]
+		var dirv := path[1] - path[0]
+		for q in range(1, path.size()):
+			var seg := path[q].distance_to(path[q - 1])
+			if d <= seg or q == path.size() - 1:
+				pos = path[q - 1].lerp(path[q], clampf(d / maxf(seg, 0.01), 0.0, 1.0))
+				dirv = path[q] - path[q - 1]
+				break
+			d -= seg
+		if not carrying:
+			dirv = -dirv
+		pos.y = G.terrain.ground_h(pos)
+		sb.position = pos
+		sb.rotation.y = atan2(-dirv.x, -dirv.z)
+		(p[2] as MeshInstance3D).visible = carrying
+		sb.animate(dt, "carry" if carrying else "walk", 1.3 if carrying else 1.8, 1.0)
 
 func truck_lost(tr: Vehicle) -> void:
 	trucks[tr.team].erase(tr)
@@ -170,9 +251,17 @@ func _process(dt: float) -> void:
 			i -= 1
 		for tr in trucks[t].duplicate():
 			if not is_instance_valid(tr) or not tr.alive:
+				if is_instance_valid(tr):
+					_porters(tr, dt, {})
 				trucks[t].erase(tr)
 				continue
 			var j: Dictionary = tr.job
+			_porters(tr, dt, j)
+			if j.get("state", "") == "unload":
+				j["t"] -= dt
+				if j["t"] <= 0.0:
+					truck_arrived(tr)
+				continue
 			if j.get("state", "") == "load":
 				j["t"] -= dt
 				if j["t"] <= 0.0:

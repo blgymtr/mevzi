@@ -69,6 +69,8 @@ func _ready() -> void:
 		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
 		_run_weather_test()
+	elif shot_dir != "" and shot_scene == "supplytest":
+		_run_supply_test()
 	elif shot_dir != "" and shot_scene == "logitest":
 		_run_logi_test()
 	elif shot_dir != "" and shot_scene == "modetest":
@@ -1225,6 +1227,35 @@ func _run_weather_test() -> void:
 	print("WEATHERTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
+func _run_supply_test() -> void:
+	# ikmal kamyonu boşaltma: iki hamal kamyonun arkasından binaya kutu taşır
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var hq: Vector3 = G.hq_pos[0]
+	var fob := place_building(0, "fob", G.grid.nearest_free(hq.lerp(G.hq_pos[1], 0.3), Grid.M_HEAVY), 0.0)
+	fob.complete()
+	var tr := spawn_vehicle(0, "truck", G.logi._door(fob) + Vector3(0, 0, 3.0), 0.0)
+	G.logi.trucks[0].append(tr)
+	tr.job = {"state": "unload", "t": 60.0, "to": fob}
+	await _wait(1.0)
+	G.cam.size = 9.0
+	G.cam.target_size = 9.0
+	G.cam.jump_to(tr.position.lerp(fob.position, 0.5), true)
+	for i in 3:
+		await _wait(1.4)
+		await _shot("supply_%02d" % i)
+	var n: int = tr.get_meta("porters", []).size()
+	print("SUPPLY porters=%d" % n)
+	tr.job["t"] = 0.1
+	await _wait(1.0)
+	print("SUPPLY after=%d state=%s" % [tr.get_meta("porters", []).size(), tr.job.get("state", "")])
+	print("SUPPLYTEST RESULT fails=%d" % (0 if n == 2 and tr.get_meta("porters", []).is_empty() else 1))
+	get_tree().quit()
+
 func _run_logi_test() -> void:
 	# kg stok: ileri üs mühimmatı stoktan verir, araç onarımı, üsse dönüş iadesi, konuşlanma aşaması
 	get_window().size = Vector2i(1920, 1080)
@@ -1291,6 +1322,39 @@ func _run_logi_test() -> void:
 	var fought: bool = b1.shots > 0 or e1.shots > 0
 	print("LOGI deploy quiet=%s fought_after=%s" % [quiet, fought])
 	if not quiet or not fought:
+		fails += 1
+	# kamyon: varınca hamallar iner, kutu taşır, sonra döner
+	var seen_unload := false
+	var seen_porters := false
+	var tr0: Vehicle = null
+	for k in 120:
+		await _wait(1.0)
+		for tr in G.logi.trucks[0]:
+			if is_instance_valid(tr) and tr.job.get("state", "") == "unload":
+				seen_unload = true
+				tr0 = tr
+				if not tr.get_meta("porters", []).is_empty():
+					seen_porters = true
+		if seen_porters:
+			break
+		if k % 15 == 0:
+			var sts := []
+			for tr in G.logi.trucks[0]:
+				if is_instance_valid(tr):
+					sts.append("%s@%.0f,%.0f p%d/%d" % [tr.job.get("state", ""), tr.position.x, tr.position.z, tr.path_i, tr.path.size()])
+			print("LOGI dbg t=%d %s" % [k, sts])
+	if tr0 != null:
+		await _wait(1.5)
+		G.cam.size = 8.0
+		G.cam.target_size = 8.0
+		G.cam.jump_to(tr0.position - tr0.forward() * 3.0, true)
+		await _shot("logi_02_porters")
+		for p in tr0.get_meta("porters", []):
+			print("LOGI porter %s vis=%s truck=%s st=%s" % [p[0].global_position, p[0].visible, tr0.position, tr0.job.get("state", "")])
+		await _wait(7.0)
+	var gone_p: bool = tr0 != null and is_instance_valid(tr0) and tr0.get_meta("porters", []).is_empty()
+	print("LOGI truck unload=%s porters=%s cleaned=%s" % [seen_unload, seen_porters, gone_p])
+	if not seen_unload or not seen_porters or not gone_p:
 		fails += 1
 	print("LOGITEST RESULT fails=%d" % fails)
 	get_tree().quit()
