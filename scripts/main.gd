@@ -43,7 +43,10 @@ func _ready() -> void:
 	apply_video()
 	if shot_dir != "":
 		_start_watchdog()
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest"]:
+		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
+		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
+		start_units = shot_scene in ["battletest", "modetest", "stresstest", "supplytest", "logitest", "hudtest", "test", "crash"]
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -280,6 +283,7 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	# harita boyutu: ızgara ve arazi çözünürlüğü buna göre
 	G.MAP = float(MapGen.MAPS.get(id, {}).get("size", 256)) if id != "custom" else float(data.get("size", 256))
 	G.prof("start")
+	Combat.set_scale(G.MAP)
 	Grid.configure(G.MAP)
 	if G.cam != null:
 		G.cam.setup_for_map(G.MAP)
@@ -355,12 +359,19 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	ambience = Sfx.ambience("wind", -14.0)
 	ambience2 = Sfx.ambience("battle_far", -20.0)
 
+# başlangıç birlikleri (sahne testlerinde kapalı: gerçek menzilde karargâhtaki tank haritanın ortasındaki
+# deney birliklerini vuruyordu; testler kendi birliklerini kurar)
+var start_units := true
+
 func _start_forces() -> void:
 	for t in 2:
 		var hp: Vector3 = G.hq_pos[t]
 		var rot := PI * 0.75 if t == 0 else -PI * 0.25
 		var hq := place_building(t, "hq", hp, 0.0)
 		hq.complete()
+		if not start_units:
+			G.supply[t] = 650.0
+			continue
 		var toward: Vector3 = (G.hq_pos[1 - t] - hp).normalized()
 		var side := Vector3(-toward.z, 0, toward.x)
 		var base := hp + toward * 16.0
@@ -2313,6 +2324,15 @@ func _run_orders_test() -> void:
 		if m.order == "amove" and m.state != "move":
 			engaged += 1
 	print("ORD amove engaged=%d" % engaged)
+	for m in blue.alive_members():
+		var rs := red.alive_members()
+		var near_d := 1e9
+		var seen_n := 0
+		for r in rs:
+			near_d = minf(near_d, m.dist2(r))
+			if G.is_seen(r, 0):
+				seen_n += 1
+		print("ORD dbg %s state=%s order=%s tgt=%s near=%.1f seen=%d/%d rng=%.1f vis=%d sight=%.1f" % [m.role, m.state, m.order, m.target != null, near_d, seen_n, rs.size(), m.weapon()["range"], G.visible_enemies(0).size(), m.sight])
 	if engaged == 0:
 		fails += 1
 	G.player.exec_order("fire", Vector3.INF)

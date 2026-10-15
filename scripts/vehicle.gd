@@ -52,6 +52,13 @@ var ammo_ke := ""
 var ammo_he := ""
 var ammo_auto := ""
 var cat: Dictionary = {}
+# gerçek savaş verisi (data/real_combat.json, roadmap 49/50/51)
+var cdat: Dictionary = {}
+var rng: Dictionary = {}      # silah başına oyun menzili (m): main, atgm, auto, mg, rkt, aa, ind
+var arm_tab: Array = []       # zırh (oyun birimi = 20 mm RHA), [[kinetik ön, yan, arka, üst], [HEAT ...]]
+var fcs := 0.001              # atış kontrolü: mesafe başına dağılım (m/m)
+var radar := 0.0              # hava hedefini algılama menzili (m)
+var slat := false             # kafes zırh: RPG/HEAT'in bir kısmını boşa çıkarır
 # 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
 const ARMOR := {
 	"tank": [[22, 8, 5, 3], [26, 11, 5, 3]],
@@ -66,13 +73,15 @@ const ARMOR := {
 	"howitzer": [[1, 0, 0, 0], [1, 0, 0, 0]],
 	"mtngun": [[1, 0, 0, 0], [1, 0, 0, 0]],
 }
-# silah delmesi: [tip 0=kinetik 1=HEAT, yakın delme, 60 m+ delme, üstten saldırı]
+# silah delmesi (roadmap 51, gerçek ölçek: birim = 20 mm RHA): [tip 0=kinetik 1=HEAT, namlu önünde, 2 km'de,
+# üstten saldırı]. Tüfek ~10 mm, 12,7 mm AP ~30 mm, RPG-7 ~500 mm, Kornet ~1200 mm, Javelin üstten.
+# Mühimmata / füzeye özel değer varsa (Ammo tablosu, füze modeli) o kullanılır.
 const PEN := {
-	"bullet": [0, 1, 0, false], "sniper": [0, 3, 2, false], "hmg": [0, 5, 3, false], "auto": [0, 10, 7, false],
-	"crush": [0, 0, 0, false], "melee": [0, 0, 0, false], "blast": [1, 2, 2, false],
-	"ap": [0, 28, 23, false], "he": [1, 7, 7, false], "rpg": [1, 17, 17, false], "atgm": [1, 27, 27, false],
-	"topatk": [1, 24, 24, true], "grenade": [1, 2, 2, false], "shell": [1, 6, 6, true], "big": [1, 9, 9, true],
-	"mortar": [1, 4, 4, true], "mine": [0, 12, 12, true], "fpv": [1, 10, 10, true], "sam": [1, 12, 12, false],
+	"bullet": [0, 0.5, 0.1, false], "sniper": [0, 0.9, 0.5, false], "hmg": [0, 1.5, 0.8, false], "auto": [0, 5.0, 3.5, false],
+	"crush": [0, 0, 0, false], "melee": [0, 0, 0, false], "blast": [1, 1.5, 1.5, false],
+	"ap": [0, 32, 29, false], "he": [1, 4, 4, false], "rpg": [1, 23, 23, false], "atgm": [1, 45, 45, false],
+	"topatk": [1, 37.5, 37.5, true], "grenade": [1, 1, 1, false], "shell": [1, 3, 3, true], "big": [1, 6, 6, true],
+	"mortar": [1, 2.5, 2.5, true], "mine": [0, 12, 12, true], "fpv": [1, 15, 15, true], "sam": [1, 12, 12, false],
 }
 const SIDE_NAME := ["ÖN", "YAN", "ARKA", "ÜST"]
 static var shot_from := Vector3.INF
@@ -557,10 +566,28 @@ func setup(t: int, vt: String) -> void:
 		salvo_n = int(pf.get("salvo", 0))
 		salvo_ival = float(pf.get("ival", 0.0))
 		rearm_s = float(pf.get("rearm", 0.0))
+	cdat = Combat.vehicle(vid, vt)
+	if not cdat.is_empty():
+		if vid == "":
+			D = D.duplicate()
+		if cdat.has("hp"):
+			D["hp"] = float(cdat["hp"])
+		arm_tab = Combat.armor_units(cdat)
+		rng = Combat.ranges(cdat)
+		var on := String(cdat.get("opt", "day"))
+		opt_k = Combat.optic(on)
+		fcs = float({"th3": 0.0004, "th": 0.0006, "rad": 0.0007, "uav": 0.0006, "cl": 0.0006, "scope": 0.0008, "day": 0.0011, "bino": 0.0015}.get(on, 0.002))
+		radar = float(cdat.get("radar", 0.0)) * Combat.K_RANGE
+		slat = bool(cdat.get("slat", false))
+		# görüş (savaş sisi yarıçapı): açıktaki ayakta piyadeyi seçebileceği mesafe
+		D["sight"] = Combat.detect_range(opt_k, 0.32)
 	title = D["title"]
 	max_hp = D["hp"]
 	hp = max_hp
 	armor = D["armor"]
+	if not arm_tab.is_empty():
+		# zırh sınıfı: 0 açık (kurşun işler), 1 hafif zırhlı, 2 ağır zırhlı (≥ 300 mm ön)
+		armor = 0 if float(arm_tab[0][0]) < 0.5 else (2 if float(arm_tab[0][0]) >= 15.0 else 1)
 	speed_max = D["speed"]
 	radius = D["radius"]
 	nav_mode = D["nav"]
@@ -687,6 +714,7 @@ func setup(t: int, vt: String) -> void:
 			crates = crates_max()
 	set_layer(self, 2)
 	_calc_ext()
+	_calc_sig()
 	heading = rotation.y
 	rotation.y = 0.0
 	hull.rotation.y = heading
@@ -874,7 +902,11 @@ func _attack_block(u: Unit) -> String:
 
 # dolaylı atışlı topçunun asgari menzili (bunun içindeki hedefe ateş edemez)
 func _min_range() -> float:
-	return 18.0 if vtype == "hmortar" else 30.0
+	# gerçekçi asgari menzil: havan ~100 m, obüs (yüksek açı) ~600 m, roketatar ~1,5 km (oyun ölçeğiyle)
+	var r := 100.0 if vtype == "hmortar" else (1500.0 if vtype == "mlrs" else 600.0)
+	if vid in ["rus_mlrs_tos"]:
+		r = 400.0
+	return r * Combat.K_RANGE if not rng.is_empty() else (18.0 if vtype == "hmortar" else 30.0)
 
 func cmd_attack(u: Unit) -> void:
 	if not alive:
@@ -1016,7 +1048,42 @@ func follow_route(pts: PackedVector3Array) -> void:
 	path_i = 0
 	order = "route"
 
+# en uzun doğrudan atış silahının menzili (tarama yarıçapı); dolaylı atışlıda azami menzil
 func _range() -> float:
+	if rng.is_empty():
+		return _range_old()
+	if vtype in INDIRECT:
+		return float(rng.get("ind", 0.0))
+	var r := 0.0
+	for k in ["main", "auto", "atgm", "mg", "rkt", "aa"]:
+		r = maxf(r, float(rng.get(k, 0.0)))
+	return r
+
+# tek silahın menzili (veri yoksa eski tip menzili)
+func _wr(k: String, def := -1.0) -> float:
+	if rng.is_empty():
+		return _range_old()
+	if rng.has(k):
+		return float(rng[k])
+	return def if def >= 0.0 else 0.0
+
+# ana silah bu hedefe bu mesafeden ateş edebilir mi
+func _can_fire_at(t: Unit, dist: float) -> bool:
+	var air: bool = t is Vehicle and t.is_air()
+	match vtype:
+		"tank", "fieldgun", "atgun":
+			return dist <= _wr("main")
+		"apc", "ifv":
+			return dist <= maxf(_wr("auto"), _wr("mg"))
+		"technical", "transport", "truck":
+			return dist <= _wr("mg", 1000.0)
+		"aa", "aagun":
+			return dist <= (_wr("aa") if air else _wr("auto", _wr("mg")))
+	if vtype in INDIRECT:
+		return dist <= _wr("ind")
+	return dist <= _range()
+
+func _range_old() -> float:
 	match vtype:
 		"tank":
 			return 58.0
@@ -1533,18 +1600,22 @@ func _scan() -> void:
 	var best_inf: Unit = null
 	var bsi := 1e9
 	var cands: Array = []
-	for e in G.enemies_near(position, rng_w + 4.0, team):
-		if not e.alive or not G.is_seen(e, team):
+	for e in G.visible_enemies(team):
+		if not is_instance_valid(e) or not e.alive:
 			continue
 		if e is Soldier and e.incapacitated():
 			continue
 		var d := dist2(e)
+		if d > rng_w + 4.0:
+			continue
 		var sc := d
 		var air: bool = e is Vehicle and e.is_air()
 		if vtype == "aa":
 			if air:
 				sc -= 200.0
-			elif d > 46.0 or e is Building:
+				if d > _wr("aa"):
+					continue
+			elif d > _wr("auto", _wr("mg")) or e is Building:
 				continue
 		elif air and not (vtype in ["apc", "ifv", "technical", "heli"]) :
 			continue
@@ -1553,7 +1624,7 @@ func _scan() -> void:
 		if vtype == "aagun":
 			if air:
 				sc -= 200.0
-			elif d > 40.0 or e is Building or (e is Vehicle and e.armor > 0):
+			elif d > _wr("auto", 2000.0) or e is Building or (e is Vehicle and e.armor > 0):
 				continue
 		elif vtype == "atgun":
 			if air:
@@ -1583,7 +1654,7 @@ func _scan() -> void:
 		if e == forced_target:
 			sc -= 200.0
 		cands.append([sc, e])
-		if e is Soldier and d < 42.0 and d < bsi:
+		if e is Soldier and d < _wr("mg", 1000.0) and d < bsi:
 			bsi = d
 			best_inf = e
 	cands.sort_custom(func(a, b): return a[0] < b[0])
@@ -1675,7 +1746,12 @@ func _aim_fire(dt: float) -> void:
 		return
 	var aligned := absf(angle_difference(turret_yaw, want_local)) < (0.05 if vtype == "tank" else 0.12)
 	var dist := dist2(t)
-	if aligned and dist <= _range() and main_cd <= 0.0:
+	# güdümlü tanksavar füzesi: PSA (TOW / Konkurs / Kornet) ve namludan füze atan tank — ana silahın
+	# menzili dışındaki zırhlıya da
+	if aligned and atgm_cd <= 0.0 and vtype in ["ifv", "tank"] and t is Vehicle and t.armor > 0 and not t.is_air() and _wr("atgm") > 0.0 and dist <= _wr("atgm"):
+		if vtype == "ifv" or dist > _wr("main") * 0.85:
+			_fire_atgm(t, dist)
+	if aligned and main_cd <= 0.0 and _can_fire_at(t, dist):
 		match vtype:
 			"tank":
 				_fire_cannon(t)
@@ -1684,12 +1760,8 @@ func _aim_fire(dt: float) -> void:
 			"technical":
 				_fire_hmg(t)
 			"ifv":
-				_fire_auto(t)
-				if atgm_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air():
-					atgm_cd = 14.0
-					var mp := muzzle_world() + Vector3(0, 0.4, 0)
-					G.bal.rocket(mp, t.aim_point(), team, self, t, "atgm")
-					Sfx.play3d("rpg", mp, 2.0)
+				if dist <= _wr("auto", _range()):
+					_fire_auto(t)
 			"aa", "aagun":
 				if not _fire_sam(t):
 					_fire_flak(t)
@@ -1730,6 +1802,7 @@ func _mlrs_tick(dt: float) -> void:
 		return
 	mlrs_t = salvo_ival if salvo_ival > 0.0 else 0.22
 	mlrs_left -= 1
+	fired_t = G.time
 	var mp := muzzle_world() + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.2), 0)
 	var d := dist2_p(mlrs_aim)
 	var err := d * 0.07 + 4.0
@@ -1944,6 +2017,7 @@ func dist2_p(p: Vector3) -> float:
 
 func _fire_ground() -> void:
 	# baskı / bombardıman: yere ateş
+	fired_t = G.time
 	var mp := muzzle_world()
 	var p := ground_pt + Vector3(randf_range(-3.5, 3.5), 0.1, randf_range(-3.5, 3.5))
 	match vtype:
@@ -2007,6 +2081,7 @@ func _fire_ground() -> void:
 			main_cd = 1.0
 
 func _fire_flak(t: Unit) -> void:
+	fired_t = G.time
 	if burst <= 0:
 		burst = _burst_len(6, 12)
 	burst -= 1
@@ -2039,9 +2114,10 @@ func _fire_flak(t: Unit) -> void:
 
 func _fire_arty(t: Unit) -> void:
 	main_cd = _rl(9.0)
+	fired_t = G.time
 	var mp := muzzle_world()
 	var d := dist2(t)
-	var err := d * 0.05 + 2.0
+	var err := d * (0.012 if not rng.is_empty() else 0.05) + 4.0
 	var tp := t.position + Vector3(randf_range(-err, err), 0, randf_range(-err, err))
 	G.bal.artillery(mp, tp, team, self, ammo_he)
 	G.fx.cannon_blast(mp, (tp - mp).normalized())
@@ -2051,13 +2127,17 @@ func _fire_arty(t: Unit) -> void:
 	G.cam.shake(0.2, position)
 
 func _fire_cannon(t: Unit) -> void:
+	fired_t = G.time
 	main_cd = _rl(6.5)
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var d := mp.distance_to(tp)
-	var spread := d * 0.025 * (1.0 if t is Vehicle else 1.5) * aim_mult()
-	tp += Vector3(randf_range(-spread, spread), randf_range(-0.3, 0.3), randf_range(-spread, spread))
 	var ap = t is Vehicle and t.armor > 0
+	# atış kontrolü: termal nişangâhlı modern top 2 km'de ~1 m dağılır; yürürken dengesiz/eski top kötüleşir
+	var moving := absf(cur_speed) > 1.0
+	var spread := (d * fcs + 0.25) * (1.0 if t is Vehicle else 1.4) * aim_mult() * (1.8 if moving and fcs > 0.0008 else (1.2 if moving else 1.0))
+	tp = _lead(t, mp, tp, Ammo.speed(ammo_ke if ap else ammo_he, 900.0))
+	tp += Vector3(randf_range(-spread, spread), randf_range(-0.3, 0.3), randf_range(-spread, spread))
 	G.bal.shell(mp, tp, team, self, t, "ap" if ap else "he", ammo_ke if ap else ammo_he)
 	G.fx.cannon_blast(mp, (tp - mp).normalized())
 	Sfx.play3d("tank_fire", mp, 5.0)
@@ -2065,15 +2145,91 @@ func _fire_cannon(t: Unit) -> void:
 	rock_v += 2.5
 	G.cam.shake(0.25, position)
 
+# hareketli hedefe öndeleme (atış kontrolü): uçuş süresince hedefin alacağı yol; iyi atış kontrolü daha isabetli
+func _lead(t: Unit, from: Vector3, tp: Vector3, spd: float) -> Vector3:
+	var v := t.move_vel()
+	if v.length_squared() < 0.04 or spd <= 1.0:
+		return tp
+	var ft := from.distance_to(tp) / spd
+	return tp + v * ft * (0.9 if fcs <= 0.0008 else 0.6)
+
+func move_vel() -> Vector3:
+	if is_air():
+		return hvel
+	return forward() * cur_speed
+
+# hedef izi (roadmap 50): gerçek boyut (W×H, ana muharebe tankı = 1), hareket, ateş, bitki örtüsü;
+# hava aracı: helikopter belirgin, İHA küçük (yüksek irtifada yarı)
+var sig := 1.0
+func spot_sig() -> float:
+	if not alive:
+		return 0.0
+	var s := sig
+	if is_air():
+		s = maxf(s, 0.9) if vtype in ["heli", "transport"] else s * 0.6
+		if high_alt:
+			s *= 0.5
+		return s * (1.4 if G.time - fired_t < 3.0 else 1.0)
+	if absf(cur_speed) > 1.0:
+		s *= 1.3
+	if G.time - fired_t < 3.0:
+		s *= 2.0
+	# orman kenarına girmiş araç: ağaçlar gövdeyi böler (çalı aracı saklamaz)
+	var veg: int = G.props.veg_count(position, ext.y + 3.0, "tree") if G.props != null else 0
+	if veg >= 6:
+		s *= 0.45
+	elif veg >= 3:
+		s *= 0.7
+	return s
+
+func eye_point() -> Vector3:
+	if is_air():
+		return hull.global_position
+	if turret != null:
+		return turret.global_position + Vector3(0, 0.6, 0)
+	return position + Vector3(0, 2.0, 0)
+
+func los_skip() -> float:
+	return float(D["len"]) * 0.5
+
+func thermal() -> bool:
+	return String(cdat.get("opt", "")) in ["th", "th3", "uav", "cl"]
+
+# boyut izi: gerçek genişlik × yükseklik (data/real_dims.json), yoksa modelin taban izi
+func _calc_sig() -> void:
+	var wh := Combat.dims(vid)
+	var w := wh.x if wh.x > 0.0 else ext.x * 2.0
+	var h := wh.y if wh.y > 0.0 else (3.0 if vtype in ["heli", "transport"] else 2.4)
+	if vtype in ["heli", "transport"]:
+		w = minf(w, 4.0)
+	sig = clampf(sqrt(w * h / 8.6), 0.2, 1.6)
+
+# güdümlü tanksavar füzesi (PSA, tank namlusu): ABD TOW-2B üstten geçişli, Rus Konkurs/Kornet/Refleks doğrudan.
+# Tel/lazer güdümlü füze uçarken ikinci atış yok: bekleme = uçuş süresi + dolum
+const ATGM_MODEL := {"rus_ifv_bmp2": "konkurs", "rus_ifv_bmp2m": "kornet", "rus_ifv_bmp3": "arkan", "rus_ifv_bmd4": "arkan",
+	"rus_ifv_kurg": "kornet", "rus_apc_boom": "kornet", "rus_ifv_bmpt": "kornet"}
+
+func _fire_atgm(t: Unit, dist: float) -> void:
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	var model: String = "refleks" if vtype == "tank" else String(ATGM_MODEL.get(vid, "tow" if nat in ["usa", "gbr"] else "konkurs"))
+	var mp := muzzle_world() + Vector3(0, 0.4, 0)
+	fired_t = G.time
+	G.bal.rocket(mp, t.aim_point(), team, self, t, "atgm", model, _wr("atgm"))
+	atgm_cd = dist / Ballistics.missile_speed("atgm", model, team) + 9.0
+	Sfx.play3d("rpg", mp, 2.0)
+	say("FÜZE ATILDI", 1.5)
+
 func _fire_auto(t: Unit) -> void:
 	if burst <= 0:
 		burst = _burst_len(3, 5)
 	burst -= 1
 	main_cd = _auto_ival(0.26) if burst > 0 else randf_range(1.2, 2.2)
+	fired_t = G.time
 	var mp := muzzle_world()
 	var tp := t.aim_point()
 	var d := mp.distance_to(tp)
-	var spread := d * 0.04 * aim_mult()
+	var spread := (d * fcs * 2.5 + 0.3) * aim_mult() * (1.6 if absf(cur_speed) > 1.0 else 1.0)
+	tp = _lead(t, mp, tp, Ammo.speed(ammo_auto, 1000.0))
 	tp += Vector3(randf_range(-spread, spread), randf_range(-0.2, 0.4), randf_range(-spread, spread))
 	G.bal.shell(mp, tp, team, self, t, "auto", ammo_auto)
 	G.fx.muzzle(mp, (tp - mp).normalized(), true)
@@ -2103,18 +2259,20 @@ func _coax(_dt: float) -> void:
 
 func _hitscan(t: Unit, dmg: float, acc: float, sup: float, k: String, from_barrel: bool) -> void:
 	shots += 1
+	fired_t = G.time
 	var mp := muzzle_world() if from_barrel else turret_world_pos() + forward() * 1.2 + Vector3(0, 0.3, 0)
 	var tp := t.aim_point()
 	var dir := (tp - mp).normalized()
 	if from_barrel:
 		G.fx.muzzle(mp, dir, true)
 	var d := mp.distance_to(tp)
-	var c := acc * (1.0 - clampf(d / 50.0, 0.0, 1.0) * 0.6)
+	var R := _wr("mg", 1000.0) if not rng.is_empty() else 50.0
+	var c := acc * (1.0 - pow(clampf(d / maxf(R, 1.0), 0.0, 1.0), 1.2) * 0.8)
 	if t is Soldier:
 		c *= [1.0, 0.72, 0.45][t.stance]
 		c *= 1.0 - G.grid.cover_factor(t.position, t.torso_h(), position) * 0.75
 	else:
-		c = 0.85
+		c = 0.85 * (1.0 - clampf(d / maxf(R, 1.0), 0.0, 1.0) * 0.5)
 	if absf(cur_speed) > 1.0:
 		c *= 0.6
 	c /= aim_mult()
@@ -2245,19 +2403,23 @@ func armor_side(from: Vector3, k: String) -> int:
 	return 1
 
 func armor_tab() -> Array:
+	if not arm_tab.is_empty():
+		return arm_tab
 	if cat.has("armor"):
 		return cat["armor"]
 	return ARMOR.get(vtype, [])
 
-func armor_value(kind: int, side: int) -> int:
+func armor_value(kind: int, side: int) -> float:
 	var a: Array = armor_tab()
 	if a.is_empty():
-		return 0
-	return a[kind][side]
+		return 0.0
+	return float(a[kind][side])
 
 func pen_at(k: String, dist: float, ov: Array = []) -> float:
 	var pd: Array = ov if ov.size() >= 3 else PEN.get(k, PEN["bullet"])
-	return lerpf(float(pd[1]), float(pd[2]), clampf(dist / 60.0, 0.0, 1.0))
+	# delme mesafeyle düşer (kinetik): namlu önünden 2 km'ye doğrusal, ötesinde aynı eğimle
+	var f := dist / (2000.0 * Combat.K_RANGE)
+	return maxf(0.0, lerpf(float(pd[1]), float(pd[2]), f))
 
 # delme - zırh farkına göre hasar çarpanı (0 = delemedi)
 func pen_mult(k: String, from: Vector3) -> float:
@@ -2286,7 +2448,8 @@ func armor_text() -> String:
 	var a: Array = armor_tab()
 	if a.is_empty():
 		return "-"
-	return "%d/%d/%d/%d · HEAT %d/%d/%d/%d" % [a[0][0], a[0][1], a[0][2], a[0][3], a[1][0], a[1][1], a[1][2], a[1][3]]
+	# mm RHA eşdeğeri (oyun birimi × 20)
+	return "%d/%d/%d/%d · HEAT %d/%d/%d/%d mm" % [int(a[0][0] * 20.0), int(a[0][1] * 20.0), int(a[0][2] * 20.0), int(a[0][3] * 20.0), int(a[1][0] * 20.0), int(a[1][1] * 20.0), int(a[1][2] * 20.0), int(a[1][3] * 20.0)]
 
 func _subsystem_hit(dmg: float, src, k: String) -> void:
 	var boom := k in ["rpg", "atgm", "topatk", "fpv", "mortar", "ap", "he", "shell", "big", "mine", "grenade"]
@@ -2425,7 +2588,7 @@ func _heli(dt: float) -> void:
 	rocket_cd -= dt
 	hf_cd -= dt
 	if vtype == "transport":
-		if t != null and is_instance_valid(t) and t.alive and main_cd <= 0.0 and dist2(t) < 30.0 and not landing:
+		if t != null and is_instance_valid(t) and t.alive and main_cd <= 0.0 and dist2(t) < _wr("mg", 30.0) and not landing:
 			if burst <= 0:
 				burst = randi_range(5, 9)
 			burst -= 1
@@ -2448,7 +2611,7 @@ func _heli(dt: float) -> void:
 			var mp := hull.global_transform * Vector3(side, -0.4, -1.0)
 			G.bal.rocket(mp, t.aim_point(), team, self, t, "rpg", "hydra")
 			Sfx.play3d("rpg", mp, 0.0, 0.1, 0.05)
-	elif hf_left > 0 and hf_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air() and dist < 75.0:
+	elif hf_left > 0 and hf_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air() and dist < _wr("atgm", 75.0):
 		# kanat altı raydan güdümlü tanksavar füzesi (ABD Hellfire / Rus Vikhr)
 		hf_left -= 1
 		hf_cd = 6.0
@@ -2458,11 +2621,11 @@ func _heli(dt: float) -> void:
 		G.fx.flash(hp, 5.0, 8.0, 0.08, Color(1.0, 0.8, 0.5))
 		Sfx.play3d("rpg", hp, 3.0)
 		say("FÜZE ATILDI")
-	elif rocket_cd <= 0.0 and dist < 50.0 and (t is Vehicle or t is Building or randf() < 0.5):
+	elif rocket_cd <= 0.0 and dist < _wr("rkt", 50.0) and (t is Vehicle or t is Building or randf() < 0.5):
 		salvo = 4
 		salvo_t = 0.0
 		rocket_cd = 9.0
-	if main_cd <= 0.0 and dist < 46.0:
+	if main_cd <= 0.0 and dist < _wr("auto", _wr("mg", 46.0)):
 		if burst <= 0:
 			burst = randi_range(6, 12)
 		burst -= 1
@@ -2672,6 +2835,10 @@ func _setup_air_defense(vt: String) -> void:
 	if vt in ["heli", "transport"]:
 		flares = 12 if vt == "heli" else 16
 		hf_left = 8 if vt == "heli" else 0
+	# gerçek füze menzili (roadmap 49): Stinger 4,8 km, Tor 15 km, Buk 70 km, S-400 250 km (harita ölçeğinde,
+	# köşegenle sınırlı); hedefi radar ya da optik bulur
+	if vt == "aa" and rng.has("aa") and sams > 0:
+		sam_range = float(rng["aa"])
 
 # gelen güdümlü füze: helikopter fişek atar ve kırar; İHA yalnız manevra yapar
 func on_missile(p) -> void:
@@ -2788,8 +2955,9 @@ func _uav(dt: float) -> void:
 		return
 	var best: Vehicle = null
 	var bd := 1e9
-	for e in G.enemies_near(position, 75.0, team):
-		if e is Vehicle and e.alive and not e.is_air() and G.is_seen(e, team):
+	var mr := _wr("atgm", 75.0)
+	for e in G.visible_enemies(team):
+		if is_instance_valid(e) and e is Vehicle and e.alive and not e.is_air() and dist2(e) <= mr:
 			var d: float = dist2(e) - e.max_hp * 0.02
 			if forced_target == e:
 				d -= 999.0
@@ -2815,10 +2983,11 @@ func _fpv(dt: float) -> void:
 	if t == null or not is_instance_valid(t) or not t.alive:
 		# yeni hedef: yakındaki düşman
 		t = null
+		# arama yarıçapı: dolanan mühimmat ~3 km, FPV ~1,5 km (kendi kamerasıyla; takımın gördükleri)
 		var lm := vtype == "loiter"
-		var bd := 95.0 if lm else 60.0
-		for e in G.enemies_near(position, bd, team):
-			if e.alive and not (e is Building) and not (e is Vehicle and e.is_air()):
+		var bd := (3000.0 if lm else 1500.0) * Combat.K_RANGE
+		for e in G.visible_enemies(team):
+			if is_instance_valid(e) and e.alive and not (e is Building) and not (e is Vehicle and e.is_air()) and dist2(e) <= bd:
 				var sc := dist2(e) - (40.0 if lm and e is Vehicle else 0.0)
 				if sc < bd:
 					bd = sc

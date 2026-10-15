@@ -264,26 +264,64 @@ func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String, aid
 	var cal := float(Ammo.get_def(aid).get("cal", 120.0 if mode != "auto" else 30.0))
 	G.fx.tracer_cal(from, from + p.vel * p.life, sp, tc.lightened(0.25) if mode != "auto" else tc, cal)
 
-func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", model := "") -> void:
+# gerçek ortalama uçuş hızları (m/sn; oyunda × K_proj): roadmap 49. Model ipucu yoksa tür ve ulustan
+const MISSILE_V := {"rpg": 180.0, "javelin": 150.0, "tow": 280.0, "kornet": 250.0, "konkurs": 200.0, "metis": 200.0,
+	"refleks": 350.0, "arkan": 300.0, "hellfire": 425.0, "vikhr": 550.0, "hydra": 700.0}
+const MISSILE_R := {"rpg": 500.0, "atgm": 4000.0, "topatk": 2500.0}
+# füze/roket başına delme (birim = 20 mm RHA) ve delen isabette hasar (roadmap 51)
+const MISSILE_PEN := {"rpg": 25.0, "at4": 21.0, "javelin": 37.5, "tow": 45.0, "tow2b": 10.0, "kornet": 60.0, "konkurs": 37.5,
+	"metis": 47.5, "refleks": 45.0, "arkan": 45.0, "hellfire": 50.0, "vikhr": 50.0, "hydra": 6.0}
+const MISSILE_DMG := {"rpg": 330.0, "at4": 300.0, "javelin": 520.0, "tow": 480.0, "tow2b": 460.0, "kornet": 520.0, "konkurs": 420.0,
+	"metis": 450.0, "refleks": 450.0, "arkan": 450.0, "hellfire": 520.0, "vikhr": 520.0, "hydra": 180.0}
+
+static func missile_key(kind: String, model: String, team: int) -> String:
+	if model != "":
+		return model
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	match kind:
+		"rpg":
+			return "at4" if nat in ["usa", "gbr"] else "rpg"
+		"topatk":
+			return "javelin" if nat in ["usa", "gbr"] else "kornet"
+	return "tow" if nat in ["usa", "gbr"] else "kornet"
+
+static func missile_speed(kind: String, model: String, team: int) -> float:
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	var key := model
+	if key == "":
+		match kind:
+			"rpg":
+				key = "rpg"
+			"topatk":
+				key = "javelin" if nat in ["usa", "gbr"] else "kornet"
+			_:
+				key = "tow" if nat in ["usa", "gbr"] else "kornet"
+	return float(MISSILE_V.get(key, 200.0)) * Ammo.K_PROJ
+
+func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", model := "", max_r := -1.0) -> void:
 	var p := Proj.new()
 	p.kind = kind
 	var guided := kind == "atgm" or kind == "topatk"
 	p.pos = from
 	var d := to - from
 	var L := d.length()
-	var err := L * 0.035
+	var spd := missile_speed(kind, model, team)
+	var reach := (max_r if max_r > 0.0 else float(MISSILE_R.get(kind, 2000.0)) * Combat.K_RANGE)
+	# güdümsüz roket dağılımı: ~0,6 % mesafe (RPG-7 100 m'de ~0,6 m)
+	var err := L * 0.006 + 0.3
 	p.aim = to + Vector3(randf_range(-err, err), randf_range(-0.25, 0.25), randf_range(-err, err))
-	p.vel = (p.aim - from).normalized() * 78.0
-	p.life = 80.0 / 78.0
+	p.vel = (p.aim - from).normalized() * spd
+	p.life = maxf(L, reach) * 1.08 / spd
 	G.fx.backblast(from, p.vel.normalized())
 	if guided:
 		p.aim = to
 		var up := Vector3(0, 0.6 if kind == "topatk" else 0.05, 0)
-		p.vel = ((to - from).normalized() + up).normalized() * 34.0
-		p.life = 6.0
+		p.vel = ((to - from).normalized() + up).normalized() * spd
+		p.life = maxf(L, reach) * 1.15 / spd + 1.0
 	p.team = team
 	p.src = src
 	p.target = target
+	p.aid = missile_key(kind, model, team)
 	var mm: Mesh = _atgm_m if guided else _rmesh
 	match model:
 		"hellfire":
@@ -295,12 +333,9 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", m
 	p.node = _node(mm)
 	p.node.position = from
 	p.node.look_at(from + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
-	if model != "":
+	if model in ["hellfire", "vikhr", "hydra"]:
 		_flame(p, 1.4 if model == "hydra" else 1.0)
 		_glow(p, 2.2, 6.0, Color(1.0, 0.7, 0.35))
-		if model in ["hellfire", "vikhr"]:
-			p.vel = p.vel.normalized() * 48.0
-			p.life = 7.0
 	elif guided:
 		# tanksavar füzesi: küçük motor alevi + kuyrukta parlak iz fişeği (nişancı füzeyi bununla izler)
 		_flame(p, 0.45, 0.7)
@@ -321,10 +356,13 @@ func sam(from: Vector3, target, team: int, src, big := false) -> void:
 	p.team = team
 	p.src = src
 	p.target = target
-	p.spd = 30.0
+	p.spd = 30.0 * Ammo.K_PROJ
 	var tp: Vector3 = target.aim_point()
 	p.vel = ((tp - from).normalized() + Vector3(0, 0.9, 0)).normalized() * p.spd
-	p.life = 7.0
+	# gerçek hız (uzun/orta menzil ~1200 m/sn, omuzdan atılan ~700 m/sn × K_proj); ömür menzile yeter
+	var vmax := (1200.0 if big else 700.0) * Ammo.K_PROJ
+	var reach: float = src.sam_range if src != null and is_instance_valid(src) and "sam_range" in src else 300.0
+	p.life = maxf(7.0, reach / maxf(vmax, 1.0) * 1.4 + 2.0)
 	p.node = _node(_sam_m)
 	p.node.scale = Vector3.ONE * (2.4 if big else 1.0)
 	p.node.position = from
@@ -356,11 +394,13 @@ func flare(from: Vector3, vel: Vector3) -> void:
 # Eskiden ~7 m tepeli, 2,5 sn'lik alçak yay çiziyordu — mancınıktan atılan taş gibi görünüyordu.
 # Uçuşta top/taş gibi değil, hız yönünde uzayan hareket bulanıklığı izi olarak çizilir (gerçekte mermi
 # gözle seçilmez); roketatar roketi görünür kalır (motor alevi + duman izi).
+# gerçek menzilde gerçek uçuş: havan yüksek açı (tepe ≈ mesafenin yarısı, 3 km'de ~30 sn), obüs tepe ≈
+# mesafenin %18'i (8 km'de ~34 sn), roket ~600 m/sn ortalama
 func mortar(from: Vector3, to: Vector3, team: int, src, aid := "") -> void:
-	_lob(from, to, team, src, "mortar", _flight_t(from.distance_to(to), 1.3, 45.0, 140.0), aid)
+	_lob(from, to, team, src, "mortar", _flight_t(from.distance_to(to), 0.5, 45.0, 2500.0), aid)
 
 func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
-	_lob(from, to, team, src, "rkt", 3.2 + from.distance_to(to) * 0.018)
+	_lob(from, to, team, src, "rkt", 3.2 + from.distance_to(to) / 600.0)
 	var p: Proj = projs[projs.size() - 1]
 	p.node.queue_free()
 	p.node = _node(_rmesh)
@@ -371,7 +411,7 @@ func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
 	_glow(p, 2.6, 7.0, Color(1.0, 0.7, 0.35))
 
 func artillery(from: Vector3, to: Vector3, team: int, src, aid := "") -> void:
-	_lob(from, to, team, src, "arty", _flight_t(from.distance_to(to), 0.7, 60.0, 180.0), aid)
+	_lob(from, to, team, src, "arty", _flight_t(from.distance_to(to), 0.18, 60.0, 2500.0), aid)
 
 # tepe yüksekliğinden uçuş süresi: H = mesafe × k (sınırlı), T = 2·√(2H/g)
 func _flight_t(dist: float, k: float, hmin: float, hmax: float) -> float:
@@ -379,6 +419,7 @@ func _flight_t(dist: float, k: float, hmin: float, hmax: float) -> float:
 	return 2.0 * sqrt(2.0 * H / 9.8)
 
 func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float, aid := "") -> void:
+	T = maxf(T, 0.5)
 	var p := Proj.new()
 	p.kind = kind
 	p.aid = aid
@@ -572,7 +613,10 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 	if tgt != null and tgt.alive and not (tgt is Soldier):
 		if np.distance_to(tgt.aim_point()) < tgt.radius * (1.1 if p.kind in ["atgm", "topatk"] else 0.85):
 			if tgt is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
-			tgt.take_damage(330.0 if p.kind == "topatk" else (310.0 if p.kind == "atgm" else 270.0), p.src, p.kind)
+			if tgt is Vehicle:
+				var pv := float(MISSILE_PEN.get(p.aid, 25.0))
+				Vehicle.shot_pen = [1, pv, pv]
+			tgt.take_damage(float(MISSILE_DMG.get(p.aid, 330.0)), p.src, p.kind)
 			G.fx.explosion(np, 1.3, "rpg")
 			G.fx.flash(np, 9.0, 9.0, 0.12, Color(1.0, 0.75, 0.4))
 			Sfx.play3d("expl_med", np, 3.0)
@@ -597,7 +641,8 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 func _step_sam(p: Proj, dt: float) -> bool:
 	p.t += dt
 	# motor: 0.4 sn fırlatma, sonra hızlanma
-	p.spd = minf(p.spd + dt * (260.0 if p.t > 0.35 else 40.0), 150.0 if p.big else 120.0)
+	var vmax := (1200.0 if p.big else 700.0) * Ammo.K_PROJ
+	p.spd = minf(p.spd + dt * (vmax / 1.6 if p.t > 0.35 else vmax * 0.1), vmax)
 	var tgt = p.target if p.target != null and is_instance_valid(p.target) else null
 	var aimp := p.pos + p.vel
 	if p.decoy != Vector3.INF:

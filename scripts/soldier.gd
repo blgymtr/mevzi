@@ -52,7 +52,6 @@ var bandage_t := 0.0
 var blood_t := 0.0
 var mortar_setup := 0.0     # havancı: durunca kurar (sn birikir), yürüyünce söker
 var cold := 0.0           # kar fırtınasında üşüme (0-100)
-var fired_t := -99.0
 var cost_share := 0.0      # üretim maliyetinden payı (iade/imha puanı)
 var stress_lv := 0
 var stress_t := -99.0
@@ -187,14 +186,15 @@ func setup(t: int, rl: String) -> void:
 	kind = rl
 	cap_cost = 1
 	radius = 0.35
-	sight = 42.0
+	# görüş: rolün optiği (çıplak göz, dürbün, nişancı dürbünü, güdümlü füze termal komuta birimi) ile açıktaki
+	# ayakta piyadeyi seçebileceği mesafe (gerçek ölçek, roadmap 50)
+	opt_k = Combat.optic(String(Combat.inf(rl).get("opt", "eye")))
+	sight = Combat.detect_range(opt_k, 0.32)
 	max_hp = 100.0
 	hp = 100.0
 	icon = "inf"
 	title = ROLE_TITLE.get(rl, "Piyade")
-	if rl == "sniper":
-		sight = 78.0
-	elif rl == "mortar":
+	if rl == "mortar":
 		mortar_rounds = 24
 	var W: Dictionary = WPN[rl]
 	ammo = W["ammo"]
@@ -213,8 +213,59 @@ func setup(t: int, rl: String) -> void:
 	face_yaw = rotation.y
 	dest = position
 
+# silah: rol tablosu + gerçek etkili menzil (ulusa göre; data/real_combat.json "inf", oyunda × K_range)
+static var _wpn := {}
 func weapon() -> Dictionary:
-	return WPN[role]
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	var key := role + "_" + nat
+	if not _wpn.has(key):
+		var w: Dictionary = WPN[role].duplicate()
+		var ci := Combat.inf(role)
+		w["range"] = float(ci.get("rng_" + nat, ci.get("rng", w["range"]))) * Combat.K_RANGE
+		_wpn[key] = w
+	return _wpn[key]
+
+# dolaylı atış menzili (havan timi 60/82 mm, drone ekibi kumanda menzili)
+func ind_range() -> float:
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	var ci := Combat.inf(role)
+	return float(ci.get("ind_" + nat, ci.get("ind", 85.0))) * Combat.K_RANGE
+
+# tespit: duruş (ayakta / çömelik / yüzüstü), hareket, ateş (namlu alevi, toz), bina içi, siper, bitki örtüsü
+func spot_sig() -> float:
+	if not alive or state in ["aboard", "hospital"]:
+		return 0.0
+	var s: float = [0.32, 0.22, 0.12][stance]
+	if vel.length() > 0.6:
+		s *= 1.5
+	if G.time - fired_t < 3.0:
+		s *= 1.6 if role == "sniper" else 2.6
+	if house_id >= 0:
+		s *= 0.7 if popped else 0.45
+	elif G.grid.in_trench(position):
+		s *= 0.55
+	# bitki örtüsü: orman (ağaç gövdesi + tepe örtüsü) her duruşta gizler; çalı yalnız alçaktakini
+	if G.props != null:
+		var trees: int = G.props.veg_count(position, 6.0, "tree")
+		if trees >= 3:
+			s *= 0.4
+		elif trees >= 1:
+			s *= 0.8
+		if G.props.veg_count(position, 3.0, "bush") >= 1:
+			s *= 0.85 if stance == STAND else 0.5
+	return s
+
+func eye_point() -> Vector3:
+	return position + Vector3(0, eye_h(), 0)
+
+func los_skip() -> float:
+	return 2.3 if house_id >= 0 else 0.75
+
+func thermal() -> bool:
+	return role == "atgm"
+
+func move_vel() -> Vector3:
+	return vel
 
 func can_fight() -> bool:
 	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "prisoner", "dive", "aboard", "stretchered", "hospital", "stretcher", "slide", "rope", "rope_up", "rope_wait", "exiting", "entering", "para"])
@@ -1577,8 +1628,9 @@ func _think_drone() -> void:
 		return
 	var best: Unit = null
 	var bs := 1e9
-	for e in G.enemies_near(position, 85.0, team):
-		if not e.alive or not G.is_seen(e, team) or e is Building:
+	var dr := ind_range()
+	for e in G.visible_enemies(team):
+		if not is_instance_valid(e) or not e.alive or e is Building or dist2(e) > dr:
 			continue
 		if e is Vehicle and e.is_air():
 			continue
@@ -1668,10 +1720,12 @@ func _scan() -> void:
 			return
 	target = null
 	var cands: Array = []
-	for e in G.enemies_near(position, rng_w + 12.0, team):
-		if not G.is_seen(e, team):
+	for e in G.visible_enemies(team):
+		if not is_instance_valid(e) or not e.hostile():
 			continue
 		var d := dist2(e)
+		if d > rng_w + 12.0:
+			continue
 		var sc := d
 		if e is Soldier:
 			if not e.alive:
@@ -2086,11 +2140,12 @@ func _mortar_fire() -> void:
 		return
 	var best: Unit = null
 	var bs := 1e9
-	for e in G.enemies_near(position, 85.0, team):
-		if not e.alive or not G.is_seen(e, team) or (e is Vehicle and e.is_air()):
+	var mr := ind_range()
+	for e in G.visible_enemies(team):
+		if not is_instance_valid(e) or not e.alive or (e is Vehicle and e.is_air()):
 			continue
 		var d := dist2(e)
-		if d < 16.0:
+		if d < 16.0 or d > mr:
 			continue
 		var sc := d
 		if e is Soldier:
@@ -2296,9 +2351,26 @@ func add_suppression(v: float, from: Vector3) -> void:
 		say(["BASTIRILDIK!", "KAFANI KALDIRMA!", "SİPER!"][randi() % 3])
 
 # ------------------------------------------------------------ hasar
+# yelek (roadmap 51): seramik plakalı yelek gövdeye gelen tüfek mermisini çoğunlukla durdurur (darbe hasarı
+# kalır), nişancı / makineli AP mermisi kısmen geçer; yumuşak yelek (nişancı, araç mürettebatı) yalnız
+# parçacığa karşı. İsabetin ~yarısı gövdeye (plaka) gelir.
+const VEST := {"rifle": "plate", "leader": "plate", "mg": "plate", "at": "plate", "atgm": "plate", "engineer": "plate",
+	"medic": "plate", "mortar": "plate", "drone": "plate", "sniper": "soft", "crew": "soft"}
+
+func _vest_mult(kind: String) -> float:
+	var v := String(VEST.get(role, "soft"))
+	if kind in ["bullet", "sniper", "hmg"]:
+		if randf() < 0.5 and v == "plate":
+			return {"bullet": 0.25, "sniper": 0.6, "hmg": 0.85}.get(kind, 1.0)
+		return 1.0
+	if kind in ["grenade", "shell", "mortar", "blast", "big", "rpg", "auto"]:
+		return 0.7 if v == "plate" else 0.85
+	return 1.0
+
 func take_damage(amount: float, src, _kind := "bullet") -> void:
 	if not alive:
 		return
+	amount *= _vest_mult(_kind)
 	if src != null and is_instance_valid(src):
 		attacker = src
 		threat_pos = src.position
@@ -2349,6 +2421,7 @@ func on_blast(p: Vector3, r: float, dmg: float, d: float, src) -> void:
 		dm *= 0.25
 	if stance == PRONE or G.grid.in_trench(position):
 		dm *= 0.55
+	dm *= _vest_mult("blast")
 	if incapacitated():
 		die(src)
 	else:

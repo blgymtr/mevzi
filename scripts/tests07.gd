@@ -7,6 +7,7 @@ func _init(main: Main) -> void:
 	m = main
 
 func run(scene: String) -> void:
+	m.start_units = false
 	match scene:
 		"treetest":
 			await tree_test()
@@ -48,6 +49,10 @@ func run(scene: String) -> void:
 			await los_test()
 		"icontest":
 			await icon_test()
+		"spottest":
+			await spot_test()
+		"rangetest":
+			await range_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -138,6 +143,7 @@ func drone_test() -> void:
 	await m._wait(1.0)
 	var dr = op.my_drone
 	if dr == null:
+		print("DRONE dbg state=%s job=%s cd=%.1f fpv=%d fight=%s alive=%s hp=%.0f target=%s attacker=%s last_hit=%.1f now=%.1f" % [op.state, op.drone_job, op.drone_cd, op.fpv_left, op.can_fight(), op.alive, op.hp, op.target, (op.attacker.title if op.attacker != null and is_instance_valid(op.attacker) else "?"), op.last_hit, G.time])
 		print("DRONE fail: no mini drone after order")
 		fails += 1
 	await m._wait(0.5)
@@ -200,6 +206,7 @@ func evade_test() -> void:
 			seen_sam = true
 		if i % 30 == 0:
 			print("EVADE loop i=%d ms=%d fps=%d projs=%d heli=%s" % [i, Time.get_ticks_msec(), Engine.get_frames_per_second(), G.bal.projs.size(), is_instance_valid(heli) and heli.alive])
+			print("EVADE aa tgt=%s seen=%s dist=%.0f rng=%.0f sam_r=%.0f sams=%d cd=%.2f samcd=%.2f atgmcd=%.2f think=%.2f proc=%s gt=%.2f yaw=%.2f alive=%s hp=%.0f by=%s" % [aa.target.title if aa.target != null else "-", G.is_seen(heli, 0), aa.dist2(heli), aa._range(), aa.sam_range, aa.sams, aa.main_cd, aa.sam_cd, aa.atgm_cd, aa.think_t, aa.is_processing(), G.time, aa.turret_yaw, aa.alive, aa.hp, (aa.attacker.title if aa.attacker != null and is_instance_valid(aa.attacker) else "-")])
 		if (nsam > 0 or nfl > 0) and shot_n < 4 and i % 6 == 0:
 			if is_instance_valid(heli):
 				_cam(heli.position + Vector3(0, heli.hull.position.y, 0), 34.0)
@@ -434,6 +441,8 @@ func crew_test() -> void:
 		# hızlı başarısızlık: 15 sn'de ilk atış yoksa nedenini yaz, boşuna bekleme
 		if cycles == 0 and G.time - t0 > 15.0:
 			print("CREW no fire: seen=%s dist=%.1f sight=%.1f range=%.1f tgt=%s order=%s deployed=%.2f" % [G.is_seen(tk, gun.team), gun.dist2(tk), gun.sight, gun._range(), gun.target != null, gun.order, gun.deployed])
+			var eye := gun.turret_world_pos() + Vector3(0, 0.4, 0)
+			print("CREW dbg2 vis=%d los=%s smokes=%d gunner_ok=%s crew=%d/%d hold=%s fire_mode=%d abandon=%.1f retreat=%s" % [G.visible_enemies(gun.team).size(), G.grid.los(eye, tk.aim_point(), gun.D["len"] * 0.5, 0.5), G.smokes.size(), gun.gunner_ok, gun.crew_n, gun.crew_max, gun.order, gun.fire_mode, gun.abandon_t, gun.retreating])
 			break
 		if cycles >= 2:
 			var p := 1.0 - gun.main_cd / gun.crew_cycle
@@ -1184,6 +1193,156 @@ func icon_test() -> void:
 	if picked == null:
 		fails += 1
 	print("ICONTEST RESULT fails=%d" % fails)
+
+# tespit modeli (roadmap 50): menzil sınırı, duruş, ateş, görüş hattı, gece/termal
+func spot_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("front_2k", {}, true, 31)
+	G.weather.night = false
+	# açık, düz bir şerit bul: 0'dan 1,6 R'ye kadar görüş hattı açık
+	var obs_p := Vector3.INF
+	var dir := Vector3.RIGHT
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var tank_R := Combat.detect_range(Combat.optic("th3"), 1.0)
+	for i in 400:
+		var p := Vector3(rng.randf_range(200, G.MAP - 200), 0, rng.randf_range(200, G.MAP - 200))
+		var a := rng.randf() * TAU
+		var d := Vector3(cos(a), 0, sin(a))
+		var far := p + d * minf(tank_R * 1.2, G.MAP * 0.4)
+		if far.x < 20 or far.z < 20 or far.x > G.MAP - 20 or far.z > G.MAP - 20:
+			continue
+		if G.grid.los(p + Vector3(0, 2.6, 0), far + Vector3(0, 0.3, 0), 2.0, 0.3) and G.props.veg_count(p, 10.0) == 0 and G.props.veg_count(far, 10.0) == 0:
+			obs_p = p
+			dir = d
+			break
+	print("SPOT strip=%s tank_R=%.0f K=%.3f" % [obs_p != Vector3.INF, tank_R, Combat.K_DETECT])
+	if obs_p == Vector3.INF:
+		print("SPOTTEST RESULT fails=1")
+		return
+	var ob: Vehicle = m.spawn_vehicle(0, "usa_mbt_s3", G.grid.nearest_free(obs_p, Grid.M_HEAVY), 0.0)
+	ob.cmd_hold()
+	ob.fire_mode = 2
+	var place := func(u: Unit, d: float) -> void:
+		u.position = G.on_ground(ob.position + dir * d)
+	# (1) tank, açıkta: R'nin %70'inde görülür, %130'unda görülmez
+	var tk: Vehicle = m.spawn_vehicle(1, "rus_mbt_72b3", ob.position + dir * 50.0, 0.0)
+	tk.cmd_hold()
+	tk.fire_mode = 2
+	var sigt: float = tk.spot_sig()
+	var Rt := Combat.detect_range(ob.opt_k, sigt)
+	place.call(tk, minf(Rt * 0.7, G.MAP * 0.38))
+	await m._wait(2.2)
+	var near_seen := G.is_seen(tk, 0)
+	var far_ok := true
+	if Rt * 1.3 < G.MAP * 0.4:
+		place.call(tk, Rt * 1.3)
+		await m._wait(3.2)
+		far_ok = not G.is_seen(tk, 0)
+	print("SPOT tank sig=%.2f R=%.0f near_seen=%s far_hidden=%s" % [sigt, Rt, near_seen, far_ok])
+	if not near_seen or not far_ok:
+		fails += 1
+	tk.position = G.on_ground(ob.position - dir * 900.0)
+	# (2) piyade: ayakta görülür, aynı mesafede yüzüstü görülmez
+	var sol: Soldier = m.spawn_soldier(1, "rifle", ob.position + dir * 30.0, null)
+	sol.cmd_hold()
+	sol.fire_mode = 2
+	var Rs := Combat.detect_range(ob.opt_k, 0.32)
+	var dtest := Rs * 0.6
+	place.call(sol, dtest)
+	sol.stance_lock = Soldier.STAND
+	await m._wait(2.2)
+	var stand_seen := G.is_seen(sol, 0)
+	sol.stance_lock = Soldier.PRONE
+	sol.stance = Soldier.PRONE
+	await m._wait(3.2)
+	var prone_hidden := not G.is_seen(sol, 0)
+	# (3) ateş eden yüzüstü asker görünür (namlu alevi, toz)
+	sol.fired_t = G.time + 2.0
+	await m._wait(1.6)
+	var fire_seen := G.is_seen(sol, 0)
+	print("SPOT inf d=%.0f stand_seen=%s prone_hidden=%s firing_seen=%s" % [dtest, stand_seen, prone_hidden, fire_seen])
+	if not stand_seen or not prone_hidden or not fire_seen:
+		fails += 1
+	# (4) görüş hattı kapalı: arada 4 m yüksek duvar
+	sol.stance_lock = Soldier.STAND
+	sol.fired_t = -99.0
+	var mid := ob.position + dir * dtest * 0.5
+	G.grid.set_static_rect(mid, Vector2(3.0, 30.0), atan2(-dir.z, dir.x), 4.0, Grid.K_WALL)
+	G.grid.flush_nav()
+	await m._wait(3.2)
+	var wall_hidden := not G.is_seen(sol, 0)
+	print("SPOT wall_hidden=%s" % wall_hidden)
+	if not wall_hidden:
+		fails += 1
+	G.grid.set_static_rect(mid, Vector2(3.0, 30.0), atan2(-dir.z, dir.x), 0.0, Grid.K_NONE, true)
+	G.grid.flush_nav()
+	# (5) gece: çıplak gözlü piyade gözcü ayakta askeri artık seçemez, termal tank seçer
+	var eyeo: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(ob.position - dir * 6.0, Grid.M_INF), null)
+	eyeo.cmd_hold()
+	eyeo.fire_mode = 2
+	var Re := Combat.detect_range(eyeo.opt_k, 0.32)
+	place.call(sol, Re * 0.75)
+	await m._wait(3.2)
+	var day_seen := G.is_seen(sol, 0)
+	ob.position = G.on_ground(ob.position - dir * 1200.0)
+	await m._wait(3.2)
+	var day_eye_only := G.is_seen(sol, 0)
+	G.weather.night = true
+	await m._wait(3.2)
+	var night_eye_hidden := not G.is_seen(sol, 0)
+	ob.position = G.on_ground(eyeo.position - dir * 3.0)
+	await m._wait(3.2)
+	var night_th_seen := G.is_seen(sol, 0)
+	G.weather.night = false
+	print("SPOT night day_seen=%s eye_day=%s eye_night_hidden=%s thermal_night_seen=%s" % [day_seen, day_eye_only, night_eye_hidden, night_th_seen])
+	if not day_eye_only or not night_eye_hidden or not night_th_seen:
+		fails += 1
+	print("SPOTTEST RESULT fails=%d" % fails)
+
+# gerçekçi menzil (roadmap 49): veri tüm araçları kapsar, silahlar arası oranlar gerçek
+func range_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 5)
+	var K := Combat.K_RANGE
+	var missing: Array = []
+	Catalog.load_all()
+	for id in Catalog.units:
+		var u: Dictionary = Catalog.units[id]
+		var base: String = Catalog.FAM_BASE.get(u["fam"], "")
+		if Combat.vehicle(id, base).is_empty():
+			missing.append(id)
+	print("RANGE K=%.3f catalog=%d missing=%d %s" % [K, Catalog.units.size(), missing.size(), str(missing.slice(0, 8))])
+	if not missing.is_empty():
+		fails += 1
+	var r := func(id: String, k: String) -> float:
+		return float(Combat.vehicle(id, "").get("rng", {}).get(k, 0.0))
+	var checks := [
+		["M1A2 SEP v3 > T-72B (ana top)", r.call("usa_mbt_s3", "main") > r.call("rus_mbt_72b", "main")],
+		["Kornet > Javelin", float(Combat.inf("atgm").get("rng_rus", 0)) > float(Combat.inf("atgm").get("rng_usa", 0))],
+		["tank topu > 25 mm > 12,7 mm", r.call("usa_mbt_a1", "main") > r.call("usa_ifv_m2a3", "auto") and r.call("usa_ifv_m2a3", "auto") > r.call("usa_mbt_a1", "mg")],
+		["TOW > 25 mm", r.call("usa_ifv_m2a3", "atgm") > r.call("usa_ifv_m2a3", "auto")],
+		["obüs > havan", r.call("usa_spg_a6", "ind") > r.call("usa_mor_120", "ind")],
+		["roketatar > obüs", r.call("usa_mlrs_m270a1", "ind") > r.call("usa_spg_a6", "ind")],
+		["Hellfire > tank topu", r.call("usa_heli_ah64e", "atgm") > r.call("usa_mbt_a1", "main")],
+		["S-400 > Tor > Pantsir topu", r.call("rus_aa_s400", "aa") > r.call("rus_aa_tor", "aa") and r.call("rus_aa_tor", "aa") > r.call("rus_aa_pantsir", "auto")],
+		["tüfek < makineli < keskin nişancı (RUS)", float(Combat.inf("rifle")["rng"]) < float(Combat.inf("mg")["rng_rus"]) and float(Combat.inf("mg")["rng_rus"]) <= float(Combat.inf("sniper")["rng_rus"])],
+	]
+	for c in checks:
+		print("RANGE %s: %s" % [c[0], c[1]])
+		if not c[1]:
+			fails += 1
+	# oyundaki araç: menzil = gerçek × K
+	var tk: Vehicle = m.spawn_vehicle(0, "usa_mbt_a1", G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY), 0.0)
+	var exp := 3500.0 * K
+	print("RANGE M1A1 game_main=%.1f expected=%.1f armor=%s" % [tk._wr("main"), exp, tk.armor_text()])
+	if absf(tk._wr("main") - exp) > 0.5:
+		fails += 1
+	print("RANGETEST RESULT fails=%d" % fails)
 
 func _prof_toggle(part: String, on: bool) -> void:
 	match part:

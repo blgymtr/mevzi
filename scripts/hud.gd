@@ -728,8 +728,13 @@ func _update_info() -> void:
 	elif u is Vehicle:
 		var parts: Array = ["%s %d / %d" % [I18n.s("GÖVDE"), int(u.hp), int(u.max_hp)]]
 		if not u.armor_tab().is_empty():
+			# ön/yan/arka/üst kinetik zırh, mm RHA eşdeğeri (roadmap 51)
 			var ar: Array = u.armor_tab()[0]
-			parts.append("%s %d·%d·%d·%d" % [I18n.s("ZIRH"), ar[0], ar[1], ar[2], ar[3]])
+			parts.append("%s %d·%d·%d·%d mm" % [I18n.s("ZIRH"), int(ar[0] * 20.0), int(ar[1] * 20.0), int(ar[2] * 20.0), int(ar[3] * 20.0)])
+		var rg: float = u._range()
+		if rg > 0.0:
+			# en uzun silahın oyundaki menzili (harita ölçeğinde; 8 km haritada gerçek)
+			parts.append("%s %s" % [I18n.s("MENZİL"), ("%.1f km" % (rg / 1000.0)) if rg >= 1000.0 else ("%d m" % int(rg))])
 		if u.crew_max > 0:
 			parts.append("%s %d/%d" % [I18n.s("MÜRETTEBAT"), u.crew_n, u.crew_max])
 		if u.capacity() > 0:

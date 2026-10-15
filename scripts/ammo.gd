@@ -4,7 +4,8 @@ class_name Ammo extends RefCounted
 # Hızlar oyunda K_proj ile ölçeklenir (harita ölçeği), mühimmatlar arası oran gerçek kalır.
 
 static var _d := {}
-static var K_PROJ := 0.11
+static var K_PROJ := 1.0
+static var K_PROJ_BASE := 1.0     # veri (8 km haritada gerçek hız); haritada × harita ölçeği (uçuş süreleri oransal)
 
 static func _load() -> void:
 	if not _d.is_empty():
@@ -16,7 +17,8 @@ static func _load() -> void:
 	var js = JSON.parse_string(f.get_as_text())
 	if js is Dictionary:
 		_d = js
-		K_PROJ = float(js.get("K_proj", K_PROJ))
+		K_PROJ_BASE = float(js.get("K_proj", 1.0))
+		K_PROJ = K_PROJ_BASE * Combat.map_scale
 
 static func get_def(id: String) -> Dictionary:
 	if id == "":

@@ -87,7 +87,9 @@ func setup(t: int, bt: String, r := 0.0) -> void:
 	hp = max_hp * 0.15
 	size = B["size"]
 	rot = r
-	sight = B["sight"]
+	# gözcü (roadmap 50): karargâh / ileri üs nöbetçileri dürbünlü, MG yuvası, kule yüksekten optikli
+	opt_k = float({"hq": 1.3, "fob": 1.3, "mgnest": 1.3, "tower": 2.2}.get(bt, 0.9))
+	sight = Combat.detect_range(opt_k, 0.32) if not B.get("line", false) else 8.0
 	cap_cost = 0
 	icon = "bld"
 	radius = maxf(size.x, size.y) * 0.5
@@ -1126,16 +1128,28 @@ func _spawn(id: String) -> void:
 	if team == G.player_team and not G.spectate:
 		Sfx.play2d("ui_done", -6.0)
 
+# büyük ve durağan: açıkta uzaktan seçilir; kule yüksekten bakar (alçak engeller görüşü kesmez)
+func spot_sig() -> float:
+	return 1.5 if alive else 0.0
+
+func eye_point() -> Vector3:
+	return position + Vector3(0, 9.0 if btype == "tower" else 3.0, 0)
+
+func los_skip() -> float:
+	return radius + 0.5
+
 func _coastal(dt: float) -> void:
 	gun_cd -= dt
 	if gun_target == null or not is_instance_valid(gun_target) or not gun_target.alive or randf() < 0.01:
 		gun_target = null
 		var best := 1e9
-		for e in G.enemies_near(position, 190.0, team):
-			if not G.is_seen(e, team) or (e is Vehicle and e.is_air()):
+		# kıyı topu: gerçek menzil (~20 km, harita köşegeniyle sınırlı), takımın gördüğü hedefler
+		var cr := minf(20000.0 * Combat.K_RANGE, G.MAP * 1.42)
+		for e in G.visible_enemies(team):
+			if not is_instance_valid(e) or not e.alive or (e is Vehicle and e.is_air()):
 				continue
 			var d := dist2(e)
-			if d < 25.0:
+			if d < 25.0 or d > cr:
 				continue
 			var sc := d - (60.0 if e is Vehicle else 0.0) - G.enemies_near(e.position, 8.0, team).size() * 6.0
 			if sc < best:
@@ -1163,8 +1177,10 @@ func _mg(dt: float) -> void:
 	if gun_target == null or not is_instance_valid(gun_target) or not gun_target.alive or randf() < 0.02:
 		gun_target = null
 		var best := 1e9
-		for e in G.enemies_near(position, 46.0, team):
-			if e is Soldier and e.can_fight() and G.is_seen(e, team):
+		# makineli yuvası: 12,7 mm etkili ~1200 m (oyun ölçeğiyle)
+		var mr := 1200.0 * Combat.K_RANGE
+		for e in G.visible_enemies(team):
+			if is_instance_valid(e) and e is Soldier and e.can_fight() and dist2(e) <= mr:
 				var d := dist2(e)
 				if d < best and G.grid.los(position + Vector3(0, 1.4, 0), e.aim_point(), 2.2, 0.3):
 					best = d

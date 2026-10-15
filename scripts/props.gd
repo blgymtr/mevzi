@@ -1277,7 +1277,7 @@ func _trees_near(q: Vector3, r: float) -> Array:
 	if _thash_n != items.size():
 		_thash.clear()
 		for it in items:
-			if it["kind"] == "tree":
+			if it["kind"] == "tree" or it["kind"] == "bush":
 				var p: Vector3 = it["pos"]
 				var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
 				if _thash.has(k):
@@ -1292,6 +1292,16 @@ func _trees_near(q: Vector3, r: float) -> Array:
 			if arr != null:
 				out.append_array(arr)
 	return out
+
+# p çevresinde r içindeki canlı ağaç/çalı sayısı (tespitte gizlenme)
+func veg_count(p: Vector3, r: float, only := "") -> int:
+	var n := 0
+	for it in _trees_near(p, r):
+		if it["alive"] and (only == "" or it["kind"] == only):
+			var q: Vector3 = it["pos"]
+			if Vector2(q.x - p.x, q.z - p.z).length() <= r:
+				n += 1
+	return n
 
 func _process(dt: float) -> void:
 	if G.grass_stream:
@@ -1309,7 +1319,7 @@ func _process(dt: float) -> void:
 	var now: Array = []
 	for q in pts:
 		for it in _trees_near(q + Vector3(2.2, 0, 2.2), 6.0):
-			if not it["alive"] or now.has(it):
+			if it["kind"] != "tree" or not it["alive"] or now.has(it):
 				continue
 			var p: Vector3 = it["pos"]
 			# ağaç tepesi ekranda yukarı (-x -z yönündeki zemin) düşer: birliğin +x +z kadar ötesindeki ağaçlar örter

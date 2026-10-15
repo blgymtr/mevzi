@@ -186,28 +186,89 @@ func friends_near(p: Vector3, r: float, team: int) -> Array:
 			out.append(u)
 	return out
 
-# ------------------------------------------------------------ görüş (sis)
+# ------------------------------------------------------------ görüş / tespit (roadmap 50)
+# Takım görüşü: düşman, takımdan bir gözcünün tespit menzili içinde ve görüş hattındaysa görülür.
+# Tespit menzili = det_base × gözcü optiği (çıplak göz 1, dürbün 1,3, gündüz nişangâhı 1,4, termal 2-2,4,
+# İHA 2,6) × hedef izi (boyut, duruş, hareket, ateş, bina/siper/bitki örtüsü) × hava/gece (termal az
+# etkilenir). Hava hedefini radar uzaktan görür. Hedefler dört dilimde sırayla değerlendirilir (her biri
+# ~1 sn); son gören gözcü önce denenir; görülen 2 sn hafızada kalır (titreme olmaz).
+var _vis_list := [[], []]
+var _spot_slice := 0
+
+func visible_enemies(t: int) -> Array:
+	return _vis_list[t] if t >= 0 and t < 2 else []
+
 func _update_visibility() -> void:
+	var obs := [[], []]
 	for u in units:
+		if not is_instance_valid(u) or not u.alive or u.team < 0 or u.team > 1:
+			continue
+		if u is Soldier and (u.state in ["aboard", "hospital", "prisoner", "surrender"] or u.incapacitated()):
+			continue
+		obs[u.team].append(u)
+	var wm: float = weather.sight_mult() if weather != null and is_instance_valid(weather) else 1.0
+	var night: bool = weather != null and is_instance_valid(weather) and weather.night
+	_spot_slice = (_spot_slice + 1) % 4
+	var i := 0
+	for u in units:
+		i += 1
 		if not is_instance_valid(u):
 			continue
 		for t in 2:
 			if u.team == t or u.team < 0:
 				u.seen[t] = true
 				continue
+			if (i & 3) != _spot_slice:
+				if u.seen[t] and u.spot_mem[t] <= time and not (u is Building and time < reveal[t]):
+					u.seen[t] = false
+				continue
 			var s: bool = u is Building and time < reveal[t]
-			var wm: float = weather.sight_mult() if weather != null and is_instance_valid(weather) else 1.0
-			# gece/kötü havada ateş eden birim yine de görünür
-			if wm < 1.0 and u is Soldier and time - u.fired_t < 1.5:
-				wm = maxf(wm, 1.0)
-			for f in near(u.position, 125.0):
-				if s:
-					break
-				if f.team == t and f.alive and f.position.distance_to(u.position) <= f.sight * (wm if not (f is Building) else maxf(wm, 0.75)):
-					s = true
-					break
-			u.seen[t] = s
+			if not s and u.alive:
+				s = _spotted(u, obs[t], t, wm, night)
+			if s:
+				u.spot_mem[t] = time + 2.0
+			u.seen[t] = s or u.spot_mem[t] > time
 		u.apply_visibility()
+	_vis_list = [[], []]
+	for u in units:
+		if is_instance_valid(u) and u.alive and u.team >= 0 and u.team < 2:
+			var e: int = 1 - u.team
+			if u.seen[e]:
+				_vis_list[e].append(u)
+
+func _spotted(u, observers: Array, t: int, wm: float, night: bool) -> bool:
+	var sig: float = u.spot_sig()
+	if sig <= 0.0:
+		return false
+	var tp: Vector3 = u.aim_point()
+	var air: bool = u is Vehicle and u.is_air()
+	var last = u.spot_by[t]
+	if last != null and is_instance_valid(last) and last.alive and _obs_sees(last, u, tp, sig, air, wm, night):
+		return true
+	for o in observers:
+		if o == last:
+			continue
+		if _obs_sees(o, u, tp, sig, air, wm, night):
+			u.spot_by[t] = o
+			return true
+	return false
+
+func _obs_sees(o, u, tp: Vector3, sig: float, air: bool, wm: float, night: bool) -> bool:
+	var th: bool = o.thermal()
+	var w := wm if not th else lerpf(wm, 1.0, 0.7)
+	if night and not th:
+		w *= 0.45
+	var R: float = Combat.detect_range(o.opt_k, sig) * w
+	if air and o is Vehicle and o.radar > 0.0:
+		R = maxf(R, o.radar)
+	var dx: float = tp.x - o.position.x
+	var dz: float = tp.z - o.position.z
+	if dx * dx + dz * dz > R * R:
+		return false
+	# hava hedefi ya da havadaki gözcü: görüş hattı yukarıdan açık say (orman örtüsü izde)
+	if air or (o is Vehicle and o.is_air()):
+		return true
+	return grid.los(o.eye_point(), tp, o.los_skip(), 1.6 if (u is Soldier and u.house_id >= 0) else 0.4)
 
 func is_seen(u, by_team: int) -> bool:
 	if by_team < 0:
