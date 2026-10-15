@@ -3,3 +3,6 @@ build/
 *.tmp
 node_modules/
 .claude/worktrees/
+tools/anim/.cache/
+__pycache__/
+shots/
