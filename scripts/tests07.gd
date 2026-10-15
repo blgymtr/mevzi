@@ -327,6 +327,8 @@ func crew_test() -> void:
 	var last_cd := 0.0
 	for i in 900:
 		await m._wait(0.03)
+		if i % 50 == 0:
+			print("CREW dbg i=%d ms=%d fps=%d cycle=%.1f cd=%.2f emit=%d tgt=%s" % [i, Time.get_ticks_msec(), Engine.get_frames_per_second(), gun.crew_cycle, gun.main_cd, G.fx.emitters.size(), gun.target != null])
 		if gun.crew_cycle > 0.0 and gun.main_cd > last_cd + 0.5:
 			cycles += 1
 		last_cd = gun.main_cd
