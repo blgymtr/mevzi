@@ -53,6 +53,8 @@ func run(scene: String) -> void:
 			await spot_test()
 		"rangetest":
 			await range_test()
+		"missiletest":
+			await missile_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -1343,6 +1345,106 @@ func range_test() -> void:
 	if absf(tk._wr("main") - exp) > 0.5:
 		fails += 1
 	print("RANGETEST RESULT fails=%d" % fails)
+
+# füze türleri (15) ve önleme (31): tel güdümlü füze nişancı bastırılınca sapar, APS roketi vurur,
+# C-RAM havan mermisini düşürür, kilit süreleri ve fişeğe kanma füzeye göre
+func missile_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("front_2k", {}, true, 77)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	# açık şerit: 120 m boyunca görüş hattı açık iki nokta
+	var a0 := Vector3.INF
+	var b0 := Vector3.INF
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 9
+	for i in 600:
+		var p := Vector3(rr.randf_range(150, G.MAP - 150), 0, rr.randf_range(150, G.MAP - 150))
+		var q := p + Vector3(0, 0, -110)
+		if G.grid.free_at(p, Grid.M_INF) and G.grid.free_at(q, Grid.M_HEAVY) and G.grid.los(p + Vector3(0, 1.6, 0), q + Vector3(0, 1.0, 0), 0.75, 2.5) and G.grid.los(p + Vector3(40, 1.6, 0), q + Vector3(40, 1.0, 0), 0.75, 2.5):
+			a0 = p
+			b0 = q
+			break
+	print("MISSILE strip=%s" % (a0 != Vector3.INF))
+	if a0 != Vector3.INF:
+		c = a0
+	# (1) tel güdümlü TOW: sağlam nişancı vurur, bastırılan nişancının füzesi sapar
+	var hits := [0, 0]
+	for case in 2:
+		var gun: Soldier = m.spawn_soldier(0, "rifle", c + Vector3(case * 40.0, 0, 0), null)
+		gun.cmd_hold()
+		gun.fire_mode = 2
+		var tk: Vehicle = m.spawn_vehicle(1, "rus_mbt_72b", c + Vector3(case * 40.0, 0, -110), 0.0)
+		tk.cmd_hold()
+		tk.fire_mode = 2
+		tk.hp = 100000.0
+		await m._wait(0.3)
+		var hp0 := tk.hp
+		G.bal.rocket(gun.eye_point() + Vector3(0, 0, -1), tk.aim_point(), 0, gun, tk, "atgm", "tow", 4000.0 * Combat.K_RANGE)
+		if case == 0:
+			_cam(c + Vector3(0, 0, -40), 40.0)
+			await m._wait(0.25)
+			await m._shot("missile_00_tow_wire")
+		if case == 1:
+			await m._wait(0.15)
+			gun.suppression = 95.0
+		var t0 := G.time
+		while G.time - t0 < 10.0 and G.bal.projs.any(func(p): return p.src == gun):
+			await m._wait(0.05)
+			if case == 1:
+				gun.suppression = 95.0
+		hits[case] = 1 if tk.hp < hp0 - 50.0 else 0
+		tk.queue_free()
+		gun.queue_free()
+	print("MISSILE tow_hit_ok=%d tow_hit_suppressed=%d" % [hits[0], hits[1]])
+	if hits[0] != 1 or hits[1] != 0:
+		fails += 1
+	# (2) APS: Kurganets'e (Afganit) 6 RPG — 4 şarj, sonrakiler gövdeye ulaşır
+	var t14: Vehicle = m.spawn_vehicle(1, "rus_ifv_kurg", G.grid.nearest_free(c + Vector3(0, 0, 60), Grid.M_HEAVY), 0.0)
+	t14.cmd_hold()
+	t14.fire_mode = 2
+	t14.hp = 100000.0
+	var aps0 := t14.aps_n
+	var hit_n := 0
+	for k in 6:
+		var hp1 := t14.hp
+		G.bal.rocket(t14.position + Vector3(-60, 1.2, 0), t14.aim_point(), 0, null, t14, "rpg")
+		var t1 := G.time
+		while G.time - t1 < 4.0 and G.bal.projs.any(func(p): return p.kind == "rpg"):
+			await m._wait(0.05)
+		if t14.hp < hp1:
+			hit_n += 1
+	var used := aps0 - t14.aps_n
+	print("MISSILE aps charges=%d used=%d hits=%d/6" % [aps0, used, hit_n])
+	if aps0 != 4 or used != 4 or hit_n < 2 or hit_n == 6:
+		fails += 1
+	# (3) C-RAM: düşman havan mermilerinin bir kısmı inişte düşürülür
+	var cram: Vehicle = m.spawn_vehicle(0, "usa_aa_cram", G.grid.nearest_free(c + Vector3(80, 0, 0), Grid.M_HEAVY), 0.0)
+	cram.cmd_hold()
+	var am0 := cram.cram_ammo
+	var landed := 0
+	for k in 10:
+		G.bal.mortar(cram.position + Vector3(-120, 1, 30), cram.position + Vector3(randf_range(-8, 8), 0, randf_range(-8, 8)), 1, null)
+		await m._wait(1.5)
+	var t2 := G.time
+	var live := 10
+	while G.time - t2 < 40.0 and G.bal.projs.any(func(p): return p.kind == "mortar"):
+		await m._wait(0.1)
+	print("MISSILE cram engaged=%d (ammo %d->%d)" % [am0 - cram.cram_ammo, am0, cram.cram_ammo])
+	if am0 - cram.cram_ammo < 3:
+		fails += 1
+	# (4) kilit süreleri ve fişeğe kanma
+	var lj := Ballistics.lock_time("javelin")
+	var lk := Ballistics.lock_time("kornet")
+	var dv := Ballistics.decoy_chance("verba", false)
+	var ds := Ballistics.decoy_chance("stinger", false)
+	print("MISSILE lock javelin=%.1f kornet=%.1f decoy verba=%.2f stinger=%.2f" % [lj, lk, dv, ds])
+	if not (lj > lk and dv < ds):
+		fails += 1
+	print("MISSILETEST RESULT fails=%d" % fails)
 
 func _prof_toggle(part: String, on: bool) -> void:
 	match part:

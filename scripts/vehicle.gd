@@ -59,6 +59,13 @@ var arm_tab: Array = []       # zırh (oyun birimi = 20 mm RHA), [[kinetik ön, 
 var fcs := 0.001              # atış kontrolü: mesafe başına dağılım (m/m)
 var radar := 0.0              # hava hedefini algılama menzili (m)
 var slat := false             # kafes zırh: RPG/HEAT'in bir kısmını boşa çıkarır
+var aps_n := 0                # aktif koruma şarjı (Trophy / Afganit)
+var cram_ammo := 20           # C-RAM angajman sayısı (Centurion)
+var cram_cd := 0.0
+var aps_cd := 0.0
+var atgm_lock := 0.0          # güdümlü füze nişan/kilit süresi birikimi
+var sam_lock := 0.0
+var hf_lock := 0.0
 # 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
 const ARMOR := {
 	"tank": [[22, 8, 5, 3], [26, 11, 5, 3]],
@@ -579,6 +586,7 @@ func setup(t: int, vt: String) -> void:
 		fcs = float({"th3": 0.0004, "th": 0.0006, "rad": 0.0007, "uav": 0.0006, "cl": 0.0006, "scope": 0.0008, "day": 0.0011, "bino": 0.0015}.get(on, 0.002))
 		radar = float(cdat.get("radar", 0.0)) * Combat.K_RANGE
 		slat = bool(cdat.get("slat", false))
+		aps_n = 4 if bool(cdat.get("aps", false)) else 0
 		# görüş (savaş sisi yarıçapı): açıktaki ayakta piyadeyi seçebileceği mesafe
 		D["sight"] = Combat.detect_range(opt_k, 0.32)
 	title = D["title"]
@@ -1748,9 +1756,14 @@ func _aim_fire(dt: float) -> void:
 	var dist := dist2(t)
 	# güdümlü tanksavar füzesi: PSA (TOW / Konkurs / Kornet) ve namludan füze atan tank — ana silahın
 	# menzili dışındaki zırhlıya da
-	if aligned and atgm_cd <= 0.0 and vtype in ["ifv", "tank"] and t is Vehicle and t.armor > 0 and not t.is_air() and _wr("atgm") > 0.0 and dist <= _wr("atgm"):
-		if vtype == "ifv" or dist > _wr("main") * 0.85:
+	if aligned and atgm_cd <= 0.0 and vtype in ["ifv", "tank"] and t is Vehicle and t.armor > 0 and not t.is_air() and _wr("atgm") > 0.0 and dist <= _wr("atgm") and (vtype == "ifv" or dist > _wr("main") * 0.85):
+		# nişan / kilit (roadmap 15): TOW, Konkurs ~1,5 sn, Refleks 1,2 sn — hedef izlenirken birikir
+		atgm_lock += dt
+		if atgm_lock >= Ballistics.lock_time(_atgm_model()):
+			atgm_lock = 0.0
 			_fire_atgm(t, dist)
+	else:
+		atgm_lock = maxf(0.0, atgm_lock - dt * 2.0)
 	if aligned and main_cd <= 0.0 and _can_fire_at(t, dist):
 		match vtype:
 			"tank":
@@ -2209,9 +2222,12 @@ func _calc_sig() -> void:
 const ATGM_MODEL := {"rus_ifv_bmp2": "konkurs", "rus_ifv_bmp2m": "kornet", "rus_ifv_bmp3": "arkan", "rus_ifv_bmd4": "arkan",
 	"rus_ifv_kurg": "kornet", "rus_apc_boom": "kornet", "rus_ifv_bmpt": "kornet"}
 
-func _fire_atgm(t: Unit, dist: float) -> void:
+func _atgm_model() -> String:
 	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
-	var model: String = "refleks" if vtype == "tank" else String(ATGM_MODEL.get(vid, "tow" if nat in ["usa", "gbr"] else "konkurs"))
+	return "refleks" if vtype == "tank" else String(ATGM_MODEL.get(vid, "tow" if nat in ["usa", "gbr"] else "konkurs"))
+
+func _fire_atgm(t: Unit, dist: float) -> void:
+	var model := _atgm_model()
 	var mp := muzzle_world() + Vector3(0, 0.4, 0)
 	fired_t = G.time
 	G.bal.rocket(mp, t.aim_point(), team, self, t, "atgm", model, _wr("atgm"))
@@ -2611,8 +2627,8 @@ func _heli(dt: float) -> void:
 			var mp := hull.global_transform * Vector3(side, -0.4, -1.0)
 			G.bal.rocket(mp, t.aim_point(), team, self, t, "rpg", "hydra")
 			Sfx.play3d("rpg", mp, 0.0, 0.1, 0.05)
-	elif hf_left > 0 and hf_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air() and dist < _wr("atgm", 75.0):
-		# kanat altı raydan güdümlü tanksavar füzesi (ABD Hellfire / Rus Vikhr)
+	elif hf_left > 0 and hf_cd <= 0.0 and t is Vehicle and t.armor > 0 and not t.is_air() and dist < _wr("atgm", 75.0) and _hf_locked(dt):
+		# kanat altı raydan güdümlü tanksavar füzesi (ABD Hellfire / Rus Vikhr); işaretleme kilidi sonrası
 		hf_left -= 1
 		hf_cd = 6.0
 		var hs := 1.9 if hf_left % 2 == 0 else -1.9
@@ -2633,6 +2649,36 @@ func _heli(dt: float) -> void:
 		var gp := hull.global_transform * Vector3(0, -1.3, -4.6)
 		_hitscan_from(gp, t, 28.0, 0.38, 12.0)
 		Sfx.play3d("hmg", gp, 2.0, 0.08, 0.03)
+
+# Hellfire/Vikhr: hedef işaretlenir (lazer) — ~2 sn hedefte kalınca atış
+func _hf_locked(dt: float) -> bool:
+	hf_lock += dt
+	if hf_lock >= Ballistics.lock_time("hellfire" if team == 0 else "vikhr"):
+		hf_lock = 0.0
+		return true
+	return false
+
+# aktif koruma (roadmap 31): yaklaşan RPG / güdümlü füzeyi ~%70 olasılıkla vurur (üstten saldırıda %15,
+# Afganit kinetik mermide %20), şarj sınırlı, iki önleme arası 0,6 sn
+func aps_intercept(at: Vector3, k: String) -> bool:
+	if aps_n <= 0 or G.time < aps_cd or not alive:
+		return false
+	var pc := 0.7
+	if k == "topatk":
+		pc = 0.15
+	elif k in ["ap", "auto"]:
+		pc = 0.2 if vid == "rus_mbt_14" else 0.0
+	if pc <= 0.0:
+		return false
+	aps_n -= 1
+	aps_cd = G.time + 0.6
+	var ok := randf() < pc
+	G.fx.flash(at, 7.0, 8.0, 0.08, Color(1.0, 0.85, 0.6))
+	G.fx.explosion(at, 0.6, "flak")
+	Sfx.play3d("expl_med", at, -4.0)
+	if ok:
+		say("APS ÖNLEDİ", 1.5)
+	return ok
 
 # saldırı emrindeki helikopterin atış konumu. Hedef seçilemiyorsa (görüş hattı kapalı) konumda 2,5 sn
 # bekledikten sonra hedef çevresinde 50° döner; her tam turda mesafe daralır (32 → 22 → 14 m: daha dik açı
@@ -2850,8 +2896,8 @@ func on_missile(p) -> void:
 		if flares > 0:
 			flare_q += 3
 			say("FÜZE! FİŞEK!", 2.0)
-			# kızılötesi arayıcı fişeğe kanar (büyük radar güdümlüde daha az)
-			if randf() < (0.35 if p.big else 0.62):
+			# kızılötesi arayıcı fişeğe kanar (füzeye göre: Stinger %45, Igla %35, Verba %15, radar güdümlü %5-10)
+			if randf() < Ballistics.decoy_chance(String(p.aid), p.big):
 				var tw := create_tween()
 				tw.tween_interval(randf_range(0.35, 0.8))
 				tw.tween_callback(func():
@@ -2886,16 +2932,32 @@ func _evade_vec(dt: float) -> Vector3:
 	evade_t -= dt
 	return right() * evade_side * speed_max * 1.3
 
+func _sam_key() -> String:
+	var fam: String = cat.get("fam", "")
+	if fam in ["sam_long", "sam_ru_long"]:
+		return "sam_long"
+	if sam_big:
+		return "sam_mid"
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	return "stinger" if nat in ["usa", "gbr"] else "verba"
+
 func _fire_sam(t: Unit) -> bool:
 	if sams <= 0 or sam_cd > 0.0 or not (t is Vehicle) or not t.is_air() or not t.alive:
+		sam_lock = 0.0
 		return false
 	var d := dist2(t)
 	if d > sam_range or d < 12.0:
+		sam_lock = 0.0
 		return false
+	# arayıcı soğutma + kilit (Stinger ~3 sn, Verba 2,5, orta menzil 2, uzun 3): hedef izlenirken
+	sam_lock += get_process_delta_time()
+	if sam_lock < Ballistics.lock_time(_sam_key()):
+		return not rng.has("auto")
+	sam_lock = 0.0
 	sams -= 1
 	sam_cd = 7.0 if sam_big else 5.0
 	var mp := (turret.global_position if turret else position) + Vector3(0, 1.4, 0)
-	G.bal.sam(mp, t, team, self, sam_big)
+	G.bal.sam(mp, t, team, self, sam_big, _sam_key())
 	say("FÜZE ATILDI")
 	return true
 

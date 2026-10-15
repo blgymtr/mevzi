@@ -2050,7 +2050,9 @@ func _combat(_dt: float) -> void:
 		rocket_aim += _dt
 		popped = true
 		var gm := role == "atgm"
-		if rocket_aim > (2.2 if gm else 1.3) and fire_cd <= 0.0:
+		# nişan / kilit (roadmap 15): Javelin ~4 sn (komuta birimi soğutma + kilit), Kornet 1,5, RPG 1,3, AT4 1
+		var lk := Ballistics.lock_time(Ballistics.missile_key(("topatk" if (G.nation[team] if team >= 0 and team < G.nation.size() else "usa") in ["usa", "gbr"] else "atgm") if gm else "rpg", "", team))
+		if rocket_aim > lk and fire_cd <= 0.0:
 			rocket_aim = 0.0
 			rockets -= 1
 			fire_cd = 9.0 if gm else 4.5

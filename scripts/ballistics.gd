@@ -21,6 +21,13 @@ class Proj:
 	var spd := 0.0
 	var aid := ""          # mühimmat kimliği (data/ammo.json)
 	var glow := false      # motor ışığı taşıyor (eşzamanlı ışık sınırı için)
+	var guide := ""        # füze güdümü: ir (ateşle-unut), wire (tel), beam (lazer hüzme), sal (lazer işaretleme), radar
+	var guide_ok := true   # güdüm sürüyor mu (nişancı bastırıldı / öldü / görüş kesildi / tel bitti → sapar)
+	var gchk := 0.0
+	var max_r := 0.0
+	var launch := Vector3.ZERO
+	var wire: MeshInstance3D = null
+	var aps_tried := false
 
 var projs: Array = []
 var _gmesh: Mesh
@@ -274,6 +281,31 @@ const MISSILE_PEN := {"rpg": 25.0, "at4": 21.0, "javelin": 37.5, "tow": 45.0, "t
 const MISSILE_DMG := {"rpg": 330.0, "at4": 300.0, "javelin": 520.0, "tow": 480.0, "tow2b": 460.0, "kornet": 520.0, "konkurs": 420.0,
 	"metis": 450.0, "refleks": 450.0, "arkan": 450.0, "hellfire": 520.0, "vikhr": 520.0, "hydra": 180.0}
 
+# füze türleri (roadmap 15): güdüm, kilitlenme/nişan süresi (sn), fişeğe kanma olasılığı
+#  ir: ateşle-unut kızılötesi (Javelin görüntülü IIR, Stinger, Igla, Verba) — atıcı atışta serbest
+#  wire: tel güdümlü SACLOS (TOW, Konkurs, Metis) — nişancı hedefi izlemeli; bastırılır, ölür, görüş kesilir
+#        ya da tel menzili biterse füze sapar
+#  beam: lazer hüzme binici (Kornet, Refleks, Arkan, Vikhr) — nişancı izlemeli, karıştırmaya dayanıklı
+#  sal: yarı aktif lazer (Hellfire) — atan hava aracı hedefi işaretler
+#  radar: orta/uzun menzil karadan havaya (komuta / aktif radar) — fişeğe neredeyse kanmaz
+const MISSILES := {
+	"rpg": {"guide": "", "lock": 1.3}, "at4": {"guide": "", "lock": 1.0},
+	"javelin": {"guide": "ir", "lock": 4.0}, "tow": {"guide": "wire", "lock": 1.5}, "konkurs": {"guide": "wire", "lock": 1.5},
+	"metis": {"guide": "wire", "lock": 1.2}, "kornet": {"guide": "beam", "lock": 1.5}, "refleks": {"guide": "beam", "lock": 1.2},
+	"arkan": {"guide": "beam", "lock": 1.2}, "vikhr": {"guide": "beam", "lock": 1.5}, "hellfire": {"guide": "sal", "lock": 2.0},
+	"hydra": {"guide": "", "lock": 0.5},
+	"stinger": {"guide": "ir", "lock": 3.0, "decoy": 0.45}, "igla": {"guide": "ir", "lock": 3.5, "decoy": 0.35},
+	"verba": {"guide": "ir", "lock": 2.5, "decoy": 0.15}, "sam_mid": {"guide": "radar", "lock": 2.0, "decoy": 0.1},
+	"sam_long": {"guide": "radar", "lock": 3.0, "decoy": 0.05},
+}
+
+static func lock_time(key: String) -> float:
+	return float(MISSILES.get(key, {}).get("lock", 1.5))
+
+static func decoy_chance(key: String, big: bool) -> float:
+	var m: Dictionary = MISSILES.get(key, {})
+	return float(m.get("decoy", 0.35 if big else 0.62))
+
 static func missile_key(kind: String, model: String, team: int) -> String:
 	if model != "":
 		return model
@@ -322,6 +354,16 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", m
 	p.src = src
 	p.target = target
 	p.aid = missile_key(kind, model, team)
+	p.max_r = reach
+	p.launch = from
+	if guided:
+		p.guide = String(MISSILES.get(p.aid, {}).get("guide", "ir"))
+		if p.guide == "wire":
+			p.wire = MeshInstance3D.new()
+			p.wire.mesh = ImmediateMesh.new()
+			p.wire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			p.wire.material_override = _wire_mat()
+			add_child(p.wire)
 	var mm: Mesh = _atgm_m if guided else _rmesh
 	match model:
 		"hellfire":
@@ -348,9 +390,11 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", m
 	projs.append(p)
 
 # karadan havaya güdümlü füze: hedefe orantılı seyrüsefer, yakınlık tapası, fişeğe kanabilir
-func sam(from: Vector3, target, team: int, src, big := false) -> void:
+func sam(from: Vector3, target, team: int, src, big := false, key := "") -> void:
 	var p := Proj.new()
 	p.kind = "sam"
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	p.aid = key if key != "" else ("sam_mid" if big else ("stinger" if nat in ["usa", "gbr"] else "verba"))
 	p.pos = from
 	p.big = big
 	p.team = team
@@ -436,10 +480,40 @@ func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float, ai
 	p.node.position = from
 	projs.append(p)
 
+# C-RAM (roadmap 31): havan / topçu / roket mermisini inişte 20 mm Gatling ile vurur — düşük olasılık (%35),
+# sınırlı mühimmat (20 angajman), angajmanlar arası 1,2 sn. Listede yalnız C-RAM birimleri.
+var _crams: Array = []
+var _cram_t := 0.0
+
+func _cram_try(p: Proj) -> bool:
+	if G.time > _cram_t:
+		_cram_t = G.time + 1.0
+		_crams = G.units.filter(func(u): return is_instance_valid(u) and u is Vehicle and u.alive and u.vid == "usa_aa_cram")
+	for c in _crams:
+		if not is_instance_valid(c) or not c.alive or c.team == p.team or c.cram_ammo <= 0 or G.time < c.cram_cd:
+			continue
+		if Vector2(c.position.x - p.pos.x, c.position.z - p.pos.z).length() > c._wr("aa", 100.0):
+			continue
+		p.aps_tried = true
+		c.cram_ammo -= 1
+		c.cram_cd = G.time + 1.2
+		c.fired_t = G.time
+		var mp: Vector3 = c.eye_point()
+		for k in 4:
+			G.fx.tracer_cal(mp, p.pos + Vector3(randf_range(-3, 3), randf_range(-3, 3), randf_range(-3, 3)), 600.0, Ammo.team_tracer(c.team).lightened(0.3), 20.0)
+		Sfx.play3d("autocannon", mp, 2.0, 0.05, 0.02)
+		if randf() < 0.35:
+			_air_burst(p.pos, false)
+			return true
+		return false
+	return false
+
 func _step_lob(p: Proj, dt: float) -> bool:
 	p.t += dt
 	p.vel.y -= 9.8 * dt
 	var np := p.pos + p.vel * dt
+	if not p.aps_tried and p.vel.y < 0.0 and p.pos.y > 12.0 and _cram_try(p):
+		return true
 	p.trail -= dt
 	if p.kind == "rkt":
 		# kavis boyunca boncuk boncuk beyaz iz: saniyelerce asılı kalır, yavaşça genişler
@@ -513,6 +587,8 @@ func _process(dt: float) -> void:
 		if done:
 			if p.node:
 				p.node.queue_free()
+			if p.wire != null:
+				p.wire.queue_free()
 			projs.remove_at(i)
 		i -= 1
 
@@ -586,6 +662,24 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 	if p.kind == "atgm" or p.kind == "topatk":
 		wob *= 0.15
 		var gt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
+		if p.guide in ["wire", "beam", "sal"] and p.guide_ok:
+			p.gchk -= dt
+			if p.gchk <= 0.0:
+				p.gchk = 0.15
+				if not _guidance_ok(p, gt):
+					p.guide_ok = false
+					# güdüm koptu: füze son doğrultusundan rastgele sapar, artık hedefe dönmez
+					p.vel = p.vel.rotated(Vector3(randf_range(-1, 1), randf_range(-0.3, 0.3), randf_range(-1, 1)).normalized(), deg_to_rad(randf_range(4.0, 11.0)))
+					if p.src != null and is_instance_valid(p.src) and p.src.team == G.player_team and not G.spectate and p.src.has_method("say"):
+						p.src.say("FÜZE SAPTI", 1.5)
+		if p.wire != null:
+			_draw_wire(p)
+		if not p.guide_ok:
+			wob *= 6.0
+			gt = null
+		elif p.guide == "wire" and p.src != null and is_instance_valid(p.src) and p.src is Soldier and p.src.suppression > 45.0:
+			# bastırılan nişancının eli titrer: tel güdümlü füze yalpalar
+			wob *= 1.0 + (p.src.suppression - 45.0) / 10.0
 		if gt != null and gt.alive:
 			var aimp := gt.aim_point()
 			var dd := Vector2(aimp.x - p.pos.x, aimp.z - p.pos.z).length()
@@ -610,6 +704,11 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 		p.trail = 0.008
 		G.fx.rocket_trail(p.pos, p.vel.normalized())
 	var tgt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
+	# aktif koruma (APS, roadmap 31): yaklaşan roket/füzeyi ~15 m'de vurur (sınırlı şarj)
+	if not p.aps_tried and tgt != null and tgt is Vehicle and tgt.alive and tgt.aps_n > 0 and np.distance_to(tgt.aim_point()) < 15.0:
+		p.aps_tried = true
+		if tgt.aps_intercept(p.pos, p.kind):
+			return true
 	if tgt != null and tgt.alive and not (tgt is Soldier):
 		if np.distance_to(tgt.aim_point()) < tgt.radius * (1.1 if p.kind in ["atgm", "topatk"] else 0.85):
 			if tgt is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
@@ -637,6 +736,50 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 		G.explode(Vector3(p.pos.x, maxf(p.pos.y, 0.0), p.pos.z), 3.0, 95.0, "rpg", p.team, p.src)
 		return true
 	return false
+
+# tel/hüzme/işaretleme güdümü sürüyor mu: atıcı hayatta ve ateş edebilir, ağır bastırılmamış, hedefi
+# görüyor; tel güdümlüde tel menzili aşılmamış
+func _guidance_ok(p: Proj, gt: Unit) -> bool:
+	var s = p.src
+	if s == null or not is_instance_valid(s) or not s.alive:
+		return false
+	if s is Soldier and (not s.can_fight() or s.suppression > 85.0 or s.state in ["dive", "fly", "dazed"]):
+		return false
+	if gt == null or not gt.alive:
+		return true
+	if p.guide == "wire" and p.pos.distance_to(p.launch) > p.max_r * 1.05:
+		return false
+	if s is Vehicle and s.is_air():
+		return true
+	return G.grid.los(s.eye_point(), gt.aim_point(), s.los_skip(), 0.5)
+
+var _wmat: StandardMaterial3D = null
+func _wire_mat() -> StandardMaterial3D:
+	if _wmat == null:
+		_wmat = StandardMaterial3D.new()
+		_wmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_wmat.albedo_color = Color(0.12, 0.12, 0.11, 0.85)
+		_wmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	return _wmat
+
+# güdüm teli: atıcıdan füzeye hafif sarkan ince çizgi (kopunca serbest ucu düşer)
+func _draw_wire(p: Proj) -> void:
+	var im := p.wire.mesh as ImmediateMesh
+	im.clear_surfaces()
+	var a := p.launch
+	if p.guide_ok and p.src != null and is_instance_valid(p.src):
+		a = p.src.eye_point() if not (p.src is Vehicle) else p.launch
+	var b := p.pos
+	var L := a.distance_to(b)
+	if L < 0.5:
+		return
+	im.surface_begin(Mesh.PRIMITIVE_LINE_STRIP)
+	for i in 13:
+		var t := float(i) / 12.0
+		var q := a.lerp(b, t)
+		q.y -= sin(t * PI) * minf(L * 0.02, 2.5) * (3.0 if not p.guide_ok else 1.0)
+		im.surface_add_vertex(q)
+	im.surface_end()
 
 func _step_sam(p: Proj, dt: float) -> bool:
 	p.t += dt
