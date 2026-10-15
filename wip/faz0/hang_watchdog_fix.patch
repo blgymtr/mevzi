@@ -1,0 +1,258 @@
+--- a/scripts/main.gd
++++ b/scripts/main.gd
+@@ -10,6 +10,13 @@
+ var shot_scene := ""
+ var autoplay := 0.0
+ var _t07: Tests07 = null
++# test bekçisi: duvar saatiyle toplam süre sınırı + tek karede kilitlenme (sonsuz döngü) algılama.
++# Ayrı iş parçacığında çalışır; ana iş parçacığı kilitlense bile süreç sonlanır ve günlükte neden/aşama görünür.
++var _wd_thread: Thread = null
++var _wd_mx := Mutex.new()
++var _wd_phase := ""
++var _beat_ms := 0
++var _wd_stop := false
+ var ambience: AudioStreamPlayer
+ var ambience2: AudioStreamPlayer
+ var cfg := {"volume": 0.8, "difficulty": 1, "lang": "", "fullscreen": true, "shadows": true, "edge_scroll": true}
+@@ -34,6 +41,8 @@
+ 		elif a.begins_with("--autoplay="):
+ 			autoplay = float(a.substr(11))
+ 	apply_video()
++	if shot_dir != "":
++		_start_watchdog()
+ 	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "tactest", "largetest", "hugetest", "rocktest"]:
+ 		_t07 = Tests07.new(self)
+ 		_t07.run(shot_scene)
+@@ -497,6 +506,7 @@
+ 	G.say("Karargâh kuruldu. İleri üs kurarak ilerleyin.", G.hq_pos[0], 0)
+ 
+ func _process(dt: float) -> void:
++	_beat_ms = Time.get_ticks_msec()
+ 	if not G.running or get_tree().paused:
+ 		return
+ 	G.step(dt)
+@@ -549,12 +559,64 @@
+ 
+ # ------------------------------------------------------------ testler
+ func _shot(n: String) -> void:
++	# çizim kapalıysa (test hızlandırma, bkz. Tests07._fast) yalnız bu kare için aç
++	var off := not RenderingServer.render_loop_enabled
++	if off:
++		RenderingServer.render_loop_enabled = true
+ 	await RenderingServer.frame_post_draw
+ 	var img := get_viewport().get_texture().get_image()
++	if off:
++		RenderingServer.render_loop_enabled = false
+ 	DirAccess.make_dir_recursive_absolute(shot_dir)
+ 	img.save_png(shot_dir.path_join(n + ".png"))
+ 	print("SHOT ", n)
+ 
++# test aşaması: bekçi süre aşımında son aşamayı yazar
++func test_phase(p: String) -> void:
++	_wd_mx.lock()
++	_wd_phase = p
++	_wd_mx.unlock()
++	print("PHASE %s ms=%d gt=%.1f" % [p, Time.get_ticks_msec(), G.time])
++
++func _start_watchdog() -> void:
++	var budget := 840.0      # toplam duvar saati (sn) — dış "timeout 900"den kısa olmalı (--budget=)
++	var stall := 240.0       # tek kare bu kadar sürerse kilitlenme say (--stall=)
++	for a in OS.get_cmdline_user_args():
++		if a.begins_with("--budget="):
++			budget = float(a.substr(9))
++		elif a.begins_with("--stall="):
++			stall = float(a.substr(8))
++	_beat_ms = Time.get_ticks_msec()
++	_wd_thread = Thread.new()
++	_wd_thread.start(_watchdog.bind(Time.get_ticks_msec() + int(budget * 1000.0), int(stall * 1000.0)))
++
++func _watchdog(deadline: int, stall_ms: int) -> void:
++	var asked := 0
++	while not _wd_stop:
++		OS.delay_msec(500)
++		var now := Time.get_ticks_msec()
++		_wd_mx.lock()
++		var ph := _wd_phase
++		_wd_mx.unlock()
++		if asked == 0 and now > deadline:
++			# yavaş ama canlı: düzgün çık (çıkış kodu 3)
++			print("TIMEOUT scene=%s phase=%s wall=%ds gt=%.1f fps=%d" % [shot_scene, ph, now / 1000, G.time, Engine.get_frames_per_second()])
++			asked = now
++			_wd_quit.call_deferred()
++		elif now - _beat_ms > stall_ms or (asked > 0 and now - asked > 20000):
++			# ana iş parçacığı kare bitiremiyor (sonsuz döngü vb.): süreci öldür
++			print("HANG scene=%s phase=%s frame_stuck=%ds" % [shot_scene, ph, (now - _beat_ms) / 1000])
++			OS.kill(OS.get_process_id())
++			return
++
++func _wd_quit() -> void:
++	get_tree().quit(3)
++
++func _exit_tree() -> void:
++	if _wd_thread != null:
++		_wd_stop = true
++		_wd_thread.wait_to_finish()
++
+ func _wait(sec: float) -> void:
+ 	var t := 0.0
+ 	while t < sec:
+--- a/scripts/tests07.gd
++++ b/scripts/tests07.gd
+@@ -49,6 +49,12 @@
+ 			best = p
+ 	return best
+ 
++# test hızlandırma: kareler arası çizimi kapat, yalnız Main._shot çizsin. llvmpipe'ta 1280x720 bir kare
++# ~2-7 sn sürer (oyun mantığı ~15-30 ms); döngüler çizimle birlikte 1500 sn sınırını aşıyordu.
++# Savaş sisi "keşfedildi" katmanı yalnız çizilen karelerde birikir: fow_test'te kullanma.
++func _fast() -> void:
++	RenderingServer.render_loop_enabled = false
++
+ func _cam(c: Vector3, size: float) -> void:
+ 	# yüksekteki nesne (halat, paraşüt, helikopter): yer odağı, ekranda aynı yere düşecek kadar kaydırılır
+ 	if c.y > 0.5:
+@@ -146,6 +152,7 @@
+ 	Sfx.muted = true
+ 	var fails := 0
+ 	m.start_game("green_valley", {}, true)
++	_fast()
+ 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+ 	G.reveal = [999.0, 999.0]
+ 	var aa: Vehicle = m.spawn_vehicle(0, "usa_aa_avenger", c, 0.0)
+@@ -160,6 +167,7 @@
+ 	var shot_n := 0
+ 	var seen_sam := false
+ 	var flares0 := heli.flares
++	m.test_phase("evade_sam")
+ 	for i in 240:
+ 		await m._wait(0.05)
+ 		var nsam := G.bal.projs.filter(func(p): return p.kind == "sam").size()
+@@ -173,6 +181,11 @@
+ 				_cam(heli.position + Vector3(0, heli.hull.position.y, 0), 34.0)
+ 			await m._shot("evade_%02d" % shot_n)
+ 			shot_n += 1
++		# başarı ölçütü sağlandı ya da helikopter düştü: kalan döngüyü bekleme
++		if seen_sam and shot_n >= 4 and is_instance_valid(heli) and heli.flares < flares0:
++			break
++		if not is_instance_valid(heli) or not heli.alive:
++			break
+ 	var hv := is_instance_valid(heli)
+ 	var fl_used: int = flares0 - (heli.flares if hv else 0)
+ 	print("EVADE seen_sam=%s flares_used=%d heli_alive=%s" % [seen_sam, fl_used, hv and heli.alive])
+@@ -185,6 +198,7 @@
+ 	tk.fire_mode = 2
+ 	h2.cmd_attack(tk)
+ 	var shot_h := false
++	m.test_phase("evade_hellfire")
+ 	for i in 300:
+ 		await m._wait(0.05)
+ 		if i % 40 == 0:
+@@ -197,6 +211,9 @@
+ 			_cam(ms[0].pos, 30.0)
+ 			await m._wait(0.3)
+ 			await m._shot("evade_11_hellfire_trail")
++			break
++		if not is_instance_valid(h2) or not h2.alive:
++			break
+ 	print("EVADE hellfire_seen=%s" % shot_h)
+ 	if not shot_h:
+ 		fails += 1
+@@ -257,6 +274,7 @@
+ 	Sfx.muted = true
+ 	var fails := 0
+ 	m.start_game("green_valley", {}, true)
++	_fast()
+ 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
+ 	var h: Vehicle = m.spawn_vehicle(G.player_team, "usa_heli_uh60", c + Vector3(-40, 0, 0), 0.0)
+ 	var sq := Squad.new(G.player_team, "Tim")
+@@ -268,6 +286,7 @@
+ 	h.cmd_fastrope(c)
+ 	var shots := 0
+ 	var landed := 0
++	m.test_phase("rope_down")
+ 	for i in 600:
+ 		await m._wait(0.05)
+ 		var on_rope := sq.members.filter(func(x): return x.state == "rope")
+@@ -277,8 +296,14 @@
+ 			await m._shot("rope_%02d" % shots)
+ 			shots += 1
+ 		landed = sq.members.filter(func(x): return x.state != "rope" and x.vehicle_in == null and x.position.y < 0.05).size()
++		if not is_instance_valid(h) or not h.alive:
++			break
+ 		if landed == 8 and h.ropes.is_empty():
+ 			break
++	if not is_instance_valid(h) or not h.alive:
++		print("ROPE heli lost landed=%d" % landed)
++		print("ROPETEST RESULT fails=%d" % (fails + 1))
++		return
+ 	print("ROPE landed=%d ropes_left=%d" % [landed, h.ropes.size()])
+ 	if landed < 8 or not h.ropes.is_empty():
+ 		fails += 1
+@@ -289,6 +314,7 @@
+ 	for x in sq.members:
+ 		x.cmd_move(G.grid.nearest_free(c + Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)), Grid.M_INF))
+ 	await m._wait(3.0)
++	m.test_phase("rope_spies")
+ 	h.cmd_rope_pick(c)
+ 	var up_shot := false
+ 	for i in 900:
+@@ -298,10 +324,14 @@
+ 			up_shot = true
+ 			_cam(ups[0].position, 16.0)
+ 			await m._shot("rope_11_spies")
+-		if h.cargo.size() >= 8:
++		# helikopter yok, alım bitti/iptal (halat kesildi) ya da dolu: kalan döngüyü bekleme
++		if not is_instance_valid(h) or not h.alive or h.cargo.size() >= 8 or (h.rope_mode == "" and i > 10):
+ 			break
+-	print("ROPE extracted=%d" % h.cargo.size())
+-	if h.cargo.size() < 6:
++	var hv := is_instance_valid(h)
++	var extracted: int = h.cargo.size() if hv else 0
++	var sts: Array = sq.members.filter(func(x): return is_instance_valid(x)).map(func(x): return "%s/%s" % [x.state, x.order])
++	print("ROPE extracted=%d rope_t=%.1f members=%s" % [extracted, h.rope_t if hv else -1.0, " ".join(sts)])
++	if extracted < 6:
+ 		fails += 1
+ 	print("ROPETEST RESULT fails=%d" % fails)
+ 
+--- a/scripts/soldier.gd
++++ b/scripts/soldier.gd
+@@ -512,6 +512,7 @@
+ 	rope_i = 0
+ 	state = "move"
+ 	order = "rope_up"
++	to_cover = false
+ 	_set_path(G.grid.nearest_free(v.rope_pt + Vector3(randf_range(-0.6, 0.6), 0, randf_range(-0.6, 0.6)), Grid.M_INF))
+ 	say("HALATA!", 2.0)
+ 
+@@ -1048,6 +1049,12 @@
+ 				state = "idle"
+ 				order = ""
+ 		"move":
++			if order == "rope_up" and rope_heli != null and is_instance_valid(rope_heli) and rope_heli.rope_pt != Vector3.INF and dist2_p(rope_heli.rope_pt) < 2.5:
++				# halatın dibine vardı: tam yol sonunu bekleme — kalabalıkta ayrışma itişi askerleri
++				# 0.25 m varış eşiğinin dışında dengede tutar, "move"da sonsuza dek kalırlardı
++				path = PackedVector3Array()
++				_arrive()
++				return
+ 			if order == "build" and build_goal != Vector3.INF and randf() < 0.06:
+ 				# yol bina ızgaraya işlenmeden hesaplanmış olabilir: ara sıra yeniden bul
+ 				_set_path(build_goal)
+--- a/scripts/vehicle.gd
++++ b/scripts/vehicle.gd
+@@ -2398,11 +2398,14 @@
+ 						u.start_rope_up(self)
+ 		rope_riders = rope_riders.filter(func(x): return is_instance_valid(x) and x.alive and x.state in ["rope_wait", "rope_up", "move"] )
+ 		var ready := rope_riders.filter(func(x): return x.state == "rope_wait")
+-		if not rope_riders.is_empty() and ready.size() == rope_riders.size() and rope_t > 2.0:
++		# hepsi kancalanınca çek; geciken varsa 12 sn sonra kancalı olanları çek (geç gelenler ardından çekilir)
++		if not ready.is_empty() and rope_t > 2.0 and (ready.size() == rope_riders.size() or rope_t > 12.0):
+ 			for x in ready:
+ 				x.state = "rope_up"
+ 				x.state_t = 0.0
+-		if rope_t > 40.0 or (rope_riders.is_empty() and rope_t > 4.0):
++		# süre sınırı: tırmanan varken halatı kesme (düşerlerdi); 60 sn kesin üst sınır
++		var climbing := rope_riders.any(func(x): return x.state == "rope_up")
++		if (rope_t > 40.0 and not climbing) or rope_t > 60.0 or (rope_riders.is_empty() and rope_t > 4.0):
+ 			_rope_cut()
+ 			rope_pt = Vector3.INF
+ 			rope_mode = ""

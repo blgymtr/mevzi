@@ -65,6 +65,8 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Eklendi:** Ulus silahları (Blender): M4A1/ACOG/PEQ, M249, AT4, M110, M17 — AK-12, PKP, RPG-7, SV-98, PL-15
 - **Eklendi:** Uzun yol bulma iş parçacığında (2 km+): grup emri 2–8 ms (önce 0,5–0,7 sn donma)
 - **Eklendi:** Gerçek kaya modelleri + üretilmiş kaya dokusu, kışta karlı / yazın yosunlu kayalar; çakıllar da aynı modelden
+- **Eklendi:** İskeletli animasyon hattı prototipi — MakeHuman (CC0) taban örgü + 35 kemikli iskelet + CMU mocap retarget → `assets/anim/soldier_anim.glb` (22 klip + tüfek üst gövde katmanı), Godot AnimationTree ön izlemesi; oyuna henüz bağlı değil (`docs/ANIM_PIPELINE.md`)
+- **Eklendi:** Windows/GPU test çalıştırıcısı `tools/run_tests.ps1` (sahne başına süre sınırı, TIMEOUT/CRASH tespiti, özet tablo) ve devir notu `docs/DEVIR_NOTU.md`
 - **Doğrulama durumu (dürüst not):** crewtest (top hedef almıyor), paratest (8 askerden 7'si indi) ve SPIES/evadetest testleri takıldı → kök neden ve kalıcı önlem çalışması sürüyor (aşağıda 0.0.8 Faz 0)
 
 ---
@@ -108,7 +110,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 32 | Ana menü: Masaüstüne Çık · Ayarlar (Grafik, Ses, Oynanış, Klavye) · Senaryo Oluşturucu · Kampanya · Klasik Harita · Sandbox Test | ⏳ | → Menü yeniden düzenlenecek (şimdilik bu düzen) |
 
 ### Uygulama sırası (fazlar)
-- **Faz 0 — Stabilite (🔄 şu an):** test zaman aşımı bekçisi + hata dökümü, ekransız hızlı test modu, `tools/run_tests.sh`; crewtest/paratest/SPIES/evade kök nedenleri; oyunda takılabilecek her geçici duruma süre sınırı + güvenli çıkış; yapılamayan emirde birimin sesli geri bildirimi
+- **Faz 0 — Stabilite (🔄 yerel GPU oturumuna devredildi — `docs/DEVIR_NOTU.md` §3; teşhis yamaları `wip/faz0/`):** test zaman aşımı bekçisi + hata dökümü, ekransız hızlı test modu, `tools/run_tests.sh`; crewtest/paratest/SPIES/evade kök nedenleri; oyunda takılabilecek her geçici duruma süre sınırı + güvenli çıkış; yapılamayan emirde birimin sesli geri bildirimi
 - **Faz 1 — Veri gerçekçiliği:** 2, 6, 26, 15, 27, 31
 - **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 8/29, 18, 7
 - **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28, 5
