@@ -117,6 +117,24 @@ static func stone() -> StandardMaterial3D:
 		_c["stone"] = m
 	return _c["stone"]
 
+# doğal kaya: üretilmiş döşenebilir doku (tools/rock_tex.py), dünya üç düzlemli; köşe rengi ton verir
+static func rock() -> StandardMaterial3D:
+	if not _c.has("rock"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.albedo_texture = load("res://assets/textures/rock_face/albedo.jpg")
+		m.normal_enabled = true
+		m.normal_texture = load("res://assets/textures/rock_face/normal.jpg")
+		m.normal_scale = 1.4
+		m.roughness_texture = load("res://assets/textures/rock_face/rough.jpg")
+		m.roughness = 1.0
+		m.uv1_triplanar = true
+		m.uv1_world_triplanar = true
+		m.uv1_triplanar_sharpness = 4.0
+		m.uv1_scale = Vector3(0.32, 0.32, 0.32)
+		_c["rock"] = m
+	return _c["rock"]
+
 static func burnt() -> StandardMaterial3D:
 	if not _c.has("burnt"):
 		var m := StandardMaterial3D.new()

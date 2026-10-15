@@ -34,7 +34,7 @@ func _ready() -> void:
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
 	apply_video()
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "tactest", "largetest", "hugetest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "tactest", "largetest", "hugetest", "rocktest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":

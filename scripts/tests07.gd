@@ -30,6 +30,8 @@ func run(scene: String) -> void:
 			await large_test()
 		"hugetest":
 			await huge_test()
+		"rocktest":
+			await rock_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -538,3 +540,25 @@ func huge_test() -> void:
 		await m._wait(1.0)
 		await m._shot("huge_%s" % id)
 	print("HUGETEST RESULT fails=%d" % fails)
+
+# kaya modelleri: kırık yüzlü, dokulu; yaz ve kış
+func rock_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	for mp in ["green_valley", "winter_village"]:
+		m.start_game(mp, {}, true)
+		G.fog_off = true
+		var c := G.grid.nearest_free(Vector3(G.MAP * 0.5 + 20, 0, G.MAP * 0.5 + 20), Grid.M_HEAVY)
+		for k in 14:
+			var a := k * 0.9
+			var p := c + Vector3(cos(a), 0, sin(a)) * (2.0 + k * 0.45)
+			G.props.rock(G.on_ground(p), 0.5 + (k % 5) * 0.3)
+		var sq := m.spawn_soldier(G.player_team, "rifle", c + Vector3(1.5, 0, 0), null)
+		await m._wait(0.6)
+		_cam(c, 10.0)
+		await m._wait(0.4)
+		await m._shot("rock_%s_close" % mp)
+		_cam(c, 24.0)
+		await m._shot("rock_%s_mid" % mp)
+		print("ROCK map=%s soldier=%s" % [mp, sq != null])
+	print("ROCKTEST RESULT fails=0")

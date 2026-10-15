@@ -857,19 +857,90 @@ func _bush_mesh_old(v: int) -> ArrayMesh:
 	return mb.commit(Mats.vc())
 
 func rock(p: Vector3, s := 1.0) -> void:
-	var v := rng.randi() % 4
-	var mesh := _cached("rock%d" % v, func(): return _rock_mesh(v))
-	_place(mesh, p, rng.randf() * TAU, s)
+	var v := rng.randi() % 8
+	var mesh := _cached("rock%d_%s" % [v, str(winter)], func(): return _rock_mesh(v))
+	var mi := _place(mesh, p, rng.randf() * TAU, s)
+	# hafif eğik oturur, yarı gömülü
+	mi.rotation.x = rng.randf_range(-0.12, 0.12)
+	mi.rotation.z = rng.randf_range(-0.12, 0.12)
 	if s > 0.9:
 		G.grid.set_static_circle(p, 0.7 * s, 0.8 * s, Grid.K_WRECK)
 
+# kaya: alt bölünmüş ikosfer → elipsoid → rastgele düzlem kesikleri (kırık yüzler, keskin kenar)
+# → üç boyutlu gürültü; doku: tools/rock_tex.py (Voronoi kırık ağı, tabakalanma, liken)
 func _rock_mesh(v: int) -> ArrayMesh:
 	var r := RandomNumberGenerator.new()
 	r.seed = 900 + v
-	var mb := MB.new()
-	mb.sphere(Vector3(0, 0.25, 0), Vector3(0.9, 0.6, 0.75), 7, 5, Color(0.42, 0.42, 0.42), Basis(), false, 0.28, r)
-	mb.sphere(Vector3(0.5, 0.15, 0.3), Vector3(0.5, 0.35, 0.45), 6, 4, Color(0.38, 0.38, 0.37), Basis(), false, 0.3, r)
-	return mb.commit(Mats.stone())
+	var t := (1.0 + sqrt(5.0)) * 0.5
+	var vs: Array = [Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0),
+		Vector3(0, -1, t), Vector3(0, 1, t), Vector3(0, -1, -t), Vector3(0, 1, -t),
+		Vector3(t, 0, -1), Vector3(t, 0, 1), Vector3(-t, 0, -1), Vector3(-t, 0, 1)]
+	for i in vs.size():
+		vs[i] = vs[i].normalized()
+	var fs: Array = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+		[3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
+	for lvl in 3:
+		var mid := {}
+		var nf: Array = []
+		for f in fs:
+			var m: Array = []
+			for e in 3:
+				var a: int = f[e]
+				var b: int = f[(e + 1) % 3]
+				var key := Vector2i(mini(a, b), maxi(a, b))
+				if not mid.has(key):
+					vs.append(((vs[a] + vs[b]) * 0.5).normalized())
+					mid[key] = vs.size() - 1
+				m.append(mid[key])
+			nf.append([f[0], m[0], m[2]])
+			nf.append([f[1], m[1], m[0]])
+			nf.append([f[2], m[2], m[1]])
+			nf.append([m[0], m[1], m[2]])
+		fs = nf
+	var rad := Vector3(r.randf_range(0.75, 1.05), r.randf_range(0.45, 0.75), r.randf_range(0.6, 0.9))
+	if v % 4 == 3:
+		rad = Vector3(r.randf_range(1.1, 1.4), r.randf_range(0.35, 0.5), r.randf_range(0.7, 0.9))    # yassı levha
+	var cuts: Array = []
+	for k in r.randi_range(5, 8):
+		var cn := Vector3(r.randf_range(-1, 1), r.randf_range(-0.35, 1.0), r.randf_range(-1, 1)).normalized()
+		cuts.append([cn, r.randf_range(0.55, 0.85)])
+	var fn := FastNoiseLite.new()
+	fn.seed = 77 + v
+	fn.frequency = 1.6
+	fn.fractal_octaves = 3
+	var pos := PackedVector3Array()
+	pos.resize(vs.size())
+	for i in vs.size():
+		var n: Vector3 = vs[i]
+		var p := n * rad
+		for c in cuts:
+			var d: float = p.dot(c[0]) - c[1] * (rad * c[0]).length()
+			if d > 0.0:
+				p -= c[0] * d
+		p *= 1.0 + fn.get_noise_3dv(n * 1.3) * 0.16 + fn.get_noise_3dv(n * 5.0) * 0.035
+		if p.y < -0.12:
+			p.y = -0.12 + (p.y + 0.12) * 0.25          # taban düz, toprağa gömülü
+		pos[i] = p + Vector3(0, 0.08, 0)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var moss := not winter and biome_id != "desert"
+	for f in fs:
+		for e in [0, 2, 1]:
+			var p: Vector3 = pos[f[e]]
+			var hgt := clampf((p.y + 0.1) / (rad.y * 0.9 + 0.1), 0.0, 1.0)
+			var c := Color(0.92, 0.9, 0.86).lerp(Color(0.62, 0.6, 0.56), 1.0 - hgt)   # taban gölgeli/toprak lekeli
+			var up: float = vs[f[e]].y
+			if winter and up > 0.55:
+				c = c.lerp(Color(1.6, 1.62, 1.7), clampf((up - 0.55) * 3.0, 0, 1))
+			elif moss and up > 0.6:
+				c = c.lerp(Color(0.55, 0.68, 0.38), clampf((up - 0.6) * 1.6, 0, 0.45))
+			st.set_color(c)
+			st.add_vertex(p)
+	st.index()
+	st.generate_normals()
+	var mesh := st.commit()
+	mesh.surface_set_material(0, Mats.rock())
+	return mesh
 
 func hay(p: Vector3) -> void:
 	var mesh := _cached("hay", func(): return _hay_mesh())
