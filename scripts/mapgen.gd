@@ -81,11 +81,16 @@ func build(id: String, seed_v: int) -> void:
 	if id != "custom" and id != "big_city" and G.MAP <= 1024.0:
 		_footpaths()
 	print("ARCH bina=%d ms=%d blok=%d" % [arch_n, arch_us / 1000, B.bpos.size()])
+	G.prof("layout")
 	T.make_water()
+	G.prof("water")
 	B.finalize()
+	G.prof("blocks")
 	G.grid.flush_all()
+	G.prof("grid_flush")
 	T.scatter(rng)
 	T.flush()
+	G.prof("scatter")
 
 # ------------------------------------------------------------ yardımcılar
 func _spline(ctrl: Array, step := 3.0) -> PackedVector3Array:

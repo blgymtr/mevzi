@@ -64,6 +64,16 @@ var hq_pos := [Vector3.ZERO, Vector3.ZERO]
 var _hash := {}
 var _vis_t := 0.0
 
+# yükleme ölçümü (mapprof testi): aşama süresi ve bellek
+var prof_on := false
+var _prof_t := 0
+func prof(label: String) -> void:
+	if not prof_on:
+		return
+	var now := Time.get_ticks_msec()
+	print("PROF %-16s +%6d ms  static=%5d MB  vram=%5d MB" % [label, now - _prof_t, OS.get_static_memory_usage() / 1048576, int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) / 1048576])
+	_prof_t = now
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	rng.randomize()

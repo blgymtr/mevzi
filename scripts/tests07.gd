@@ -42,6 +42,8 @@ func run(scene: String) -> void:
 			await huge_test()
 		"rocktest":
 			await rock_test()
+		"mapprof":
+			await map_prof()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -1044,6 +1046,45 @@ func huge_test() -> void:
 		await m._wait(1.0)
 		await m._shot("huge_%s" % id)
 	print("HUGETEST RESULT fails=%d" % fails)
+
+# büyük harita ölçümü: yükleme aşamaları (süre, bellek, VRAM) ve yakınlaştırma düzeyine göre çizim
+# yükü (çizim çağrısı, üçgen, nesne, kare süresi). --map=<id> ile harita seçilir (varsayılan airborne_4k).
+func map_prof() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	var id := "airborne_4k"
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--map="):
+			id = a.substr(6)
+	G.prof_on = true
+	G._prof_t = Time.get_ticks_msec()
+	var t0 := Time.get_ticks_msec()
+	m.start_game(id, {}, true)
+	G.prof("ready")
+	G.prof_on = false
+	print("MAPPROF id=%s map=%.0f load_ms=%d houses=%d props=%d units=%d" % [id, G.MAP, Time.get_ticks_msec() - t0, G.blocks.houses.size(), G.props.items.size(), G.units.size()])
+	G.fog_off = true
+	var c := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	for sz in [40.0, 115.0, 300.0, 800.0]:
+		G.cam.max_size = maxf(G.cam.max_size, sz)
+		_cam(c, sz)
+		await m._wait(0.6)
+		var n := 0
+		var t1 := Time.get_ticks_usec()
+		var dc := 0.0
+		var prim := 0.0
+		var obj := 0.0
+		while n < 90:
+			await m.get_tree().process_frame
+			n += 1
+			dc += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+			prim += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+			obj += Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
+		var ms := float(Time.get_ticks_usec() - t1) / 1000.0 / n
+		print("MAPPROF zoom=%4.0f frame_ms=%.1f fps=%.0f draw=%d prim=%dk obj=%d" % [sz, ms, 1000.0 / ms, int(dc / n), int(prim / n / 1000.0), int(obj / n)])
+		await m._shot("mapprof_%s_%d" % [id, int(sz)])
+	print("MAPPROF RESULT fails=0")
 
 # kaya modelleri: kırık yüzlü, dokulu; yaz ve kış
 func rock_test() -> void:

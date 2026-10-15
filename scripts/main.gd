@@ -43,7 +43,7 @@ func _ready() -> void:
 	apply_video()
 	if shot_dir != "":
 		_start_watchdog()
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -213,6 +213,7 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	G.map_id = id
 	# harita boyutu: ızgara ve arazi çözünürlüğü buna göre
 	G.MAP = float(MapGen.MAPS.get(id, {}).get("size", 256)) if id != "custom" else float(data.get("size", 256))
+	G.prof("start")
 	Grid.configure(G.MAP)
 	Terrain.HRES = mini(2048, int(G.MAP * 2.0))
 	Terrain.RES = mini(2048, int(G.MAP * 4.0))
@@ -226,10 +227,12 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	if G.grid != null:
 		G.grid.shutdown()
 	G.grid = Grid.new()
+	G.prof("grid")
 	var t := Terrain.new()
 	world.add_child(t)
 	G.terrain = t
 	t.build(bio)
+	G.prof("terrain")
 	var fx := Fx.new()
 	fx.winter = kind == "winter"
 	fx.sand_col = bio["sand"]
@@ -255,6 +258,7 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	mg.data_in = data
 	G.mapgen = mg
 	mg.build(id, seed_v)
+	G.prof("mapgen")
 	var lg := Logistics.new()
 	add_child(lg)
 	G.logi = lg

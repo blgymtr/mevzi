@@ -374,8 +374,8 @@ func _register_cells(id: int, cells: Array) -> void:
 		else:
 			cell_blocks[ci] = PackedInt32Array([id])
 		# lento / pencere üstü: tabanı insan boyundan yüksek blok yerdeki geçişi kapatmaz (kapı, pencere)
-		if top > G.grid.hb[ci] and p.y - s.y * 0.5 < LINTEL:
-			G.grid.hb[ci] = top
+		if top > G.grid.hb[ci] / Grid.HQ and p.y - s.y * 0.5 < LINTEL:
+			G.grid.hb[ci] = Grid.hq(top)
 		if G.grid.kind[ci] < bkind[id] or G.grid.kind[ci] == Grid.K_NONE:
 			G.grid.kind[ci] = bkind[id]
 		cells.append(ci)
@@ -496,7 +496,7 @@ func _destroy_many(ids: Array, center: Vector3, power: float) -> void:
 			for o in cell_blocks[ci]:
 				if balive[o] == 1 and bpos[o].y - bsize[o].y * 0.5 < LINTEL:
 					mx = maxf(mx, bpos[o].y + bsize[o].y * 0.5)
-		G.grid.hb[ci] = mx
+		G.grid.hb[ci] = Grid.hq(mx)
 		changed.append(ci)
 	G.grid.refresh(changed)
 	if ids.size() > 0:

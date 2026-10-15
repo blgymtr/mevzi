@@ -2,7 +2,7 @@ class_name Grid extends RefCounted
 # Engel yükseklik ızgarası (0.5 m), yol bulma (1 m, üç hareket sınıfı) ve görüş hattı.
 
 # hücre boyutları haritaya göre (main.build_world): ≤1 km 0,5 m ince / 1 m yol bulma;
-# 2 km 0,5 m / 2 m; 4 km 1 m / 4 m. FPN: bir yol bulma hücresindeki ince hücre sayısı (kenar)
+# 2 km 0,5 m / 2 m; 4-8 km 1 m / 4 m. FPN: bir yol bulma hücresindeki ince hücre sayısı (kenar)
 static var CS := 0.5
 static var NAV := 1.0
 static var FPN := 2
@@ -23,10 +23,15 @@ static func configure(map_size: float) -> void:
 	N = int(map_size / CS)
 	NN = int(map_size / NAV)
 enum { K_NONE, K_WALL, K_HOUSE, K_WRECK, K_TRAP, K_WIRE, K_TREE, K_BUILDING }
+# ham yükseklikler (hs sabit engel, hb bina blokları) bayt olarak 1/10 m biriminde tutulur (en çok 25,5 m):
+# 8 km haritada 67 M hücre × 2 dizi = 134 MB (float ile 537 MB). Birleşik h float kalır (görüş hattı).
+const HQ := 10.0
+static func hq(v: float) -> int:
+	return clampi(int(round(v * HQ)), 0, 255)
 enum { M_INF, M_LIGHT, M_HEAVY }
 
-var hs := PackedFloat32Array()
-var hb := PackedFloat32Array()
+var hs := PackedByteArray()
+var hb := PackedByteArray()
 var h := PackedFloat32Array()
 var kind := PackedByteArray()
 var trench := PackedByteArray()
@@ -98,6 +103,7 @@ func set_static_rect(center: Vector3, size: Vector2, rot: float, height: float, 
 	var x1 := ci(center.x + ext)
 	var z0 := ci(center.z - ext2)
 	var z1 := ci(center.z + ext2)
+	var hv := hq(height)
 	var changed: Array = []
 	for z in range(z0, z1 + 1):
 		for x in range(x0, x1 + 1):
@@ -109,10 +115,10 @@ func set_static_rect(center: Vector3, size: Vector2, rot: float, height: float, 
 			if absf(lx) <= size.x * 0.5 and absf(lz) <= size.y * 0.5:
 				var i := z * N + x
 				if replace:
-					hs[i] = height
+					hs[i] = hv
 					kind[i] = k
-				elif height >= hs[i]:
-					hs[i] = height
+				elif hv >= hs[i]:
+					hs[i] = hv
 					kind[i] = k
 				changed.append(i)
 	refresh(changed)
@@ -122,6 +128,7 @@ func set_static_circle(center: Vector3, r: float, height: float, k: int, replace
 	var x1 := ci(center.x + r)
 	var z0 := ci(center.z - r)
 	var z1 := ci(center.z + r)
+	var hv := hq(height)
 	var changed: Array = []
 	for z in range(z0, z1 + 1):
 		for x in range(x0, x1 + 1):
@@ -129,8 +136,8 @@ func set_static_circle(center: Vector3, r: float, height: float, k: int, replace
 			var pz := (z + 0.5) * CS - center.z
 			if px * px + pz * pz <= r * r:
 				var i := z * N + x
-				if replace or height >= hs[i]:
-					hs[i] = height
+				if replace or hv >= hs[i]:
+					hs[i] = hv
 					kind[i] = k
 				changed.append(i)
 	refresh(changed)
@@ -166,8 +173,7 @@ func set_trench(a: Vector3, b: Vector3, w: float, on := true) -> void:
 
 func refresh(cells: Array) -> void:
 	for i in cells:
-		var v := maxf(hs[i], hb[i])
-		h[i] = v
+		h[i] = maxi(hs[i], hb[i]) / HQ
 		_dirty[Vector2i((i % N) / FPN, (i / N) / FPN)] = true
 
 func flush_nav() -> void:
@@ -241,7 +247,7 @@ func _update_base(c: Vector2i) -> void:
 				hard_h = true
 			if v >= 0.3:
 				hard_l = true
-				if k == K_WALL and hs[i] < 0.3:
+				if k == K_WALL and hs[i] < 3:
 					wall_h = true
 				elif k == K_TREE:
 					pass

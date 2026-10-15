@@ -10,7 +10,8 @@ param(
 	[string[]]$Scenes = @("treetest", "dronetest", "woundtest", "ropetest", "crewtest", "paratest", "para2test", "fowtest", "tactest", "evadetest", "vfxtest", "rocktest", "largetest"),
 	[int]$Timeout = 600,
 	[switch]$NoImport,
-	[switch]$Headless      # çizimsiz (CI): ekran görüntüleri atlanır, yalnız mantık denetlenir
+	[switch]$Headless,     # çizimsiz (CI): ekran görüntüleri atlanır, yalnız mantık denetlenir
+	[string[]]$Extra = @() # sahneye ek argümanlar (ör. -Extra "--map=battle_8k")
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -38,7 +39,7 @@ foreach ($s in $Scenes) {
 	$err = Join-Path $logs "$s.err"
 	Write-Host "== $s"
 	$t0 = Get-Date
-	$gargs = @("--path", "`"$root`"", "--", "--shot=`"$out`"", "--scene=$s")
+	$gargs = @("--path", "`"$root`"", "--", "--shot=`"$out`"", "--scene=$s") + $Extra
 	if ($Headless) { $gargs = @("--headless") + $gargs }
 	$p = Start-Process -FilePath $Godot -ArgumentList $gargs -NoNewWindow -PassThru `
 		-RedirectStandardOutput $log -RedirectStandardError $err
