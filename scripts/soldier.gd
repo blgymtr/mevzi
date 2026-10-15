@@ -248,6 +248,11 @@ func aim_point() -> Vector3:
 func cmd_move(p: Vector3, force := false) -> void:
 	if not alive or incapacitated() or state == "fly":
 		return
+	if state == "para":
+		# paraşütle inerken: emir toplanma noktasını değiştirir (yere değince oraya yürür);
+		# durumu burada "move" yapmak askeri havadan yere ışınlardı
+		para_goal = _free_ground(p, para_goal)
+		return
 	_leave_house()
 	_release_patient()
 	build_site = null
@@ -265,7 +270,7 @@ func cmd_move(p: Vector3, force := false) -> void:
 	state = "move"
 
 func cmd_attack(u: Unit) -> void:
-	if not alive or incapacitated():
+	if not alive or incapacitated() or state == "para":
 		return
 	_release_patient()
 	forced_target = u
@@ -358,6 +363,8 @@ func sees(from: Vector3, p: Vector3, tgt = null) -> bool:
 
 # araç eskortu: aracın düşmana göre arkasında yan yana siper alıp onunla ilerler
 func cmd_follow_vehicle(v: Vehicle, slot: int, n: int) -> void:
+	if state == "para":
+		return
 	_leave_house()
 	cover_veh = v
 	cover_type = 3
@@ -457,7 +464,7 @@ func nearest_base() -> Building:
 	return best
 
 func cmd_board(v: Vehicle) -> void:
-	if not alive or incapacitated() or vehicle_in != null:
+	if not alive or incapacitated() or vehicle_in != null or state == "para":
 		return
 	_release_patient()
 	build_site = null
@@ -512,6 +519,7 @@ func start_rope_up(v: Vehicle) -> void:
 	rope_i = 0
 	state = "move"
 	order = "rope_up"
+	to_cover = false
 	_set_path(G.grid.nearest_free(v.rope_pt + Vector3(randf_range(-0.6, 0.6), 0, randf_range(-0.6, 0.6)), Grid.M_INF))
 	say("HALATA!", 2.0)
 
@@ -604,10 +612,17 @@ var door_veh: Vehicle = null
 
 # ------------------------------------------------------------ paraşüt (hava indirme)
 # statik hat 0.9 sn serbest düşüş → kubbe açılır (0.7 sn) → 5 m/sn süzülme, hedefe doğru
-# yönlendirme → yere değince yuvarlanma (PLF) → kubbe çöker → tüfeği alıp toplanma noktasına
+# yönlendirme → yere değince yuvarlanma (PLF) → kubbe çöker → tüfeği alıp toplanma noktasına.
+# Ne olursa olsun asker sınırlı sürede harita içinde boş bir zemin hücresine iner: altı dolu
+# (bina, su, ağaç) ise son metrelerde boş hücreye yönelir, yine de doluysa oraya kayar;
+# PARA_MAX_T aşılırsa zorunlu iniş; havada vurulursa kubbe altında yaralı süzülür, yerde yatar.
+const PARA_MAX_T := 30.0
 var para_vel := Vector3.ZERO
 var para_goal := Vector3.ZERO
 var para_phase := 0
+var para_t := 0.0
+var para_hurt := false
+var para_spot := Vector3.INF
 var canopy: Node3D = null
 static var _canopy_m: Mesh = null
 
@@ -615,10 +630,28 @@ func start_para(p: Vector3, v0: Vector3, goal: Vector3) -> void:
 	state = "para"
 	state_t = 0.0
 	para_phase = 0
+	para_t = 0.0
+	para_hurt = false
+	para_spot = Vector3.INF
 	position = p
 	para_vel = v0
-	para_goal = G.grid.nearest_free(G.on_ground(goal), Grid.M_INF)
+	para_goal = _free_ground(goal)
 	path = PackedVector3Array()
+
+# p'ye en yakın, piyadenin durabileceği boş zemin hücresi (harita içi; su/bina/ağaç/duvar değil);
+# yakında yoksa arama genişler, hiç yoksa yedek nokta
+func _free_ground(p: Vector3, fallback := Vector3.INF) -> Vector3:
+	var c := G.on_ground(p)
+	if G.grid.free_at(c, Grid.M_INF):
+		return c
+	var q := G.grid.nearest_free(c, Grid.M_INF, 96)
+	if G.grid.free_at(q, Grid.M_INF):
+		return q
+	return fallback if fallback != Vector3.INF else c
+
+func _para_clamp() -> void:
+	position.x = clampf(position.x, 2.0, G.MAP - 2.0)
+	position.z = clampf(position.z, 2.0, G.MAP - 2.0)
 
 func _canopy_mesh() -> Mesh:
 	if _canopy_m != null:
@@ -646,16 +679,21 @@ func _canopy_mesh() -> Mesh:
 	return _canopy_m
 
 func _para_process(dt: float) -> void:
+	para_t += dt
 	var gh := G.terrain.ground_h(position) if G.terrain else 0.0
 	match para_phase:
 		0:
-			# serbest düşüş (statik hat çekiyor)
+			# serbest düşüş (statik hat çekiyor); sönümler kare süresinden bağımsız (üstel)
 			para_vel.y -= 9.8 * dt
-			para_vel.x *= 1.0 - dt * 0.8
-			para_vel.z *= 1.0 - dt * 0.8
+			var dmp := exp(-dt * 0.8)
+			para_vel.x *= dmp
+			para_vel.z *= dmp
 			position += para_vel * dt
+			_para_clamp()
 			body.animate(dt, "fly", 0.0, 0.4)
-			if state_t > 0.9:
+			if position.y <= gh + 0.02 or para_t > PARA_MAX_T:
+				_para_touchdown()
+			elif state_t > 0.9:
 				para_phase = 1
 				state_t = 0.0
 				canopy = MeshInstance3D.new()
@@ -664,30 +702,38 @@ func _para_process(dt: float) -> void:
 				canopy.position = Vector3(0, 6.6, 0)
 				canopy.scale = Vector3(0.1, 0.6, 0.1)
 		1, 2:
+			var cv := canopy != null and is_instance_valid(canopy)
 			if para_phase == 1:
 				var k := clampf(state_t / 0.7, 0.0, 1.0)
-				canopy.scale = Vector3(lerpf(0.1, 1.0, k * k), lerpf(0.6, 1.0, k), lerpf(0.1, 1.0, k * k))
+				if cv:
+					canopy.scale = Vector3(lerpf(0.1, 1.0, k * k), lerpf(0.6, 1.0, k), lerpf(0.1, 1.0, k * k))
 				if k >= 1.0:
 					para_phase = 2
-			# süzülme: dikey 5 m/sn, hedefe yatay yönlenme + rüzgâr salınımı
-			var to := para_goal - position
+			# son 12 m: altı dolu (bina, su, ağaç) ise en yakın boş hücreye yönel
+			if para_spot == Vector3.INF and position.y - gh < 12.0 and not G.grid.free_at(G.on_ground(position), Grid.M_INF):
+				para_spot = _free_ground(position, para_goal)
+			# süzülme: dikey 5 m/sn, hedefe yatay yönlenme + rüzgâr salınımı. Yumuşatma ağırlıkları
+			# üstel: düşük kare hızında (büyük dt) lerp ağırlığı 1'i aşıp hızı salındırmasın
+			var aim := para_goal if para_spot == Vector3.INF else para_spot
+			var to := aim - position
 			to.y = 0.0
-			var hv := to.normalized() * minf(to.length() * 0.35, 3.2) if to.length() > 0.3 else Vector3.ZERO
-			para_vel.x = lerpf(para_vel.x, hv.x + sin(G.time * 0.7 + position.x) * 0.5, dt * 1.5)
-			para_vel.z = lerpf(para_vel.z, hv.z, dt * 1.5)
-			para_vel.y = lerpf(para_vel.y, -5.0, dt * 3.0)
+			var vmax := 3.2 if para_spot == Vector3.INF else 4.5
+			var hv := to.normalized() * minf(to.length() * (0.35 if para_spot == Vector3.INF else 1.2), vmax) if to.length() > 0.3 else Vector3.ZERO
+			var kh := 1.0 - exp(-dt * 1.5)
+			var sway := sin(G.time * 0.7 + position.x) * 0.5 if para_spot == Vector3.INF else 0.0
+			para_vel.x = lerpf(para_vel.x, hv.x + sway, kh)
+			para_vel.z = lerpf(para_vel.z, hv.z, kh)
+			para_vel.y = lerpf(para_vel.y, -5.0, 1.0 - exp(-dt * 3.0))
 			position += para_vel * dt
+			_para_clamp()
 			if hv.length() > 0.2:
-				rotation.y = lerp_angle(rotation.y, _yaw_of(hv), dt * 1.5)
-			canopy.rotation.z = sin(G.time * 1.3 + position.z) * 0.08
-			canopy.rotation.x = cos(G.time * 1.1) * 0.06
+				rotation.y = lerp_angle(rotation.y, _yaw_of(hv), clampf(dt * 1.5, 0.0, 1.0))
+			if cv:
+				canopy.rotation.z = sin(G.time * 1.3 + position.z) * 0.08
+				canopy.rotation.x = cos(G.time * 1.1) * 0.06
 			body.animate(dt, "para", 0.0, 0.0)
-			if position.y <= gh + 0.02:
-				position.y = gh
-				para_phase = 3
-				state_t = 0.0
-				G.fx.dust_burst(position, 0.8)
-				_drop_canopy()
+			if position.y <= gh + 0.02 or para_t > PARA_MAX_T:
+				_para_touchdown()
 		3:
 			# iniş yuvarlanması: yan yatıp kalkar
 			body.animate(dt, "prone" if state_t < 0.7 else "crouch", 0.0)
@@ -702,6 +748,25 @@ func _para_process(dt: float) -> void:
 				stance = CROUCH
 				cmd_move(para_goal)
 	body.position = Vector3.ZERO
+
+# yere değiş: iniş noktası her durumda harita içinde boş bir zemin hücresi (dolu hücreye
+# düşen en yakın boş hücreye kayar); kubbe çöker. Havada vurulmuşsa yuvarlanmaz, yaralı yatar.
+func _para_touchdown() -> void:
+	var lp := _free_ground(position, para_goal)
+	position = Vector3(lp.x, G.terrain.ground_h(lp) if G.terrain else 0.0, lp.z)
+	para_vel = Vector3.ZERO
+	para_phase = 3
+	state_t = 0.0
+	G.fx.dust_burst(position, 0.8)
+	_drop_canopy()
+	if para_hurt:
+		para_hurt = false
+		state = "wounded"
+		stance = PRONE
+		target = null
+		vel = Vector3.ZERO
+		G.fx.blood_pool(position)
+		say(["SIHHİYE!", "SIHHİYE! VURULDUM!", "YARDIM EDİN!"][randi() % 3], 3.0)
 
 func _drop_canopy() -> void:
 	if canopy == null:
@@ -789,7 +854,7 @@ func _door_process(dt: float) -> void:
 			say("ARAÇ DOLU!")
 
 func cmd_build(site: Node3D) -> void:
-	if not alive or incapacitated():
+	if not alive or incapacitated() or state == "para":
 		return
 	_release_patient()
 	build_site = site
@@ -1048,6 +1113,12 @@ func _think() -> void:
 				state = "idle"
 				order = ""
 		"move":
+			if order == "rope_up" and rope_heli != null and is_instance_valid(rope_heli) and rope_heli.rope_pt != Vector3.INF and dist2_p(rope_heli.rope_pt) < 2.5:
+				# halatın dibine vardı: tam yol sonunu bekleme — kalabalıkta ayrışma itişi askerleri
+				# 0.25 m varış eşiğinin dışında dengede tutar, "move"da sonsuza dek kalırlardı
+				path = PackedVector3Array()
+				_arrive()
+				return
 			if order == "build" and build_goal != Vector3.INF and randf() < 0.06:
 				# yol bina ızgaraya işlenmeden hesaplanmış olabilir: ara sıra yeniden bul
 				_set_path(build_goal)
@@ -2157,6 +2228,11 @@ func on_blast(p: Vector3, r: float, dmg: float, d: float, src) -> void:
 	if src != null and is_instance_valid(src):
 		threat_pos = src.position
 		threat_time = G.time
+	if state == "para" and para_phase < 3:
+		# kubbe altında savrulmaz ("fly" yere ışınlardı); hasar işlenir, düşerse süzülerek iner
+		if hp <= 0.0 and alive:
+			_down(src, true)
+		return
 	if not blocked and k > 0.2 and alive and state != "fly" and G.time - fly_end > 3.0:
 		_release_patient()
 		state = "fly"
@@ -2184,10 +2260,17 @@ func _down(src, explosive := false) -> void:
 	hp = 1.0
 	_release_patient()
 	_injure(explosive)
+	bleed = randf_range(38.0, 55.0)
+	if state == "para" and para_phase < 3:
+		# kubbe altında: durum burada değişirse asker havada kalır ya da yere ışınlanır;
+		# yaralı süzülmeye devam eder, yere değince (_para_touchdown) yatar
+		para_hurt = true
+		say("VURULDUM!", 2.0)
+		return
+	_drop_canopy()
 	state = "wounded"
 	state_t = 0.0
 	stance = PRONE
-	bleed = randf_range(38.0, 55.0)
 	target = null
 	path = PackedVector3Array()
 	vel = Vector3.ZERO
@@ -2257,9 +2340,14 @@ func die(src, keep_fly := false) -> void:
 	rescuer = null
 	var rv := Vector3(randf_range(-0.6, 0.6), 0.4, randf_range(-0.6, 0.6))
 	var spin := 0.0
+	var airborne := state == "para" and para_phase < 3
+	_drop_canopy()
 	if state == "fly":
 		rv = fly_vel
 		spin = fly_spin * 0.3
+	elif airborne:
+		# kubbe altında ölen: beden süzülme hızıyla düşer (ragdoll zemine indirir)
+		rv = para_vel
 	elif src != null and is_instance_valid(src):
 		var away: Vector3 = position - src.position
 		away.y = 0
@@ -2287,7 +2375,8 @@ func die(src, keep_fly := false) -> void:
 	loot = mini(ammo, 90)
 	lean = Vector3.ZERO
 	G.credit_kill(src, self)
-	G.fx.blood_pool(position)
+	if not airborne:
+		G.fx.blood_pool(position)
 	if selected and G.player:
 		G.player.deselect(self)
 	if squad:
@@ -2607,7 +2696,9 @@ func _settle_body() -> void:
 	if rag == null:
 		return
 	var c := rag.center()
-	position = Vector3(c.x, position.y, c.z)
+	# havada ölen (paraşüt, halat, savrulma): düğüm de cesedin yattığı zemine iner
+	var gy := G.terrain.ground_h(c) if G.terrain else 0.0
+	position = Vector3(c.x, gy if position.y > gy + 0.5 else position.y, c.z)
 	rag._apply()
 
 # ------------------------------------------------------------ yaralıyken tabanca

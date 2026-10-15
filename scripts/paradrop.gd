@@ -1,10 +1,12 @@
 class_name Paradrop extends Node3D
 # Hava indirme: nakliye uçağı (ABD: C-130 tipi pervaneli, Rusya: Il-76 tipi jet) haritanın
-# kenarından girer, atlama bölgesinin üstünden geçerken askerler arka rampadan sırayla atlar
+# kenarından girer, atlama bölgesinin üstünden geçerken askerler arka rampadan iki sıra hâlinde atlar
 # (statik hat → kubbe paraşüt açılır → süzülme → iniş yuvarlanması), uçak öbür kenardan çıkar.
 
 const ALT := 42.0
 const SPEED := 46.0
+const GAP := 0.21 * SPEED      # ardışık iki atlayış arası uçuş mesafesi (m): rampadan iki sıra, her sıra 0,42 sn arayla
+const DRIFT := 12.0            # statik hat serbest düşüşünde ileri savrulma (m): çıkış noktaları bu kadar geri alınır
 
 var team := 0
 var target := Vector3.ZERO
@@ -15,7 +17,6 @@ var dir := Vector3.FORWARD
 var plane: Node3D
 var props: Array = []
 var jumped := 0
-var _jt := 0.0
 static var _plane_m := {}
 
 static func launch(t: int, tgt: Vector3, unit_roles: Array, sq: Squad, share: float) -> void:
@@ -119,20 +120,27 @@ func _process(dt: float) -> void:
 	position += dir * SPEED * dt
 	for pr in props:
 		pr.rotation.y += dt * 40.0
-	# atlama bölgesi: hedefin ±(n*0.5*aralık) kadarında, 0.42 sn arayla
+	# atlama bölgesi: çıkış noktaları uçuş hattı boyunca hedefe ortalanmış, sabit aralıklı.
+	# Kare süresinden bağımsız: yavaş bir karede birden çok nokta geçildiyse o askerler de
+	# atlar, kapı konumu geçilen mesafe kadar geri alınır (eskiden aralık kare süresine
+	# yuvarlanıyor, sıra hedefin çok ötesine — düşman mevzisinin üstüne — uzuyordu)
 	var along := (position - target).dot(dir)
-	var spread := roles.size() * 0.42 * SPEED * 0.5
-	if jumped < roles.size() and along > -spread - 6.0:
-		_jt -= dt
-		if _jt <= 0.0:
-			_jt = 0.42
-			_jump(jumped)
-			jumped += 1
+	while jumped < roles.size():
+		var at := _exit_along(jumped)
+		if along < at:
+			break
+		_jump(jumped, along - at)
+		jumped += 1
 	if along > minf(G.MAP * 0.9 + 80.0, 700.0):
 		queue_free()
 
-func _jump(i: int) -> void:
-	var door := plane.global_transform * Vector3(0, -1.6, (30.0 if team == 0 else 44.0) * 0.36)
+# i. askerin çıkış noktası (hedefe göre uçuş hattı üzerindeki mesafe)
+func _exit_along(i: int) -> float:
+	return (i - (roles.size() - 1) * 0.5) * GAP - DRIFT
+
+func _jump(i: int, back := 0.0) -> void:
+	var file := 0.7 if i % 2 == 0 else -0.7
+	var door := plane.global_transform * Vector3(file, -1.6, (30.0 if team == 0 else 44.0) * 0.36) - dir * back
 	var s: Soldier = G.main.spawn_soldier(team, roles[i], Vector3(door.x, 0, door.z), squad)
 	s.cost_share = cost_share
 	s.start_para(door, dir * SPEED * 0.35, target + Vector3((i % 3 - 1) * 2.5, 0, (i / 3) * 2.5))

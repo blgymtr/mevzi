@@ -293,6 +293,12 @@ func _occupied(c: Vector2i, mode: int) -> bool:
 		return true
 	return mode == M_INF and vault[c.y * NN + c.x] == 1
 
+# p'nin hücresinde durulabilir mi (harita içi, katı/su/atlanacak engel değil)
+func free_at(p: Vector3, mode: int) -> bool:
+	if p.x < 0.0 or p.z < 0.0:
+		return false
+	return not _occupied(Vector2i(int(p.x / NAV), int(p.z / NAV)), mode)
+
 func nearest_free(p: Vector3, mode: int, maxr := 8) -> Vector3:
 	var c := cell_of(p)
 	if not _occupied(c, mode):

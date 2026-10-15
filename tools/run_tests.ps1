@@ -7,7 +7,7 @@
 # Çıkış kodu: tüm sahneler "RESULT fails=0" ise 0, değilse 1.
 param(
 	[Parameter(Mandatory = $true)][string]$Godot,
-	[string[]]$Scenes = @("treetest", "dronetest", "woundtest", "ropetest", "crewtest", "paratest", "fowtest", "tactest", "evadetest", "vfxtest", "rocktest", "largetest"),
+	[string[]]$Scenes = @("treetest", "dronetest", "woundtest", "ropetest", "crewtest", "paratest", "para2test", "fowtest", "tactest", "evadetest", "vfxtest", "rocktest", "largetest"),
 	[int]$Timeout = 600,
 	[switch]$NoImport
 )

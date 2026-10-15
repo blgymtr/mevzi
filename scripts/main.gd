@@ -10,6 +10,13 @@ var shot_dir := ""
 var shot_scene := ""
 var autoplay := 0.0
 var _t07: Tests07 = null
+# test bekçisi: duvar saatiyle toplam süre sınırı + tek karede kilitlenme (sonsuz döngü) algılama.
+# Ayrı iş parçacığında çalışır; ana iş parçacığı kilitlense bile süreç sonlanır ve günlükte neden/aşama görünür.
+var _wd_thread: Thread = null
+var _wd_mx := Mutex.new()
+var _wd_phase := ""
+var _beat_ms := 0
+var _wd_stop := false
 var ambience: AudioStreamPlayer
 var ambience2: AudioStreamPlayer
 var cfg := {"volume": 0.8, "difficulty": 1, "lang": "", "fullscreen": true, "shadows": true, "edge_scroll": true}
@@ -34,7 +41,9 @@ func _ready() -> void:
 		elif a.begins_with("--autoplay="):
 			autoplay = float(a.substr(11))
 	apply_video()
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "tactest", "largetest", "hugetest", "rocktest"]:
+	if shot_dir != "":
+		_start_watchdog()
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "tactest", "largetest", "hugetest", "rocktest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -497,6 +506,7 @@ func start_game(kind: String, data := {}, sandbox := false) -> void:
 	G.say("Karargâh kuruldu. İleri üs kurarak ilerleyin.", G.hq_pos[0], 0)
 
 func _process(dt: float) -> void:
+	_beat_ms = Time.get_ticks_msec()
 	if not G.running or get_tree().paused:
 		return
 	G.step(dt)
@@ -549,11 +559,63 @@ func save_cfg() -> void:
 
 # ------------------------------------------------------------ testler
 func _shot(n: String) -> void:
+	# çizim kapalıysa (test hızlandırma, bkz. Tests07._fast) yalnız bu kare için aç
+	var off := not RenderingServer.render_loop_enabled
+	if off:
+		RenderingServer.render_loop_enabled = true
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
+	if off:
+		RenderingServer.render_loop_enabled = false
 	DirAccess.make_dir_recursive_absolute(shot_dir)
 	img.save_png(shot_dir.path_join(n + ".png"))
 	print("SHOT ", n)
+
+# test aşaması: bekçi süre aşımında son aşamayı yazar
+func test_phase(p: String) -> void:
+	_wd_mx.lock()
+	_wd_phase = p
+	_wd_mx.unlock()
+	print("PHASE %s ms=%d gt=%.1f" % [p, Time.get_ticks_msec(), G.time])
+
+func _start_watchdog() -> void:
+	var budget := 840.0      # toplam duvar saati (sn) — dış "timeout 900"den kısa olmalı (--budget=)
+	var stall := 240.0       # tek kare bu kadar sürerse kilitlenme say (--stall=)
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--budget="):
+			budget = float(a.substr(9))
+		elif a.begins_with("--stall="):
+			stall = float(a.substr(8))
+	_beat_ms = Time.get_ticks_msec()
+	_wd_thread = Thread.new()
+	_wd_thread.start(_watchdog.bind(Time.get_ticks_msec() + int(budget * 1000.0), int(stall * 1000.0)))
+
+func _watchdog(deadline: int, stall_ms: int) -> void:
+	var asked := 0
+	while not _wd_stop:
+		OS.delay_msec(500)
+		var now := Time.get_ticks_msec()
+		_wd_mx.lock()
+		var ph := _wd_phase
+		_wd_mx.unlock()
+		if asked == 0 and now > deadline:
+			# yavaş ama canlı: düzgün çık (çıkış kodu 3)
+			print("TIMEOUT scene=%s phase=%s wall=%ds gt=%.1f fps=%d" % [shot_scene, ph, now / 1000, G.time, Engine.get_frames_per_second()])
+			asked = now
+			_wd_quit.call_deferred()
+		elif now - _beat_ms > stall_ms or (asked > 0 and now - asked > 20000):
+			# ana iş parçacığı kare bitiremiyor (sonsuz döngü vb.): süreci öldür
+			print("HANG scene=%s phase=%s frame_stuck=%ds" % [shot_scene, ph, (now - _beat_ms) / 1000])
+			OS.kill(OS.get_process_id())
+			return
+
+func _wd_quit() -> void:
+	get_tree().quit(3)
+
+func _exit_tree() -> void:
+	if _wd_thread != null:
+		_wd_stop = true
+		_wd_thread.wait_to_finish()
 
 func _wait(sec: float) -> void:
 	var t := 0.0

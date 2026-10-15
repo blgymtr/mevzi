@@ -479,6 +479,13 @@ var evade_t := 0.0
 var evade_side := 1.0
 var hf_left := 0                # helikopter güdümlü füzesi (Hellfire / Vikhr)
 var hf_cd := 3.0
+# saldırı helikopterinin atış konumu: hedefe göre yön + mesafe; görüş hattı kapalıysa (ağaç, bina)
+# konum hedef çevresinde döndürülür ve mesafe daraltılır (yoksa helikopter aynı noktada sonsuza dek asılı kalırdı)
+var atk_for: Unit = null
+var atk_dir := Vector3.ZERO
+var atk_r := 32.0
+var atk_t := 0.0
+var atk_n := 0
 # halatla iniş (fast-rope) / halatla çekme (SPIES)
 var rope_pt := Vector3.INF
 var rope_mode := ""             # "down": asker indir, "up": asker al
@@ -1444,6 +1451,35 @@ func _scan() -> void:
 	coax_target = null
 	if vtype == "tank" and best_inf != null and G.grid.los(eye, best_inf.aim_point(), 3.0, 1.6 if best_inf.house_id >= 0 else 0.5):
 		coax_target = best_inf
+	if order == "attack" and forced_target != null and best != forced_target:
+		_close_on_forced()
+
+# saldırı emri verilen hedef vurulamıyor (görülmüyor / menzil dışı / görüş hattı kapalı): doğrudan atışlı kara
+# aracı (çekili top dahil) piyadedeki gibi hedefe yaklaşır — yoksa emir sessizce askıda kalır. Dolaylı atışlı
+# topçu yaklaşmaz (asgari menzil); gözcü gerektiğini söyler.
+var _chase_t := 0.0
+
+func _close_on_forced() -> void:
+	var ft: Unit = forced_target
+	if not is_instance_valid(ft) or not ft.hostile() or is_air() or immobile() or (ft is Vehicle and ft.is_air()):
+		return
+	if G.time < _chase_t:
+		return
+	if vtype in INDIRECT:
+		if not G.is_seen(ft, team):
+			_chase_t = G.time + 8.0
+			say("HEDEF GÖRÜLMÜYOR, GÖZCÜ GEREK", 2.5)
+		return
+	var d := dist2(ft)
+	if d < 8.0:
+		return
+	var stand := minf(minf(sight, _range()) * 0.7, d * 0.6)
+	var goal: Vector3 = G.grid.nearest_free(ft.position + (position - ft.position).normalized() * stand, nav_mode)
+	if path_i < path.size() and goal.distance_to(dest) < 4.0:
+		return
+	_chase_t = G.time + 1.5
+	dest = goal
+	_repath(dest)
 
 func _aim_fire(dt: float) -> void:
 	if turret == null or G.deploy_t > 0.0:
@@ -2130,9 +2166,7 @@ func _heli(dt: float) -> void:
 	if rope_pt != Vector3.INF:
 		goal = rope_pt
 	if forced_target != null and is_instance_valid(forced_target) and forced_target.hostile():
-		var off := position - forced_target.position
-		off.y = 0
-		goal = forced_target.position + off.normalized() * 32.0
+		goal = _attack_spot(dt)
 	var d := goal - position
 	d.y = 0
 	var L := d.length()
@@ -2255,6 +2289,35 @@ func _heli(dt: float) -> void:
 		var gp := hull.global_transform * Vector3(0, -1.3, -4.6)
 		_hitscan_from(gp, t, 28.0, 0.38, 12.0)
 		Sfx.play3d("hmg", gp, 2.0, 0.08, 0.03)
+
+# saldırı emrindeki helikopterin atış konumu. Hedef seçilemiyorsa (görüş hattı kapalı) konumda 2,5 sn
+# bekledikten sonra hedef çevresinde 50° döner; her tam turda mesafe daralır (32 → 22 → 14 m: daha dik açı
+# ağaç/bina üstünden görür), sonra başa döner.
+func _attack_spot(dt: float) -> Vector3:
+	var ft: Unit = forced_target
+	if atk_for != ft:
+		atk_for = ft
+		var off := position - ft.position
+		off.y = 0.0
+		atk_dir = off.normalized() if off.length() > 0.5 else Vector3.FORWARD
+		atk_r = 32.0
+		atk_t = 0.0
+		atk_n = 0
+	var goal := ft.position + atk_dir * atk_r
+	if target == ft:
+		atk_t = 0.0
+	elif Vector2(goal.x - position.x, goal.z - position.z).length() < 5.0:
+		atk_t += dt
+		if atk_t > 2.5:
+			atk_t = 0.0
+			atk_n += 1
+			atk_dir = atk_dir.rotated(Vector3.UP, deg_to_rad(50.0))
+			if atk_n % 7 == 0:
+				atk_r = [32.0, 22.0, 14.0][(atk_n / 7) % 3]
+			if atk_n == 1:
+				say("AÇI ARIYORUM", 2.0)
+			goal = ft.position + atk_dir * atk_r
+	return goal
 
 # ------------------------------------------------------------ halatla iniş / çekme
 func can_rope() -> bool:
@@ -2398,11 +2461,14 @@ func _rope_tick(dt: float, L: float) -> bool:
 						u.start_rope_up(self)
 		rope_riders = rope_riders.filter(func(x): return is_instance_valid(x) and x.alive and x.state in ["rope_wait", "rope_up", "move"] )
 		var ready := rope_riders.filter(func(x): return x.state == "rope_wait")
-		if not rope_riders.is_empty() and ready.size() == rope_riders.size() and rope_t > 2.0:
+		# hepsi kancalanınca çek; geciken varsa 12 sn sonra kancalı olanları çek (geç gelenler ardından çekilir)
+		if not ready.is_empty() and rope_t > 2.0 and (ready.size() == rope_riders.size() or rope_t > 12.0):
 			for x in ready:
 				x.state = "rope_up"
 				x.state_t = 0.0
-		if rope_t > 40.0 or (rope_riders.is_empty() and rope_t > 4.0):
+		# süre sınırı: tırmanan varken halatı kesme (düşerlerdi); 60 sn kesin üst sınır
+		var climbing := rope_riders.any(func(x): return x.state == "rope_up")
+		if (rope_t > 40.0 and not climbing) or rope_t > 60.0 or (rope_riders.is_empty() and rope_t > 4.0):
 			_rope_cut()
 			rope_pt = Vector3.INF
 			rope_mode = ""

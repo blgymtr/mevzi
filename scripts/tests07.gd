@@ -24,6 +24,8 @@ func run(scene: String) -> void:
 			await fow_test()
 		"paratest":
 			await para_test()
+		"para2test":
+			await para2_test()
 		"tactest":
 			await tac_test()
 		"largetest":
@@ -48,6 +50,20 @@ func _densest(kind: String) -> Vector3:
 			bn = n
 			best = p
 	return best
+
+# test hızlandırma: kareler arası çizimi kapat, yalnız Main._shot çizsin. llvmpipe'ta 1280x720 bir kare
+# ~2-7 sn sürer (oyun mantığı ~15-30 ms); döngüler çizimle birlikte 1500 sn sınırını aşıyordu.
+# Savaş sisi "keşfedildi" katmanı yalnız çizilen karelerde birikir: fow_test'te kullanma.
+func _fast() -> void:
+	RenderingServer.render_loop_enabled = false
+
+# teşhis: duman perdeleri yok sayılarak görüş hattı (yalnız arazi/engel yüksekliği)
+func _los_nosmoke(a: Vector3, b: Vector3) -> bool:
+	var sm: Array = G.smokes
+	G.smokes = []
+	var r := G.grid.los(a, b, 0.75, 0.5)
+	G.smokes = sm
+	return r
 
 func _cam(c: Vector3, size: float) -> void:
 	# yüksekteki nesne (halat, paraşüt, helikopter): yer odağı, ekranda aynı yere düşecek kadar kaydırılır
@@ -146,6 +162,7 @@ func evade_test() -> void:
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
+	_fast()
 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
 	G.reveal = [999.0, 999.0]
 	var aa: Vehicle = m.spawn_vehicle(0, "usa_aa_avenger", c, 0.0)
@@ -160,6 +177,7 @@ func evade_test() -> void:
 	var shot_n := 0
 	var seen_sam := false
 	var flares0 := heli.flares
+	m.test_phase("evade_sam")
 	for i in 240:
 		await m._wait(0.05)
 		var nsam := G.bal.projs.filter(func(p): return p.kind == "sam").size()
@@ -173,6 +191,11 @@ func evade_test() -> void:
 				_cam(heli.position + Vector3(0, heli.hull.position.y, 0), 34.0)
 			await m._shot("evade_%02d" % shot_n)
 			shot_n += 1
+		# başarı ölçütü sağlandı ya da helikopter düştü: kalan döngüyü bekleme
+		if seen_sam and shot_n >= 4 and is_instance_valid(heli) and heli.flares < flares0:
+			break
+		if not is_instance_valid(heli) or not heli.alive:
+			break
 	var hv := is_instance_valid(heli)
 	var fl_used: int = flares0 - (heli.flares if hv else 0)
 	print("EVADE seen_sam=%s flares_used=%d heli_alive=%s" % [seen_sam, fl_used, hv and heli.alive])
@@ -185,10 +208,18 @@ func evade_test() -> void:
 	tk.fire_mode = 2
 	h2.cmd_attack(tk)
 	var shot_h := false
-	for i in 300:
+	m.test_phase("evade_hellfire")
+	# oyun süresiyle sınırlı: görüş hattı kapalıysa helikopter hedef çevresinde atış açısı arar (bkz. Vehicle._attack_spot)
+	var th := G.time
+	var dbg_h := -9.0
+	while G.time - th < 40.0:
 		await m._wait(0.05)
-		if i % 40 == 0:
-			print("EVADE dbg t=%.1f tgt=%s hf=%d cd=%.1f dist=%.0f alive=%s" % [G.time, h2.target, h2.hf_left, h2.hf_cd, h2.dist2(tk), h2.alive])
+		if not is_instance_valid(h2) or not is_instance_valid(tk):
+			break
+		if G.time - dbg_h > 2.0:
+			dbg_h = G.time
+			var eye := h2.turret_world_pos() + Vector3(0, 0.4, 0)
+			print("EVADE dbg t=%.1f tgt=%s hf=%d cd=%.1f dist=%.0f seen=%s los=%s los_nosmoke=%s smokes=%d atk_n=%d atk_r=%.0f" % [G.time - th, h2.target != null, h2.hf_left, h2.hf_cd, h2.dist2(tk), G.is_seen(tk, h2.team), G.grid.los(eye, tk.aim_point(), h2.D["len"] * 0.5, 0.5), _los_nosmoke(eye, tk.aim_point()), G.smokes.size(), h2.atk_n, h2.atk_r])
 		var ms: Array = G.bal.projs.filter(func(p): return p.kind == "atgm" and p.src == h2)
 		if not ms.is_empty() and not shot_h and ms[0].t > 0.35:
 			shot_h = true
@@ -197,8 +228,43 @@ func evade_test() -> void:
 			_cam(ms[0].pos, 30.0)
 			await m._wait(0.3)
 			await m._shot("evade_11_hellfire_trail")
+			break
+		if not is_instance_valid(h2) or not h2.alive:
+			break
 	print("EVADE hellfire_seen=%s" % shot_h)
 	if not shot_h:
+		fails += 1
+	# görüş hattı kapalı hedef: tankın çevresinde 6 m yüksek engel halkası, yalnız batıda (helikopterin
+	# tersinde) boşluk. Helikopter doğudan gelir; ilk atış konumundan göremez → hedef çevresinde açı
+	# arayıp boşluğu bulmalı (Vehicle._attack_spot). Eskiden aynı noktada sonsuza dek asılı kalıyordu.
+	var fp := G.grid.nearest_free(c + Vector3(-60, 0, 60), Grid.M_HEAVY)
+	var tk2: Vehicle = m.spawn_vehicle(1, "rus_mbt_72b3", fp, 0.0)
+	tk2.cmd_hold()
+	tk2.fire_mode = 2
+	tk2.hp = 99999.0
+	for k in 60:
+		var a := k * TAU / 60.0
+		if absf(angle_difference(a, PI)) < deg_to_rad(40.0):
+			continue
+		G.grid.set_static_circle(fp + Vector3(cos(a), 0, sin(a)) * 6.0, 0.45, 6.0, Grid.K_WALL)
+	var h3: Vehicle = m.spawn_vehicle(0, "heli", G.grid.nearest_free(fp + Vector3(60, 0, 0), Grid.M_HEAVY), 0.0)
+	h3.cmd_attack(tk2)
+	m.test_phase("evade_blocked")
+	var tf := G.time
+	var fired := false
+	var blind0 := false
+	while G.time - tf < 90.0:
+		await m._wait(0.1)
+		if not is_instance_valid(h3) or not h3.alive or not is_instance_valid(tk2):
+			break
+		if G.time - tf > 6.0 and G.time - tf < 6.2:
+			blind0 = h3.target == null
+		if h3.hf_left < 8 or G.bal.projs.any(func(p): return p.src == h3):
+			fired = true
+			break
+	var hok := is_instance_valid(h3)
+	print("EVADE blocked fired=%s t=%.1f blind_at_first_spot=%s atk_n=%d atk_r=%.0f bearing=%.0f" % [fired, G.time - tf, blind0, h3.atk_n if hok else -1, h3.atk_r if hok else -1.0, rad_to_deg(atan2(h3.position.z - fp.z, h3.position.x - fp.x)) if hok else 0.0])
+	if not fired:
 		fails += 1
 	print("EVADETEST RESULT fails=%d" % fails)
 
@@ -257,6 +323,7 @@ func rope_test() -> void:
 	Sfx.muted = true
 	var fails := 0
 	m.start_game("green_valley", {}, true)
+	_fast()
 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
 	var h: Vehicle = m.spawn_vehicle(G.player_team, "usa_heli_uh60", c + Vector3(-40, 0, 0), 0.0)
 	var sq := Squad.new(G.player_team, "Tim")
@@ -268,6 +335,7 @@ func rope_test() -> void:
 	h.cmd_fastrope(c)
 	var shots := 0
 	var landed := 0
+	m.test_phase("rope_down")
 	for i in 600:
 		await m._wait(0.05)
 		var on_rope := sq.members.filter(func(x): return x.state == "rope")
@@ -277,8 +345,14 @@ func rope_test() -> void:
 			await m._shot("rope_%02d" % shots)
 			shots += 1
 		landed = sq.members.filter(func(x): return x.state != "rope" and x.vehicle_in == null and x.position.y < 0.05).size()
+		if not is_instance_valid(h) or not h.alive:
+			break
 		if landed == 8 and h.ropes.is_empty():
 			break
+	if not is_instance_valid(h) or not h.alive:
+		print("ROPE heli lost landed=%d" % landed)
+		print("ROPETEST RESULT fails=%d" % (fails + 1))
+		return
 	print("ROPE landed=%d ropes_left=%d" % [landed, h.ropes.size()])
 	if landed < 8 or not h.ropes.is_empty():
 		fails += 1
@@ -289,6 +363,7 @@ func rope_test() -> void:
 	for x in sq.members:
 		x.cmd_move(G.grid.nearest_free(c + Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)), Grid.M_INF))
 	await m._wait(3.0)
+	m.test_phase("rope_spies")
 	h.cmd_rope_pick(c)
 	var up_shot := false
 	for i in 900:
@@ -298,10 +373,14 @@ func rope_test() -> void:
 			up_shot = true
 			_cam(ups[0].position, 16.0)
 			await m._shot("rope_11_spies")
-		if h.cargo.size() >= 8:
+		# helikopter yok, alım bitti/iptal (halat kesildi) ya da dolu: kalan döngüyü bekleme
+		if not is_instance_valid(h) or not h.alive or h.cargo.size() >= 8 or (h.rope_mode == "" and i > 10):
 			break
-	print("ROPE extracted=%d" % h.cargo.size())
-	if h.cargo.size() < 6:
+	var hv := is_instance_valid(h)
+	var extracted: int = h.cargo.size() if hv else 0
+	var sts: Array = sq.members.filter(func(x): return is_instance_valid(x)).map(func(x): return "%s/%s" % [x.state, x.order])
+	print("ROPE extracted=%d rope_t=%.1f members=%s" % [extracted, h.rope_t if hv else -1.0, " ".join(sts)])
+	if extracted < 6:
 		fails += 1
 	print("ROPETEST RESULT fails=%d" % fails)
 
@@ -315,7 +394,9 @@ func crew_test() -> void:
 	G.reveal = [999.0, 999.0]
 	var gun: Vehicle = m.spawn_vehicle(G.player_team, "usa_tow_m119", c, 0.0)
 	gun.cmd_hold()
-	var tk: Vehicle = m.spawn_vehicle(1 - G.player_team, "rus_mbt_72b3", G.grid.nearest_free(c + Vector3(0, 0, -45), Grid.M_HEAVY), 0.0)
+	# hedef topun kendi görüşü içinde olmalı (sahra topu: görüş 40 m, menzil 64 m); G.reveal yalnız yapıları
+	# açar — 45 m'deki tank hiç görülmüyordu, top hedef almıyor, döngü hiç başlamıyordu
+	var tk: Vehicle = m.spawn_vehicle(1 - G.player_team, "rus_mbt_72b3", G.grid.nearest_free(c + Vector3(0, 0, -32), Grid.M_HEAVY), 0.0)
 	tk.cmd_hold()
 	tk.fire_mode = 2
 	tk.hp = 99999.0
@@ -325,21 +406,27 @@ func crew_test() -> void:
 	var mi := 0
 	var cycles := 0
 	var last_cd := 0.0
-	for i in 900:
+	var t0 := G.time
+	var dbg_t := -9.0
+	# kare sayısıyla değil oyun süresiyle sınırlı (yazılım çiziminde kare başına 0.13 sn oyun zamanı geçer)
+	while G.time - t0 < 45.0 and mi < marks.size():
 		await m._wait(0.03)
-		if i % 50 == 0:
-			print("CREW dbg i=%d ms=%d fps=%d cycle=%.1f cd=%.2f emit=%d tgt=%s" % [i, Time.get_ticks_msec(), Engine.get_frames_per_second(), gun.crew_cycle, gun.main_cd, G.fx.emitters.size(), gun.target != null])
+		if G.time - dbg_t > 3.0:
+			dbg_t = G.time
+			print("CREW dbg t=%.1f ms=%d fps=%d cycle=%.1f cd=%.2f cycles=%d tgt=%s seen=%s" % [G.time - t0, Time.get_ticks_msec(), Engine.get_frames_per_second(), gun.crew_cycle, gun.main_cd, cycles, gun.target != null, G.is_seen(tk, gun.team)])
 		if gun.crew_cycle > 0.0 and gun.main_cd > last_cd + 0.5:
 			cycles += 1
 		last_cd = gun.main_cd
-		if cycles >= 2 and mi < marks.size():
+		# hızlı başarısızlık: 15 sn'de ilk atış yoksa nedenini yaz, boşuna bekleme
+		if cycles == 0 and G.time - t0 > 15.0:
+			print("CREW no fire: seen=%s dist=%.1f sight=%.1f range=%.1f tgt=%s order=%s deployed=%.2f" % [G.is_seen(tk, gun.team), gun.dist2(tk), gun.sight, gun._range(), gun.target != null, gun.order, gun.deployed])
+			break
+		if cycles >= 2:
 			var p := 1.0 - gun.main_cd / gun.crew_cycle
 			if p >= marks[mi] and p < marks[mi] + 0.08:
 				await m._shot("crew_%02d" % mi)
 				mi += 1
-		if mi >= marks.size():
-			break
-	print("CREW cycles=%d shots=%d" % [cycles, mi])
+	print("CREW cycles=%d shots=%d t=%.1f" % [cycles, mi, G.time - t0])
 	if cycles < 2 or mi < 4:
 		fails += 1
 	# araca kapıdan binme / inme
@@ -352,25 +439,29 @@ func crew_test() -> void:
 		ss.append(s)
 	_cam(apc.position, 13.0)
 	var shot_in := false
-	for i in 400:
+	var t1 := G.time
+	while G.time - t1 < 40.0 and apc.cargo.size() < 6:
 		await m._wait(0.05)
 		if not shot_in and ss.any(func(x): return x.state == "entering"):
 			shot_in = true
 			await m._shot("crew_10_board")
-		if apc.cargo.size() >= 6:
-			break
-	print("CREW boarded=%d" % apc.cargo.size())
+	print("CREW boarded=%d t=%.1f" % [apc.cargo.size(), G.time - t1])
 	if apc.cargo.size() < 6:
 		fails += 1
 	apc.unload()
 	var shot_out := 0
-	for i in 200:
+	var t2 := G.time
+	var n := 0
+	while G.time - t2 < 20.0:
 		await m._wait(0.05)
-		if shot_out < 2 and ss.filter(func(x): return x.state == "exiting" and x.visible).size() > 0 and i % 6 == 0:
+		n += 1
+		if shot_out < 2 and ss.filter(func(x): return x.state == "exiting" and x.visible).size() > 0 and n % 3 == 0:
 			await m._shot("crew_%02d_exit" % (11 + shot_out))
 			shot_out += 1
+		if G.time - t2 > 4.0 and ss.all(func(x): return x.vehicle_in == null and x.state != "exiting"):
+			break
 	var out := ss.filter(func(x): return x.vehicle_in == null and x.state != "exiting").size()
-	print("CREW unloaded=%d" % out)
+	print("CREW unloaded=%d exit_shots=%d t=%.1f" % [out, shot_out, G.time - t2])
 	if out < 6:
 		fails += 1
 	print("CREWTEST RESULT fails=%d" % fails)
@@ -431,6 +522,103 @@ func para_test() -> void:
 	if down < 8:
 		fails += 1
 	print("PARATEST RESULT fails=%d" % fails)
+
+# paraşüt sağlamlığı: nehre / binaya / harita köşesine düşen, havada yaralanan / ölen / patlamada
+# kalan, havada emir alan ve dev kare süresiyle işlenen paraşütçülerin hepsi sınırlı sürede
+# harita içinde boş bir zemin hücresine iner (ölüler: ceset zemine)
+func para2_test() -> void:
+	m.get_window().size = Vector2i(480, 270)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
+	# haritanın ortasına en yakın nehir hücresi
+	var wp := Vector3.INF
+	for z in range(2, int(G.MAP) - 2, 2):
+		for x in range(2, int(G.MAP) - 2, 2):
+			var p := Vector3(x + 0.5, 0, z + 0.5)
+			if G.grid.is_water(p) and (wp == Vector3.INF or p.distance_to(c) < wp.distance_to(c)):
+				wp = p
+	var hq: Vector3 = G.hq_pos[0]
+	var sq := Squad.new(G.player_team, "P2")
+	G.squads.append(sq)
+	# "hurt": vurulup düşer (yüzde 30 havada ölür, yoksa kubbe altında yaralı iner) — üç kez
+	var cases := ["water", "hq", "corner", "hurt", "kill", "blast", "order", "bigdt", "hurt", "hurt"]
+	var ss: Array = []
+	for i in cases.size():
+		var k: String = cases[i]
+		var at := c + Vector3((i % 4) * 6.0 - 9.0, 0, (i / 4) * 6.0)
+		var goal := at
+		if k == "water" and wp != Vector3.INF:
+			at = wp
+			goal = wp
+		elif k == "hq":
+			at = hq
+			goal = hq
+		elif k == "corner":
+			at = Vector3(-15, 0, -15)
+			goal = Vector3(-40, 0, -40)
+		var s: Soldier = m.spawn_soldier(G.player_team, "rifle", at, sq)
+		s.start_para(at + Vector3(0, 40, 0), Vector3.ZERO, goal)
+		# rüzgâr hedefi dolu hücreye itmiş gibi: yön noktası da dolu hücre
+		if k in ["water", "hq", "corner"]:
+			s.para_goal = goal
+		ss.append(s)
+	print("P2 water=%s hq=%s c=%s" % [wp, hq, c])
+	var t0 := G.time
+	var seen_w := {}
+	var hurt_done := false
+	var shot := false
+	while G.time - t0 < 40.0:
+		await m._wait(0.1)
+		var el := G.time - t0
+		if not hurt_done and el > 3.0:
+			hurt_done = true
+			for i in cases.size():
+				if cases[i] == "hurt":
+					ss[i].take_damage(110.0, null)
+			ss[4].die(null)
+			ss[5].on_blast(ss[5].position + Vector3(1.5, 0, 0), 6.0, 300.0, 1.5, null)
+			ss[6].cmd_move(c + Vector3(10, 0, -10))
+			for st in 4:
+				if ss[7].state == "para":
+					ss[7]._para_process(2.5)
+			print("P2 mid: hurt=%s/%s,%s/%s,%s/%s kill=%s blast=%s/%s/y=%.1f order=%s bigdt=%s/ph=%d/y=%.1f" % [ss[3].state, ss[3].para_hurt, ss[8].state, ss[8].para_hurt, ss[9].state, ss[9].para_hurt, ss[4].alive, ss[5].state, ss[5].alive, ss[5].position.y, ss[6].state, ss[7].state, ss[7].para_phase, ss[7].position.y])
+		if not shot and el > 4.0:
+			shot = true
+			_cam(ss[0].position, 30.0)
+			await m._wait(0.1)
+			await m._shot("para2_00")
+		for i in ss.size():
+			if is_instance_valid(ss[i]) and ss[i].state == "wounded":
+				seen_w[i] = true
+		var air := ss.filter(func(x): return is_instance_valid(x) and x.alive and x.state == "para")
+		if air.is_empty() and el > 14.0:
+			break
+	await m._wait(8.0)
+	var el := G.time - t0
+	for i in ss.size():
+		var s: Soldier = ss[i]
+		if not is_instance_valid(s):
+			print("P2 %s freed" % cases[i])
+			fails += 1
+			continue
+		var ok := false
+		if s.alive:
+			ok = s.state != "para" and G.grid.free_at(s.position, Grid.M_INF) and s.position.y < 0.3
+		else:
+			ok = s.position.y < 0.6 and s.canopy == null
+		print("P2 %s ok=%s alive=%s st=%s wounded_seen=%s p=%s free=%s h=%.2f" % [cases[i], ok, s.alive, s.state, seen_w.has(i), s.position, G.grid.free_at(s.position, Grid.M_INF), G.grid.height_at(s.position)])
+		if not ok:
+			fails += 1
+	if ss[6].alive and Vector2(ss[6].dest.x - c.x - 10.0, ss[6].dest.z - c.z + 10.0).length() > 3.0:
+		print("P2 order lost: dest=%s" % ss[6].dest)
+		fails += 1
+	_cam(c, 30.0)
+	await m._wait(0.1)
+	await m._shot("para2_10")
+	print("P2 elapsed=%.1f" % el)
+	print("PARA2TEST RESULT fails=%d" % fails)
 
 # tim beyni: YZ timi uzun çatışmada kanattan dolanır, taban kolu baskı ateşi açar
 func tac_test() -> void:
