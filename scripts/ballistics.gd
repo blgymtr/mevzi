@@ -19,6 +19,7 @@ class Proj:
 	var decoy := Vector3.INF      # füze fişeğe kandı: bu noktaya gider
 	var big := false
 	var spd := 0.0
+	var aid := ""          # mühimmat kimliği (data/ammo.json)
 
 var projs: Array = []
 var _gmesh: Mesh
@@ -199,11 +200,13 @@ func _node(m: Mesh) -> MeshInstance3D:
 	add_child(mi)
 	return mi
 
-func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String) -> void:
+func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String, aid := "") -> void:
 	var p := Proj.new()
 	p.kind = mode
 	p.pos = from
-	var sp := 170.0 if mode == "ap" else (140.0 if mode == "he" else 110.0)
+	p.aid = aid
+	# hız: mühimmatın gerçek namlu çıkış hızı × K_proj (APFSDS 1555-1660, HE 850, 25 mm 1385 m/sn...)
+	var sp := Ammo.speed(aid, 170.0 if mode == "ap" else (140.0 if mode == "he" else 110.0))
 	var d := to - from
 	var L := d.length()
 	# hedefin biraz ötesine kadar uçar
@@ -218,7 +221,9 @@ func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String) -> 
 		p.node.position = from
 		p.node.look_at(from + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
 	projs.append(p)
-	G.fx.tracer(from, from + p.vel * p.life, sp, Color(1.0, 0.8, 0.45) if mode != "auto" else Color(1.0, 0.6, 0.3), 0.16 if mode != "auto" else 0.1, 6.0 if mode != "auto" else 3.0)
+	# iz rengi ulusa göre (NATO kırmızı-turuncu, doğu bloku yeşil); büyük kalibre daha kalın/parlak
+	var tc := Ammo.team_tracer(team)
+	G.fx.tracer(from, from + p.vel * p.life, sp, tc.lightened(0.25) if mode != "auto" else tc, 0.16 if mode != "auto" else 0.1, 6.0 if mode != "auto" else 3.0)
 
 func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg", model := "") -> void:
 	var p := Proj.new()
@@ -302,8 +307,8 @@ func flare(from: Vector3, vel: Vector3) -> void:
 # Eskiden ~7 m tepeli, 2,5 sn'lik alçak yay çiziyordu — mancınıktan atılan taş gibi görünüyordu.
 # Uçuşta top/taş gibi değil, hız yönünde uzayan hareket bulanıklığı izi olarak çizilir (gerçekte mermi
 # gözle seçilmez); roketatar roketi görünür kalır (motor alevi + duman izi).
-func mortar(from: Vector3, to: Vector3, team: int, src) -> void:
-	_lob(from, to, team, src, "mortar", _flight_t(from.distance_to(to), 1.3, 45.0, 140.0))
+func mortar(from: Vector3, to: Vector3, team: int, src, aid := "") -> void:
+	_lob(from, to, team, src, "mortar", _flight_t(from.distance_to(to), 1.3, 45.0, 140.0), aid)
 
 func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
 	_lob(from, to, team, src, "rkt", 3.2 + from.distance_to(to) * 0.018)
@@ -313,17 +318,18 @@ func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
 	p.node.scale = Vector3.ONE * 1.6
 	p.node.position = from
 
-func artillery(from: Vector3, to: Vector3, team: int, src) -> void:
-	_lob(from, to, team, src, "arty", _flight_t(from.distance_to(to), 0.7, 60.0, 180.0))
+func artillery(from: Vector3, to: Vector3, team: int, src, aid := "") -> void:
+	_lob(from, to, team, src, "arty", _flight_t(from.distance_to(to), 0.7, 60.0, 180.0), aid)
 
 # tepe yüksekliğinden uçuş süresi: H = mesafe × k (sınırlı), T = 2·√(2H/g)
 func _flight_t(dist: float, k: float, hmin: float, hmax: float) -> float:
 	var H := clampf(dist * k, hmin, hmax)
 	return 2.0 * sqrt(2.0 * H / 9.8)
 
-func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float) -> void:
+func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float, aid := "") -> void:
 	var p := Proj.new()
 	p.kind = kind
+	p.aid = aid
 	p.pos = from
 	var g := Vector3(0, -9.8, 0)
 	p.vel = (to - from - 0.5 * g * T * T) / T
@@ -365,10 +371,12 @@ func _step_lob(p: Proj, dt: float) -> bool:
 			p.node.scale = Vector3(1.0, 1.0, clampf(p.vel.length() * 0.04, 0.6, 6.0))
 	if hit or p.t > p.life:
 		var at := Vector3(np.x, maxf(np.y, 0.0), np.z)
+		# patlama yarıçapı ve hasarı kalibreden (155 mm 7 m, 122 mm 5,5 m, 203 mm 9 m, 120 mm havan 6 m...)
+		var am := Ammo.get_def(p.aid)
 		if p.kind == "mortar":
-			G.explode(at, 4.0, 110.0, "shell", p.team, p.src)
+			G.explode(at, float(am.get("blast", 4.0)), float(am.get("bdmg", 110.0)), "shell", p.team, p.src)
 		else:
-			G.explode(at, 6.0, 180.0, "big", p.team, p.src)
+			G.explode(at, float(am.get("blast", 6.0)), float(am.get("bdmg", 180.0)), "big", p.team, p.src)
 		return true
 	return false
 
@@ -453,11 +461,15 @@ func _step_shell(p: Proj, dt: float) -> bool:
 	return false
 
 func _shell_hit(p: Proj, at: Vector3, direct: Unit) -> void:
+	# mühimmat tablosu: doğrudan hasar, delme, patlama yarıçapı/hasarı (yoksa eski sabitler)
+	var am := Ammo.get_def(p.aid)
+	if direct and direct is Vehicle and am.has("pen"):
+		Vehicle.shot_pen = am["pen"]
 	match p.kind:
 		"ap":
 			if direct:
 				if direct is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
-				direct.take_damage(230.0, p.src, "ap")
+				direct.take_damage(float(am.get("dmg", 230.0)), p.src, "ap")
 				G.fx.impact(at, "metal")
 				G.fx.explosion(at, 0.8, "ap")
 				Sfx.play3d("hit_metal", at, 3.0)
@@ -466,12 +478,12 @@ func _shell_hit(p: Proj, at: Vector3, direct: Unit) -> void:
 		"he":
 			if direct:
 				if direct is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
-				direct.take_damage(140.0, p.src, "he")
-			G.explode(at, 4.5, 130.0, "shell", p.team, p.src)
+				direct.take_damage(float(am.get("dmg", 140.0)), p.src, "he")
+			G.explode(at, float(am.get("blast", 4.5)), float(am.get("bdmg", 130.0)), "shell", p.team, p.src)
 		"auto":
 			if direct:
 				if direct is Vehicle: Vehicle.shot_from = p.pos - p.vel * p.t
-				direct.take_damage(32.0, p.src, "auto")
+				direct.take_damage(float(am.get("dmg", 32.0)), p.src, "auto")
 				G.fx.impact(at, "metal")
 			G.explode(at, 1.7, 40.0, "auto", p.team, p.src)
 

@@ -2165,7 +2165,7 @@ func _shoot(t: Unit) -> void:
 		if randf() < 0.18:
 			Sfx.play3d("whiz", impact, -8.0, 0.2, 0.08)
 	if shots % W["tr"] == 0:
-		G.fx.tracer(mp, impact, 240.0, Color(1.0, 0.62, 0.25) if team == 0 else Color(1.0, 0.45, 0.2))
+		G.fx.tracer(mp, impact, 240.0, Ammo.team_tracer(team))
 
 func _area_fire(center := Vector3.INF, spread := 3.0) -> void:
 	# örtme ateşi: hedef görünmese de tehdit bölgesine
@@ -2189,7 +2189,7 @@ func _area_fire(center := Vector3.INF, spread := 3.0) -> void:
 		if o is Soldier and o.team != team and o.alive:
 			o.add_suppression(W["sup"] * 1.2, position)
 	if shots % W["tr"] == 0:
-		G.fx.tracer(mp, p, 240.0)
+		G.fx.tracer(mp, p, 240.0, Ammo.team_tracer(team))
 	fire_cd = W["rof"] * 1.3 if randf() < 0.8 else randf_range(0.4, 0.9)
 	_face_to(p)
 
@@ -2849,7 +2849,7 @@ func _pistol() -> void:
 		best.add_suppression(5.0, position)
 		G.fx.impact(Vector3(tp.x + randf_range(-1, 1), 0.02, tp.z + randf_range(-1, 1)), "dirt")
 	if shots % 2 == 0:
-		G.fx.tracer(mp, tp, 220.0)
+		G.fx.tracer(mp, tp, 220.0, Ammo.team_tracer(team))
 
 # ------------------------------------------------------------ yakın dövüş
 func _think_melee() -> bool:

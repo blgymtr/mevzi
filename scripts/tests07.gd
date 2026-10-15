@@ -865,6 +865,35 @@ func ammo_test() -> void:
 	print("AMMO arty_apex=%.1f mortar_apex=%.1f blur=%s flight=%.1f" % [apex, apex_m, blur, flight])
 	if apex < 45.0 or apex_m < 40.0 or not blur:
 		fails += 1
+	# mühimmat tablosu (roadmap 6): ulusa göre mermi, gerçek hız oranı, iz rengi, delme, patlama yarıçapı
+	var us: Vehicle = m.spawn_vehicle(0, "usa_mbt_a1", G.grid.nearest_free(c + Vector3(-30, 0, 30), Grid.M_HEAVY), 0.0)
+	var ru: Vehicle = m.spawn_vehicle(1, "rus_mbt_72b3", G.grid.nearest_free(c + Vector3(30, 0, 30), Grid.M_HEAVY), 0.0)
+	var v_us := Ammo.speed(us.ammo_ke, 0.0)
+	var v_ru := Ammo.speed(ru.ammo_ke, 0.0)
+	var v_he := Ammo.speed(ru.ammo_he, 0.0)
+	print("AMMO tank us=%s/%s ru=%s/%s v=%.0f/%.0f he=%.0f m/sn" % [us.ammo_ke, us.ammo_he, ru.ammo_ke, ru.ammo_he, v_us, v_ru, v_he])
+	if us.ammo_ke != "120_apfsds" or ru.ammo_ke != "125_apfsds" or not (v_ru > v_us and v_us > v_he):
+		fails += 1
+	var tc0 := Ammo.team_tracer(0)
+	var tc1 := Ammo.team_tracer(1)
+	print("AMMO tracer usa=%s rus=%s" % [tc0.to_html(false), tc1.to_html(false)])
+	if not (tc0.r > tc0.g and tc1.g > tc1.r):
+		fails += 1
+	# delme: APFSDS ana tankın önünü deler; 30 mm otomatik top delemez
+	var p_us := 0.0
+	var p_auto := 0.0
+	Vehicle.shot_pen = Ammo.get_def("120_apfsds")["pen"]
+	p_us = ru.pen_mult("ap", ru.position + ru.forward() * 40.0)
+	Vehicle.shot_pen = Ammo.get_def("30_ru")["pen"]
+	p_auto = us.pen_mult("auto", us.position + us.forward() * 40.0)
+	print("AMMO pen 120_apfsds->T72 front=%.2f  30mm->M1 front=%.2f" % [p_us, p_auto])
+	if p_us <= 0.0 or p_auto > 0.0:
+		fails += 1
+	var m110: Vehicle = m.spawn_vehicle(0, "usa_spg_m110", G.grid.nearest_free(c + Vector3(0, 0, 60), Grid.M_HEAVY), 0.0)
+	var blast := float(Ammo.get_def(m110.ammo_he).get("blast", 0.0))
+	print("AMMO m110=%s blast=%.1f" % [m110.ammo_he, blast])
+	if blast < 8.0:
+		fails += 1
 	print("AMMOTEST RESULT fails=%d" % fails)
 
 # tim beyni: YZ timi uzun çatışmada kanattan dolanır, taban kolu baskı ateşi açar

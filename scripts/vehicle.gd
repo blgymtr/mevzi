@@ -47,6 +47,10 @@ var salvo_ival := 0.0
 var rearm_s := 0.0
 var _road_t := 0.0
 var _on_road := false
+# mühimmat (data/ammo.json, roadmap 6): zırh delici / patlayıcı / otomatik top mermisi kimliği
+var ammo_ke := ""
+var ammo_he := ""
+var ammo_auto := ""
 var cat: Dictionary = {}
 # 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
 const ARMOR := {
@@ -72,6 +76,8 @@ const PEN := {
 }
 const SIDE_NAME := ["ÖN", "YAN", "ARKA", "ÜST"]
 static var shot_from := Vector3.INF
+# mermiye özel delme (Ammo tablosu): [tür, yakın, 60 m+]; take_damage öncesi kurulur, bir kez kullanılır
+static var shot_pen: Array = []
 # kritik hasar (BA): 4 tür x 2 seviye (1 sarı, 2 kırmızı); mürettebat zamanla onarır
 const CRIT_NAME := {"mob": "HAREKET", "opt": "OPTİK", "tgt": "NİŞAN", "load": "DOLUM"}
 var crit := {"mob": 0, "opt": 0, "tgt": 0, "load": 0}
@@ -563,6 +569,10 @@ func setup(t: int, vt: String) -> void:
 	icon = D["icon"]
 	crew_max = CREWED.get(vt, 0)
 	crew_n = crew_max
+	var am := Ammo.for_vehicle(vid, vt, G.nation[t] if t >= 0 and t < G.nation.size() else "")
+	ammo_ke = String(am.get("ke", ""))
+	ammo_he = String(am.get("he", ""))
+	ammo_auto = String(am.get("auto", ""))
 	M = Art.vehicle_model(vid, t) if vid != "" and Art.has(vid) else Art.vehicle(vt, t)
 	if M.is_empty() and vid == "":
 		# taban tipin kendi modeli yoksa katalogdan aynı tabandaki bir birimin modeli
@@ -1759,7 +1769,7 @@ func _fire_hmortar(tp: Vector3) -> void:
 	var d := dist2_p(tp)
 	var err := d * 0.05 + 2.0
 	var mp := muzzle_world()
-	G.bal.mortar(mp, tp + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self)
+	G.bal.mortar(mp, tp + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self, ammo_he)
 	Sfx.play3d("mortar", mp, 3.0)
 	G.fx.muzzle(mp, Vector3.UP, true)
 	recoil = 0.6
@@ -1939,7 +1949,7 @@ func _fire_ground() -> void:
 	match vtype:
 		"tank":
 			main_cd = _rl(6.5)
-			G.bal.shell(mp, p, team, self, null, "he")
+			G.bal.shell(mp, p, team, self, null, "he", ammo_he)
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 5.0)
 			recoil = 1.0
@@ -1949,7 +1959,7 @@ func _fire_ground() -> void:
 				burst = _burst_len(3, 5)
 			burst -= 1
 			main_cd = _auto_ival(0.26) if burst > 0 else randf_range(1.0, 1.8)
-			G.bal.shell(mp, p, team, self, null, "auto")
+			G.bal.shell(mp, p, team, self, null, "auto", ammo_auto)
 			G.fx.muzzle(mp, (p - mp).normalized(), true)
 			Sfx.play3d("autocannon", mp, 0.0)
 			recoil = 0.4
@@ -1966,23 +1976,23 @@ func _fire_ground() -> void:
 				if o is Soldier and o.team != team and o.alive:
 					o.add_suppression(12.0, position)
 			if shots % 2 == 0:
-				G.fx.tracer(mp, p, 260.0, Color(1.0, 0.55, 0.22), 0.09)
+				G.fx.tracer(mp, p, 260.0, Ammo.team_tracer(team), 0.09)
 		"arty":
 			main_cd = _rl(9.0)
-			G.bal.artillery(mp, p, team, self)
+			G.bal.artillery(mp, p, team, self, ammo_he)
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 6.0)
 			recoil = 1.0
 			rock_v += 3.0
 		"fieldgun", "atgun":
 			main_cd = _rl(5.0)
-			G.bal.shell(mp, p, team, self, null, "he")
+			G.bal.shell(mp, p, team, self, null, "he", ammo_he)
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 3.0)
 			recoil = 1.0
 		"howitzer", "mtngun":
 			main_cd = _rl(10.0 if vtype == "howitzer" else 7.0)
-			G.bal.artillery(mp, p, team, self)
+			G.bal.artillery(mp, p, team, self, ammo_he)
 			G.fx.cannon_blast(mp, (p - mp).normalized())
 			Sfx.play3d("tank_fire", mp, 5.0)
 			recoil = 1.0
@@ -2025,7 +2035,7 @@ func _fire_flak(t: Unit) -> void:
 		for o in G.near(impact, 3.0):
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(12.0, position)
-	G.fx.tracer(mp, impact, 300.0, Color(1.0, 0.7, 0.3), 0.1)
+	G.fx.tracer(mp, impact, 300.0, Ammo.team_tracer(team).lightened(0.2), 0.1)
 
 func _fire_arty(t: Unit) -> void:
 	main_cd = _rl(9.0)
@@ -2033,7 +2043,7 @@ func _fire_arty(t: Unit) -> void:
 	var d := dist2(t)
 	var err := d * 0.05 + 2.0
 	var tp := t.position + Vector3(randf_range(-err, err), 0, randf_range(-err, err))
-	G.bal.artillery(mp, tp, team, self)
+	G.bal.artillery(mp, tp, team, self, ammo_he)
 	G.fx.cannon_blast(mp, (tp - mp).normalized())
 	Sfx.play3d("tank_fire", mp, 6.0)
 	recoil = 1.0
@@ -2048,7 +2058,7 @@ func _fire_cannon(t: Unit) -> void:
 	var spread := d * 0.025 * (1.0 if t is Vehicle else 1.5) * aim_mult()
 	tp += Vector3(randf_range(-spread, spread), randf_range(-0.3, 0.3), randf_range(-spread, spread))
 	var ap = t is Vehicle and t.armor > 0
-	G.bal.shell(mp, tp, team, self, t, "ap" if ap else "he")
+	G.bal.shell(mp, tp, team, self, t, "ap" if ap else "he", ammo_ke if ap else ammo_he)
 	G.fx.cannon_blast(mp, (tp - mp).normalized())
 	Sfx.play3d("tank_fire", mp, 5.0)
 	recoil = 1.0
@@ -2065,7 +2075,7 @@ func _fire_auto(t: Unit) -> void:
 	var d := mp.distance_to(tp)
 	var spread := d * 0.04 * aim_mult()
 	tp += Vector3(randf_range(-spread, spread), randf_range(-0.2, 0.4), randf_range(-spread, spread))
-	G.bal.shell(mp, tp, team, self, t, "auto")
+	G.bal.shell(mp, tp, team, self, t, "auto", ammo_auto)
 	G.fx.muzzle(mp, (tp - mp).normalized(), true)
 	Sfx.play3d("autocannon", mp, 0.0)
 	recoil = 0.4
@@ -2120,7 +2130,7 @@ func _hitscan(t: Unit, dmg: float, acc: float, sup: float, k: String, from_barre
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(sup, position)
 	if shots % 2 == 0:
-		G.fx.tracer(mp, impact, 260.0, Color(1.0, 0.55, 0.22), 0.09)
+		G.fx.tracer(mp, impact, 260.0, Ammo.team_tracer(team), 0.09)
 
 func _visuals(dt: float) -> void:
 	hull.rotation.y = heading
@@ -2147,6 +2157,8 @@ func _visuals(dt: float) -> void:
 func take_damage(amount: float, src, k := "bullet") -> void:
 	var from := shot_from
 	shot_from = Vector3.INF
+	var po := shot_pen        # erken dönen dallarda (hava aracı, ölü) bir sonraki isabete taşınmasın
+	shot_pen = []
 	if not alive:
 		return
 	var m := 1.0
@@ -2175,6 +2187,7 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	var pk := k
 	if k == "bullet" and src != null and is_instance_valid(src) and src is Soldier and src.role == "sniper":
 		pk = "sniper"
+	shot_pen = po
 	m = pen_mult(pk, from)
 	if m <= 0.0:
 		# delemedi: sekme (mürettebat yine de sarsılır)
@@ -2242,17 +2255,21 @@ func armor_value(kind: int, side: int) -> int:
 		return 0
 	return a[kind][side]
 
-func pen_at(k: String, dist: float) -> float:
-	var pd: Array = PEN.get(k, PEN["bullet"])
+func pen_at(k: String, dist: float, ov: Array = []) -> float:
+	var pd: Array = ov if ov.size() >= 3 else PEN.get(k, PEN["bullet"])
 	return lerpf(float(pd[1]), float(pd[2]), clampf(dist / 60.0, 0.0, 1.0))
 
 # delme - zırh farkına göre hasar çarpanı (0 = delemedi)
 func pen_mult(k: String, from: Vector3) -> float:
+	var ov := shot_pen
+	shot_pen = []
 	var pd: Array = PEN.get(k, PEN["bullet"])
+	if ov.size() >= 3:
+		pd = [int(ov[0]), float(ov[1]), float(ov[2]), pd[3]]
 	var side := armor_side(from, k)
 	var a := armor_value(pd[0], side)
 	var dist := 0.0 if from == Vector3.INF else from.distance_to(position)
-	var p := pen_at(k, dist)
+	var p := pen_at(k, dist, pd)
 	last_side = side
 	last_pen = p
 	if a <= 0:
@@ -2868,7 +2885,7 @@ func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> 
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(sup, position)
 	if shots % 2 == 0:
-		G.fx.tracer(mp, impact, 260.0, Color(1.0, 0.55, 0.22), 0.09)
+		G.fx.tracer(mp, impact, 260.0, Ammo.team_tracer(team), 0.09)
 
 static func _rotor_disc_mat() -> ShaderMaterial:
 	if _disc_mat == null:
