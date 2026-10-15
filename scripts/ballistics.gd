@@ -474,6 +474,14 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 			else:
 				p.vel = p.vel.lerp((aimp - p.pos).normalized() * spd, clampf(dt * 6.0, 0.0, 1.0))
 	var np := p.pos + (p.vel + wob) * dt
+	# yaklaşan roketi gören piyade yana atılır (hedefin çevresi, son ~0.6 sn)
+	p.fuse -= dt
+	if p.fuse <= 0.0:
+		p.fuse = 0.1
+		var ahead := p.pos + p.vel * 0.45
+		for s in G.near(ahead, 5.0):
+			if s is Soldier and s.alive and s.team != p.team:
+				s.on_rocket(p.pos, p.vel)
 	p.trail -= dt
 	if p.trail <= 0.0:
 		p.trail = 0.008

@@ -24,6 +24,8 @@ func run(scene: String) -> void:
 			await fow_test()
 		"paratest":
 			await para_test()
+		"tactest":
+			await tac_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -410,3 +412,39 @@ func para_test() -> void:
 	if down < 8:
 		fails += 1
 	print("PARATEST RESULT fails=%d" % fails)
+
+# tim beyni: YZ timi uzun çatışmada kanattan dolanır, taban kolu baskı ateşi açar
+func tac_test() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true)
+	G.reveal = [999.0, 999.0]
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
+	var def := Squad.new(G.player_team, "Tim")
+	G.squads.append(def)
+	for i in 4:
+		var d: Soldier = m.spawn_soldier(G.player_team, "rifle", G.grid.nearest_free(c + Vector3(i * 2.0, 0, -22), Grid.M_INF), def)
+		d.cmd_hold()
+		d.hp = 4000.0
+	var att := Squad.new(1 - G.player_team, "Tim")
+	G.squads.append(att)
+	for i in 6:
+		var a: Soldier = m.spawn_soldier(1 - G.player_team, ["leader", "rifle", "rifle", "mg", "rifle", "at"][i], G.grid.nearest_free(c + Vector3(i * 1.5, 0, 22), Grid.M_INF), att)
+		a.hp = 4000.0
+	var flanked := false
+	var shot := false
+	for i in 500:
+		await m._wait(0.1)
+		if not att.flankers.is_empty():
+			flanked = true
+			if not shot and att.flank_t > 3.0:
+				shot = true
+				_cam(c + Vector3(0, 0, 4), 40.0)
+				await m._shot("tac_00_flank")
+		if flanked and att.flankers.is_empty():
+			break
+	print("TAC flanked=%s engaged=%.0f" % [flanked, att.engaged_t])
+	if not flanked:
+		fails += 1
+	print("TACTEST RESULT fails=%d" % fails)

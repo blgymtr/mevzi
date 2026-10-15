@@ -2427,6 +2427,27 @@ func _yield_step() -> Vector3:
 		stance = CROUCH
 	return ok * 2.6
 
+# gelen roket / füze: görüyorsa roketin yolundan yana atılır
+func on_rocket(from: Vector3, v: Vector3) -> void:
+	if not can_fight() or state in ["throw", "drag", "heal", "dive", "aboard", "build", "setup"] or house_id >= 0 or flinch_t > 0.0:
+		return
+	if randf() > 0.45 or not sees(position + Vector3(0, eye_h(), 0), from, null):
+		return
+	var dir := v
+	dir.y = 0.0
+	dir = dir.normalized()
+	var side := Vector3(-dir.z, 0, dir.x)
+	if side.dot(position - from) < 0.0:
+		side = -side
+	state = "dive"
+	state_t = 0.0
+	fly_vel = side * 5.5
+	stance = PRONE
+	face_yaw = _yaw_of(side)
+	popped = false
+	if randf() < 0.4:
+		say("ROKET!")
+
 func on_drone(p: Vector3) -> void:
 	if not can_fight() or state in ["throw", "drag", "heal", "dive", "aboard"]:
 		return

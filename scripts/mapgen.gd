@@ -64,6 +64,8 @@ func build(id: String, seed_v: int) -> void:
 			_city()
 		_:
 			_desert()
+	if id != "custom" and id != "big_city":
+		_footpaths()
 	T.make_water()
 	B.finalize()
 	G.grid.flush_all()
@@ -1256,6 +1258,8 @@ func _run(op: Dictionary):
 			_x_snow_brick_wall(v3(op["p"]))
 		"tracks":
 			_x_tracks(int(op["n"]), float(op["amt"]))
+		"path":
+			_x_path(pts_in(op["pts"]), float(op["w"]), bool(op.get("stone", false)))
 		"palm":
 			P.palm(v3(op["p"]))
 		"tree":
@@ -1325,6 +1329,101 @@ func _snow_brick_wall(c: Vector3) -> void:
 
 func _tracks(n: int, amt: float) -> void:
 	exec({"t": "tracks", "n": n, "amt": amt})
+
+# ---- patikalar: evden yola taş döşeme, evler/üs alanları arasında çiğnenmiş toprak patika
+func _nearest_road_pt(p: Vector3) -> Vector3:
+	var best := Vector3.INF
+	var bd := 1e9
+	for r in roads:
+		var pts: PackedVector3Array = r
+		for q in pts:
+			var d := Vector2(q.x - p.x, q.z - p.z).length()
+			if d < bd:
+				bd = d
+				best = q
+	return best
+
+func _footpaths() -> void:
+	var doors: Array = []
+	for h in G.blocks.houses:
+		var dp: Vector3 = h.get("door", Vector3.INF)
+		if dp != Vector3.INF:
+			doors.append(dp)
+	# evden en yakın yola taş döşeme (kısa olanlar)
+	for dp in doors:
+		var rp := _nearest_road_pt(dp)
+		if rp == Vector3.INF:
+			continue
+		var L := Vector2(rp.x - dp.x, rp.z - dp.z).length()
+		if L > 2.5 and L < 22.0 and rng.randf() < 0.75:
+			var mid: Vector3 = dp.lerp(rp, 0.5) + Vector3(rng.randf_range(-1.5, 1.5), 0, rng.randf_range(-1.5, 1.5))
+			exec({"t": "path", "pts": pts_out([dp, mid, rp]), "w": 1.2, "stone": kind != "desert"})
+	# evler arası / alanlar arası toprak patika
+	var spots: Array = doors.duplicate()
+	for f in G.fob_sites:
+		spots.append(f)
+	for i in mini(14, spots.size()):
+		var a: Vector3 = spots[rng.randi() % spots.size()]
+		var b: Vector3 = spots[rng.randi() % spots.size()]
+		var L2 := a.distance_to(b)
+		if L2 < 20.0 or L2 > 90.0:
+			continue
+		var dir := (b - a).normalized()
+		var side := Vector3(-dir.z, 0, dir.x)
+		var pts: Array = [a]
+		for k in 3:
+			pts.append(a.lerp(b, (k + 1) / 4.0) + side * rng.randf_range(-L2 * 0.12, L2 * 0.12))
+		pts.append(b)
+		exec({"t": "path", "pts": pts_out(pts), "w": 1.3, "stone": false})
+
+static var _slab_m: Mesh = null
+func _x_path(pts: Array, w: float, stone: bool) -> void:
+	var sp := _spline(pts, 1.0)
+	for j in sp.size() - 1:
+		if G.grid.is_water(sp[j]):
+			continue
+		T.paint_line(sp[j], sp[j + 1], w, 0, 0.5 if not stone else 0.35, 0.15, rng)
+		var d := (sp[j + 1] - sp[j]).normalized()
+		var sd := Vector3(-d.z, 0, d.x)
+		for s in [-w * 0.5, w * 0.5]:
+			T.paint_line(sp[j] + sd * s, sp[j + 1] + sd * s, 0.35, 1, 0.18)
+	if not stone:
+		return
+	# taş döşeme: düzensiz, hafif yüksek yassı kayrak plakalar
+	if _slab_m == null:
+		var mb := MB.new()
+		mb.hull(Vector3(0, 0.0, 0), Vector2(0.55, 0.45), Vector2(0.5, 0.4), 0.05, Color(0.6, 0.58, 0.55))
+		_slab_m = mb.commit(Mats.stone())
+	var xs: Array = []
+	var acc := 0.0
+	for j in sp.size() - 1:
+		var a2 := sp[j]
+		var b2 := sp[j + 1]
+		var seg := a2.distance_to(b2)
+		var d2 := (b2 - a2).normalized()
+		var sd2 := Vector3(-d2.z, 0, d2.x)
+		while acc < seg:
+			var p := a2 + d2 * acc
+			for o in ([-0.28, 0.28] if w > 1.0 else [0.0]):
+				var q: Vector3 = p + sd2 * (float(o) + rng.randf_range(-0.06, 0.06))
+				if G.grid.height_at(q) < 0.1 and not G.grid.is_water(q):
+					var sc := rng.randf_range(0.8, 1.15)
+					var bs := Basis(Vector3.UP, atan2(d2.x, d2.z) + rng.randf_range(-0.25, 0.25)).scaled(Vector3(sc, 1, sc * rng.randf_range(0.8, 1.2)))
+					xs.append(Transform3D(bs, Vector3(q.x, T.ground_h(q) + 0.015, q.z)))
+			acc += 0.62
+		acc -= seg
+	if xs.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _slab_m
+	mm.instance_count = xs.size()
+	for i in xs.size():
+		mm.set_instance_transform(i, xs[i])
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	T.add_child(mi)
 
 func p_palm(p: Vector3) -> void:
 	exec({"t": "palm", "p": vv(p)})

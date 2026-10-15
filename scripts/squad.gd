@@ -109,11 +109,137 @@ func _reorganize() -> void:
 			m.cmd_move(G.grid.nearest_free(lead.position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)), Grid.M_INF))
 		m.say("%s'E KATILIYORUM" % best.name.to_upper() if I18n.lang == "tr" else "JOINING %s" % best.name.to_upper(), 2.5)
 
+# ------------------------------------------------------------ tim beyni (taktik)
+# Çatışmada: ilerleyen arkadaşlar için örtme ateşi; YZ timleri uzun çatışmada kanattan dolanır
+# (taban kolu baskı ateşi açar, manevra kolu 70° yandan yaklaşıp saldırı hareketiyle bastırır),
+# düşmanın tuttuğu binaya el bombası atıp baskın yapar.
+var brain_t := 1.5
+var engaged_t := 0.0
+var flankers: Array = []
+var flank_pt := Vector3.INF
+var flank_t := 0.0
+var flank_cd := 0.0
+var assault_t := -1.0
+var assault_house := -1
+var last_threat := Vector3.INF
+
+func _ai_side() -> bool:
+	return G.spectate or team != G.player_team
+
+func _brain(ab: Array) -> void:
+	flank_cd -= 1.5
+	# tehdit merkezi: son 6 sn içinde üyelerin gördüğü tehditler
+	var tc := Vector3.ZERO
+	var n := 0
+	for m in ab:
+		if G.time - m.threat_time < 6.0:
+			tc += m.threat_pos
+			n += 1
+	if n == 0:
+		engaged_t = maxf(0.0, engaged_t - 3.0)
+		if flankers.is_empty():
+			return
+	else:
+		tc /= n
+		last_threat = tc
+		engaged_t += 1.5
+	var center := Vector3.ZERO
+	for m in ab:
+		center += m.position
+	center /= ab.size()
+	# 1) örtme ateşi: hareket eden arkadaş varken duranlar tehdit bölgesine ateş eder
+	if n > 0:
+		var moving := ab.filter(func(m): return m.state == "move" and m.order != "hold")
+		if not moving.is_empty():
+			for m in ab:
+				if m.state == "idle" and m.ammo > 20 and m.role != "medic" and G.time > m.covering_until:
+					m.covering_until = G.time + 4.0
+	if not _ai_side():
+		return
+	# 2) kanat manevrası
+	if not flankers.is_empty():
+		flank_t += 1.5
+		flankers = flankers.filter(func(m): return is_instance_valid(m) and m.alive and m.can_fight())
+		var arrived := flankers.all(func(m): return m.dist2_p(flank_pt) < 4.0 or m.state == "idle")
+		if flankers.is_empty() or flank_t > 30.0 or (arrived and flank_t > 6.0):
+			for m in flankers:
+				m.cmd_attack_move(last_threat)
+				if randf() < 0.4:
+					m.say("YANDAN VURUYORUZ!")
+			flankers.clear()
+			flank_pt = Vector3.INF
+			flank_cd = 40.0
+		return
+	if n > 0 and engaged_t > 12.0 and flank_cd <= 0.0 and ab.size() >= 4 and center.distance_to(tc) > 14.0 and center.distance_to(tc) < 70.0:
+		var to := tc - center
+		to.y = 0.0
+		var dist := to.length()
+		var best := Vector3.INF
+		var bs := -1e9
+		for sg in [-1.0, 1.0]:
+			var side := to.normalized().rotated(Vector3.UP, sg * 1.2)
+			var p := G.grid.nearest_free(tc - side * dist * 0.75, Grid.M_INF, 6)
+			var sc := -float(G.enemies_near(p, 25.0, team).size()) * 10.0 + G.grid.cover_factor(p, 1.0, tc) * 5.0
+			if sc > bs:
+				bs = sc
+				best = p
+		if best == Vector3.INF:
+			return
+		var cand := ab.filter(func(m): return m.role in ["rifle", "at", "engineer"] and m.order != "hold")
+		if cand.size() < 2:
+			return
+		flankers = cand.slice(0, mini(3, cand.size() - (1 if ab.size() <= 4 else 0)))
+		if flankers.size() < 2:
+			flankers.clear()
+			return
+		flank_pt = best
+		flank_t = 0.0
+		for m in flankers:
+			m.cmd_move(G.grid.nearest_free(best + Vector3(randf_range(-2, 2), 0, randf_range(-2, 2)), Grid.M_INF), true)
+		flankers[0].say("KANATTAN DOLANIYORUZ!", 2.5)
+		for m in ab:
+			if not flankers.has(m) and m.role != "medic":
+				m.cmd_suppress(tc)
+		return
+	# 3) düşmanın tuttuğu bina: el bombası, ardından baskın
+	if n > 0 and assault_t < 0.0:
+		for i in G.blocks.houses.size():
+			var h: Dictionary = G.blocks.houses[i]
+			if h["collapsed"]:
+				continue
+			var ht := G.blocks.house_team(i)
+			if ht < 0 or ht == team or (h["center"] as Vector3).distance_to(tc) > 8.0 or center.distance_to(h["center"]) > 30.0:
+				continue
+			var thrown := 0
+			for m in ab:
+				if m.grenades > 0 and thrown < 2 and m.dist2_p(h["center"]) < 22.0:
+					if m.cmd_throw(h["center"], false):
+						thrown += 1
+			if thrown > 0:
+				assault_t = 0.0
+				assault_house = i
+				ab[0].say("BİNAYA BOMBA!", 2.0)
+			break
+	elif assault_t >= 0.0:
+		assault_t += 1.5
+		if assault_t > 4.0:
+			var hc: Vector3 = G.blocks.houses[assault_house]["center"]
+			for m in ab:
+				if m.role != "medic" and m.dist2_p(hc) < 35.0:
+					m.cmd_attack_move(hc)
+			assault_t = -1.0
+
 func update(dt: float) -> void:
 	_merge_t -= dt
 	if _merge_t <= 0.0 and team >= 0:
 		_merge_t = 3.0
 		_reorganize()
+	brain_t -= dt
+	if brain_t <= 0.0 and team >= 0:
+		brain_t = 1.5
+		var ab := able()
+		if ab.size() >= 2:
+			_brain(ab)
 	_t -= dt
 	if _t > 0.0:
 		return
