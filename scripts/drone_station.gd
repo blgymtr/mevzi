@@ -18,7 +18,7 @@ var relaunch_t := 0.0
 var launch_t := -1.0         # >= 0: rampada fırlatma geri sayımı
 var parts: Array = []        # [düğüm, görünme eşiği]
 var rail_yaw := 0.0
-var _rail_uav: MeshInstance3D = null
+var _rail_uav: Node3D = null
 var _screen: MeshInstance3D = null
 
 static var all: Array = []
@@ -37,6 +37,14 @@ static func of_operator(s) -> DroneStation:
 		if is_instance_valid(st) and st.alive and st.operator == s:
 			return st
 	return null
+
+# İstasyonun fırlattığı İHA: mancınıkla atılan küçük taktik keşif İHA'sı (ABD: RQ-7 sınıfı, Rusya: Orlan-10
+# sınıfı), gerçek ölçekte. Eskiden temel "uav" tipi doğuyordu: o tipin kendi modeli olmadığından katalogdaki
+# ilk keşif İHA'sı (ABD'de RQ-4 sınıfı, en büyüğü) 1,6 kat büyütülerek rampadan kalkıyordu.
+static func uav_id(t: int) -> String:
+	var nat: String = G.nation[t] if t >= 0 and t < G.nation.size() else ""
+	var id := "rus_uav_orlan10" if nat == "rus" or (nat == "" and t == 1) else "usa_uav_rq7"
+	return id if Art.has(id) else ""
 
 # ------------------------------------------------------------ model
 func _part(mesh: Mesh, at: float, mat: Material = null) -> MeshInstance3D:
@@ -118,7 +126,16 @@ func _build_model() -> void:
 	mb.cyl(Vector3(0.25, 0.25, 1.9), 0.13, 0.13, 0.5, 10, Color(0.25, 0.3, 0.22))   # hava tankı
 	var rail := _part(mb.commit(Mats.vcs()), 0.65)
 	rail.position = Vector3(1.2, 0.0, 0.0)
-	# rampada bekleyen İHA (sabit kanatlı): gövde + kanat + V kuyruk + itici pervane
+	# rampada bekleyen İHA: fırlatılacak modelin kendisi (gerçek ölçek) — yoksa basit sabit kanatlı model
+	var uid := uav_id(team)
+	if uid != "":
+		_rail_uav = _rail_model(uid)
+		parts.append([_rail_uav, 0.85])
+		add_child(_rail_uav)
+		_rail_uav.position = Vector3(1.2, 0.9, 1.2)
+		_rail_uav.rotation.x = tilt
+		_build_net()
+		return
 	mb = MB.new()
 	var grey := Color(0.55, 0.57, 0.56)
 	mb.cyl(Vector3.ZERO, 0.09, 0.07, 1.3, 8, grey, Basis(Vector3.RIGHT, PI * 0.5))
@@ -131,17 +148,35 @@ func _build_model() -> void:
 	_rail_uav = _part(mb.commit(Mats.vcs()), 0.85)
 	_rail_uav.position = Vector3(1.2, 0.9, 1.2)
 	_rail_uav.rotation.x = tilt
-	# kamuflaj ağı (son)
-	mb = MB.new()
+	_build_net()
+
+# kamuflaj ağı (kurulumun son parçası)
+func _build_net() -> void:
+	var mb := MB.new()
 	var net := Color(0.3, 0.33, 0.2)
 	mb.quad(Vector3(-1.7, 1.25, 1.4), Vector3(0.0, 1.35, 1.4), Vector3(0.0, 1.35, -1.6), Vector3(-1.7, 1.2, -1.6), net, Vector3.UP)
 	for c in [Vector3(-1.7, 0, 1.4), Vector3(0.0, 0, 1.4), Vector3(0.0, 0, -1.6), Vector3(-1.7, 0, -1.6)]:
 		mb.cyl_between(c, c + Vector3(0, 1.3, 0), 0.02, 0.02, 4, Color(0.35, 0.28, 0.18), false)
 	_part(mb.commit(Mats.vc2()), 0.95)
 
+# katalog İHA modelinin gövde parçaları (rampada bekleyen, fırlatılacak olanın aynısı)
+func _rail_model(id: String) -> Node3D:
+	# kök: kurulum animasyonu ölçeği (_apply_progress) · iç düğüm: katalog gerçek boyut ölçeği
+	var root := Node3D.new()
+	var inner := Node3D.new()
+	inner.scale = Vehicle.cat_scale(id)
+	root.add_child(inner)
+	var M := Art.vehicle_model(id, team)
+	for hm in M.get("hulls", []):
+		var mi := MeshInstance3D.new()
+		mi.mesh = hm[0]
+		mi.position = hm[1]
+		inner.add_child(mi)
+	return root
+
 func _apply_progress() -> void:
 	for p in parts:
-		var mi: MeshInstance3D = p[0]
+		var mi: Node3D = p[0]
 		var thr: float = p[1]
 		mi.visible = progress >= thr
 		if mi.visible and progress < thr + 0.12 and not done:
@@ -207,7 +242,8 @@ func _launch() -> void:
 	fwd.y = 0.0
 	fwd = fwd.normalized()
 	var p0 := global_position + global_transform.basis * Vector3(1.2, 0, -2.6)
-	var v: Vehicle = G.main.spawn_vehicle(team, "uav", p0, rotation.y)
+	var uid := uav_id(team)
+	var v: Vehicle = G.main.spawn_vehicle(team, uid if uid != "" else "uav", p0, rotation.y)
 	v.station = self
 	v.high_alt = true
 	v.sight = 120.0
@@ -238,7 +274,9 @@ func destroy() -> void:
 	_lose_link()
 	G.fx.explosion(global_position + Vector3(0, 0.5, 0), 0.8, "rpg")
 	for p in parts:
-		(p[0] as MeshInstance3D).material_override = Mats.burnt()
+		var n: Node3D = p[0]
+		for mi in ([n] if n is MeshInstance3D else n.find_children("*", "MeshInstance3D", true, false)):
+			(mi as MeshInstance3D).material_override = Mats.burnt()
 	var tw := create_tween()
 	tw.tween_interval(25.0)
 	tw.tween_callback(queue_free)

@@ -16,6 +16,8 @@ $root = Split-Path -Parent $PSScriptRoot
 $shots = Join-Path $root "shots"
 $logs = Join-Path $shots "logs"
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
+# Godot ekran görüntülerini içe aktarmasın (her çalıştırmada .import üretip taramayı yavaşlatıyordu)
+New-Item -ItemType File -Force -Path (Join-Path $shots ".gdignore") | Out-Null
 
 if (-not $NoImport) {
 	Write-Host "== içe aktarma (yeni sınıflar/varlıklar için)"

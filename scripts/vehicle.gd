@@ -185,6 +185,15 @@ func _air_shadow_tick() -> void:
 func is_air() -> bool:
 	return vtype in ["heli", "transport", "fpv", "uav", "uav_armed", "loiter"]
 
+# katalog biriminin gerçek boyut ölçeği: "scale": 1.18 (eşit) ya da [x, y, z] (eksen başına; sabit kanatlı
+# İHA'da kanat açıklığı ve boy ayrı düzeltilir). Yoksa 1.
+static func cat_scale(id: String) -> Vector3:
+	Catalog.load_all()
+	var s = Catalog.units.get(id, {}).get("scale", 1.0)
+	if s is Array and (s as Array).size() == 3:
+		return Vector3(float(s[0]), float(s[1]), float(s[2]))
+	return Vector3.ONE * float(s)
+
 func is_drone() -> bool:
 	return vtype in ["fpv", "uav", "uav_armed", "loiter"]
 
@@ -530,13 +539,17 @@ func setup(t: int, vt: String) -> void:
 	M = Art.vehicle_model(vid, t) if vid != "" and Art.has(vid) else Art.vehicle(vt, t)
 	if M.is_empty() and vid == "":
 		# taban tipin kendi modeli yoksa katalogdan aynı tabandaki bir birimin modeli
-		var alt := Catalog.first_of_base(vt, G.nation[t] if t >= 0 and t < G.nation.size() else "")
+		# (keşif İHA'sı: katalogdaki ilk — en büyük, RQ-4 sınıfı — değil, küçük taktik sınıf)
+		var alt := DroneStation.uav_id(t) if vt == "uav" else Catalog.first_of_base(vt, G.nation[t] if t >= 0 and t < G.nation.size() else "")
 		if alt != "" and Art.has(alt):
 			M = Art.vehicle_model(alt, t)
 	if M.is_empty():
 		M = VehicleModels.get_model(vt, t, G.map_kind == "winter")
 	hull = Node3D.new()
 	add_child(hull)
+	if vid != "":
+		# gerçek boyut düzeltmesi (data/real_dims.json → tools/size_audit.gd → katalog 'scale')
+		hull.scale = cat_scale(vid)
 	if M.has("hulls"):
 		for hm in M["hulls"]:
 			var hmi := MeshInstance3D.new()
@@ -589,8 +602,8 @@ func setup(t: int, vt: String) -> void:
 		hull.position.y = 2.2
 		Sfx.loop3d("drone", self, -6.0)
 	if vt in ["uav", "uav_armed"]:
+		# gerçek ölçek (eskiden görünürlük için 1,6 kat büyütülüyordu); görünürlüğü irtifa gölgesi sağlar
 		hull.position.y = UAV_ALT
-		hull.scale = Vector3.ONE * 1.6
 		uav_ang = randf() * TAU
 		missiles = 4 if vt == "uav_armed" else 0
 		Sfx.loop3d("drone", self, -14.0)
@@ -658,6 +671,8 @@ func _calc_ext() -> void:
 		a = bb if first else a.merge(bb)
 		first = false
 	if not first:
+		# gövde ölçeği (gerçek boyut düzeltmesi) kapsama da yansısın
+		a = Transform3D(Basis.from_scale(hull.scale), Vector3.ZERO) * a
 		ext = Vector2(clampf(a.size.x * 0.5, 0.4, 3.0), clampf(a.size.z * 0.5, 0.4, 7.0))
 		top_h = clampf(a.end.y - hull.position.y, 0.8, 5.0)
 

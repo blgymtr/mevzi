@@ -982,6 +982,7 @@
   {
    "cat": "heli_atk",
    "id": "rus_heli_mi28",
+   "scale": 1.178,
    "ref": "Mi-28NM",
    "name": "Taarruz Helikopteri (doğu)",
    "fam": "heli_atk",
@@ -996,6 +997,7 @@
   {
    "cat": "heli_atk",
    "id": "rus_heli_mi24",
+   "scale": 1.094,
    "ref": "Mi-24P",
    "name": "Muharebe Nakliye Helikopteri",
    "fam": "heli_hind",
@@ -1006,6 +1008,7 @@
   {
    "cat": "heli_atk",
    "id": "rus_heli_mi35",
+   "scale": 1.094,
    "ref": "Mi-35M",
    "name": "Muharebe Nakliye Helikopteri II",
    "fam": "heli_hind",
@@ -1037,11 +1040,13 @@
    "cost": 700,
    "hp": 680,
    "speed": 17.0,
-   "id": "rus_heli_mi28n"
+   "id": "rus_heli_mi28n",
+   "scale": 1.178
   },
   {
    "cat": "heli_tr",
    "id": "rus_heli_mi8amtsh",
+   "scale": 1.096,
    "ref": "Mi-8AMTSh",
    "name": "Silahlı Nakliye Helikopteri",
    "fam": "heli_mi8",
@@ -1055,6 +1060,7 @@
   {
    "cat": "heli_tr",
    "id": "rus_heli_mi8",
+   "scale": 1.096,
    "ref": "Mi-8MTV-5",
    "name": "Nakliye Helikopteri (doğu)",
    "fam": "heli_mi8",
@@ -1065,6 +1071,7 @@
   {
    "cat": "heli_tr",
    "id": "rus_heli_mi17",
+   "scale": 1.096,
    "ref": "Mi-17",
    "name": "Nakliye Helikopteri (doğu) II",
    "fam": "heli_mi8",
@@ -1078,6 +1085,7 @@
   {
    "cat": "heli_tr",
    "id": "rus_heli_mi26",
+   "scale": 1.107,
    "ref": "Mi-26",
    "name": "Dev Nakliye Helikopteri",
    "fam": "cargo_mi26",
@@ -1213,6 +1221,7 @@
   {
    "cat": "uav",
    "id": "rus_uav_orlan10",
+   "scale": [0.671, 0.571, 0.486],
    "ref": "Orlan 10",
    "name": "Taktik Keşif İHA (doğu)",
    "fam": "uav_tac",
@@ -1221,6 +1230,7 @@
   {
    "cat": "uav",
    "id": "rus_uav_orlan30",
+   "scale": [0.736, 0.646, 0.568],
    "ref": "Orlan 30",
    "name": "Taktik Keşif İHA II (doğu)",
    "fam": "uav_tac",
@@ -1229,6 +1239,7 @@
   {
    "cat": "uav",
    "id": "rus_uav_zala42116e",
+   "scale": [1.783, 1.511, 1.28],
    "ref": "ZALA 421 16E",
    "name": "Hafif Keşif İHA (doğu)",
    "fam": "uav_hand",
@@ -1237,6 +1248,7 @@
   {
    "cat": "uav",
    "id": "rus_uav_eleron3",
+   "scale": [0.936, 0.67, 0.48],
    "ref": "Eleron 3",
    "name": "El Atımlı Keşif İHA (doğu)",
    "fam": "uav_hand",
@@ -1245,6 +1257,7 @@
   {
    "cat": "uav",
    "id": "rus_uav_forpostr",
+   "scale": [0.611, 0.675, 0.746],
    "ref": "Forpost R",
    "name": "Silahlı İHA (doğu)",
    "fam": "uav_male",
@@ -1253,6 +1266,7 @@
   {
    "cat": "uav",
    "id": "rus_uav_orion",
+   "scale": [1.164, 1.09, 1.02],
    "ref": "Orion",
    "name": "Silahlı İHA II (doğu)",
    "fam": "uav_male",
@@ -1424,6 +1438,7 @@
   {
    "cat": "loiter",
    "id": "rus_lm_kub",
+   "scale": [1.247, 0.832, 0.556],
    "ref": "ZALA Kub-BLA",
    "name": "Dolanan Mühimmat (doğu)",
    "fam": "lm_wing",
@@ -1432,6 +1447,7 @@
   {
    "cat": "loiter",
    "id": "rus_lm_geran2",
+   "scale": [1.096, 1.07, 1.045],
    "ref": "Geran-2",
    "name": "Ağır Kamikaze İHA",
    "fam": "lm_delta",
@@ -1443,6 +1459,7 @@
   {
    "cat": "loiter",
    "id": "rus_lm_molniya2",
+   "scale": [1.443, 0.919, 0.585],
    "ref": "Molniya-2",
    "name": "Dolanan Mühimmat (doğu)",
    "fam": "lm_wing",
@@ -1451,6 +1468,7 @@
   {
    "cat": "loiter",
    "id": "rus_lm_upyr",
+   "scale": [0.758, 0.758, 0.758],
    "ref": "Upyr FPV",
    "name": "FPV Kamikaze (doğu)",
    "fam": "fpv",
