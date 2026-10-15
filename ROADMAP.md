@@ -145,7 +145,7 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 - [x] Gerçekçi inşaat: 4-6 işçi farklı yerlerde farklı işler (çakma, yukarı çakma, malzeme taşıma), iskele, alttan yukarı örülen duvar
 - [x] ABD/Rusya kargo helikopteri (CH-47F tipi, Mi-26 tipi; Blender): asker indirme/bindirme, araç askıya alma/bırakma, havadan ikmal
 - [x] Bekleme tutuşuyla koşu (2. foto), nişana kalkıp geri inme, tabancayı kılıftan çekme/ateş/geri takma
-- [~] Hava indirme tugayı: paraşütçü timi ✅ (0.0.7), halatla iniş/çekme ✅ — kalan: 4×4 km harita (aşağıda)
+- [x] Hava indirme tugayı: paraşütçü timi, halatla iniş/çekme, 4×4 km Hava İndirme Bölgesi (0.0.7)
 - [~] Faction yapılarının özgün Blender modelleri — 0.0.7'de ayrı dalda yapılıyor
 
 ## Hotfix 0.0.7 — kullanıcı listesi
@@ -163,11 +163,15 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 - [x] Çekili top mürettebatı: atışta kulak kapatma, kovan atma, cephaneci sandıktan mermi taşır, doldurucu kamaya sürer, nişancı volan çevirir; havanda mermi ağızdan bırakılır (crewtest)
 - [x] Paraşütçü timi (pistten): C-130 / Il-76 tipi uçak geçer, statik hatla atlama, kubbe paraşüt, süzülme, iniş yuvarlanması, kubbe çöker (paratest)
 - [x] Görsel savaş sisi: keşfedilmemiş alan koyu, görülmüş ama görüş dışı soluk, görüş içi açık (fowtest)
-- [ ] 4×4 km harita: mevcut 0,5 m ızgara 4 km'de 67 M hücre → bölgesel (chunk) ızgara, hiyerarşik yol bulma, arazi parçaları, ağaç impostor'ları gerekiyor (aşağıda plan)
-- [ ] 100+ bina türü (prosedürel varyant üreteci), çimen/patika/taş yol çeşitliliği
-- [ ] Piyade YZ beyni (mermiden kaçınma, kanat, bina temizleme, plan) — tim birleştirme ilk adım
-- [ ] İskeletli (Blender) animasyon kütüphanesi: koşu/nişan/binme/halat/paraşüt pozlarının keyframe klipleri (şu an kodla poz + IK)
-- [ ] Efektler: Blender Mantaflow/EmberGen ile flipbook (sprite sheet) patlama, duman, sekme
+- [x] Büyük haritalar: Geniş Cephe 1 km, Kuzey Cephesi 2 km, Hava İndirme Bölgesi 4×4 km — ızgara/yol bulma hücresi haritaya göre ölçeklenir, ağaçlar karo karo MultiMesh, yol önbelleği (largetest, hugetest)
+- [x] Tim beyni: ilerlerken örtme ateşi, YZ timi kanattan dolanır (taban kolu baskı ateşi), düşmanın tuttuğu binaya el bombası + baskın, gelen roketten yana atılma (tactest)
+- [x] Patika ve evden yola taş döşeme yollar
+- [x] Efekt flipbook'ları: numpy 3B gaz simülasyonu (yanma, kaldırma, girdap, basınç) → patlama ateş topu/mantar bulutu, kalın duman sütunu, toprak sütunu (tools/fx_sim.py)
+- [~] 100+ bina türü — ayrı dalda yapılıyor
+- [ ] Yol bulmayı iş parçacığına almak (4 km'de uzun yol 0,3–0,8 sn takılma; grup isteği önbellekte)
+- [ ] 4 km'de bellek (~1,5 GB) ve yükleme (~77 sn yazılım render altında): seyrek ızgara, ot yoğunluğu
+- [ ] İskeletli (Blender) animasyon kütüphanesi: koşu/nişan/binme/halat/paraşüt pozlarının keyframe klipleri (şu an kodla poz + IK iskelete uygulanıyor)
+- [ ] Araç modelleri A-Z detay geçişi (ABD/Rusya tüm katalog)
 
 ### Unreal Engine kararı
 Niagara efektleri Godot'a "export" edilemez: Niagara yalnız UE çalışma zamanında çalışır. Taşınabilen tek şey
@@ -175,11 +179,10 @@ efektin **flipbook** (sprite sheet) olarak pişirilmiş görüntüsüdür; bunu 
 Oyunu UE'ye taşımak ~21 bin satırlık GDScript'in sıfırdan yazılması demek. Karar: **Godot + Blender** devam;
 UE yalnız istenirse bir "efekt pişirme istasyonu" olarak (flipbook PNG) kullanılır.
 
-### 4×4 km harita planı
-1. Izgara parçalara (64 m chunk) bölünür; yalnız dolu/kentsel parçalar 0,5 m ince ızgara tutar, açık arazi 2 m.
-2. Yol bulma iki katman: 8 m kaba ızgara (bölgeler arası) + 1 m yerel (birlik çevresi).
-3. Arazi: parça başına mesh + LOD, uzak ağaçlar impostor (kart), MultiMesh bitki örtüsü.
-4. Önce 1 km (orta ölçek) harita ile ölçekleme testi, sonra 2 km, en son 4 km.
+### Büyük harita mimarisi (0.0.7)
+- ≤1 km: 0,5 m ince ızgara, 1 m yol bulma · 2 km: 0,5 m / 2 m · 4 km: 1 m / 4 m (iri hücrede piyade için çoğunluk kuralı)
+- Arazi 256 m karolar, ağaç bankaları 256/512 m karolar (görüş dışı kırpılır), su ve ızgara taraması yalnız nehir kutularında
+- Sırada: seyrek (chunk) ince ızgara, hiyerarşik + iş parçacıklı yol bulma, uzak ağaçlar için impostor
 
 ## Sıradaki adımlar (sıra)
 1. **Görsel polish (Blender):** binalar → üs yapıları → harita öğeleri (ağaç, çit, direk, köprü) — hepsi yeniden, faset/temiz stil, asker v3 ile uyumlu
