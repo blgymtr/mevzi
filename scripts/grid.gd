@@ -142,6 +142,14 @@ func flush_nav() -> void:
 	_dirty.clear()
 
 func flush_all() -> void:
+	if NN > 512:
+		# büyük harita: boş hücrelerde AStar varsayılanı (açık, ağırlık 1) zaten doğru;
+		# yalnız değişen hücreler + kenar halkası işlenir (1 km'de 1 M hücrelik tam tarama yok)
+		for k in NN:
+			for c in [Vector2i(k, 0), Vector2i(k, NN - 1), Vector2i(0, k), Vector2i(NN - 1, k)]:
+				_dirty[c] = true
+		flush_nav()
+		return
 	for z in NN:
 		for x in NN:
 			_update_base(Vector2i(x, z))

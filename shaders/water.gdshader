@@ -17,6 +17,10 @@ uniform sampler2D river_mask : filter_linear, repeat_disable;
 uniform float map_size = 256.0;
 
 varying vec3 wpos;
+// görsel savaş sisi (FogOfWar global dokuları): su şeffaf geçişte sisin üstüne çizildiği için kendisi kararır
+global uniform sampler2D fow_vis;
+global uniform sampler2D fow_exp;
+global uniform float fow_on;
 
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -54,4 +58,12 @@ void fragment() {
 	SPECULAR = 0.6;
 	METALLIC = 0.0;
 	ALPHA = clamp(0.75 + k * 0.25 + foam, 0.0, 1.0);
+	if (fow_on > 0.5) {
+		vec2 fuv = wpos.xz / map_size;
+		float fv = texture(fow_vis, fuv).r;
+		float fe = texture(fow_exp, fuv).r;
+		float dark = mix(0.78, 0.42, smoothstep(0.05, 0.6, fe)) * (1.0 - smoothstep(0.15, 0.85, fv));
+		ALBEDO = mix(ALBEDO, vec3(0.03, 0.035, 0.045), dark);
+		SPECULAR *= 1.0 - dark;
+	}
 }

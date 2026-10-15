@@ -29,20 +29,27 @@ func build(b: Dictionary) -> void:
 	himg = Image.create(HRES, HRES, false, Image.FORMAT_RF)
 	himg.fill(Color(0, 0, 0, 1))
 	htex = ImageTexture.create_from_image(himg)
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(G.MAP, G.MAP)
-	pm.subdivide_width = 383
-	pm.subdivide_depth = 383
-	mi = MeshInstance3D.new()
-	mi.mesh = pm
-	mi.position = Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.extra_cull_margin = 4.0
 	mat = ShaderMaterial.new()
 	mat.shader = load("res://shaders/terrain.gdshader")
 	_apply_material(mat)
-	mi.material_override = mat
-	add_child(mi)
+	# arazi parçaları: 256 m'lik karolar (büyük haritada görünmeyen karolar kırpılır, köşe aralığı ~0,67 m)
+	var tiles := maxi(1, int(ceil(G.MAP / 256.0)))
+	var ts := G.MAP / tiles
+	for tz in tiles:
+		for tx in tiles:
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(ts, ts)
+			pm.subdivide_width = 383
+			pm.subdivide_depth = 383
+			var t := MeshInstance3D.new()
+			t.mesh = pm
+			t.position = Vector3((tx + 0.5) * ts, 0, (tz + 0.5) * ts)
+			t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			t.extra_cull_margin = 4.0
+			t.material_override = mat
+			add_child(t)
+			if mi == null:
+				mi = t
 	# harita dışı: aynı malzemeyle düz çevre halkası
 	var E := 260.0
 	for r in [Rect2(-E, -E, G.MAP + 2 * E, E), Rect2(-E, G.MAP, G.MAP + 2 * E, E), Rect2(-E, 0, E, G.MAP), Rect2(G.MAP, 0, E, G.MAP)]:

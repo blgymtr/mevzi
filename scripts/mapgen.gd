@@ -19,6 +19,7 @@ const MAPS := {
 	"green_valley": {"title": "Yeşil Vadi", "biome": "green", "desc": "Kıvrılan nehir, toprak yollar ve tek taş köprü. Ağaçlıklar pusu için ideal."},
 	"winter_village": {"title": "Karlı Köy", "biome": "winter", "desc": "Karla kaplı köy, tuğla duvarlar ve kazılmış siperler."},
 	"big_city": {"title": "Büyük Şehir", "biome": "green", "size": 512, "desc": "512 m: nehirle bölünmüş şehir, sokak sokak girilebilir binalar, sanayi bölgesi ve dış mahalleler."},
+	"large_front": {"title": "Geniş Cephe", "biome": "green", "size": 1024, "desc": "1 km: büyük nehir ve kolu, otoyol, altı köy, ormanlar ve tarlalar. Helikopter, hava indirme ve uzun menzilli topçu için."},
 	"desert_town": {"title": "Çöl Kasabası", "biome": "desert", "desc": "Düz çatılı beyaz evler ve yıkıntılarla dolu kasabada sokak sokak savaş."},
 }
 
@@ -62,6 +63,8 @@ func build(id: String, seed_v: int) -> void:
 			_winter()
 		"big_city":
 			_city()
+		"large_front":
+			MapGenLarge.new().build(self)
 		_:
 			_desert()
 	if id != "custom" and id != "big_city":
@@ -140,7 +143,60 @@ func _x_auto_bridges() -> void:
 						P.bridge(c, dir, (w + 5.0) / maxf(s, 0.5))
 						reserve(c, w * 0.5 + 6.0)
 
+# ---- parça kovası: büyük haritada yol/nehir mesafesi her çağrıda tüm noktaları taramasın
+const SEG_CELL := 24.0
+var _seg_road := {}
+var _seg_road_n := -1
+var _seg_riv := {}
+var _seg_riv_n := -1
+
+func _seg_index(lines: Array, with_w: bool) -> Dictionary:
+	var out := {}
+	for ln in lines:
+		var pts: PackedVector3Array = ln[0] if with_w else ln
+		var w: float = ln[1] if with_w else 0.0
+		for i in pts.size() - 1:
+			var a := Vector2(pts[i].x, pts[i].z)
+			var b := Vector2(pts[i + 1].x, pts[i + 1].z)
+			var c0 := Vector2i(int(minf(a.x, b.x) / SEG_CELL), int(minf(a.y, b.y) / SEG_CELL))
+			var c1 := Vector2i(int(maxf(a.x, b.x) / SEG_CELL), int(maxf(a.y, b.y) / SEG_CELL))
+			for cz in range(c0.y, c1.y + 1):
+				for cx in range(c0.x, c1.x + 1):
+					var k := Vector2i(cx, cz)
+					if not out.has(k):
+						out[k] = []
+					out[k].append([a, b, w])
+	return out
+
+func _seg_near(idx: Dictionary, p: Vector3, reach: int) -> float:
+	# en yakın parçaya uzaklık − (nehirse) yarı genişlik; menzil dışında 1e9
+	var q := Vector2(p.x, p.z)
+	var c := Vector2i(int(p.x / SEG_CELL), int(p.z / SEG_CELL))
+	var best := 1e9
+	for dz in range(-reach, reach + 1):
+		for dx in range(-reach, reach + 1):
+			var arr = idx.get(c + Vector2i(dx, dz))
+			if arr == null:
+				continue
+			for sg in arr:
+				var a: Vector2 = sg[0]
+				var ab: Vector2 = sg[1] - a
+				var t := clampf((q - a).dot(ab) / maxf(ab.length_squared(), 1e-5), 0.0, 1.0)
+				best = minf(best, (q - (a + ab * t)).length() - float(sg[2]) * 0.5)
+	return best
+
+func river_clear(p: Vector3, r: float) -> bool:
+	if _seg_riv_n != rivers.size():
+		_seg_riv = _seg_index(rivers, true)
+		_seg_riv_n = rivers.size()
+	return _seg_near(_seg_riv, p, 2) >= 3.0 + r
+
 func road_dist(p: Vector3) -> float:
+	if G.MAP > 512.0:
+		if _seg_road_n != roads.size():
+			_seg_road = _seg_index(roads, false)
+			_seg_road_n = roads.size()
+		return _seg_near(_seg_road, p, 2)
 	var best := 1e9
 	for r in roads:
 		var pts: PackedVector3Array = r
@@ -161,9 +217,13 @@ func free_at(p: Vector3, r: float, road_m := 4.0) -> bool:
 			return false
 	if road_dist(p) < r + road_m:
 		return false
-	for rv in rivers:
-		if _poly_dist(rv[0], p) < rv[1] * 0.5 + 3.0 + r:
+	if G.MAP > 512.0:
+		if not river_clear(p, r):
 			return false
+	else:
+		for rv in rivers:
+			if _poly_dist(rv[0], p) < rv[1] * 0.5 + 3.0 + r:
+				return false
 	var s := maxf(r, 0.5)
 	for dz in [-s, 0.0, s]:
 		for dx in [-s, 0.0, s]:
@@ -1392,7 +1452,7 @@ func _x_path(pts: Array, w: float, stone: bool) -> void:
 	# taş döşeme: düzensiz, hafif yüksek yassı kayrak plakalar
 	if _slab_m == null:
 		var mb := MB.new()
-		mb.hull(Vector3(0, 0.0, 0), Vector2(0.55, 0.45), Vector2(0.5, 0.4), 0.05, Color(0.6, 0.58, 0.55))
+		mb.hull(Vector3(0, 0.0, 0), Vector2(0.62, 0.5), Vector2(0.56, 0.44), 0.05, Color(0.46, 0.44, 0.41))
 		_slab_m = mb.commit(Mats.stone())
 	var xs: Array = []
 	var acc := 0.0
@@ -1410,7 +1470,7 @@ func _x_path(pts: Array, w: float, stone: bool) -> void:
 					var sc := rng.randf_range(0.8, 1.15)
 					var bs := Basis(Vector3.UP, atan2(d2.x, d2.z) + rng.randf_range(-0.25, 0.25)).scaled(Vector3(sc, 1, sc * rng.randf_range(0.8, 1.2)))
 					xs.append(Transform3D(bs, Vector3(q.x, T.ground_h(q) + 0.015, q.z)))
-			acc += 0.62
+			acc += 0.56
 		acc -= seg
 	if xs.is_empty():
 		return

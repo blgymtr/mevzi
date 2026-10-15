@@ -160,15 +160,83 @@ func _real_tree(p: Vector3, set_name: String, sc := 1.0) -> bool:
 	var mesh := _tree_model("%s_%d" % [id, rng.randi() % 3])
 	if mesh == null:
 		return false
-	var mi := _place(mesh, p, rng.randf() * TAU, sc * rng.randf_range(0.85, 1.15))
+	var s2 := sc * rng.randf_range(0.85, 1.15)
+	var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s2, s2, s2)), p)
+	var it: Dictionary
 	if set_name == "bush":
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		items.append({"node": mi, "pos": p, "kind": "bush", "hp": 20.0, "alive": true, "r": 0.6})
-		return true
-	var big := id.contains("_l")
-	items.append({"node": mi, "pos": p, "kind": "tree", "hp": (110.0 if big else 75.0) * sc, "alive": true, "r": 0.5 if big else 0.4})
-	G.grid.set_static_circle(p, 0.35 if big else 0.3, 3.0, Grid.K_TREE)
+		it = {"node": null, "pos": p, "kind": "bush", "hp": 20.0, "alive": true, "r": 0.6}
+	else:
+		var big := id.contains("_l")
+		it = {"node": null, "pos": p, "kind": "tree", "hp": (110.0 if big else 75.0) * sc, "alive": true, "r": 0.5 if big else 0.4}
+		G.grid.set_static_circle(p, 0.35 if big else 0.3, 3.0, Grid.K_TREE)
+	it["mesh"] = mesh
+	it["xf"] = xf
+	items.append(it)
+	_mm_add(it, set_name == "bush")
 	return true
+
+# ------------------------------------------------------------ ağaç örnekleme (MultiMesh)
+# Aynı modeldeki tüm ağaçlar tek MultiMesh: çizim çağrısı az, büyük haritada binlerce ağaç.
+# Örnek gizleme: ölçek 0; saydamlaşma: özel veri r (shader'da titreşimli kesim).
+var _banks := {}          # mesh -> {"mm": MultiMesh, "items": Array, "dirty": bool}
+
+func _mm_add(it: Dictionary, bush: bool) -> void:
+	var mesh: Mesh = it["mesh"]
+	if not _banks.has(mesh):
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = mesh
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if bush else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		add_child(mmi)
+		_banks[mesh] = {"mm": mm, "items": [], "dirty": true}
+	var b: Dictionary = _banks[mesh]
+	it["bank"] = b
+	it["mi_idx"] = b["items"].size()
+	b["items"].append(it)
+	b["dirty"] = true
+	if not _bank_pending:
+		_bank_pending = true
+		_flush_banks.call_deferred()
+
+var _bank_pending := false
+func _flush_banks() -> void:
+	_bank_pending = false
+	for mesh in _banks:
+		var b: Dictionary = _banks[mesh]
+		if not b["dirty"]:
+			continue
+		b["dirty"] = false
+		var mm: MultiMesh = b["mm"]
+		var its: Array = b["items"]
+		mm.instance_count = its.size()
+		for i in its.size():
+			var it: Dictionary = its[i]
+			var shown: bool = it["alive"] and it["node"] == null
+			mm.set_instance_transform(i, it["xf"] if shown else Transform3D(Basis().scaled(Vector3.ZERO), it["pos"]))
+			mm.set_instance_custom_data(i, Color(0, 0, 0, 0))
+
+func _mm_hide(it: Dictionary) -> void:
+	var b: Dictionary = it["bank"]
+	(b["mm"] as MultiMesh).set_instance_transform(it["mi_idx"], Transform3D(Basis().scaled(Vector3.ZERO), it["pos"]))
+
+func _mm_fade(it: Dictionary, a: float) -> void:
+	var b: Dictionary = it["bank"]
+	(b["mm"] as MultiMesh).set_instance_custom_data(it["mi_idx"], Color(a, 0, 0, 0))
+
+# devrilecek/yanacak örnek: MultiMesh'ten çıkarılıp ayrı düğüm olur
+func _detach(it: Dictionary) -> MeshInstance3D:
+	if it["node"] != null:
+		return it["node"]
+	_mm_hide(it)
+	var mi := MeshInstance3D.new()
+	mi.mesh = it["mesh"]
+	mi.transform = it["xf"]
+	add_child(mi)
+	it["node"] = mi
+	return mi
 
 # patlama şok dalgası: ağaç shader'ı son 4 büyük patlamayı (global) okuyup uzaktan yatar/sallanır
 func shake_trees(center: Vector3, power: float) -> void:
@@ -606,7 +674,10 @@ func crush(center: Vector3, r: float, dir: Vector3) -> void:
 
 func _destroy(it: Dictionary, center: Vector3) -> void:
 	it["alive"] = false
-	var mi: MeshInstance3D = it["node"]
+	if it.has("bank") and it["kind"] != "tree":
+		_mm_hide(it)
+		return
+	var mi: MeshInstance3D = it["node"] if not it.has("bank") else _detach(it)
 	match it["kind"]:
 		"car":
 			mi.material_override = Mats.burnt()
@@ -684,7 +755,7 @@ func _collapse_bridge(it: Dictionary) -> void:
 
 func _fell(it: Dictionary, dir: Vector3) -> void:
 	it["alive"] = false
-	var mi: MeshInstance3D = it["node"]
+	var mi: MeshInstance3D = it["node"] if not it.has("bank") else _detach(it)
 	var axis := Vector3(dir.z, 0, -dir.x).normalized()
 	if axis.length() < 0.1:
 		axis = Vector3.RIGHT
@@ -702,7 +773,10 @@ func clear_area(c: Vector3, r: float) -> void:
 		var p: Vector3 = it["pos"]
 		if Vector2(p.x - c.x, p.z - c.z).length() < r:
 			it["alive"] = false
-			(it["node"] as Node3D).visible = false
+			if it.has("bank") and it["node"] == null:
+				_mm_hide(it)
+			else:
+				(it["node"] as Node3D).visible = false
 			G.grid.set_static_circle(p, 0.5, 0.0, Grid.K_NONE, true)
 
 # ------------------------------------------------------------ bitki örtüsü (çam, çalı, kaya, saman, ot, kamış)
@@ -969,11 +1043,18 @@ func _process(dt: float) -> void:
 			# ağaç tepesi ekranda yukarı (-x -z yönündeki zemin) düşer: birliğin +x +z kadar ötesindeki ağaçlar örter
 			var d := Vector2(p.x - 2.2 - q.x, p.z - 2.2 - q.z).length()
 			if d < 4.5:
-				now.append(it["node"])
+				now.append(it)
 				break
-	for n in _faded:
-		if is_instance_valid(n) and not now.has(n):
-			n.transparency = 0.0
-	for n in now:
-		n.transparency = 0.65
+	for it2 in _faded:
+		if not now.has(it2):
+			_set_fade(it2, 0.0)
+	for it2 in now:
+		_set_fade(it2, 0.65)
 	_faded = now
+
+func _set_fade(it: Dictionary, a: float) -> void:
+	if it.has("bank") and it["node"] == null:
+		if it["alive"]:
+			_mm_fade(it, a)
+	elif it["node"] != null and is_instance_valid(it["node"]):
+		(it["node"] as GeometryInstance3D).transparency = a

@@ -26,6 +26,8 @@ func run(scene: String) -> void:
 			await para_test()
 		"tactest":
 			await tac_test()
+		"largetest":
+			await large_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -448,3 +450,31 @@ func tac_test() -> void:
 	if not flanked:
 		fails += 1
 	print("TACTEST RESULT fails=%d" % fails)
+
+# 1 km harita: üretim süresi, ağaç/bina sayısı, genel ve yakın görünüm, uzun yol bulma
+func large_test() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	var t0 := Time.get_ticks_msec()
+	m.start_game("large_front", {}, true)
+	var ms := Time.get_ticks_msec() - t0
+	var trees := G.props.items.filter(func(it): return it["kind"] == "tree").size()
+	print("LARGE map=%.0f load_ms=%d trees=%d houses=%d banks=%d" % [G.MAP, ms, trees, G.blocks.houses.size(), G.props._banks.size()])
+	if G.MAP < 1000.0:
+		fails += 1
+	var t1 := Time.get_ticks_msec()
+	var path := G.grid.find_path(G.hq_pos[0], G.hq_pos[1], Grid.M_HEAVY)
+	print("LARGE path_pts=%d path_ms=%d" % [path.size(), Time.get_ticks_msec() - t1])
+	if path.size() < 3:
+		fails += 1
+	_cam(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), 115.0)
+	await m._wait(1.0)
+	await m._shot("large_00_mid")
+	_cam(G.hq_pos[0], 60.0)
+	await m._wait(0.5)
+	await m._shot("large_01_hq")
+	_cam(Vector3(G.MAP * 0.78, 0, G.MAP * 0.55), 50.0)
+	await m._wait(0.5)
+	await m._shot("large_02_village")
+	print("LARGETEST RESULT fails=%d" % fails)

@@ -1,8 +1,11 @@
 class_name Fx extends Node3D
 # Görsel efektler: GPU-hesaplı parçacık halkaları, iz mermileri, parlama ışıkları, krater izleri.
 
-enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS, P_STREAK }
-const CAP := [7000, 4000, 3000, 1800, 2400]
+enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS, P_STREAK, P_FLIP, P_FLIPS }
+const CAP := [7000, 4000, 3000, 1800, 2400, 300, 400]
+# flipbook atlasları (tools/blender/fx_flipbook.py, Mantaflow simülasyonu): yoksa bu türler kullanılmaz
+var has_flip := false
+var has_flip_smoke := false
 
 var mms: Array = []
 var heads := [0, 0, 0, 0, 0]
@@ -34,7 +37,9 @@ func _ready() -> void:
 	add_sh.code = base.code.replace("render_mode unshaded", "render_mode blend_add, unshaded")
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1, 1)
-	for k in 5:
+	has_flip = ResourceLoader.exists("res://assets/fx/expl_flip.png")
+	has_flip_smoke = ResourceLoader.exists("res://assets/fx/smoke_flip.png")
+	for k in 7:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
@@ -46,15 +51,19 @@ func _ready() -> void:
 			mm.set_instance_transform(i, dead)
 		var mi := MultiMeshInstance3D.new()
 		mi.multimesh = mm
-		mi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(1300, 400, 1300))
+		mi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(G.MAP + 1000.0, 400, G.MAP + 1000.0))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var mat := ShaderMaterial.new()
 		mat.shader = add_sh if k == P_SPARK else base
 		mat.set_shader_parameter("tex", dot_tex if k == P_SPARK else puff_tex)
+		if k == P_FLIP and has_flip:
+			mat.set_shader_parameter("tex", load("res://assets/fx/expl_flip.png"))
+		elif k == P_FLIPS and has_flip_smoke:
+			mat.set_shader_parameter("tex", load("res://assets/fx/smoke_flip.png"))
 		mat.set_shader_parameter("mode", k)
 		mat.set_shader_parameter("intensity", 1.35 if k == P_FIRE else 4.0)
 		mat.set_shader_parameter("ground_stop", 1.0 if k == P_DEBRIS or k == P_SPARK or k == P_STREAK else 0.0)
-		mat.render_priority = [1, 3, 4, 0, 2][k]
+		mat.render_priority = [1, 3, 4, 0, 2, 3, 1][k]
 		mi.material_override = mat
 		add_child(mi)
 		mms.append(mm)
@@ -67,7 +76,7 @@ func _ready() -> void:
 		tr_mm.set_instance_transform(i, Transform3D(Basis(Vector3(0.01, 0, 0), Vector3(-1000, 0.1, 0.1), Vector3(0, 0, 0.01)), Vector3(0, -50, 0)))
 	var tmi := MultiMeshInstance3D.new()
 	tmi.multimesh = tr_mm
-	tmi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(1300, 400, 1300))
+	tmi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(G.MAP + 1000.0, 400, G.MAP + 1000.0))
 	tmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var tmat := ShaderMaterial.new()
 	tmat.shader = load("res://shaders/tracer.gdshader")
@@ -265,6 +274,14 @@ func _run_emitter(e: Array, dt: float) -> void:
 					emit(P_FIRE, p + _rv(0.6 * pw, 0.2), Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(2.0, 4.0), rng.randf_range(-0.4, 0.4)), rng.randf_range(0.5, 1.0), 0.9 * pw, 1.8 * pw, -1.0, 1.0, Color(1, 1, 1, 0.95))
 				var g := rng.randf_range(0.03, 0.09)
 				emit(P_SMOKE, p + _rv(0.5 * pw, 0.3) + Vector3(0, 1.0, 0), Vector3(rng.randf_range(0.2, 1.0), rng.randf_range(4.0, 7.0), rng.randf_range(-0.5, 0.3)), rng.randf_range(6.0, 9.0), 1.4 * pw, 6.5 * pw, -0.1, 0.25, Color(g, g, g, 0.92))
+			# simüle edilmiş kalın duman (flipbook): seyrek, büyük, kıvrılarak yükselen
+			if e.size() < 6:
+				e.append(0.0)
+			e[5] += dt
+			if has_flip_smoke and e[5] > 1.1:
+				e[5] = 0.0
+				var dk := Color(0.32, 0.31, 0.3, 0.85) if rng.randf() < 0.7 else Color(0.5, 0.48, 0.46, 0.7)
+				emit(P_FLIPS, p + Vector3(rng.randf_range(-0.6, 0.6), 4.0 * pw, rng.randf_range(-0.6, 0.6)), Vector3(rng.randf_range(0.3, 0.9), 2.2, rng.randf_range(-0.3, 0.3)), rng.randf_range(5.5, 7.5), 6.0 * pw, 10.0 * pw, -0.15, 0.25, dk, 0.0, rng.randf_range(-0.2, 0.2))
 		"jet":
 			var fade3 := clampf(left / 6.0, 0.0, 1.0)
 			var pulse := 0.6 + 0.4 * sin(G.time * 7.0 + p.x)
@@ -347,6 +364,11 @@ func dirt_crown(p: Vector3, s: float) -> void:
 # büyük ateş topu: türbülanslı turuncu-sarı alev kütlesi, içinden kara duman çıkar
 func fireball(p: Vector3, s: float) -> void:
 	flash(p, 4.5 * s, 9.0 + 8.0 * s, 0.4 + 0.15 * s, Color(1.0, 0.6, 0.28))
+	if has_flip:
+		# simüle edilmiş ateş topu (flipbook): gerçek girdaplı alev + kara duman
+		emit(P_FLIP, p + Vector3(0, 1.4 * s, 0), Vector3(0, 0.6, 0), rng.randf_range(1.5, 1.9), 6.5 * s, 8.5 * s, 0.0, 1.0, Color(1, 1, 1, 1), 0.0, rng.randf_range(-0.2, 0.2))
+		if s > 1.2:
+			emit(P_FLIP, p + Vector3(rng.randf_range(-1, 1), 1.0 * s, rng.randf_range(-1, 1)), Vector3(0, 0.8, 0), rng.randf_range(1.6, 2.0), 5.0 * s, 7.0 * s, 0.0, 1.0, Color(1, 1, 1, 0.9), 0.12, rng.randf_range(-0.3, 0.3))
 	emit(P_FIRE, p + Vector3(0, 0.6 * s, 0), Vector3(0, 1.0, 0), 0.16, 2.0 * s, 3.8 * s, 0.0, 1.0, Color(1.1, 0.9, 0.65, 1))
 	for i in int(34 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1.4), rng.randf_range(-1, 1)).normalized()

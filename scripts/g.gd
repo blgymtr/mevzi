@@ -68,6 +68,10 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	rng.randomize()
 	RenderingServer.global_shader_parameter_add("game_time", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	# görsel savaş sisi (FogOfWar dokuları atanana kadar kapalı)
+	RenderingServer.global_shader_parameter_add("fow_on", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	RenderingServer.global_shader_parameter_add("fow_vis", RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, null)
+	RenderingServer.global_shader_parameter_add("fow_exp", RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, null)
 	# ağaç/çalı şok dalgası için son 4 büyük patlama: (x, z, başlangıç, güç)
 	for i in 4:
 		RenderingServer.global_shader_parameter_add("blast%d" % i, RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, -100, 0))

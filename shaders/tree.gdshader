@@ -22,11 +22,13 @@ global uniform vec4 blast2;
 global uniform vec4 blast3;
 
 varying float v_h;
+varying float v_fade;
 varying vec3 v_crown_n;
 
 void vertex() {
 	float h = clamp(VERTEX.y / tree_h, 0.0, 1.0);
 	v_h = h;
+	v_fade = INSTANCE_CUSTOM.r;
 	float w = h * h;
 	float t = game_time;
 	float phase = fract(sin(dot(MODEL_MATRIX[3].xz, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831;
@@ -70,6 +72,11 @@ void vertex() {
 }
 
 void fragment() {
+	// seçili birliği örten ağaç: titreşimli (dither) kesimle yarı saydam
+	if (v_fade > 0.0) {
+		float d = fract(sin(dot(floor(FRAGCOORD.xy), vec2(12.9898, 78.233))) * 43758.5453);
+		if (d < v_fade) discard;
+	}
 	vec4 c = texture(albedo_tex, UV * uv_scale);
 	vec3 col = c.rgb * tint.rgb;
 	if (leaf) {

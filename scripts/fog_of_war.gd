@@ -53,6 +53,8 @@ func _ready() -> void:
 	mat.set_shader_parameter("map_size", G.MAP)
 	quad.material_override = mat
 	add_child(quad)
+	RenderingServer.global_shader_parameter_set("fow_vis", vis_vp.get_texture())
+	RenderingServer.global_shader_parameter_set("fow_exp", exp_vp.get_texture())
 
 func _make_vp(clear: int) -> SubViewport:
 	var vp := SubViewport.new()
@@ -75,6 +77,7 @@ func _make_vp(clear: int) -> SubViewport:
 var _t := 0.0
 func _process(dt: float) -> void:
 	quad.visible = G.running and G.view_team() >= 0 and not G.game_over
+	RenderingServer.global_shader_parameter_set("fow_on", 1.0 if quad.visible else 0.0)
 	if not quad.visible:
 		return
 	_t -= dt

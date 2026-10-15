@@ -38,7 +38,7 @@ void vertex() {
 			p.y = max(p.y, 0.04);
 		}
 		float sz = mix(s0, s1, 1.0 - (1.0 - a) * (1.0 - a));
-		float rot = INSTANCE_CUSTOM.x + INSTANCE_CUSTOM.y * t;
+		float rot = (mode >= 5) ? INSTANCE_CUSTOM.y * 0.15 : INSTANCE_CUSTOM.x + INSTANCE_CUSTOM.y * t;
 		vec2 q = VERTEX.xy;
 		vec3 right = (INV_VIEW_MATRIX[0]).xyz;
 		vec3 up = (INV_VIEW_MATRIX[1]).xyz;
@@ -62,7 +62,7 @@ void vertex() {
 	}
 	float var_i = INSTANCE_CUSTOM.z;
 	vec2 cell = vec2(mod(var_i, 2.0), floor(mod(var_i, 4.0) / 2.0));
-	v_uv = (UV + cell) * 0.5;
+	v_uv = (mode >= 5) ? UV : (UV + cell) * 0.5;
 }
 
 void fragment() {
@@ -86,6 +86,18 @@ void fragment() {
 	} else if (mode == 2) {
 		ALBEDO = v_col.rgb * intensity;
 		ALPHA = tx.a * (1.0 - a);
+	} else if (mode == 5 || mode == 6) {
+		// flipbook (8x6): yaşa göre kare seçilir, iki kare arası karışım
+		float fr = clamp(a, 0.0, 0.999) * 48.0;
+		float f0 = floor(fr);
+		float f1 = min(f0 + 1.0, 47.0);
+		vec2 c0 = vec2(mod(f0, 8.0), floor(f0 / 8.0));
+		vec2 c1 = vec2(mod(f1, 8.0), floor(f1 / 8.0));
+		vec4 t0 = texture(tex, (v_uv + c0) / vec2(8.0, 6.0));
+		vec4 t1 = texture(tex, (v_uv + c1) / vec2(8.0, 6.0));
+		vec4 tf = mix(t0, t1, fract(fr));
+		ALBEDO = tf.rgb * v_col.rgb * (mode == 5 ? 1.25 : 1.0);
+		ALPHA = tf.a * v_col.a * (1.0 - smoothstep(0.85, 1.0, a));
 	} else if (mode == 4) {
 		// toprak/şarapnel çizgisi: opak, sona doğru incelip söner
 		ALBEDO = v_col.rgb * (0.6 + 0.4 * tx.r);
