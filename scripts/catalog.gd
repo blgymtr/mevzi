@@ -58,6 +58,18 @@ static func load_all() -> void:
 			order.append([nat, u["cat"], u["id"]])
 	Building.add_catalog()
 
+static func first_of_base(base: String, nation: String) -> String:
+	load_all()
+	var any := ""
+	for o in order:
+		var u: Dictionary = units[o[2]]
+		if FAM_BASE.get(u["fam"], "") == base:
+			if u["nation"] == nation:
+				return o[2]
+			if any == "":
+				any = o[2]
+	return any
+
 static func has(id: String) -> bool:
 	load_all()
 	return units.has(id)

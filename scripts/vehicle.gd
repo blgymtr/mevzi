@@ -478,6 +478,11 @@ func setup(t: int, vt: String) -> void:
 	crew_max = CREWED.get(vt, 0)
 	crew_n = crew_max
 	M = Art.vehicle_model(vid, t) if vid != "" and Art.has(vid) else Art.vehicle(vt, t)
+	if M.is_empty() and vid == "":
+		# taban tipin kendi modeli yoksa katalogdan aynı tabandaki bir birimin modeli
+		var alt := Catalog.first_of_base(vt, G.nation[t] if t >= 0 and t < G.nation.size() else "")
+		if alt != "" and Art.has(alt):
+			M = Art.vehicle_model(alt, t)
 	if M.is_empty():
 		M = VehicleModels.get_model(vt, t, G.map_kind == "winter")
 	hull = Node3D.new()
