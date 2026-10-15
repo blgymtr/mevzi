@@ -4,6 +4,9 @@ render_mode diffuse_burley, specular_schlick_ggx;
 // Fotoğraf dokulu arazi: taban + yama + yol + yanık + kıyı çamuru; yükseklik haritası ile oyulmuş nehir yatakları.
 uniform sampler2D map_tex : filter_linear, repeat_disable;      // r yol, g iz, b yanık, a yama
 uniform sampler2D height_tex : filter_linear, repeat_disable;   // r yükseklik (m)
+// tarla deseni: r ekin türü/4, g sıra açısı/π, b ton, a maske (aynı doku: tür en yakın, maske doğrusal)
+uniform sampler2D field_tex : filter_nearest, repeat_disable;
+uniform sampler2D field_mask : filter_linear, repeat_disable;
 uniform sampler2D tex_a : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D nrm_a : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D tex_b : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -15,6 +18,11 @@ uniform sampler2D tex_burn : source_color, filter_linear_mipmap_anisotropic, rep
 uniform sampler2D macro : filter_linear_mipmap, repeat_enable;  // büyük ölçek gürültü (renk varyasyonu)
 uniform sampler2D dune_n : filter_linear_mipmap, repeat_enable; // kumul normal gürültüsü
 uniform float map_size = 256.0;
+// parça (chunk): bu malzemenin boya/yükseklik dokusu haritanın bir karesini 1 piksel komşu payıyla tutar
+uniform vec2 chunk_org = vec2(0.0);
+uniform float chunk_size = 256.0;
+uniform float chunk_px = 1024.0;
+uniform float chunk_hpx = 512.0;
 uniform vec3 tint_a : source_color = vec3(1.0);
 uniform vec3 tint_a2 : source_color = vec3(1.0);
 uniform vec3 tint_b : source_color = vec3(1.0);
@@ -36,7 +44,8 @@ varying vec3 wpos;
 varying float vh;
 
 float hgt(vec2 w) {
-	return texture(height_tex, w / map_size).r;
+	vec2 cuv = (w - chunk_org) / chunk_size;
+	return texture(height_tex, (cuv * chunk_hpx + 1.0) / (chunk_hpx + 2.0)).r;
 }
 
 void vertex() {
@@ -61,7 +70,8 @@ void fragment() {
 	vec2 w = wpos.xz;
 	vec2 muv = w / map_size;
 	float inside = step(0.0, muv.x) * step(0.0, muv.y) * step(muv.x, 1.0) * step(muv.y, 1.0);
-	vec4 m = texture(map_tex, muv) * inside;
+	vec2 cuv = (w - chunk_org) / chunk_size;
+	vec4 m = texture(map_tex, (cuv * chunk_px + 1.0) / (chunk_px + 2.0)) * inside;
 	float mac = texture(macro, w / 97.0).r;
 	float mac2 = texture(macro, w / 23.0 + vec2(0.31, 0.77)).r;
 	// taban: iki ölçek karışımı (tekrarı kırar)
@@ -79,6 +89,30 @@ void fragment() {
 	vec3 bcol = texture(tex_b, ub).rgb * tint_b;
 	base = mix(base, bcol, pm);
 	nb = mix(nb, unpack_n(texture(nrm_b, ub)), pm);
+	// tarla: ekin rengi + ekim/sürüm sıraları (uzakta sıralar ortalamaya söner); sınır gürültüyle kırılır
+	float fmk = smoothstep(0.3, 0.7, texture(field_mask, muv).a) * inside;
+	if (fmk > 0.002) {
+		vec4 fl = texture(field_tex, muv);
+		int ct = int(fl.r * 5.0 + 0.5);
+		float ang = fl.g * 3.14159265;
+		float rowc = dot(w, vec2(-sin(ang), cos(ang)));
+		float lum = dot(base, vec3(0.299, 0.587, 0.114));
+		float fvar = texture(macro, w / 41.0 + vec2(0.23, 0.71)).r;
+		// renkler doğrusal uzayda (sRGB karşılığı yorumda); taban dokusunun ayrıntısı parlaklık oranıyla korunur
+		vec3 cc = vec3(0.115, 0.165, 0.034);                                              // çayır  ~(0.38, 0.45, 0.21)
+		float rowk = 0.08;
+		float rw = 1.6;
+		float amt = 0.9;
+		if (ct == 1) { cc = vec3(0.30, 0.205, 0.068); rowk = 0.18; rw = 0.4; }          // buğday ~(0.59, 0.49, 0.30)
+		else if (ct == 2) { cc = vec3(0.047, 0.10, 0.013); rowk = 0.45; rw = 0.75; }     // yeşil ekin ~(0.25, 0.35, 0.14)
+		else if (ct == 3) { cc = vec3(0.07, 0.04, 0.018); rowk = 0.45; rw = 0.6; }       // sürülmüş ~(0.30, 0.23, 0.16)
+		else if (ct == 5) { cc = vec3(0.018, 0.027, 0.0065); rowk = 0.0; amt = 0.88; }   // orman zemini ~(0.16, 0.19, 0.10)
+		cc *= (0.8 + 0.4 * fl.b) * (0.75 + 0.5 * fvar);
+		float rows = 0.5 + 0.5 * sin(rowc * 6.2831853 / rw);
+		rows = mix(rows, 0.5, smoothstep(rw * 0.2, rw * 0.55, fwidth(rowc)));
+		vec3 fcol = cc * (1.0 - rowk * rows) * clamp(lum / 0.13, 0.6, 1.45);
+		base = mix(base, fcol, fmk * amt);
+	}
 	// kıyı çamuru (yükseklik < 0)
 	float bank = smoothstep(-0.05, -0.7, vh);
 	base = mix(base, texture(tex_bank, w / 5.0).rgb * tint_bank, bank);

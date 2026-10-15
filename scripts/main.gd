@@ -43,7 +43,7 @@ func _ready() -> void:
 	apply_video()
 	if shot_dir != "":
 		_start_watchdog()
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -202,8 +202,74 @@ func _clear_world() -> void:
 	G.reset()
 	bodies.clear()
 
+# ------------------------------------------------------------ yükleme ekranı (büyük harita)
+# Harita üretimi eşzamanlı (sahne ağacı iş parçacığında kurulamaz): ekran doğrudan RenderingServer
+# tuval öğesine çizilir ve force_draw ile basılır; pencere olayları işlenir (Windows "yanıt vermiyor"
+# demesin). Yükleme boyunca 3B çizim kapalı (yarım kurulmuş dünyayı çizmek boşa).
+const LOAD_STEPS := {"start": 0.0, "grid": 0.02, "terrain": 0.03, "rivers": 0.05, "roads": 0.09, "rail": 0.11, "sites": 0.12,
+	"town": 0.30, "towns": 0.40, "villages": 0.55, "farms": 0.60, "forests": 0.78, "fields": 0.86, "scatter": 0.90, "details": 0.92,
+	"layout": 0.92, "water": 0.93, "blocks": 0.97, "grid_flush": 0.99, "scatter_end": 0.99, "mapgen": 1.0}
+const LOAD_TEXT := {"start": "Harita hazırlanıyor", "grid": "Arazi ızgarası", "terrain": "Arazi", "rivers": "Nehirler", "roads": "Yol ağı ve köprüler",
+	"rail": "Demiryolu", "sites": "Hedefler ve ileri üsler", "town": "Merkez kasaba", "towns": "Kasabalar", "villages": "Köyler", "farms": "Çiftlikler",
+	"forests": "Ormanlar", "fields": "Tarlalar", "scatter": "Bitki örtüsü", "details": "Ayrıntılar", "layout": "Yerleşim", "water": "Su",
+	"blocks": "Binalar", "grid_flush": "Yol bulma", "mapgen": "Hazır"}
+var _load_ci := RID()
+var _load_layer: CanvasLayer = null
+var _load_title := ""
+var _load_frac := 0.0
+
+func load_begin(title: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	_load_title = title
+	_load_frac = 0.0
+	_load_layer = CanvasLayer.new()
+	_load_layer.layer = 128
+	add_child(_load_layer)
+	var host := Control.new()
+	_load_layer.add_child(host)
+	_load_ci = RenderingServer.canvas_item_create()
+	RenderingServer.canvas_item_set_parent(_load_ci, host.get_canvas_item())
+	get_viewport().disable_3d = true
+	load_step("start")
+
+func load_step(stage: String) -> void:
+	if not _load_ci.is_valid():
+		return
+	_load_frac = maxf(_load_frac, float(LOAD_STEPS.get(stage, _load_frac)))
+	var vs := get_viewport().get_visible_rect().size
+	var ci := _load_ci
+	RenderingServer.canvas_item_clear(ci)
+	RenderingServer.canvas_item_add_rect(ci, Rect2(Vector2.ZERO, vs), Color(0.055, 0.06, 0.055))
+	var font: Font = G.hud.font_b if G.hud != null and G.hud.font_b != null else ThemeDB.fallback_font
+	var w := minf(vs.x * 0.5, 720.0)
+	var x0 := (vs.x - w) * 0.5
+	var y0 := vs.y * 0.5
+	font.draw_string(ci, Vector2(x0, y0 - 46), I18n.s(_load_title).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color(0.95, 0.72, 0.3))
+	RenderingServer.canvas_item_add_rect(ci, Rect2(x0, y0, w, 10), Color(0.16, 0.17, 0.16))
+	RenderingServer.canvas_item_add_rect(ci, Rect2(x0, y0, w * _load_frac, 10), Color(0.95, 0.72, 0.3))
+	font.draw_string(ci, Vector2(x0, y0 + 40), I18n.s(String(LOAD_TEXT.get(stage, stage))) + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.78, 0.8, 0.76))
+	font.draw_string(ci, Vector2(x0 + w - 60, y0 + 40), "%d%%" % int(_load_frac * 100.0), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(0.78, 0.8, 0.76))
+	DisplayServer.process_events()
+	RenderingServer.force_draw(true, 0.0)
+	# test: yükleme ekranının bir karesi kaydedilir
+	if shot_dir != "" and stage == "villages":
+		get_viewport().get_texture().get_image().save_png(shot_dir.path_join("loading_screen.png"))
+
+func load_end() -> void:
+	if _load_ci.is_valid():
+		RenderingServer.free_rid(_load_ci)
+	_load_ci = RID()
+	if _load_layer != null and is_instance_valid(_load_layer):
+		_load_layer.queue_free()
+	_load_layer = null
+	get_viewport().disable_3d = false
+
 func build_world(id: String, seed_v: int, data := {}) -> void:
 	_clear_world()
+	var big := float(MapGen.MAPS.get(id, {}).get("size", 256)) >= 2048.0 if data.is_empty() else float(data.get("size", 256)) >= 2048.0
+	if big:
+		load_begin(String(MapGen.MAPS.get(id, {}).get("title", "Harita")))
 	if not data.is_empty():
 		id = "custom"
 	elif not MapGen.MAPS.has(id):
@@ -215,8 +281,11 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	G.MAP = float(MapGen.MAPS.get(id, {}).get("size", 256)) if id != "custom" else float(data.get("size", 256))
 	G.prof("start")
 	Grid.configure(G.MAP)
-	Terrain.HRES = mini(2048, int(G.MAP * 2.0))
-	Terrain.RES = mini(2048, int(G.MAP * 4.0))
+	if G.cam != null:
+		G.cam.setup_for_map(G.MAP)
+	# 8 km: boya 4096 (2 m/piksel, 4 km ile aynı), yükseklik 4096 (2 m) — dokular parçalı yüklenir
+	Terrain.HRES = mini(4096 if G.MAP > 4096.0 else 2048, int(G.MAP * 2.0))
+	Terrain.RES = mini(4096 if G.MAP > 4096.0 else 2048, int(G.MAP * 4.0))
 	var bio := Biomes.get_biome(kind)
 	G.biome = bio
 	_apply_theme(kind)
@@ -259,6 +328,7 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	G.mapgen = mg
 	mg.build(id, seed_v)
 	G.prof("mapgen")
+	load_end()
 	var lg := Logistics.new()
 	add_child(lg)
 	G.logi = lg
@@ -470,7 +540,7 @@ func _do_restart() -> void:
 
 var sandbox_ui: Sandbox = null
 
-func start_game(kind: String, data := {}, sandbox := false) -> void:
+func start_game(kind: String, data := {}, sandbox := false, seed_v := -1) -> void:
 	G.hud.hide_menu()
 	_close_editor()
 	G.spectate = false
@@ -480,7 +550,7 @@ func start_game(kind: String, data := {}, sandbox := false) -> void:
 	sandbox_ui = null
 	G.sandbox = sandbox
 	G.fog_off = false
-	build_world(kind, randi(), data)
+	build_world(kind, seed_v if seed_v >= 0 else randi(), data)
 	if sandbox:
 		sandbox_ui = Sandbox.new()
 		add_child(sandbox_ui)

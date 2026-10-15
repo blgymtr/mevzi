@@ -110,6 +110,4 @@ func build(m: MapGen) -> void:
 	for tz in tiles:
 		for tx in tiles:
 			mg.p_grass_field(int(9000 / sqrt(A)), Color(0.42, 0.55, 0.24), Rect2(tx * 256 + 2, tz * 256 + 2, 252, 252), 0.5)
-	for k in 10:
-		var mp: Vector3 = riv[clampi(int(float(k) / 10.0 * riv.size()), 0, riv.size() - 1)]
-		G.fx.ground_mist(mp + Vector3(rng.randf_range(-12, 12), 0, rng.randf_range(-12, 12)), 16.0)
+

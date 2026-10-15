@@ -1,5 +1,8 @@
 class_name CamRig extends Node3D
 # Ortografik izometrik kamera: kaydırma (WASD / kenar / orta tuş), yakınlaştırma, sarsıntı.
+# Büyük haritada stratejik yakınlaştırma: görüş yüksekliği haritaya göre (8 km'de 2,4 km'ye kadar);
+# kamera uzaklığı ve kırpma düzlemi görüşle büyür. Gölge mesafesi basamaklıdır (yakınlaştırırken sürekli
+# değişen gölge mesafesi gölgeleri kaydırıp parlatıyordu, roadmap 41). Uzakta ot/çakıl gizlenir.
 
 const PITCH := 40.0
 const DIST := 120.0
@@ -40,18 +43,62 @@ func right_vec() -> Vector3:
 func up_vec() -> Vector3:
 	return Vector3(-1, 0, -1).normalized()
 
+# haritaya göre azami görüş: ≤1 km 115 m; büyük haritada stratejik görüş
+func setup_for_map(map_size: float) -> void:
+	max_size = 115.0 if map_size <= 1024.0 else minf(map_size * 0.3, 2400.0)
+	target_size = minf(target_size, max_size)
+	size = minf(size, max_size)
+	_zoom_band = -1
+
+# görüş büyüdükçe kamera geri çekilir: ekranın alt kenarı yakın kırpma düzleminin önünde kalmalı
+# (ortografik kamerada yer derinliği odaktan ±0,6 × görüş)
+func _dist() -> float:
+	return maxf(DIST, size * 0.62 + 60.0)
+
+# gölge mesafesi basamakları: yalnız eşik geçilince değişir
+const SHADOW_STEPS := [160.0, 230.0, 330.0, 480.0, 700.0, 1000.0, 1500.0, 2200.0, 3200.0]
+var _shadow_d := -1.0
+var _zoom_band := -1
+
 func _apply() -> void:
 	var p := deg_to_rad(PITCH)
-	var off := Vector3(1, 0, 1).normalized() * cos(p) * DIST + Vector3(0, sin(p) * DIST, 0)
+	var dist := _dist()
+	var off := Vector3(1, 0, 1).normalized() * cos(p) * dist + Vector3(0, sin(p) * dist, 0)
 	var sh := Vector3.ZERO
 	if _shake > 0.0:
 		sh = (right_vec() * randf_range(-1, 1) + up_vec() * randf_range(-1, 1)) * _shake * 0.6
 	position = focus + sh
 	cam.transform = Transform3D(Basis.looking_at(-off, Vector3.UP), off)
 	cam.size = size
+	cam.far = dist + size * 0.62 + 400.0
 	listener.position = Vector3.ZERO
 	if light:
-		light.directional_shadow_max_distance = DIST + size * 1.6
+		var need := dist + size * 0.62 + 20.0
+		var sd: float = SHADOW_STEPS[SHADOW_STEPS.size() - 1]
+		for st in SHADOW_STEPS:
+			if st >= need:
+				sd = st
+				break
+		if sd != _shadow_d:
+			_shadow_d = sd
+			light.directional_shadow_max_distance = sd
+		light.shadow_enabled = size < 1100.0
+	_zoom_groups()
+
+# yakınlaştırma bandı değişince küçük ayrıntılar: ot 200 m, çakıl/küçük eşya 420 m görüşten sonra gizli
+func _zoom_groups() -> void:
+	var band := 0 if size < 180.0 else (1 if size < 200.0 else (2 if size < 420.0 else (3 if size < 600.0 else 4)))
+	if band == _zoom_band or not is_inside_tree():
+		return
+	_zoom_band = band
+	for n in get_tree().get_nodes_in_group("zoom_grass"):
+		n.visible = band <= 1
+	for n in get_tree().get_nodes_in_group("zoom_small"):
+		n.visible = band <= 2
+	if G.props != null and is_instance_valid(G.props):
+		G.props.set_far(size >= 600.0)
+	if G.blocks != null and is_instance_valid(G.blocks):
+		G.blocks.set_far(size >= 180.0)
 
 func jump_to(p: Vector3, instant := false) -> void:
 	target_focus = _clamp(p)
@@ -71,10 +118,11 @@ func _unhandled_input(e: InputEvent) -> void:
 		return
 	if e is InputEventMouseButton:
 		var mb := e as InputEventMouseButton
+		# uzakta adım büyür (stratejik görüşe birkaç tıkta çıkılır)
 		if mb.button_index == MOUSE_BUTTON_WHEEL_UP and mb.pressed:
-			target_size = maxf(min_size, target_size * 0.88)
+			target_size = maxf(min_size, target_size * (0.88 if target_size <= 130.0 else 0.8))
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
-			target_size = minf(max_size, target_size * 1.13)
+			target_size = minf(max_size, target_size * (1.13 if target_size < 115.0 else 1.25))
 		elif mb.button_index == MOUSE_BUTTON_MIDDLE:
 			_drag = mb.pressed
 			_drag_from = mb.position

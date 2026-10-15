@@ -48,6 +48,7 @@ const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "
 
 var font: Font
 var font_b: Font
+var icons: TacIcons
 var font_m: Font
 var root: Control
 var overlay: Control
@@ -101,6 +102,9 @@ func _ready() -> void:
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(overlay)
+	# stratejik görüş simgeleri (uzaklaşınca birlik sembolleri, hedef bölgeleri)
+	icons = TacIcons.new()
+	root.add_child(icons)
 	_build_top()
 	_build_mini()
 	_build_unit_panel()

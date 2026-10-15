@@ -2,7 +2,7 @@ class_name Blocks extends Node3D
 # Yıkılabilir blok duvar sistemi: parça (chunk) başına MultiMesh, destek zinciri,
 # fizik enkazı ve kalıcı moloz.
 
-const CH := 32.0
+var CH := 32.0          # MultiMesh parçası (m); büyük haritada 64 m (çizim çağrısı ¼)
 const BH := 2.0
 enum { T_BOX, T_SANDBAG, T_FENCE, T_CONCRETE }
 const MAX_DEBRIS := 110
@@ -35,10 +35,21 @@ var rubble: MultiMesh
 var rubble_n := 0
 var _mat_cache := {}
 var rng := RandomNumberGenerator.new()
+# uzak görüş: pahlı blok (108 üçgen) yerine düz kutu (12); 8 km haritada 600 bin blok 65 M üçgen ediyordu
+var meshes_far: Array = []
+var _mmis: Array = []      # [MultiMeshInstance3D, tip]
+var far_lod := false
 
 func _ready() -> void:
 	rng.seed = 777
+	CH = 32.0 if G.MAP <= 2048.0 else 64.0
 	meshes = [bevel_box(0.07), bevel_box(0.42), fence_panel(), bevel_box(0.006)]
+	var bx := MB.new()
+	bx.box(Vector3.ZERO, Vector3.ONE, Color(1, 1, 1))
+	var plain := bx.commit()
+	var fb := MB.new()
+	fb.box(Vector3.ZERO, Vector3(1.0, 1.0, 0.06), Color(1, 1, 1))
+	meshes_far = [plain, plain, fb.commit(), plain]
 	rubble = MultiMesh.new()
 	rubble.transform_format = MultiMesh.TRANSFORM_3D
 	rubble.use_colors = true
@@ -304,6 +315,7 @@ func finalize() -> void:
 		mi.multimesh = mm
 		mi.material_override = _type_mat(ck.z)
 		add_child(mi)
+		_mmis.append([mi, ck.z])
 	_pending.clear()
 	var cells: Array = []
 	for id in bpos.size():
@@ -311,11 +323,20 @@ func finalize() -> void:
 	G.grid.refresh(cells)
 	finalized = true
 
+func set_far(on: bool) -> void:
+	if on == far_lod:
+		return
+	far_lod = on
+	for e in _mmis:
+		var mi: MultiMeshInstance3D = e[0]
+		if is_instance_valid(mi) and mi.multimesh != null:
+			mi.multimesh.mesh = meshes_far[e[1]] if on else meshes[e[1]]
+
 func _make_mm(ids: Array, t: int) -> MultiMesh:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
-	mm.mesh = meshes[t]
+	mm.mesh = meshes_far[t] if far_lod else meshes[t]
 	mm.instance_count = ids.size()
 	for i in ids.size():
 		var id: int = ids[i]
@@ -340,6 +361,7 @@ func commit_runtime(from_id: int) -> MultiMeshInstance3D:
 		mi.multimesh = _make_mm(by_t[t], t)
 		mi.material_override = _type_mat(t)
 		add_child(mi)
+		_mmis.append([mi, t])
 		last = mi
 	_pending.clear()
 	_build_support(from_id)

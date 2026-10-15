@@ -23,6 +23,7 @@ const MAPS := {
 	"big_city": {"title": "Büyük Şehir", "biome": "green", "size": 512, "desc": "512 m: nehirle bölünmüş şehir, sokak sokak girilebilir binalar, sanayi bölgesi ve dış mahalleler."},
 	"front_2k": {"title": "Kuzey Cephesi", "biome": "green", "size": 2048, "desc": "2 km: geniş nehir vadisi, köyler ve mezralar, ormanlar. Zırhlı manevra ve helikopter harekâtı."},
 	"airborne_4k": {"title": "Hava İndirme Bölgesi", "biome": "green", "size": 4096, "desc": "4×4 km: paraşütçü ve nakliye helikopteri harekâtı için büyük cephe; köyler, ormanlar, nehirler."},
+	"battle_8k": {"title": "Büyük Muharebe", "biome": "green", "size": 8192, "desc": "8×8 km: nehir hattında cephe. Merkez kasaba iki yakada, iki kasaba, on üç köy, ormanlar, tarlalar, demiryolu; altı geçit, sekiz hedef. Broken Arrow ölçeğinde tam muharebe."},
 	"large_front": {"title": "Geniş Cephe", "biome": "green", "size": 1024, "desc": "1 km: büyük nehir ve kolu, otoyol, altı köy, ormanlar ve tarlalar. Helikopter, hava indirme ve uzun menzilli topçu için."},
 	"desert_town": {"title": "Çöl Kasabası", "biome": "desert", "desc": "Düz çatılı beyaz evler ve yıkıntılarla dolu kasabada sokak sokak savaş."},
 }
@@ -76,6 +77,8 @@ func build(id: String, seed_v: int) -> void:
 			_city()
 		"large_front", "front_2k", "airborne_4k":
 			MapGenLarge.new().build(self)
+		"battle_8k":
+			MapGenBattle.new().build(self)
 		_:
 			_desert()
 	if id != "custom" and id != "big_city" and G.MAP <= 1024.0:
@@ -131,18 +134,29 @@ func _x_river(ctrl: Array, w: float, depth := 1.7) -> PackedVector3Array:
 	T.carve(pts, w, depth)
 	return pts
 
-# yol-nehir kesişimlerine köprü
+# yol-nehir kesişimlerine köprü. Nehir parçaları kovadan (24 m) aranır: büyük haritada yol × nehir
+# parçası çift döngüsü 34 M kesişim testi (16 sn) ediyordu.
 func _x_auto_bridges() -> void:
+	var idx := _seg_index(rivers, true)
 	for r in roads:
 		var rp: PackedVector3Array = r
-		for rv in rivers:
-			var vp: PackedVector3Array = rv[0]
-			var w: float = rv[1]
-			var last := Vector3(-999, 0, -999)
-			for i in rp.size() - 1:
-				for j in vp.size() - 1:
-					var hit = Geometry2D.segment_intersects_segment(Vector2(rp[i].x, rp[i].z), Vector2(rp[i + 1].x, rp[i + 1].z), Vector2(vp[j].x, vp[j].z), Vector2(vp[j + 1].x, vp[j + 1].z))
-					if hit != null:
+		var last := Vector3(-999, 0, -999)
+		for i in rp.size() - 1:
+			var ra := Vector2(rp[i].x, rp[i].z)
+			var rb := Vector2(rp[i + 1].x, rp[i + 1].z)
+			var c0 := Vector2i(int(minf(ra.x, rb.x) / SEG_CELL), int(minf(ra.y, rb.y) / SEG_CELL))
+			var c1 := Vector2i(int(maxf(ra.x, rb.x) / SEG_CELL), int(maxf(ra.y, rb.y) / SEG_CELL))
+			for cz in range(c0.y, c1.y + 1):
+				for cx in range(c0.x, c1.x + 1):
+					var arr = idx.get(Vector2i(cx, cz))
+					if arr == null:
+						continue
+					for sg in arr:
+						var va: Vector2 = sg[0]
+						var vb: Vector2 = sg[1]
+						var hit = Geometry2D.segment_intersects_segment(ra, rb, va, vb)
+						if hit == null:
+							continue
 						var c := Vector3(hit.x, 0, hit.y)
 						if c.distance_to(last) < 12.0:
 							continue
@@ -154,10 +168,11 @@ func _x_auto_bridges() -> void:
 							continue
 						bridges.append(c)
 						last = c
+						var w: float = sg[2]
 						var dir := (rp[i + 1] - rp[i]).normalized()
-						var vd := (vp[j + 1] - vp[j]).normalized()
-						var s := absf(dir.cross(vd).y)
-						P.bridge(c, dir, (w + 5.0) / maxf(s, 0.5))
+						var vd := Vector3(vb.x - va.x, 0, vb.y - va.y).normalized()
+						var sn := absf(dir.cross(vd).y)
+						P.bridge(c, dir, (w + 5.0) / maxf(sn, 0.5))
 						reserve(c, w * 0.5 + 6.0)
 
 # ---- parça kovası: büyük haritada yol/nehir mesafesi her çağrıda tüm noktaları taramasın
@@ -1094,9 +1109,6 @@ func _city() -> void:
 			else:
 				p_rock(p, rng.randf_range(0.6, 1.3))
 	_poles_along(roads[0], 18.0, 6.0)
-	for k in 10:
-		var mp := riv[clampi(int(float(k) / 10.0 * riv.size()), 0, riv.size() - 1)]
-		G.fx.ground_mist(mp + Vector3(rng.randf_range(-12, 12), 0, rng.randf_range(-12, 12)), 14.0)
 	# sokak lambaları: ızgara sokaklar boyunca
 	for i in 7:
 		for k in 12:
@@ -1279,9 +1291,6 @@ func _green_valley() -> void:
 			p_car(p, rng.randf() * TAU)
 	_tracks(14, 0.25)
 	p_grass_field(16000, Color(0.42, 0.55, 0.24), Rect2(2, 2, 252, 252), 0.5)
-	for k in 6:
-		var mp := riv[clampi(int(float(k) / 6.0 * riv.size()), 0, riv.size() - 1)]
-		G.fx.ground_mist(mp + Vector3(rng.randf_range(-10, 10), 0, rng.randf_range(-10, 10)), 12.0)
 
 func _x_brick_ruin(c: Vector3, col: Color) -> void:
 	var ax := Vector3.RIGHT if rng.randf() < 0.5 else Vector3.BACK
@@ -1385,9 +1394,9 @@ func _run(op: Dictionary):
 		"palm":
 			P.palm(v3(op["p"]))
 		"tree":
-			P.tree(v3(op["p"]))
+			P.tree(v3(op["p"]), float(op.get("sc", 1.0)))
 		"pine":
-			P.pine(v3(op["p"]))
+			P.pine(v3(op["p"]), float(op.get("sc", 1.0)))
 		"bush":
 			P.bush(v3(op["p"]), bool(op.get("big", false)))
 		"rock":
@@ -1569,6 +1578,59 @@ func _tracks(n: int, amt: float) -> void:
 	exec({"t": "tracks", "n": n, "amt": amt})
 
 # ---- patikalar: evden yola taş döşeme, evler/üs alanları arasında çiğnenmiş toprak patika
+# en yakın yol noktası, parça kovasıyla (max_d dışında Vector3.INF) — büyük haritada tüm noktaları taramaz
+func nearest_road(p: Vector3, max_d := 300.0) -> Vector3:
+	if _seg_road_n != roads.size():
+		_seg_road = _seg_index(roads, false)
+		_seg_road_n = roads.size()
+	var q := Vector2(p.x, p.z)
+	var c := Vector2i(int(p.x / SEG_CELL), int(p.z / SEG_CELL))
+	var reach := int(ceil(max_d / SEG_CELL))
+	var best := Vector3.INF
+	var bd := max_d
+	for dz in range(-reach, reach + 1):
+		for dx in range(-reach, reach + 1):
+			var arr = _seg_road.get(c + Vector2i(dx, dz))
+			if arr == null:
+				continue
+			for sg in arr:
+				var a: Vector2 = sg[0]
+				var ab: Vector2 = sg[1] - a
+				var t := clampf((q - a).dot(ab) / maxf(ab.length_squared(), 1e-5), 0.0, 1.0)
+				var pt := a + ab * t
+				var d := (q - pt).length()
+				if d < bd:
+					bd = d
+					best = Vector3(pt.x, 0, pt.y)
+	return best
+
+# en yakın yol parçasının doğrultusu (yoksa Vector3.ZERO)
+func nearest_road_dir(p: Vector3, max_d := 300.0) -> Vector3:
+	if _seg_road_n != roads.size():
+		_seg_road = _seg_index(roads, false)
+		_seg_road_n = roads.size()
+	var q := Vector2(p.x, p.z)
+	var c := Vector2i(int(p.x / SEG_CELL), int(p.z / SEG_CELL))
+	var reach := int(ceil(max_d / SEG_CELL))
+	var best := Vector3.ZERO
+	var bd := max_d
+	for dz in range(-reach, reach + 1):
+		for dx in range(-reach, reach + 1):
+			var arr = _seg_road.get(c + Vector2i(dx, dz))
+			if arr == null:
+				continue
+			for sg in arr:
+				var a: Vector2 = sg[0]
+				var ab: Vector2 = sg[1] - a
+				if ab.length_squared() < 1e-4:
+					continue
+				var t := clampf((q - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+				var d := (q - (a + ab * t)).length()
+				if d < bd:
+					bd = d
+					best = Vector3(ab.x, 0, ab.y).normalized()
+	return best
+
 func _nearest_road_pt(p: Vector3) -> Vector3:
 	var best := Vector3.INF
 	var bd := 1e9
@@ -1666,11 +1728,17 @@ func _x_path(pts: Array, w: float, stone: bool) -> void:
 func p_palm(p: Vector3) -> void:
 	exec({"t": "palm", "p": vv(p)})
 
-func p_tree(p: Vector3) -> void:
-	exec({"t": "tree", "p": vv(p)})
+func p_tree(p: Vector3, sc := 1.0) -> void:
+	if sc != 1.0:
+		exec({"t": "tree", "p": vv(p), "sc": snappedf(sc, 0.01)})
+	else:
+		exec({"t": "tree", "p": vv(p)})
 
-func p_pine(p: Vector3) -> void:
-	exec({"t": "pine", "p": vv(p)})
+func p_pine(p: Vector3, sc := 1.0) -> void:
+	if sc != 1.0:
+		exec({"t": "pine", "p": vv(p), "sc": snappedf(sc, 0.01)})
+	else:
+		exec({"t": "pine", "p": vv(p)})
 
 func p_bush(p: Vector3, big := false) -> void:
 	exec({"t": "bush", "p": vv(p), "big": big})

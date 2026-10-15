@@ -8,6 +8,10 @@ static var NAV := 1.0
 static var FPN := 2
 static var N := 512
 static var NN := 256
+# iri en yüksek engel ızgarası (8 m): uzun görüş hattı yalnız engeli ışından yüksek olabilecek iri
+# hücrelerde ince adım atar (gerçek menzilde 2 km'lik ışın 6000 ince adım yerine ~250 iri adım)
+const CC := 8.0
+static var NCC := 32
 
 static func configure(map_size: float) -> void:
 	if map_size <= 1024.0:
@@ -22,6 +26,7 @@ static func configure(map_size: float) -> void:
 	FPN = int(round(NAV / CS))
 	N = int(map_size / CS)
 	NN = int(map_size / NAV)
+	NCC = int(ceil(map_size / CC))
 enum { K_NONE, K_WALL, K_HOUSE, K_WRECK, K_TRAP, K_WIRE, K_TREE, K_BUILDING }
 # ham yükseklikler (hs sabit engel, hb bina blokları) bayt olarak 1/10 m biriminde tutulur (en çok 25,5 m):
 # 8 km haritada 67 M hücre × 2 dizi = 134 MB (float ile 537 MB). Birleşik h float kalır (görüş hattı).
@@ -44,6 +49,8 @@ var base_h := PackedByteArray()
 var nav: Array = []
 var bridges: Array = []       # {c, d, L, w}: araçlar köprüde eksene hizalanır
 var _dirty := {}
+var hm := PackedFloat32Array()      # iri hücrede en yüksek engel (m)
+var _hm_dirty := {}                 # yükseklik düşen iri hücreler (yeniden hesap)
 
 func _init() -> void:
 	hs.resize(N * N)
@@ -54,6 +61,7 @@ func _init() -> void:
 	water.resize(N * N)
 	bridge.resize(N * N)
 	door.resize(N * N)
+	hm.resize(NCC * NCC)
 	base_l.resize(NN * NN)
 	vault.resize(NN * NN)
 	base_h.resize(NN * NN)
@@ -172,11 +180,36 @@ func set_trench(a: Vector3, b: Vector3, w: float, on := true) -> void:
 				trench[z * N + x] = 1 if on else 0
 
 func refresh(cells: Array) -> void:
+	var k := CS / CC
 	for i in cells:
-		h[i] = maxi(hs[i], hb[i]) / HQ
+		var old := h[i]
+		var v: float = maxi(hs[i], hb[i]) / HQ
+		h[i] = v
+		var c := int(int(i / N) * k) * NCC + int((i % N) * k)
+		if v > hm[c]:
+			hm[c] = v
+		elif v < old and old >= hm[c]:
+			_hm_dirty[c] = true
 		_dirty[Vector2i((i % N) / FPN, (i / N) / FPN)] = true
 
+# yüksekliği düşen iri hücrelerin en yükseğini yeniden hesapla (yıkım)
+func _hm_flush() -> void:
+	if _hm_dirty.is_empty():
+		return
+	var per := int(CC / CS)
+	for c in _hm_dirty:
+		var cx: int = c % NCC
+		var cz: int = c / NCC
+		var mx := 0.0
+		for z in range(cz * per, mini(N, (cz + 1) * per)):
+			var row := z * N
+			for x in range(cx * per, mini(N, (cx + 1) * per)):
+				mx = maxf(mx, h[row + x])
+		hm[c] = mx
+	_hm_dirty.clear()
+
 func flush_nav() -> void:
+	_hm_flush()
 	if _dirty.is_empty():
 		return
 	var locked := false
@@ -558,9 +591,53 @@ func los(a: Vector3, b: Vector3, skip_a := 0.75, skip_b := 0.3) -> bool:
 	var L := sqrt(dx * dx + dz * dz)
 	if L < 0.05:
 		return true
+	if L < 24.0:
+		if not _los_fine(a, b, 0.0, 1.0, L, skip_a, skip_b):
+			return false
+	else:
+		# iri hücre geçişi (Amanatides-Woo): engeli ışından alçak iri hücre atlanır
+		var cx := int(a.x / CC)
+		var cz := int(a.z / CC)
+		var sx := 1 if dx > 0.0 else -1
+		var sz := 1 if dz > 0.0 else -1
+		var tdx := CC / absf(dx) if absf(dx) > 1e-6 else INF
+		var tdz := CC / absf(dz) if absf(dz) > 1e-6 else INF
+		var tmx := ((cx + (1 if dx > 0.0 else 0)) * CC - a.x) / dx if absf(dx) > 1e-6 else INF
+		var tmz := ((cz + (1 if dz > 0.0 else 0)) * CC - a.z) / dz if absf(dz) > 1e-6 else INF
+		var t := 0.0
+		var dy := b.y - a.y
+		for guard in 4096:
+			var tn := minf(minf(tmx, tmz), 1.0)
+			if cx >= 0 and cz >= 0 and cx < NCC and cz < NCC:
+				var hx := hm[cz * NCC + cx]
+				if hx > 0.0 and hx > minf(a.y + dy * t, a.y + dy * tn):
+					if not _los_fine(a, b, t, tn, L, skip_a, skip_b):
+						return false
+			if tn >= 1.0:
+				break
+			if tmx < tmz:
+				cx += sx
+				t = tmx
+				tmx += tdx
+			else:
+				cz += sz
+				t = tmz
+				tmz += tdz
+	if not G.smokes.is_empty():
+		for sm in G.smokes:
+			if _seg_circle(a, b, sm[0], sm[1]):
+				return false
+	return true
+
+# ince adım (0,33 m) ışının [t0, t1] parçasında; uçlara yakın engeller (pencere, siper kenarı) atlanır.
+# Örnek noktaları tüm ışının adım ızgarasındandır: parça parça tarama tek seferlik taramayla aynı sonucu verir.
+func _los_fine(a: Vector3, b: Vector3, t0: float, t1: float, L: float, skip_a: float, skip_b: float) -> bool:
+	var dx := b.x - a.x
+	var dz := b.z - a.z
+	var dy := b.y - a.y
 	var steps := int(L / 0.33) + 1
 	var inv := 1.0 / steps
-	for s in range(1, steps):
+	for s in range(maxi(1, int(ceil(t0 * steps))), mini(steps - 1, int(floor(t1 * steps))) + 1):
 		var t := s * inv
 		var dist := t * L
 		if dist < skip_a or dist > L - skip_b:
@@ -569,12 +646,8 @@ func los(a: Vector3, b: Vector3, skip_a := 0.75, skip_b := 0.3) -> bool:
 		var z := int((a.z + dz * t) / CS)
 		if x < 0 or z < 0 or x >= N or z >= N:
 			continue
-		if h[z * N + x] > a.y + (b.y - a.y) * t:
+		if h[z * N + x] > a.y + dy * t:
 			return false
-	if not G.smokes.is_empty():
-		for sm in G.smokes:
-			if _seg_circle(a, b, sm[0], sm[1]):
-				return false
 	return true
 
 func _seg_circle(a: Vector3, b: Vector3, c: Vector3, r: float) -> bool:

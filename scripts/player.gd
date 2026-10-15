@@ -146,6 +146,11 @@ func _process(_dt: float) -> void:
 
 # ------------------------------------------------------------ seçim
 func unit_at(sp: Vector2, only_own := false) -> Unit:
+	# stratejik görüşte simgeye tıklama (tim simgesi timin bir askerini verir)
+	if G.hud != null and G.hud.icons != null and G.hud.icons.active():
+		var iu := G.hud.icons.pick(sp)
+		if iu != null and is_instance_valid(iu) and (not only_own or iu.team == team):
+			return iu
 	var best: Unit = null
 	var bd := 1e9
 	var px_per_m: float = get_viewport().get_visible_rect().size.y / G.cam.size

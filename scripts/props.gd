@@ -150,7 +150,56 @@ func _tree_model(id: String) -> Mesh:
 		var nm := mat.resource_name if mat != null else ("leaf_oak" if i > 0 else "bark_oak")
 		mesh.surface_set_material(i, _tree_shader_mat(nm, h, crown))
 	_cache[key] = mesh
+	_lod_names[mesh.get_instance_id()] = id
 	return mesh
+
+# ------------------------------------------------------------ uzak görüş ağacı (LOD)
+# Stratejik yakınlaştırmada (≥ 600 m görüş) bankaların örgüsü hafif modele geçer: taç elipsoidi
+# (çam: koni), köşe renkli. 8 km haritada 2 km görüşte ~60 bin ağaç tam modelle ~30 M üçgen ediyordu.
+var _lod_names := {}
+var far_lod := false
+
+func _tree_lod(mesh: Mesh) -> Mesh:
+	var key := "lod_%d" % mesh.get_instance_id()
+	if _cache.has(key):
+		return _cache[key]
+	var aabb := mesh.get_aabb()
+	var h := maxf(aabb.end.y, 0.4)
+	var r := maxf(aabb.size.x, aabb.size.z) * 0.5
+	var nm := String(_lod_names.get(mesh.get_instance_id(), ""))
+	var pine := nm.begins_with("pine")
+	var bush := nm.begins_with("bush")
+	var col := Color(0.13, 0.19, 0.07)
+	if pine:
+		col = Color(0.08, 0.13, 0.065)
+	elif bush:
+		col = Color(0.16, 0.21, 0.09)
+	if winter:
+		col = col.lerp(Color(0.7, 0.72, 0.76), 0.4) if pine else Color(0.24, 0.21, 0.18)
+	elif biome_id == "desert":
+		col = Color(0.2, 0.22, 0.1)
+	var mb := MB.new()
+	if pine:
+		mb.cyl(Vector3(0, h * 0.16, 0), r * 0.8, 0.0, h * 0.84, 7, col, Basis(), true, false)
+		mb.cyl(Vector3.ZERO, r * 0.07, r * 0.06, h * 0.18, 4, Color(0.24, 0.18, 0.13), Basis(), false, false)
+	elif bush:
+		mb.sphere(Vector3(0, h * 0.5, 0), Vector3(r * 0.9, h * 0.5, r * 0.9), 7, 4, col)
+	else:
+		mb.sphere(Vector3(0, h * 0.64, 0), Vector3(r * 0.85, h * 0.36, r * 0.85), 8, 5, col)
+		mb.cyl(Vector3.ZERO, r * 0.08, r * 0.06, h * 0.32, 5, Color(0.25, 0.2, 0.15), Basis(), false, false)
+	var m := mb.commit(Mats.vc())
+	_cache[key] = m
+	return m
+
+func set_far(on: bool) -> void:
+	if on == far_lod:
+		return
+	far_lod = on
+	for key in _banks:
+		var b: Dictionary = _banks[key]
+		if not b.has("mesh0"):
+			continue
+		(b["mm"] as MultiMesh).mesh = b["lod"] if on else b["mesh0"]
 
 func _real_tree(p: Vector3, set_name: String, sc := 1.0) -> bool:
 	var ids: Array = TREE_SETS[set_name]
@@ -196,7 +245,9 @@ func _mm_add(it: Dictionary, bush: bool) -> void:
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if bush else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		add_child(mmi)
-		_banks[key] = {"mm": mm, "items": [], "dirty": true}
+		_banks[key] = {"mm": mm, "mmi": mmi, "items": [], "dirty": true, "mesh0": mesh, "lod": _tree_lod(mesh)}
+		if far_lod:
+			mm.mesh = _banks[key]["lod"]
 	var b: Dictionary = _banks[key]
 	it["bank"] = b
 	it["mi_idx"] = b["items"].size()
@@ -248,17 +299,17 @@ func shake_trees(center: Vector3, power: float) -> void:
 	G.push_blast(center, power)
 
 # ------------------------------------------------------------ yapraklı ağaç (kış: sarı kuru yaprak + kar, çöl: koyu yeşil)
-func tree(p: Vector3) -> void:
-	if _real_tree(p, "desert" if biome_id == "desert" else "green"):
+func tree(p: Vector3, sc := 1.0) -> void:
+	if _real_tree(p, "desert" if biome_id == "desert" else "green", sc):
 		return
 	var v := rng.randi() % 5
 	var key := ("wtree%d" if winter else "dtree%d") % v
 	var mesh := _cached(key, func(): return _tree_mesh(v, winter))
-	var sc: float = [rng.randf_range(0.55, 0.75), rng.randf_range(0.85, 1.15), rng.randf_range(1.3, 1.7)][rng.randi() % 3]
-	var mi := _place(mesh, p, rng.randf() * TAU, sc)
+	var tsc: float = [rng.randf_range(0.55, 0.75), rng.randf_range(0.85, 1.15), rng.randf_range(1.3, 1.7)][rng.randi() % 3] * sc
+	var mi := _place(mesh, p, rng.randf() * TAU, tsc)
 	if rng.randf() < 0.22:
-		mi.scale = Vector3(0.55, 1.75, 0.55) * sc     # kavak: uzun ve ince
-	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 70.0 * sc, "alive": true, "r": 0.4})
+		mi.scale = Vector3(0.55, 1.75, 0.55) * tsc     # kavak: uzun ve ince
+	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 70.0 * tsc, "alive": true, "r": 0.4})
 	G.grid.set_static_circle(p, 0.3, 3.0, Grid.K_TREE)
 
 func _leaf_material() -> StandardMaterial3D:
@@ -775,8 +826,8 @@ func clear_area(c: Vector3, r: float) -> void:
 			G.grid.set_static_circle(p, 0.5, 0.0, Grid.K_NONE, true)
 
 # ------------------------------------------------------------ bitki örtüsü (çam, çalı, kaya, saman, ot, kamış)
-func pine(p: Vector3) -> void:
-	if _real_tree(p, "pine"):
+func pine(p: Vector3, sc := 1.0) -> void:
+	if _real_tree(p, "pine", sc):
 		return
 	var v := rng.randi() % 4
 	var key := ("pine_w%d" if winter else "pine%d") % v
@@ -1093,6 +1144,7 @@ func _grass_field_v(n: int, col: Color, region: Rect2, size: float, avoid_fn: Ca
 	m.multimesh = mm
 	m.material_override = _grass_material() if kind == 0 else _grass_variant_material(kind)
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	m.add_to_group("zoom_grass")
 	add_child(m)
 
 func reeds_along(pts: PackedVector3Array, half_w: float) -> void:
@@ -1160,11 +1212,90 @@ func _bridge_mesh(L: float, W: float) -> ArrayMesh:
 				mb.quad(p0, p1, q1, q0, st.darkened(0.15), Vector3(0, 0, sg))
 	return mb.commit(Mats.masonry())
 
+# ------------------------------------------------------------ akışlı ot (büyük harita)
+# 8 km'de haritanın tamamına ot dökmek ~2 M örnek ve ~10 sn üretim demekti: ot yalnız yakın görüşte,
+# kameranın çevresindeki 128 m'lik karolarda üretilir (kare başına bir karo), uzaklaşan karolar silinir.
+# Tohum karodan: aynı yer her seferinde aynı ot. Sürülmüş tarla ve yol üstüne ot düşmez.
+const GT := 128.0
+var _gtiles := {}
+var _gt_t := 0.0
+
+func _grass_tick(dt: float) -> void:
+	_gt_t -= dt
+	if _gt_t > 0.0 or G.cam == null:
+		return
+	_gt_t = 0.05
+	var f: Vector3 = G.cam.focus
+	var r: float = G.cam.size * 1.3 + GT * 0.5
+	# uzak karoları sil (yakınlaştırma bandı dışında yalnız gizlenir, silinmez)
+	var far := maxf(r * 2.5, 700.0)
+	for k in _gtiles.keys():
+		if Vector2((k.x + 0.5) * GT - f.x, (k.y + 0.5) * GT - f.z).length() > far:
+			for n in _gtiles[k]:
+				if is_instance_valid(n):
+					n.queue_free()
+			_gtiles.erase(k)
+	if G.cam.size >= 200.0:
+		return
+	var best := Vector2i(-1, -1)
+	var bd := 1e9
+	for tz in range(maxi(0, int((f.z - r) / GT)), mini(int(G.MAP / GT) - 1, int((f.z + r) / GT)) + 1):
+		for tx in range(maxi(0, int((f.x - r) / GT)), mini(int(G.MAP / GT) - 1, int((f.x + r) / GT)) + 1):
+			var k := Vector2i(tx, tz)
+			if _gtiles.has(k):
+				continue
+			var d := Vector2((tx + 0.5) * GT - f.x, (tz + 0.5) * GT - f.z).length()
+			if d < r + GT * 0.7 and d < bd:
+				bd = d
+				best = k
+	if best.x >= 0:
+		_grass_tile(best)
+
+func _grass_tile(k: Vector2i) -> void:
+	var keep := rng
+	rng = RandomNumberGenerator.new()
+	rng.seed = k.x * 92821 + k.y * 68917 + 7
+	var n0 := get_child_count()
+	var avoid := func(p: Vector3) -> bool:
+		return G.terrain.field_at(p) == 3 or G.terrain.on_road(p)
+	grass_field(2600, Color(0.42, 0.55, 0.24), Rect2(k.x * GT, k.y * GT, GT, GT), 0.5, avoid)
+	var nodes: Array = []
+	for i in range(n0, get_child_count()):
+		nodes.append(get_child(i))
+	_gtiles[k] = nodes
+	rng = keep
+
 # ------------------------------------------------------------ seçili birliklerin üstündeki ağaçları saydamlaştır
 var _fade_t := 0.0
 var _faded: Array = []
 
+# ağaç kovası (16 m): saydamlaştırma tüm eşyaları taramasın (8 km'de ~60 bin ağaç)
+var _thash := {}
+var _thash_n := -1
+
+func _trees_near(q: Vector3, r: float) -> Array:
+	if _thash_n != items.size():
+		_thash.clear()
+		for it in items:
+			if it["kind"] == "tree":
+				var p: Vector3 = it["pos"]
+				var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
+				if _thash.has(k):
+					_thash[k].append(it)
+				else:
+					_thash[k] = [it]
+		_thash_n = items.size()
+	var out: Array = []
+	for dz in range(int((q.z - r) / 16.0), int((q.z + r) / 16.0) + 1):
+		for dx in range(int((q.x - r) / 16.0), int((q.x + r) / 16.0) + 1):
+			var arr = _thash.get(Vector2i(dx, dz))
+			if arr != null:
+				out.append_array(arr)
+	return out
+
 func _process(dt: float) -> void:
+	if G.grass_stream:
+		_grass_tick(dt)
 	_fade_t -= dt
 	if _fade_t > 0.0 or G.player == null or not is_instance_valid(G.player):
 		return
@@ -1176,16 +1307,15 @@ func _process(dt: float) -> void:
 	if G.cam and G.cam.cam:
 		pts.append(G.cam.mouse_ground(get_viewport().get_mouse_position()))
 	var now: Array = []
-	for it in items:
-		if it["kind"] != "tree" or not it["alive"]:
-			continue
-		var p: Vector3 = it["pos"]
-		for q in pts:
+	for q in pts:
+		for it in _trees_near(q + Vector3(2.2, 0, 2.2), 6.0):
+			if not it["alive"] or now.has(it):
+				continue
+			var p: Vector3 = it["pos"]
 			# ağaç tepesi ekranda yukarı (-x -z yönündeki zemin) düşer: birliğin +x +z kadar ötesindeki ağaçlar örter
 			var d := Vector2(p.x - 2.2 - q.x, p.z - 2.2 - q.z).length()
 			if d < 4.5:
 				now.append(it)
-				break
 	for it2 in _faded:
 		if not now.has(it2):
 			_set_fade(it2, 0.0)

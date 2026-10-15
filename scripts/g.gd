@@ -59,6 +59,8 @@ var smokes: Array = []      # [Vector3 merkez, yarıçap, bitiş zamanı]
 var stats := {"kills": [0, 0], "lost": [0, 0], "built": [0, 0], "pows": [0, 0]}
 var reveal := [0.0, 0.0]      # istihbarat: bu zamana kadar düşman yapıları görünür
 var fob_sites: Array = []   # harita üzerindeki ileri üs noktaları
+var zone_sites: Array = []  # haritada tanımlı hedef bölgeleri ({p, name}); boşsa Modes kendisi yerleştirir
+var grass_stream := false   # büyük harita: ot yalnız kameranın çevresinde üretilir
 var hq_pos := [Vector3.ZERO, Vector3.ZERO]
 
 var _hash := {}
@@ -68,6 +70,8 @@ var _vis_t := 0.0
 var prof_on := false
 var _prof_t := 0
 func prof(label: String) -> void:
+	if main != null and main.has_method("load_step"):
+		main.load_step(label)
 	if not prof_on:
 		return
 	var now := Time.get_ticks_msec()
@@ -109,6 +113,8 @@ func reset() -> void:
 	reveal = [0.0, 0.0]
 	zone_t = [0.0, 0.0]
 	fob_sites.clear()
+	zone_sites.clear()
+	grass_stream = false
 	_hash.clear()
 	Squad._count = [0, 0]
 

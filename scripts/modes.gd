@@ -14,6 +14,9 @@ const PHASES := 3
 const PHASE_ZONE_PTS := 40.0
 
 var mode := "conquest"
+var zone_r := ZONE_R          # büyük haritada bölge daha geniş (8 km: 49 m)
+var goal := CONQ_GOAL         # büyük haritada hedef puan ve aşama süresi uzar (yol uzun)
+var phase_len := PHASE_LEN
 var zones: Array = []            # {p, owner, prog(-1..1), name, ring, flag, label, contested}
 var score := [0.0, 0.0]
 var destroy_pts := [0.0, 0.0]
@@ -24,11 +27,23 @@ var ui: Control
 
 func setup(m: String) -> void:
 	mode = m
+	zone_r = clampf(G.MAP * 0.006, ZONE_R, 50.0)
+	var big := clampf(G.MAP / 2048.0, 1.0, 4.0)
+	goal = CONQ_GOAL * big
+	phase_len = PHASE_LEN * big
+	phase_t = phase_len
 	_place_zones()
 	_build_ui()
 
 # bölgeler: iki karargâh arasındaki eksende, yanlara serpiştirilmiş 5 nokta
 func _place_zones() -> void:
+	# haritada tanımlı hedefler (Büyük Muharebe: kasabalar, köprüler, istasyon, sanayi)
+	if not G.zone_sites.is_empty():
+		for zs in G.zone_sites:
+			var z := {"p": zs["p"], "owner": -1, "prog": 0.0, "name": String(zs["name"]), "contested": false}
+			_zone_visual(z)
+			zones.append(z)
+		return
 	var a: Vector3 = G.hq_pos[0]
 	var b: Vector3 = G.hq_pos[1]
 	var ax := b - a
@@ -53,8 +68,8 @@ func _zone_visual(z: Dictionary) -> void:
 	add_child(root)
 	var ring := MeshInstance3D.new()
 	var tm := TorusMesh.new()
-	tm.inner_radius = ZONE_R - 0.35
-	tm.outer_radius = ZONE_R
+	tm.inner_radius = zone_r - 0.35 * zone_r / ZONE_R
+	tm.outer_radius = zone_r
 	tm.rings = 64
 	tm.ring_segments = 4
 	ring.mesh = tm
@@ -120,7 +135,7 @@ func _process(dt: float) -> void:
 			score[z["owner"]] += CONQ_RATE * dt
 	if mode == "conquest":
 		for t in 2:
-			if score[t] >= CONQ_GOAL:
+			if score[t] >= goal:
 				G._end(t)
 				return
 	else:
@@ -132,7 +147,7 @@ func _process(dt: float) -> void:
 func _capture(dt: float) -> void:
 	for z in zones:
 		var cnt := [0, 0]
-		for u in G.near(z["p"], ZONE_R):
+		for u in G.near(z["p"], zone_r):
 			if not u.alive or u.team < 0:
 				continue
 			if u is Soldier and u.can_fight():
@@ -190,7 +205,7 @@ func _phase_end() -> void:
 		G._end(w)
 		return
 	phase += 1
-	phase_t = PHASE_LEN
+	phase_t = phase_len
 
 func owned(t: int) -> int:
 	var n := 0
@@ -250,7 +265,7 @@ func _draw_ui() -> void:
 		ui.draw_string(f, Vector2(cx - 16, 28), z["name"], HORIZONTAL_ALIGNMENT_CENTER, 32, 17, Color(1, 1, 1))
 	var sub := ""
 	if mode == "conquest":
-		sub = "%s · %d" % [I18n.s("FETİH"), int(CONQ_GOAL)]
+		sub = "%s · %d" % [I18n.s("FETİH"), int(goal)]
 	else:
 		sub = "%s %d/%d · %d:%02d" % [I18n.s("AŞAMA"), phase, PHASES, int(phase_t) / 60, int(phase_t) % 60]
 	ui.draw_string(f, Vector2(0, 52), sub, HORIZONTAL_ALIGNMENT_CENTER, w, 12, Color(0.85, 0.82, 0.72))

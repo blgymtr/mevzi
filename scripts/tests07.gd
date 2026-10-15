@@ -44,6 +44,10 @@ func run(scene: String) -> void:
 			await rock_test()
 		"mapprof":
 			await map_prof()
+		"lostest":
+			await los_test()
+		"icontest":
+			await icon_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -934,7 +938,7 @@ func tac_test() -> void:
 	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
-	m.start_game("green_valley", {}, true)
+	m.start_game("green_valley", {}, true, 1234)
 	G.reveal = [999.0, 999.0]
 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
 	var def := Squad.new(G.player_team, "Tim")
@@ -1060,14 +1064,15 @@ func map_prof() -> void:
 	G.prof_on = true
 	G._prof_t = Time.get_ticks_msec()
 	var t0 := Time.get_ticks_msec()
-	m.start_game(id, {}, true)
+	m.start_game(id, {}, true, 4242)
 	G.prof("ready")
 	G.prof_on = false
 	print("MAPPROF id=%s map=%.0f load_ms=%d houses=%d props=%d units=%d" % [id, G.MAP, Time.get_ticks_msec() - t0, G.blocks.houses.size(), G.props.items.size(), G.units.size()])
 	G.fog_off = true
 	var c := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
-	for sz in [40.0, 115.0, 300.0, 800.0]:
-		G.cam.max_size = maxf(G.cam.max_size, sz)
+	for sz in [40.0, 115.0, 300.0, 800.0, 2000.0]:
+		if sz > G.cam.max_size + 1.0:
+			continue
 		_cam(c, sz)
 		await m._wait(0.6)
 		var n := 0
@@ -1082,9 +1087,116 @@ func map_prof() -> void:
 			prim += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
 			obj += Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)
 		var ms := float(Time.get_ticks_usec() - t1) / 1000.0 / n
-		print("MAPPROF zoom=%4.0f frame_ms=%.1f fps=%.0f draw=%d prim=%dk obj=%d" % [sz, ms, 1000.0 / ms, int(dc / n), int(prim / n / 1000.0), int(obj / n)])
+		print("MAPPROF zoom=%4.0f frame_ms=%.1f fps=%.0f draw=%d prim=%dk obj=%d grass_tiles=%d" % [sz, ms, 1000.0 / ms, int(dc / n), int(prim / n / 1000.0), int(obj / n), G.props._gtiles.size()])
 		await m._shot("mapprof_%s_%d" % [id, int(sz)])
+		# döküm: ot, gölge, ağaç, bina ayrı ayrı kapatılarak çizim payı
+		if sz in [115.0, 2000.0]:
+			for part in ["grass", "shadow", "trees", "blocks"]:
+				_prof_toggle(part, false)
+				await m._wait(0.2)
+				var dc2 := 0.0
+				var pr2 := 0.0
+				var t2 := Time.get_ticks_usec()
+				for k in 30:
+					await m.get_tree().process_frame
+					dc2 += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+					pr2 += Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)
+				print("MAPPROF   -%s frame_ms=%.1f draw=%d prim=%dk" % [part, float(Time.get_ticks_usec() - t2) / 1000.0 / 30.0, int(dc2 / 30.0), int(pr2 / 30.0 / 1000.0)])
+				_prof_toggle(part, true)
+	# ek görünümler: orman, köy, tarla, nehir geçidi (oran konumu, yakınlaştırma)
+	var k := 0
+	for v in [[0.16, 0.08, 400.0], [0.30, 0.30, 90.0], [0.72, 0.78, 700.0], [0.46, 0.17, 140.0], [0.535, 0.475, 90.0], [0.555, 0.477, 420.0]]:
+		_cam(Vector3(G.MAP * v[0], 0, G.MAP * v[1]), v[2])
+		await m._wait(1.2)
+		await m._shot("mapprof_%s_view%d" % [id, k])
+		k += 1
 	print("MAPPROF RESULT fails=0")
+
+# iri hücreli görüş hattı: ince adımlı eski yöntemle aynı sonucu vermeli; uzun ışında hız
+func los_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	for id in ["green_valley", "large_front"]:
+		m.start_game(id, {}, true, 99)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 5
+		var bad := 0
+		var n := 1500
+		var t_new := 0
+		var t_old := 0
+		for i in n:
+			var L := rng.randf_range(5.0, minf(G.MAP * 0.9, 900.0))
+			var a := Vector3(rng.randf_range(2, G.MAP - 2), rng.randf_range(0.3, 2.6), rng.randf_range(2, G.MAP - 2))
+			var ang := rng.randf() * TAU
+			var b := a + Vector3(cos(ang) * L, 0, sin(ang) * L)
+			b.x = clampf(b.x, 1, G.MAP - 1)
+			b.z = clampf(b.z, 1, G.MAP - 1)
+			b.y = rng.randf_range(0.3, 2.6)
+			var Lr := Vector2(b.x - a.x, b.z - a.z).length()
+			var t0 := Time.get_ticks_usec()
+			var r1 := G.grid.los(a, b)
+			var t1 := Time.get_ticks_usec()
+			var r2 := G.grid._los_fine(a, b, 0.0, 1.0, Lr, 0.75, 0.3)
+			var t2 := Time.get_ticks_usec()
+			t_new += t1 - t0
+			t_old += t2 - t1
+			if r1 != r2:
+				bad += 1
+		print("LOS map=%s n=%d mismatch=%d new_us=%.1f old_us=%.1f" % [id, n, bad, float(t_new) / n, float(t_old) / n])
+		if bad > n / 200:
+			fails += 1
+	print("LOSTEST RESULT fails=%d" % fails)
+
+# stratejik görüş simgeleri: büyük haritada iki tarafın timleri ve araçları, uzaktan sembol olarak
+func icon_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("front_2k", {}, true, 7)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	for t in 2:
+		var side := -1.0 if t == 0 else 1.0
+		for k in 3:
+			var sq := Squad.new(t, "Tim")
+			G.squads.append(sq)
+			for i in 6:
+				m.spawn_soldier(t, ["leader", "rifle", "rifle", "mg", "at", "rifle"][i], G.grid.nearest_free(c + Vector3(side * 120.0 + i * 2.0, 0, k * 40.0 - 40.0), Grid.M_INF), sq)
+		for k in 3:
+			m.spawn_vehicle(t, ["usa_mbt_a1", "usa_ifv_m2a3", "usa_spg_a6"][k] if t == 0 else ["rus_mbt_72b3", "rus_ifv_bmp2", "rus_spg_msta"][k], G.grid.nearest_free(c + Vector3(side * 180.0, 0, k * 30.0 - 30.0), Grid.M_HEAVY), 0.0)
+	G.fog_off = true
+	for sz in [120.0, 400.0, 900.0]:
+		_cam(c, sz)
+		await m._wait(0.6)
+		await m._shot("icon_%d" % int(sz))
+	var ic: TacIcons = G.hud.icons
+	print("ICON active=%s hits=%d" % [ic.active(), ic._hits.size()])
+	if not ic.active() or ic._hits.size() < 10:
+		fails += 1
+	# simgeye tıklama: ilk dost tim simgesi seçilebilmeli
+	var picked: Unit = null
+	for h in ic._hits:
+		var u: Unit = h[1]
+		if u.team == G.player_team:
+			picked = G.player.unit_at(h[0], true)
+			break
+	print("ICON pick=%s" % (picked.name if picked != null else "yok"))
+	if picked == null:
+		fails += 1
+	print("ICONTEST RESULT fails=%d" % fails)
+
+func _prof_toggle(part: String, on: bool) -> void:
+	match part:
+		"grass":
+			for n in m.get_tree().get_nodes_in_group("zoom_grass"):
+				n.visible = on and G.cam.size < 200.0
+		"shadow":
+			G.cam.light.shadow_enabled = on and G.cam.size < 1100.0
+		"trees":
+			for b in G.props._banks.values():
+				(b["mmi"] as Node3D).visible = on
+		"blocks":
+			G.blocks.visible = on
 
 # kaya modelleri: kırık yüzlü, dokulu; yaz ve kış
 func rock_test() -> void:
