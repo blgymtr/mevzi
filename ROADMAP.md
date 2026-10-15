@@ -86,7 +86,7 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 
 ## 🎯 0.0.8 — 32 maddelik büyük güncelleme (kullanıcı listesi, 15 Ekim)
 Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) · ⏳ yapılacak · 🔄 şu an çalışılıyor.
-(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu. 33–40: 15 Ekim yerel oturumunda kullanıcının ek istekleri.)
+(Listede 4. madde yok; numaralar kullanıcının listesindeki gibi korundu. 33–41: 15 Ekim yerel oturumunda kullanıcının ek istekleri.)
 
 | # | İstek (özet) | Durum | Mevcut durum → yapılacak |
 |---|---|---|---|
@@ -108,7 +108,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 17 | Asker modeli fotoğraftaki gibi + her eylem için animasyon (düşme, eğilme, zıplama, koşma...) | ⏳ | → 1 ve 25 ile birlikte: iskeletli animasyon kütüphanesi |
 | 18 | Araçlar 3. fotoğraftaki gibi gerçekçi (mürettebat görünür, açık bölme) | ⏳ | → Kundağı motorlu topçuda açık bölme + içeride çalışan mürettebat |
 | 19 | Animasyon için kendi sistemimiz (Unreal ile) | ⏳ | → Bkz. teknik not: Blender + mocap tabanlı kendi animasyon hattımız |
-| 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🟡 | Arketiplerde çatı eşyaları (klima, su deposu, anten) var. → Fotoğraftan farklılaştırma (35) |
+| 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🟡 | Çatı eşyaları var; girilebilirlik düzeltildi (kapı yol hücreleri: erişilemeyen pencere yuvası 1006 → 65). → Kalan 10 tür (istasyon, kültür merkezi, karakol kulesi...), fotoğraftan farklılaştırma (35) |
 | 21 | Harita boyutları en son büyütülecek | ⏳ | En sona alındı |
 | 22 | Helikopter alçaldıkça pervane sesi artsın, rotor rüzgârı ağaç/çimen sallasın | ⏳ | → Global shader rüzgâr kaynağı (patlama dalgası sistemi gibi), irtifaya bağlı ses |
 | 23 | Palet izi; iklime göre kalıcı/kaybolan; savaş sisine uyumlu | ⏳ | → Arazi iz dokusu, biyoma göre sönüm, görülmeyen izler gizli |
@@ -122,20 +122,21 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 31 | Roketler havada önlenebilsin (dengeli) | ⏳ | → APS / C-RAM tipi önleme, düşük olasılıklı |
 | 32 | Ana menü: Masaüstüne Çık · Ayarlar (Grafik, Ses, Oynanış, Klavye) · Senaryo Oluşturucu · Kampanya · Klasik Harita · Sandbox Test | ✅ | Menü + tuş atama birleştirildi (keybinds_test 55/55, menü ön izlemesi TR/EN) |
 | 33 | Bayrak animasyonu (Blender + UE) | ⏳ | → Blender kumaş simülasyonu pişirilir (köşe animasyon dokusu), Godot'ta rüzgârla oynatılır. UE kurulu değil; istenirse yalnız pişirme istasyonu olabilir |
-| 34 | Oyunda cami/kilise/mescit vb. hiçbir dini yapı olmayacak; her binanın yanında duvar olmasın, duvarlar gelişigüzel | ⏳ | → Dini arketipler, kule/sivri parçalar kaldırılır; avlu duvarı seyrekleşir, kısmi/yıkık/eğri duvarlar |
+| 34 | Oyunda cami/kilise/mescit vb. hiçbir dini yapı olmayacak; her binanın yanında duvar olmasın, duvarlar gelişigüzel | ✅ | 8 dini arketip + minare/çan kulesi/alem/haç üreticileri silindi; avlu duvarları seyrek ve gelişigüzel (L/U, gedik, yıkık, eğri) |
 | 35 | Binalar referans fotoğraflardan biraz farklı olsun (aynısı değil) | ⏳ | → Oran, renk, cephe düzeni, çatı ve detay çeşitlemesi |
 | 36 | Kum torbaları gerçekçi (web'den CC0 varlık ya da kendi üretimimiz) | ⏳ | → Blender'da torba modeli (kumaş dokusu, sarkma, dikiş), şaşırtmalı dizim |
 | 37 | Kazma ve inşaat animasyonları: silah sırtta, binanın içine girmeden dışarıdan inşa (hata var) | ⏳ | → İnşaat yuvaları iskele dışında, tüfek sırtta, kazma/kürek/çekiç aleti |
 | 38 | Tüm araç boyutları gerçekçi | 🟡 | Hava araçları ✅ (`data/real_dims.json` + `tools/size_audit.gd`). → Kara araçlarında 42 sapma: namlu boyu, kamyon şasisi, köprü/dozer |
 | 39 | Helikopter pervaneleri gerçekçi, detay dokulu | ⏳ | → Kanat profili, uç bandı, hub; dönüşte hareket bulanıklığı diski |
 | 40 | Hiçbir mermi yuvarlak top/taş gibi görünmesin | ✅ | Topçu/havan yüksek yörünge + iz, moloz köşeli parça (ammotest) |
+| 41 | Köprüler gerçekçi olsun ve hasar alsın; uzaklaşınca (zoom out) gölgeler kayıyor/parlıyor | ⏳ | → Köprü modeli (ayak, kiriş, korkuluk, hasar durumları); yönlü gölge mesafesi yakınlaştırmaya göre basamaklı + sapma ayarı |
 
 ### Uygulama sırası (fazlar)
 - **Faz 0 — Stabilite (🔄 yamalar uygulandı, GPU'da doğrulandı; test bekçisi ✅, crewtest/paratest/SPIES/evade ✅):** kalan — oyunda takılabilecek her geçici duruma süre sınırı + güvenli çıkış; yapılamayan emirde birimin sesli geri bildirimi; ekransız hızlı test modu
 - **Faz 1 — Veri gerçekçiliği:** 2, 38, 6, 26, 15, 27, 31
 - **Faz 2 — Araç sistemleri:** 3, 11, 12, 23, 22, 39, 8/29, 18, 7
 - **Faz 3 — Asker yeniden yapımı:** 1, 17, 19, 25, 9, 13, 28/37, 5
-- **Faz 4 — Dünya ve görsel:** 34 (öne alındı), 10, 16, 20, 35, 36, 33, 14, 24
+- **Faz 4 — Dünya ve görsel:** 34 ✅ (öne alındı), 10, 16, 20, 35, 36, 33, 14, 24, 41
 - **Faz 5 — Menü ve çekirdek:** 32, 30 (Mevzi-Core, radar/S-300)
 - **Faz 6 — En son:** 21 / 30 harita büyütme (9×9 km, seyrek ızgara, akışlı yükleme)
 
