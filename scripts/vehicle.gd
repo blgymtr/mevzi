@@ -817,8 +817,35 @@ func cmd_move(p: Vector3, force := false) -> void:
 	else:
 		_repath(dest)
 
+# saldırı emri yapılabilir mi: silah bu hedefe hiç ateş edemiyorsa nedeni ("" = yapılabilir).
+# Eskiden emir sessizce kabul ediliyor, araç hedefe bakıp sonsuza dek bekliyordu.
+func _attack_block(u: Unit) -> String:
+	var air: bool = u is Vehicle and u.is_air()
+	if vtype in ["truck", "uav"]:
+		return "SİLAHIM YOK"
+	if crew_max > 0 and crew_n <= 0:
+		return "MÜRETTEBAT YOK"
+	if not gunner_ok:
+		return "NİŞANCI YOK"
+	if air and not (vtype in ["apc", "ifv", "technical", "heli", "aa", "aagun"]):
+		return "HAVA HEDEFİNE ATEŞ EDEMEM"
+	if vtype == "aagun" and (u is Building or (u is Vehicle and u.armor > 0)):
+		return "ZIRHA ETKİSİZ"
+	if vtype == "aa" and u is Building:
+		return "YALNIZ HAVA HEDEFİ"
+	return ""
+
+# dolaylı atışlı topçunun asgari menzili (bunun içindeki hedefe ateş edemez)
+func _min_range() -> float:
+	return 18.0 if vtype == "hmortar" else 30.0
+
 func cmd_attack(u: Unit) -> void:
-	if not alive or vtype == "truck":
+	if not alive:
+		return
+	var why := _attack_block(u)
+	if why != "":
+		if team == G.player_team and not G.spectate:
+			say(why, 2.5)
 		return
 	forced_target = u
 	order = "attack"
@@ -1034,6 +1061,7 @@ func _process(dt: float) -> void:
 	if vtype in ["heli", "transport"]:
 		_heli(dt)
 		return
+	_guard_drive(dt)
 	_drive(dt)
 	_sep_vehicles()
 	_aim_fire(dt)
@@ -1371,6 +1399,64 @@ func _drive(dt: float) -> void:
 		if randf() < 0.4:
 			G.fx.exhaust(position - f * (D["len"] * 0.5) + Vector3(0, 1.0, 0), 1.0)
 
+# ------------------------------------------------------------ takılma bekçisi (kara aracı)
+# Yürüyüş emrinde ilerleme ölçütü: 15 sn'de 1 m yer değiştirmeyen araç biraz geri çekilip yolu yeniden
+# arar; üç denemede (45 sn) ilerleyemezse emri bırakır ve bir kez "STUCK-RESOLVE Vehicle move <sn>" yazar.
+# Bilerek duran araç sayılmaz: saldırı hareketinde çatışan, toplanan/kurulan top, hareketsiz (palet/sürücü).
+# İkmal kamyonu emri bırakmaz (lojistik hattı), yalnız yeniden yol arar.
+var _vg_goal := Vector3.INF
+var _vg_best := 0.0
+var _vg_t := 0.0
+var _vg_n := 0
+
+func _guard_drive(dt: float) -> void:
+	var moving := order in ["move", "amove", "retreat", "refund", "route", "attack"] and path_i < path.size() and not immobile()
+	if moving and order == "amove" and target != null and fire_mode != 2:
+		moving = false
+	if moving and needs_setup() and deployed > 0.0:
+		moving = false
+	if not moving:
+		_vg_goal = Vector3.INF
+		_vg_t = 0.0
+		_vg_n = 0
+		return
+	# ilerleme ölçütü: yolun sonuna kalan mesafe azalıyor mu (yer değiştirme değil — engelde geri çekilip
+	# yeniden deneyen araç salınır, yer değiştirir ama ilerlemez)
+	var goal := path[path.size() - 1]
+	var dd := Vector2(goal.x - position.x, goal.z - position.z).length()
+	if _vg_goal == Vector3.INF or goal.distance_to(_vg_goal) > 2.0:
+		_vg_goal = goal
+		_vg_best = dd
+		_vg_t = 0.0
+		_vg_n = 0
+		return
+	if dd < _vg_best - 1.0:
+		_vg_best = dd
+		_vg_t = 0.0
+		return
+	_vg_t += dt
+	if _vg_t < 15.0:
+		return
+	_vg_t = 0.0
+	_vg_n += 1
+	if _vg_n >= 3 and vtype != "truck":
+		print("STUCK-RESOLVE Vehicle move %d %s order=%s p=(%.0f,%.0f)" % [_vg_n * 15, vid if vid != "" else vtype, order, position.x, position.z])
+		_vg_n = 0
+		if order == "attack":
+			forced_target = null
+			order = ""
+		_arrive()
+		if team == G.player_team and not G.spectate:
+			say("YOL YOK!", 2.0)
+		return
+	# engelden kurtul: biraz geri çekil (ya da en yakın boş hücreye çık), yolu yeniden ara
+	var bp := position - forward() * 1.5
+	if _cell_ok(bp):
+		position = bp
+	elif not _cell_ok(position):
+		position = G.grid.nearest_free(position, nav_mode)
+	_repath(path[path.size() - 1])
+
 func _arrive() -> void:
 	path = PackedVector3Array()
 	path_i = 0
@@ -1384,7 +1470,9 @@ func _arrive() -> void:
 func _scan() -> void:
 	if vtype == "truck":
 		return
-	if retreating or fire_mode == 2 or (fire_mode == 1 and G.time - last_hit > 10.0) or not gunner_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0:
+	# "ateş kes" kendiliğinden ateşi keser; oyuncunun açık saldırı emri (forced_target) bunu geçersiz kılar
+	var hold := fire_mode == 2 and not (order == "attack" and forced_target != null)
+	if retreating or hold or (fire_mode == 1 and G.time - last_hit > 10.0) or not gunner_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0:
 		target = null
 		coax_target = null
 		return
@@ -1428,7 +1516,7 @@ func _scan() -> void:
 		elif vtype == "fieldgun" and air:
 			continue
 		if vtype in INDIRECT:
-			if d < (18.0 if vtype == "hmortar" else 30.0) or air:
+			if d < _min_range() or air:
 				continue
 			sc -= G.enemies_near(e.position, 8.0, team).size() * 6.0 + (25.0 if e is Building else 0.0)
 		if vtype == "tank":
@@ -1484,6 +1572,21 @@ func _close_on_forced() -> void:
 		if not G.is_seen(ft, team):
 			_chase_t = G.time + 8.0
 			say("HEDEF GÖRÜLMÜYOR, GÖZCÜ GEREK", 2.5)
+		elif dist2(ft) < _min_range():
+			_chase_t = G.time + 6.0
+			say("ASGARİ MENZİLİN İÇİNDE", 2.5)
+			if vtype in ["arty", "mlrs"] and not immobile():
+				# kundağı motorlu: hedeften asgari menzilin dışına çekil (emir sürer, sonra ateş eder)
+				var away := position - ft.position
+				away.y = 0.0
+				if away.length() < 0.1:
+					away = -forward()
+				dest = G.grid.nearest_free(ft.position + away.normalized() * (_min_range() + 10.0), nav_mode)
+				_repath(dest)
+			else:
+				# çekili top kendi kendine çekilemez: emir bırakılır
+				forced_target = null
+				order = ""
 		return
 	var d := dist2(ft)
 	if d < 8.0:
@@ -2773,7 +2876,7 @@ func _heli_crash() -> void:
 		if randf() < 0.35:
 			G.fx.emit(Fx.P_FIRE, hull.global_position + Vector3(0, 0.9, 0), Vector3(0, 1.0, 0), 0.5, 0.6, 1.3, -0.5, 1.0, Color(1.0, 0.55, 0.2, 1.0)), 0.0, 1.0, dur)
 	tw.tween_callback(func():
-		G.explode(position + Vector3(0, 0.8, 0), 4.5, 90.0, "big", team, self)
+		G.explode(position + Vector3(0, 0.8, 0), 4.5, 90.0, "big", team, self, team)
 		G.fx.burn(position + Vector3(0, 0.8, 0), 35.0, 1.2)
 		G.cam.shake(0.4, position)
 		# pallar kırılır: dönen göbek gizlenir, kırık pal parçaları savrulur
@@ -2823,7 +2926,7 @@ func destroy(src) -> void:
 		tw.tween_property(hull, "position:y", 0.3, 2.2).set_ease(Tween.EASE_IN)
 		tw.parallel().tween_property(hull, "rotation:z", 1.4, 2.2)
 		tw.tween_callback(func():
-			G.explode(position + Vector3(0, 0.3, 0), 2.5, 40.0, "grenade", -1, null)
+			G.explode(position + Vector3(0, 0.3, 0), 2.5, 40.0, "grenade", -1, null, team)
 			queue_free())
 		return
 	_cargo_lost()
@@ -2877,7 +2980,7 @@ func destroy(src) -> void:
 		return
 	match mode:
 		"catastrophic":
-			G.explode(cp, 6.5, 90.0, "big", team, self)
+			G.explode(cp, 6.5, 90.0, "big", team, self, team)
 			G.fx.fireball(cp + Vector3(0, 0.6, 0), 2.0 if heavy else 1.4)
 			G.fx.mushroom(cp, 1.6 if heavy else 1.0)
 			G.fx.fire_column(position + Vector3(0, 1.2, 0), randf_range(40.0, 70.0), 1.3)
@@ -2887,7 +2990,7 @@ func destroy(src) -> void:
 			hull.rotation.z += randf_range(-0.25, 0.25)
 			hull.position.y -= 0.15
 		"cookoff":
-			G.explode(cp, 4.5, 70.0, "big", team, self)
+			G.explode(cp, 4.5, 70.0, "big", team, self, team)
 			G.fx.fireball(cp + Vector3(0, 0.8, 0), 1.5)
 			G.fx.fire_column(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.2)
 			# taret ambarından yükselen cephane alevi jeti (birkaç saniye, aralıklı)
@@ -2907,7 +3010,7 @@ func destroy(src) -> void:
 					for k in 6:
 						G.fx.emit(Fx.P_FIRE, q, Vector3(randf_range(-1, 1), randf_range(6, 11), randf_range(-1, 1)), randf_range(0.4, 0.8), 0.6, 1.6, -2.0, 0.6, Color(1.8, 0.9, 0.3, 1)))
 		"brew":
-			G.explode(cp, 3.0, 40.0, "big", team, self)
+			G.explode(cp, 3.0, 40.0, "big", team, self, team)
 			G.fx.fireball(cp, 0.9)
 			G.fx.fire_column(position + Vector3(0, 1.3, 0), randf_range(30.0, 55.0), 1.0 if heavy else 0.8)
 			_debris(2, 4.0)

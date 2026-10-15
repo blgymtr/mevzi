@@ -43,7 +43,7 @@ func _ready() -> void:
 	apply_video()
 	if shot_dir != "":
 		_start_watchdog()
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "tactest", "largetest", "hugetest", "rocktest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "tactest", "largetest", "hugetest", "rocktest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -563,6 +563,10 @@ func save_cfg() -> void:
 
 # ------------------------------------------------------------ testler
 func _shot(n: String) -> void:
+	# ekransız kip (--headless, CI): çizim yok, görüntü atlanır; mantık testleri çizimsiz saniyeler içinde koşar
+	if DisplayServer.get_name() == "headless":
+		print("SHOT %s skipped(headless)" % n)
+		return
 	# çizim kapalıysa (test hızlandırma, bkz. Tests07._fast) yalnız bu kare için aç
 	var off := not RenderingServer.render_loop_enabled
 	if off:

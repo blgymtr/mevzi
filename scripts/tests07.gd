@@ -28,6 +28,10 @@ func run(scene: String) -> void:
 			await para2_test()
 		"ammotest":
 			await ammo_test()
+		"stucktest":
+			await stuck_test()
+		"fftest":
+			await ff_test()
 		"tactest":
 			await tac_test()
 		"largetest":
@@ -621,6 +625,130 @@ func para2_test() -> void:
 	await m._shot("para2_10")
 	print("P2 elapsed=%.1f" % el)
 	print("PARA2TEST RESULT fails=%d" % fails)
+
+# dost ateşi kuralı (roadmap 27): kendi aracının patlaması kendi askerine zarar vermez (yalnız bastırır);
+# bina patlaması iki tarafa da zarar verir
+func ff_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true)
+	_fast()
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var f1: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(2, 0, 0), Grid.M_INF), null)
+	var e1: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(-2, 0, 0), Grid.M_INF), null)
+	await m._wait(0.3)
+	var f_hp := f1.hp
+	var f_sup := f1.suppression
+	G.explode(c + Vector3(0, 1.0, 0), 6.5, 90.0, "big", 0, null, 0)   # 0. takımın aracı patladı
+	await m._wait(1.0)
+	var f_ok := f1.alive and f1.hp >= f_hp - 0.01 and f1.state != "fly"
+	var f_sup_ok := f1.suppression > f_sup
+	var e_hit := not e1.alive or e1.hp < e1.max_hp or e1.state in ["fly", "wounded", "dazed"]
+	print("FF vehicle_blast friendly_unhurt=%s friendly_suppressed=%s enemy_hit=%s" % [f_ok, f_sup_ok, e_hit])
+	if not f_ok or not e_hit or not f_sup_ok:
+		fails += 1
+	var b: Building = m.place_building(0, "barracks", G.grid.nearest_free(c + Vector3(0, 0, 40), Grid.M_HEAVY), 0.0)
+	b.add_work(99999.0)
+	var f2: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(b.position + Vector3(b.radius * 0.6, 0, 0), Grid.M_INF), null)
+	var e2: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(b.position - Vector3(b.radius * 0.6, 0, 0), Grid.M_INF), null)
+	await m._wait(0.3)
+	b.destroy(null)
+	await m._wait(1.0)
+	var hit := func(s: Soldier) -> bool: return not s.alive or s.hp < s.max_hp or s.state in ["fly", "wounded", "dazed"]
+	print("FF building_blast friendly_hit=%s enemy_hit=%s d=%.1f/%.1f r=%.1f" % [hit.call(f2), hit.call(e2), f2.position.distance_to(b.position), e2.position.distance_to(b.position), b.radius * 0.8 + 2.0])
+	if not hit.call(f2) or not hit.call(e2):
+		fails += 1
+	print("FFTEST RESULT fails=%d" % fails)
+
+# Faz 0 takılma bekçisi + emir geri bildirimi (oyun süresiyle sınırlı, ~70 sn)
+func stuck_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true)
+	_fast()
+	G.reveal = [999.0, 999.0]
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	# (1) asker: hedefi duvarın ardında; yol ızgarası geçit sanıyor (kapı işareti) ama ince ızgarada duvar
+	#     kesintisiz → asker duvara dayanıp kalır. Bekçi: 8 sn'de yeniden yol, 30 sn'de vazgeç.
+	var wa := c + Vector3(-30, 0, -20)
+	for k in 9:
+		G.grid.set_static_circle(wa + Vector3(k * 0.4 - 1.6, 0, 0), 0.35, 2.4, Grid.K_WALL)
+	G.grid.mark_door(wa, Vector3(1, 0, 0), 2.0)
+	G.grid.flush_nav()
+	var s1: Soldier = m.spawn_soldier(G.player_team, "rifle", G.grid.nearest_free(wa + Vector3(0, 0, -6), Grid.M_INF), null)
+	s1.cmd_move(wa + Vector3(0, 0, 6))
+	# (2) araç: her yanı duvarla kapalı kutuda, kutunun dışına gitmesi emredilir → itip durur
+	var vb := G.grid.nearest_free(c + Vector3(30, 0, -20), Grid.M_HEAVY)
+	var v1: Vehicle = m.spawn_vehicle(G.player_team, "apc", vb, 0.0)
+	v1.cmd_move(G.grid.nearest_free(vb + Vector3(0, 0, 30), Grid.M_HEAVY))
+	# yol bulunduktan sonra kutuya kapat: yol dışarıyı gösterir, araç fiziksel olarak çıkamaz
+	for k in 28:
+		var a := k * TAU / 28.0
+		G.grid.set_static_circle(vb + Vector3(cos(a) * 4.2, 0, sin(a) * 4.2), 0.5, 2.6, Grid.K_HOUSE)
+	G.grid.flush_nav()
+	print("STUCK vehicle path=%d order=%s" % [v1.path.size(), v1.order])
+	# (3) sedye: hastane + yanında yaralı; sedye taşınırken hastane yıkılır
+	var hp: Building = m.place_building(G.player_team, "hospital", G.grid.nearest_free(c + Vector3(0, 0, 30), Grid.M_HEAVY), 0.0)
+	hp.add_work(99999.0)
+	var wnd: Soldier = m.spawn_soldier(G.player_team, "rifle", G.grid.nearest_free(hp.position + Vector3(14, 0, 4), Grid.M_INF), null)
+	wnd.take_damage(110.0, null)
+	# (4) uçaksavar topuna tank: emir reddedilir (sessiz bekleme yok)
+	var aag: Vehicle = m.spawn_vehicle(G.player_team, "aagun", G.grid.nearest_free(c + Vector3(-20, 0, 25), Grid.M_HEAVY), 0.0)
+	var tk: Vehicle = m.spawn_vehicle(1 - G.player_team, "tank", G.grid.nearest_free(c + Vector3(-20, 0, 55), Grid.M_HEAVY), PI)
+	tk.cmd_hold()
+	tk.fire_mode = 2
+	tk.hp = 99999.0
+	aag.cmd_attack(tk)
+	var refused := aag.forced_target == null and aag.order != "attack"
+	# (5) "ateş kes"teki tank, açık saldırı emriyle ateş eder
+	var t2: Vehicle = m.spawn_vehicle(G.player_team, "tank", G.grid.nearest_free(c + Vector3(-5, 0, 25), Grid.M_HEAVY), 0.0)
+	t2.fire_mode = 2
+	t2.cmd_hold()
+	t2.cmd_attack(tk)
+	# (6) asgari menzil içindeki hedefe çekili obüs: emir bırakılır
+	var hw: Vehicle = m.spawn_vehicle(G.player_team, "howitzer", G.grid.nearest_free(tk.position + Vector3(14, 0, -10), Grid.M_HEAVY), 0.0)
+	hw.cmd_attack(tk)
+	m.test_phase("stuck")
+	var t0 := G.time
+	var hosp_killed := false
+	var s1_t := -1.0
+	var v1_t := -1.0
+	var t2_fired := false
+	var str_ok := false
+	while G.time - t0 < 75.0:
+		await m._wait(0.25)
+		var el := G.time - t0
+		if s1_t < 0.0 and s1.state != "move":
+			s1_t = el
+		if v1_t < 0.0 and v1.order == "":
+			v1_t = el
+		if t2.main_cd > 0.5:
+			t2_fired = true
+		if not hosp_killed and hp.job != null and hp.job.stage == "carry":
+			hosp_killed = true
+			var bs: Array = [hp.job.a, hp.job.b]
+			hp.destroy(null)
+			await m._wait(0.5)
+			str_ok = bs.all(func(b): return not is_instance_valid(b) or not b.alive or b.state != "stretcher") and (not wnd.alive or wnd.state != "stretchered")
+			print("STUCK stretcher dropped=%s wounded_state=%s" % [str_ok, wnd.state])
+		if s1_t >= 0.0 and v1_t >= 0.0 and t2_fired and (hosp_killed or el > 60.0):
+			break
+	print("STUCK soldier_resolved_at=%.1f state=%s order=%s" % [s1_t, s1.state, s1.order])
+	print("STUCK vehicle_resolved_at=%.1f order=%s" % [v1_t, v1.order])
+	print("STUCK aagun_refused=%s holdfire_attack_fired=%s howitzer_order=%s forced=%s" % [refused, t2_fired, hw.order, hw.forced_target != null])
+	if s1_t < 0.0 or s1_t > 40.0:
+		fails += 1
+	if v1_t < 0.0 or v1_t > 60.0:
+		fails += 1
+	if not refused or not t2_fired or hw.order == "attack":
+		fails += 1
+	if hosp_killed and not str_ok:
+		fails += 1
+	print("STUCK stretcher_tested=%s" % hosp_killed)
+	print("STUCKTEST RESULT fails=%d" % fails)
 
 # dolaylı atış görünümü: topçu/havan mermisi yüksek yayla çıkar (tepe ≥ 45 m), uçuşta top değil hareket
 # bulanıklığı izi; isabette moloz köşeli parça dokusuyla. Eskiden ~7 m tepeli alçak yay: taş atar gibiydi.

@@ -230,7 +230,9 @@ func on_ground(p: Vector3) -> Vector3:
 
 # ------------------------------------------------------------ patlama hasarı
 # kind: "grenade", "rpg", "shell", "big", "mine", "auto"
-func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src = null) -> void:
+# spare: bu takımın askerleri hasar almaz (yalnız bastırılır) — kendi aracının patlaması/helikopterinin
+# düşüşü kendi askerine zarar vermez (roadmap 27). Bina patlaması ve silah patlamaları herkese işler.
+func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src = null, spare := -1) -> void:
 	var size := clampf(radius / 3.0, 0.5, 3.0)
 	if p.y < 1.0 and grid.is_water(p):
 		fx.water_splash(p, size)
@@ -259,6 +261,8 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 			continue
 		var d: float = u.position.distance_to(p)
 		if u is Soldier:
+			if spare >= 0 and u.team == spare:
+				continue
 			u.on_blast(p, radius, dmg, d, src)
 		else:
 			var r_eff: float = radius + u.radius

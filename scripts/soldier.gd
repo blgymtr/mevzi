@@ -918,6 +918,7 @@ func _process(dt: float) -> void:
 		if dead_t > 3.0 and state != "fly":
 			set_process(false)
 		return
+	_guard(dt)
 	if state == "aboard":
 		_aboard(dt)
 		return
@@ -956,6 +957,123 @@ func _process(dt: float) -> void:
 	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
 	body.position = Vector3(lean_cur.x, body_lift, lean_cur.z).rotated(Vector3.UP, -rotation.y)
+
+# ------------------------------------------------------------ takılma bekçisi
+# Geçici durumların azami süresi (sn). Aşılırsa durum güvenle çözülür (eylem tamamlanır / iptal edilir /
+# asker en yakın boş zemin hücresine konur) ve bir kez "STUCK-RESOLVE Soldier <durum> <sn>" yazılır.
+# Meşru uzun eylemler tabloda yok (araçta yolculuk, hastane, inşaat, teslim/esir, yaralı bekleyişi) ya da
+# ilerlemeye bağlı ("move": yer değiştirmeden geçen süre). Sayaç durum değişince sıfırlanır (state_t her
+# geçişte sıfırlanmadığı için ayrı sayaç tutulur).
+const STATE_MAX := {"entering": 8.0, "exiting": 20.0, "rope": 30.0, "rope_wait": 75.0, "rope_up": 45.0,
+	"para": 45.0, "fly": 8.0, "dive": 4.0, "slide": 4.0, "throw": 5.0, "melee": 6.0, "dazed": 8.0,
+	"launch": 12.0, "setup": 120.0, "rescue": 90.0, "drag": 30.0, "heal": 30.0, "escort": 30.0,
+	"stretcher": 240.0, "dragged": 60.0, "healing": 60.0}
+const MOVE_REPATH := 8.0      # yer değiştirmeyen yürüyüş bu kadar sn sonra yeniden yol arar
+const MOVE_GIVEUP := 30.0     # ... bu kadar sn sonra bırakılır
+var _gd_state := ""
+var _gd_t := 0.0
+var _gd_pos := Vector3.ZERO
+var _gd_still := 0.0
+var _gd_repath := 0.0
+
+func _guard(dt: float) -> void:
+	if state != _gd_state:
+		_gd_state = state
+		_gd_t = 0.0
+		_gd_pos = position
+		_gd_still = 0.0
+		_gd_repath = 0.0
+		return
+	_gd_t += dt
+	var lim: float = STATE_MAX.get(state, 0.0)
+	if lim > 0.0 and _gd_t > lim:
+		_unstick(state, _gd_t)
+		return
+	if state != "move" or order == "follow_veh":
+		return
+	if Vector2(position.x - _gd_pos.x, position.z - _gd_pos.z).length() > 0.6:
+		_gd_pos = position
+		_gd_still = 0.0
+		_gd_repath = 0.0
+		return
+	_gd_still += dt
+	_gd_repath += dt
+	if _gd_still > MOVE_GIVEUP:
+		_unstick("move", _gd_still)
+	elif _gd_repath > MOVE_REPATH and path.size() > 0:
+		_gd_repath = 0.0
+		# engel içinde kaldıysa önce boş hücreye çık, sonra yolu yeniden ara
+		if not G.grid.free_at(position, Grid.M_INF):
+			position = G.grid.nearest_free(position, Grid.M_INF)
+		_set_path(path[path.size() - 1])
+
+func _unstick(st: String, secs: float) -> void:
+	print("STUCK-RESOLVE Soldier %s %.0f team=%d role=%s order=%s p=(%.0f,%.0f)" % [st, secs, team, role, order, position.x, position.z])
+	match st:
+		"entering":
+			var v := door_veh
+			if v != null and is_instance_valid(v) and v.alive and v.needs_crew():
+				v.add_crew(self)
+			elif v != null and is_instance_valid(v) and v.can_load():
+				board(v)
+			else:
+				state = "idle"
+		"exiting":
+			door_wait = 0.0
+			state = "idle"
+		"rope", "rope_wait", "rope_up":
+			var h := rope_heli
+			if h != null and is_instance_valid(h):
+				h.rope_riders.erase(self)
+			if st == "rope_up" and h != null and is_instance_valid(h) and h.alive and h.can_load():
+				position.y = 0.0
+				board(h)
+			else:
+				state = "idle"
+				stance = CROUCH
+		"para":
+			_para_touchdown()
+		"fly":
+			fly_vel = Vector3.ZERO
+			fly_ang = 0.0
+			fly_end = G.time
+			if hp <= 0.0:
+				_down(null, true)
+			else:
+				state = "idle"
+		"stretcher":
+			if job != null:
+				job._drop()
+			job = null
+			state = "idle"
+			force_move = false
+		"dragged", "healing":
+			rescuer = null
+			state = "wounded"
+		"drag", "heal", "rescue":
+			_release_patient()
+			state = "idle"
+		"move":
+			path = PackedVector3Array()
+			state = "idle"
+			board_target = null
+			force_move = false
+			dest = position
+			if order == "garrison":
+				_leave_house()          # pencere yuvasını bırak (yoksa bina dışarıdan tutulmuş sayılır)
+			if order != "hold":
+				order = ""
+			if team == G.player_team and not G.spectate:
+				say("YOL YOK!", 2.0)
+		_:
+			state = "idle"
+	if alive and state != "aboard":
+		visible = true
+		if state != "wounded" and not G.grid.free_at(position, Grid.M_INF):
+			position = G.grid.nearest_free(position, Grid.M_INF)
+		if not G.grid.in_trench(position):
+			position.y = 0.0
+	_gd_state = ""
 
 func _aboard(dt: float) -> void:
 	var v := vehicle_in

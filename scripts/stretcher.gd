@@ -70,6 +70,11 @@ func update(dt: float) -> bool:
 			if patient == null or not is_instance_valid(patient):
 				_finish()
 				return false
+			if t > 150.0:
+				# hastane kapısına yol yok (yıkıntı, kuşatma): sonsuza dek dolaşma, yaralıyı bırak
+				print("STUCK-RESOLVE Stretcher carry %.0f" % t)
+				_drop()
+				return false
 			var L := leader()
 			if L.path_i >= L.path.size() and L.dist2(hosp) > hosp.radius + 4.0:
 				L._set_path(_door())

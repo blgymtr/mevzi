@@ -974,6 +974,14 @@ func _flip(t: int) -> void:
 	team = t
 	capture_t = 0.0
 	queue.clear()
+	# ele geçirilen hastane: eski takımın sedye görevi bırakılır, sedyeciler sıradan sıhhiyeye döner
+	if job != null:
+		job._drop()
+		job = null
+	for b in bearers:
+		if is_instance_valid(b):
+			b.bearer = false
+	bearers.clear()
 	_build_model()
 	_apply_construct_look()
 	if G.logi:
@@ -1221,6 +1229,11 @@ func destroy(src) -> void:
 		if is_instance_valid(e[0]):
 			e[0].vanish()
 	inside.clear()
+	# sedye görevi: yıkılan hastanenin _process'i durur, Stretcher.update bir daha çağrılmaz — sedyeciler
+	# ve yaralı "stretcher/stretchered" durumunda sonsuza dek kalırdı
+	if job != null:
+		job._drop()
+		job = null
 	if not alive:
 		return
 	alive = false

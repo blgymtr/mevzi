@@ -9,7 +9,8 @@ param(
 	[Parameter(Mandatory = $true)][string]$Godot,
 	[string[]]$Scenes = @("treetest", "dronetest", "woundtest", "ropetest", "crewtest", "paratest", "para2test", "fowtest", "tactest", "evadetest", "vfxtest", "rocktest", "largetest"),
 	[int]$Timeout = 600,
-	[switch]$NoImport
+	[switch]$NoImport,
+	[switch]$Headless      # çizimsiz (CI): ekran görüntüleri atlanır, yalnız mantık denetlenir
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -37,7 +38,9 @@ foreach ($s in $Scenes) {
 	$err = Join-Path $logs "$s.err"
 	Write-Host "== $s"
 	$t0 = Get-Date
-	$p = Start-Process -FilePath $Godot -ArgumentList @("--path", "`"$root`"", "--", "--shot=`"$out`"", "--scene=$s") -NoNewWindow -PassThru `
+	$gargs = @("--path", "`"$root`"", "--", "--shot=`"$out`"", "--scene=$s")
+	if ($Headless) { $gargs = @("--headless") + $gargs }
+	$p = Start-Process -FilePath $Godot -ArgumentList $gargs -NoNewWindow -PassThru `
 		-RedirectStandardOutput $log -RedirectStandardError $err
 	$outcome = ""
 	if (-not $p.WaitForExit($Timeout * 1000)) {
