@@ -230,6 +230,16 @@ GEAR["pelvis"].append(box((0, 0.134, 0.975), (0.05, 0.012, 0.035), "gun"))      
 GEAR["pelvis"].append(box((0.16, -0.03, 0.95), (0.04, 0.06, 0.08), "pack", bev=0.01))  # bel cebi
 GEAR["pelvis"].append(box((-0.16, 0.02, 0.95), (0.035, 0.05, 0.07), "vest", bev=0.01))
 
+# ---------------- yan teçhizat: sağ uylukta tabanca kılıfı + tabanca kabzası, yelekte bıçak, belde IFAK (sargı) çantası
+GEAR["leg_r"].append(box((-0.215, 0.02, 0.78), (0.045, 0.09, 0.16), "dark", bev=0.01))            # kılıf
+GEAR["leg_r"].append(box((-0.215, -0.005, 0.875), (0.035, 0.05, 0.07), "gun", bev=0.006))           # kabza
+GEAR["leg_r"].append(box((-0.205, 0.02, 0.84), (0.012, 0.1, 0.012), "dark"))                       # bacak kayışı
+GEAR["leg_r"].append(ring((-0.1, 0.0, 0.72), 0.135, 0.14, 0.02, "dark", seg=16))
+G.append(box((-0.11, 0.2, 1.3), (0.03, 0.022, 0.16), "dark", rot=(0, 0, 0.35), bev=0.005))           # bıçak kını
+G.append(box((-0.135, 0.205, 1.4), (0.022, 0.025, 0.06), "gun", rot=(0, 0, 0.35), bev=0.004))        # bıçak sapı
+GEAR["pelvis"].append(box((0.0, -0.15, 0.97), (0.14, 0.05, 0.08), "pack", bev=0.012))               # IFAK
+GEAR["pelvis"].append(box((0.0, -0.177, 0.975), (0.035, 0.006, 0.035), "team"))                     # haç işareti
+
 # ---------------- kollar: omuz cebi + bayrak, dirseklik, bileklik, parmaksız eldiven
 for s, n in ((-1, "r"), (1, "l")):
     rot = (0, -s * A, 0)

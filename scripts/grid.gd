@@ -104,6 +104,12 @@ func set_static_circle(center: Vector3, r: float, height: float, k: int, replace
 				changed.append(i)
 	refresh(changed)
 
+func set_crater(p: Vector3, r: float) -> void:
+	for z in range(ci(p.z - r), ci(p.z + r) + 1):
+		for x in range(ci(p.x - r), ci(p.x + r) + 1):
+			if Vector2((x + 0.5) * CS - p.x, (z + 0.5) * CS - p.z).length() < r:
+				trench[z * N + x] = 1
+
 func set_trench(a: Vector3, b: Vector3, w: float, on := true) -> void:
 	var L := a.distance_to(b)
 	var steps := int(L / (CS * 0.5)) + 1

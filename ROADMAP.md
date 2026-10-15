@@ -115,6 +115,29 @@ Durum: ✅ bitti · 🟡 kısmen · ⏳ yapılacak. Öncelik: **P0** (Steam'den 
 
 ---
 
+
+## Hotfix 0.0.5 — kalanlar (kullanıcı listesi)
+- [x] Gerçek mermi modelleri (APFSDS, HE, havan, topçu, RPG, ATGM, el bombası), ince iz
+- [x] Kan (isabet püskürmesi, yer lekesi, sürüklenme izi)
+- [x] Seçim halkası küçük/kompakt; konuşma balonları seyrek
+- [x] Mini harita büyük, renkli, ayarlardan boyut
+- [x] İHA görünür (alçak, büyük ölçek)
+- [x] Araç hızı ağırlığa göre; katalog araçlarında tekerli/paletli ayrımı (lastik patlar/tamir)
+- [x] Havan/top/roketatar kurma-toplama süreleri
+- [x] Derin kraterler (askerler içine girer, siper)
+- [x] Yarı saydam duman, canlı renk ayarı; koşu döngüsü; tabanca/bıçak/sargı (kendi kendine sargı); nadir teslim olma
+- [ ] Araç modelleri: daha keskin, detaysız araçlara detay (tüm katalog)
+- [ ] Asker: daha hatlı insan modeli, silah tutuşu, nişan/yüzüstü pozları (Blender animasyonları)
+- [ ] Her olay için animasyon: araca binme/inme, ikmal kamyonu yükleme animasyonu
+- [ ] Patlama: mermi türü/açı/zırha göre değişken; tank imhasında daha fazla tür
+- [ ] Piyade-tank birlikte ilerleme (tank arkası siper takip)
+- [ ] 100+ farklı bina türü, farklı ağaç/çalı/çiçek/kaldırım/araç/direk; yıkılabilir köprüler
+- [ ] Faction yapılarının modelleri (sağ alt menü), özgün tasarım
+- [ ] Sis efekti (5. foto), daha gerçekçi yeşillik, orman haritası
+- [ ] Nehir/deniz suyu efekti; suya düşen aracın batması
+- [ ] YZ komutan: planlama, takılmadan ilerleme
+- [ ] El bombası düşüşünde yüzeye göre farklı efekt
+
 ## Sıradaki adımlar (sıra)
 1. **Görsel polish (Blender):** binalar → üs yapıları → harita öğeleri (ağaç, çit, direk, köprü) — hepsi yeniden, faset/temiz stil, asker v3 ile uyumlu
 2. **Büyük harita:** ≥ 1 km arazi, ızgara/yol bulma ölçekleme, bölge başına yükleme

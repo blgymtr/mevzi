@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "projtest":
+		_run_proj_test()
 	elif shot_dir != "" and shot_scene == "trenchtest":
 		_run_trench_test()
 	elif shot_dir != "" and shot_scene == "vfxtest":
@@ -747,6 +749,35 @@ func _run_cat_test() -> void:
 	if e1.alive and e1.hp >= e1.max_hp:
 		fails += 1
 	print("CATTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_proj_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	start_game("green_valley", {}, true)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.cam.jump_to(c, true)
+	G.cam.size = 10.0
+	G.cam.target_size = 10.0
+	var t := spawn_vehicle(1, "rus_mbt_72b3", c + Vector3(14, 0, 0), 0.0)
+	t.cmd_hold()
+	await _wait(0.5)
+	G.bal.rocket(c + Vector3(-6, 1.4, 1), t.aim_point(), 0, null, t)
+	G.bal.rocket(c + Vector3(-6, 1.4, -2), t.aim_point(), 0, null, t, "atgm")
+	G.bal.shell(c + Vector3(-8, 1.8, 3), t.aim_point(), 0, null, t, "ap")
+	G.bal.mortar(c + Vector3(-4, 1, -4), c + Vector3(10, 0, -4), 0, null)
+	G.bal.artillery(c + Vector3(-30, 30, 6), c + Vector3(6, 0, 6), 0, null)
+	G.bal.grenade(c + Vector3(-2, 1.5, 4), c + Vector3(3, 0, 4), 0, null)
+	await _wait(0.12)
+	await _shot("proj_01")
+	var s := spawn_soldier(1, "rifle", c + Vector3(2, 0, -6), null)
+	s.cmd_hold()
+	for i in 3:
+		s.take_damage(10.0, null, "bullet")
+		await _wait(0.1)
+	await _wait(0.1)
+	await _shot("proj_02_blood")
+	print("PROJTEST RESULT fails=0")
 	get_tree().quit()
 
 func _run_trench_test() -> void:

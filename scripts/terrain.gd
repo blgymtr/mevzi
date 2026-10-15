@@ -168,6 +168,26 @@ func carve_trench(a: Vector3, b: Vector3, w: float, depth: float) -> void:
 				himg.set_pixel(x, z, Color(hh, 0, 0, 1))
 	htex.update(himg)
 
+# krater: çanak çukur + kenarda kabarık toprak halkası (içine asker girer)
+func carve_crater(p: Vector3, r: float, depth: float) -> void:
+	var k := float(HRES) / G.MAP
+	var ext := r * 1.5
+	for z in range(maxi(0, int((p.z - ext) * k)), mini(HRES - 1, int((p.z + ext) * k)) + 1):
+		for x in range(maxi(0, int((p.x - ext) * k)), mini(HRES - 1, int((p.x + ext) * k)) + 1):
+			var q := Vector2((x + 0.5) / k - p.x, (z + 0.5) / k - p.z)
+			var d := q.length() / r
+			var hh := 0.0
+			if d < 1.0:
+				hh = -depth * (1.0 - d * d)
+			elif d < 1.45:
+				hh = depth * 0.25 * (1.0 - absf((d - 1.2) / 0.25))
+			else:
+				continue
+			var cur := himg.get_pixel(x, z).r
+			if hh < cur - 0.01 or (hh > 0.0 and cur >= -0.05 and hh > cur):
+				himg.set_pixel(x, z, Color(minf(hh, cur) if hh < 0.0 else hh, 0, 0, 1))
+	htex.update(himg)
+
 func raise_flat(p: Vector3, size: Vector2, rot: float) -> void:
 	# köprü/yol rampası için yatağı doldur (yükseklik 0)
 	var k := float(HRES) / G.MAP

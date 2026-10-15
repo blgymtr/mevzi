@@ -44,7 +44,17 @@ func take_damage(_amount: float, _src, _kind := "bullet") -> void:
 func set_selected(v: bool) -> void:
 	selected = v
 
+static var _active_bubbles := 0
+var _last_say := -99.0
+
 func say(t: String, dur := 2.2) -> void:
+	# sürekli balon olmasın: kişi başı soğuma + ekranda sınırlı sayı (önemli olaylar dur>=2.5 ile geçer)
+	if dur < 2.5:
+		if G.time - _last_say < 9.0 or _active_bubbles >= 4 or randf() < 0.45:
+			return
+	_last_say = G.time
+	if bubble_t <= 0.0:
+		_active_bubbles += 1
 	bubble = I18n.s(t)
 	bubble_t = dur
 
@@ -53,6 +63,7 @@ func tick_bubble(dt: float) -> void:
 		bubble_t -= dt
 		if bubble_t <= 0.0:
 			bubble = ""
+			_active_bubbles = maxi(0, _active_bubbles - 1)
 
 func cmd_move(_p: Vector3, _force := false) -> void:
 	pass

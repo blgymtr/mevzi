@@ -47,6 +47,10 @@ var to_cover := false
 var suppression := 0.0
 # stres (BA): baskıdan ayrı, yavaş birikir/yavaş iner. 1 = sarsılmış, 2 = panik
 var stress := 0.0
+var bandages := 2          # her askerde: ana silah, tabanca, bıçak, sargı
+var bandage_t := 0.0
+var blood_t := 0.0
+var mortar_setup := 0.0     # havancı: durunca kurar (sn birikir), yürüyünce söker
 var cold := 0.0           # kar fırtınasında üşüme (0-100)
 var fired_t := -99.0
 var cost_share := 0.0      # üretim maliyetinden payı (iade/imha puanı)
@@ -533,6 +537,23 @@ func _timers(dt: float) -> void:
 	cover_cd -= dt
 	popup_t -= dt
 	blind_t -= dt
+	# kendi kendine sargı: hafif yaralı, son 6 sn ateş altında değil
+	if bandage_t > 0.0:
+		bandage_t -= dt
+		if bandage_t <= 0.0:
+			hp = minf(max_hp, hp + 25.0)
+			bandages -= 1
+	elif bandages > 0 and hp < max_hp * 0.65 and can_fight() and state == "idle" and G.time - last_hit > 6.0 and G.time - sup_t > 4.0 and randf() < dt * 0.4:
+		bandage_t = 3.5
+		say("SARGI YAPIYORUM", 2.5)
+	if role == "mortar" and state == "move" and vel.length() > 0.5:
+		mortar_setup = 0.0
+	# sürüklenen / yerde kanayan yaralı arkasında kan izi bırakır
+	if state in ["dragged", "wounded", "stretchered"]:
+		blood_t -= dt
+		if blood_t <= 0.0:
+			blood_t = 0.35 if state == "dragged" else 2.5
+			G.fx.blood_pool(position + Vector3(randf_range(-0.2, 0.2), 0, randf_range(-0.2, 0.2)))
 	if G.time - sup_t > 1.2:
 		suppression = maxf(0.0, suppression - dt * (22.0 if led() else 16.0))
 	if stress > 0.0 and G.time - stress_t > 3.0:
@@ -1329,6 +1350,11 @@ func _blind_fire(t: Unit, side: bool) -> void:
 		say(["KÖR ATEŞ!", "KAFANI KALDIRMA!", "ÖRTÜ ATEŞİ!"][randi() % 3])
 
 func _mortar_fire() -> void:
+	if mortar_setup < 4.0:
+		if mortar_setup == 0.0:
+			say("HAVANI KURUYORUM")
+		mortar_setup += 0.45
+		return
 	if mortar_cd > 0.0 or mortar_rounds <= 0:
 		return
 	var best: Unit = null
@@ -1884,6 +1910,8 @@ func _pose() -> String:
 			return "surrender"
 	if blind_t > 0.0 and state == "idle":
 		return "blind_side" if blind_side else "blind"
+	if bandage_t > 0.0 and state == "idle":
+		return "build"
 	var aiming := target != null and is_instance_valid(target) and (popped or burst_left > 0) and can_fight()
 	match stance:
 		STAND:
@@ -1980,7 +2008,8 @@ func _think_surrender() -> bool:
 	var b := nearest_base()
 	if b != null and dist2(b) < 45.0:
 		return false
-	if randf() > 0.06:
+	# nadir: yalnız, yaralı/mermisiz ve paniğe kapılmış askerde düşük olasılık
+	if stress_lv < 2 or randf() > 0.025:
 		return false
 	surrender()
 	return true

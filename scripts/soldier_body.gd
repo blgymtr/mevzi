@@ -252,13 +252,17 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	match pose:
 		"stand", "aim", "run", "walk", "throw", "dragging", "surrender", "build", "dazed", "carry", "melee":
 			var sw := clampf(speed / 3.5, 0.0, 1.0)
-			T["py"] = HIP - absf(s) * 0.04 * sw - (0.05 if pose == "dragging" else 0.0)
-			T["prx"] = 0.0
-			T["srx"] = 0.12 * sw
-			T["lrx"] = s * 0.75 * sw
-			T["llx"] = -s * 0.75 * sw
-			T["krx"] = -maxf(0.0, -c) * 1.0 * sw - 0.05
-			T["klx"] = -maxf(0.0, c) * 1.0 * sw - 0.05
+			var run := clampf((speed - 2.2) / 1.6, 0.0, 1.0)
+			# yürüyüş/koşu: geniş adım, arkadaki bacakta güçlü diz bükümü, adım başına iniş-kalkış, gövde öne eğik
+			T["py"] = HIP - absf(s) * (0.035 + 0.05 * run) * sw + absf(c) * 0.02 * run - (0.05 if pose == "dragging" else 0.0) - 0.04 * run
+			T["prx"] = -0.06 * run
+			T["prz"] = s * 0.04 * sw
+			T["srx"] = 0.1 * sw + 0.22 * run
+			T["sry"] = -s * 0.1 * sw
+			T["lrx"] = s * (0.6 + 0.45 * run) * sw
+			T["llx"] = -s * (0.6 + 0.45 * run) * sw
+			T["krx"] = -(maxf(0.0, -c) * (0.9 + 0.8 * run) + 0.15 * run) * sw - 0.05
+			T["klx"] = -(maxf(0.0, c) * (0.9 + 0.8 * run) + 0.15 * run) * sw - 0.05
 			T["arx"] = 0.55
 			T["arz"] = 0.1
 			T["frx"] = 1.2

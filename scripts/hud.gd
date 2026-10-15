@@ -267,6 +267,15 @@ func _top_sep(h: HBoxContainer) -> void:
 	h.add_child(r)
 
 # ------------------------------------------------------------ harita
+static var mini_scale := 1.25
+
+func apply_mini_size() -> void:
+	var ms := PH * mini_scale
+	mini.offset_left = GAP
+	mini.offset_right = GAP + ms
+	mini.offset_top = -ms - GAP
+	mini.offset_bottom = -GAP
+
 func _build_mini() -> void:
 	mini = PanelContainer.new()
 	mini.anchor_top = 1.0
@@ -284,6 +293,8 @@ func _build_mini() -> void:
 	radar.hud = self
 	radar.mouse_filter = Control.MOUSE_FILTER_STOP
 	mini.add_child(radar)
+	mini_scale = float(G.main.cfg.get("minimap", 1.25)) if G.main and "cfg" in G.main else 1.25
+	apply_mini_size()
 
 # ------------------------------------------------------------ seçim + emir paneli
 func _build_unit_panel() -> void:
@@ -315,7 +326,7 @@ func _build_unit_panel() -> void:
 
 func _layout() -> void:
 	var w := root.get_viewport_rect().size.x
-	var left := GAP + PH + GAP
+	var left := GAP + PH * mini_scale + GAP
 	var right := w - GAP - PRW - GAP
 	var pw := minf(UPW, right - left)
 	var x := left + (right - left - pw) * 0.5
@@ -703,6 +714,8 @@ func _update_info() -> void:
 			probs.append(I18n.s("NİŞANCI YOK"))
 		if u.abandon_t >= 0.0:
 			probs.append(I18n.s("İMHA EDİLİYOR") + " %d" % int(u.abandon_t + 1))
+		if u.needs_setup() and u.deployed < 1.0:
+			probs.append((I18n.s("TOPLANIYOR") if absf(u.cur_speed) < 0.1 and u.path_i < u.path.size() else I18n.s("KURULUYOR")) + " %%%d" % int(u.deployed * 100))
 		for ck in u.crit:
 			if u.crit[ck] > 0:
 				probs.append(I18n.s(Vehicle.CRIT_NAME[ck]) + (" ●" if u.crit[ck] == 1 else " ●●"))
@@ -1382,6 +1395,23 @@ func _settings_menu() -> void:
 		Sfx.set_volume(x)
 		G.main.save_cfg())
 	vol.add_child(sl)
+	var mm := HBoxContainer.new()
+	mm.add_theme_constant_override("separation", 12)
+	v.add_child(mm)
+	_label(mm, "HARİTA", 20, DIM, font_b).custom_minimum_size = Vector2(70, 0)
+	var ms := HSlider.new()
+	ms.custom_minimum_size = Vector2(270, 30)
+	ms.min_value = 0.8
+	ms.max_value = 2.0
+	ms.step = 0.05
+	ms.value = mini_scale
+	ms.value_changed.connect(func(x):
+		mini_scale = x
+		G.main.cfg["minimap"] = x
+		apply_mini_size()
+		radar.tex = null
+		G.main.save_cfg())
+	mm.add_child(ms)
 
 func hide_menu() -> void:
 	if menu:
@@ -1703,11 +1733,11 @@ class Overlay extends Control:
 				continue
 			var own: bool = u.team == G.player_team and not G.spectate
 			if u.selected:
-				var col: Color = Color(0.45, 1.0, 0.6) if own else Color(1.0, 0.4, 0.3)
-				var r: float = u.radius + (0.35 if u is Soldier else 0.4)
+				var col: Color = Color(0.55, 0.95, 0.65, 0.85) if own else Color(1.0, 0.45, 0.35, 0.85)
+				var r: float = 0.38 if u is Soldier else u.radius + 0.3
 				if u is Building:
 					r = u.radius * 0.95
-				_ellipse(p, r, col, 1.6)
+				_ellipse(p, r, col, 1.0 if u is Soldier else 1.4)
 				if not (u is Soldier):
 					_brackets(p, r, col)
 			# can çubuğu
@@ -1766,7 +1796,7 @@ class Overlay extends Control:
 							st_s = I18n.s("BASKI")
 							pct = int(u.suppression)
 				var lc := Color(0.45, 0.72, 1.0, 0.95)
-				draw_string(hud.font_b, ls + Vector2(-30, 0), role_s + " ■", HORIZONTAL_ALIGNMENT_CENTER, 60, 15, lc)
+				draw_string(hud.font_b, ls + Vector2(-30, 0), role_s, HORIZONTAL_ALIGNMENT_CENTER, 60, 11, lc)
 				if st_s != "":
 					draw_string(hud.font_b, ls + Vector2(-50, 13), st_s + (" %d%%" % clampi(pct, 0, 100) if pct >= 0 else ""), HORIZONTAL_ALIGNMENT_CENTER, 100, 15, lc)
 			# durum ikonları (baş üstünde koyu kutucuklar)
@@ -1915,7 +1945,7 @@ class Radar extends Control:
 	func _build_tex() -> void:
 		var n := 192
 		var img := Image.create(n, n, false, Image.FORMAT_RGB8)
-		var base := Color(0.62, 0.53, 0.36) if G.map_kind == "desert" else (Color(0.78, 0.8, 0.82) if G.map_kind == "winter" else Color(0.34, 0.39, 0.24))
+		var base := Color(0.86, 0.72, 0.46) if G.map_kind == "desert" else (Color(0.86, 0.89, 0.92) if G.map_kind == "winter" else Color(0.42, 0.56, 0.26))
 		var cs := G.MAP / n
 		for z in n:
 			for x in n:
@@ -1927,11 +1957,11 @@ class Radar extends Control:
 				col = col.lightened(clampf((h0 - hx + h0 - hz) * 1.6, -0.3, 0.3)) if (h0 - hx + h0 - hz) > 0 else col.darkened(clampf(-(h0 - hx + h0 - hz) * 1.6, 0.0, 0.3))
 				var gi := G.grid.idx(p)
 				if G.grid.water[gi] >= 1 and G.grid.bridge[gi] == 0:
-					col = Color(0.12, 0.22, 0.28)
+					col = Color(0.16, 0.42, 0.55)
 				elif G.grid.kind[gi] == Grid.K_TREE:
-					col = col.darkened(0.35).lerp(Color(0.1, 0.18, 0.08), 0.4)
+					col = Color(0.16, 0.34, 0.14)
 				elif G.grid.h[gi] >= 0.3:
-					col = Color(0.58, 0.55, 0.5)
+					col = Color(0.78, 0.5, 0.36) if G.grid.kind[gi] == Grid.K_HOUSE else Color(0.6, 0.56, 0.5)
 				elif G.grid.h[gi] > 0.05:
 					col = col.lightened(0.15)
 				img.set_pixel(x, z, col)

@@ -20,15 +20,71 @@ class Proj:
 var projs: Array = []
 var _gmesh: Mesh
 var _rmesh: Mesh
+var _mortar_m: Mesh
+var _arty_m: Mesh
+var _apfsds_m: Mesh
+var _he_m: Mesh
+var _atgm_m: Mesh
 
 func _ready() -> void:
+	# ileri -Z: look_at(hız) ile uçuş yönüne döner
+	var X := Basis(Vector3.RIGHT, -PI * 0.5)
 	var mb := MB.new()
-	mb.sphere(Vector3.ZERO, Vector3(0.07, 0.08, 0.07), 6, 4, Color(0.2, 0.24, 0.16))
+	# el bombası (M67/RGD tipi): gövde + kaşık + pim halkası
+	mb.sphere(Vector3.ZERO, Vector3(0.032, 0.04, 0.032), 8, 6, Color(0.22, 0.26, 0.18))
+	mb.box(Vector3(0.025, 0.035, 0), Vector3(0.012, 0.06, 0.018), Color(0.35, 0.35, 0.33))
+	mb.cyl(Vector3(0, 0.05, 0), 0.012, 0.012, 0.02, 6, Color(0.3, 0.3, 0.3))
 	_gmesh = mb.commit(Mats.vc())
+	# RPG (PG-7 tipi): sivri burun konisi + şişkin harp başlığı + gövde + açılmış kanatçıklar
 	var rb := MB.new()
-	rb.cyl(Vector3(0, 0, 0.25), 0.045, 0.045, 0.5, 6, Color(0.3, 0.32, 0.22), Basis(Vector3.RIGHT, -PI * 0.5))
-	rb.cyl(Vector3(0, 0, -0.25), 0.08, 0.0, 0.3, 6, Color(0.32, 0.33, 0.25), Basis(Vector3.RIGHT, -PI * 0.5))
+	rb.cyl(Vector3(0, 0, -0.42), 0.0, 0.03, 0.18, 8, Color(0.3, 0.32, 0.24), X)
+	rb.cyl(Vector3(0, 0, -0.26), 0.03, 0.045, 0.14, 8, Color(0.34, 0.36, 0.26), X)
+	rb.cyl(Vector3(0, 0, -0.14), 0.045, 0.02, 0.1, 8, Color(0.34, 0.36, 0.26), X)
+	rb.cyl(Vector3(0, 0, 0.12), 0.02, 0.02, 0.42, 6, Color(0.2, 0.2, 0.2), X)
+	for k in 4:
+		var a := k * PI * 0.5
+		rb.box(Vector3(cos(a) * 0.04, sin(a) * 0.04, 0.3), Vector3(0.005 + absf(cos(a)) * 0.06, 0.005 + absf(sin(a)) * 0.06, 0.08), Color(0.25, 0.25, 0.24))
 	_rmesh = rb.commit(Mats.vc())
+	# havan mermisi: damla gövde + kuyruk borusu + kanatçıklar
+	var mo := MB.new()
+	mo.cyl(Vector3(0, 0, -0.18), 0.0, 0.04, 0.1, 10, Color(0.3, 0.32, 0.25), X)
+	mo.cyl(Vector3(0, 0, -0.07), 0.04, 0.04, 0.12, 10, Color(0.3, 0.32, 0.25), X)
+	mo.cyl(Vector3(0, 0, 0.05), 0.04, 0.015, 0.12, 10, Color(0.3, 0.32, 0.25), X)
+	mo.cyl(Vector3(0, 0, 0.16), 0.012, 0.012, 0.12, 6, Color(0.25, 0.25, 0.25), X)
+	for k in 6:
+		var a := k * TAU / 6.0
+		mo.box(Vector3(cos(a) * 0.03, sin(a) * 0.03, 0.19), Vector3(0.004 + absf(cos(a)) * 0.05, 0.004 + absf(sin(a)) * 0.05, 0.07), Color(0.25, 0.25, 0.25))
+	_mortar_m = mo.commit(Mats.vc())
+	# topçu mermisi (155): sivri burun (tapa) + gövde + sevk bileziği
+	var ar := MB.new()
+	ar.cyl(Vector3(0, 0, -0.38), 0.0, 0.03, 0.08, 10, Color(0.65, 0.55, 0.25), X)
+	ar.cyl(Vector3(0, 0, -0.25), 0.03, 0.078, 0.2, 12, Color(0.32, 0.34, 0.26), X)
+	ar.cyl(Vector3(0, 0, 0.05), 0.078, 0.078, 0.42, 12, Color(0.32, 0.34, 0.26), X)
+	ar.cyl(Vector3(0, 0, 0.2), 0.082, 0.082, 0.04, 12, Color(0.6, 0.38, 0.2), X)
+	_arty_m = ar.commit(Mats.vc())
+	# tank zırh delici ok (APFSDS): uzun ince çubuk + kuyruk kanatçıkları
+	var ap := MB.new()
+	ap.cyl(Vector3(0, 0, -0.42), 0.0, 0.014, 0.08, 6, Color(0.55, 0.55, 0.55), X)
+	ap.cyl(Vector3(0, 0, 0.0), 0.014, 0.014, 0.76, 6, Color(0.45, 0.45, 0.45), X)
+	for k in 4:
+		var a := k * PI * 0.5
+		ap.box(Vector3(cos(a) * 0.022, sin(a) * 0.022, 0.34), Vector3(0.003 + absf(cos(a)) * 0.035, 0.003 + absf(sin(a)) * 0.035, 0.1), Color(0.4, 0.4, 0.4))
+	_apfsds_m = ap.commit(Mats.vc())
+	# tank HE mermisi
+	var he := MB.new()
+	he.cyl(Vector3(0, 0, -0.3), 0.0, 0.04, 0.1, 10, Color(0.6, 0.5, 0.2), X)
+	he.cyl(Vector3(0, 0, -0.1), 0.04, 0.06, 0.2, 10, Color(0.3, 0.32, 0.24), X)
+	he.cyl(Vector3(0, 0, 0.12), 0.06, 0.06, 0.26, 10, Color(0.3, 0.32, 0.24), X)
+	_he_m = he.commit(Mats.vc())
+	# güdümlü tanksavar füzesi: uzun gövde + orta kanatlar + kuyruk
+	var at := MB.new()
+	at.cyl(Vector3(0, 0, -0.5), 0.02, 0.06, 0.12, 10, Color(0.35, 0.38, 0.3), X)
+	at.cyl(Vector3(0, 0, -0.05), 0.06, 0.06, 0.8, 10, Color(0.35, 0.38, 0.3), X)
+	for k in 4:
+		var a := k * PI * 0.5 + PI * 0.25
+		at.box(Vector3(cos(a) * 0.08, sin(a) * 0.08, 0.0), Vector3(0.004 + absf(cos(a)) * 0.1, 0.004 + absf(sin(a)) * 0.1, 0.2), Color(0.3, 0.32, 0.26))
+		at.box(Vector3(cos(a) * 0.07, sin(a) * 0.07, 0.32), Vector3(0.004 + absf(cos(a)) * 0.08, 0.004 + absf(sin(a)) * 0.08, 0.08), Color(0.3, 0.32, 0.26))
+	_atgm_m = at.commit(Mats.vc())
 
 func _node(m: Mesh) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
@@ -51,6 +107,10 @@ func shell(from: Vector3, to: Vector3, team: int, src, target, mode: String) -> 
 	p.team = team
 	p.src = src
 	p.target = target
+	if mode != "auto":
+		p.node = _node(_apfsds_m if mode == "ap" else _he_m)
+		p.node.position = from
+		p.node.look_at(from + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
 	projs.append(p)
 	G.fx.tracer(from, from + p.vel * p.life, sp, Color(1.0, 0.8, 0.45) if mode != "auto" else Color(1.0, 0.6, 0.3), 0.16 if mode != "auto" else 0.1, 6.0 if mode != "auto" else 3.0)
 
@@ -74,7 +134,7 @@ func rocket(from: Vector3, to: Vector3, team: int, src, target, kind := "rpg") -
 	p.team = team
 	p.src = src
 	p.target = target
-	p.node = _node(_rmesh)
+	p.node = _node(_atgm_m if guided else _rmesh)
 	p.node.position = from
 	projs.append(p)
 
@@ -94,8 +154,7 @@ func _lob(from: Vector3, to: Vector3, team: int, src, kind: String, T: float) ->
 	p.src = src
 	p.life = T + 0.5
 	p.aim = to
-	p.node = _node(_gmesh)
-	p.node.scale = Vector3(1.6, 2.2, 1.6)
+	p.node = _node(_mortar_m if kind == "mortar" else _arty_m)
 	p.node.position = from
 	projs.append(p)
 
@@ -114,6 +173,8 @@ func _step_lob(p: Proj, dt: float) -> bool:
 	var hit := np.y <= 0.0 or (np.y < 6.0 and G.grid.height_at(np) > np.y)
 	p.pos = np
 	p.node.position = np
+	if p.vel.length() > 0.1:
+		p.node.look_at(np + p.vel, Vector3.UP if absf(p.vel.normalized().y) < 0.97 else Vector3.FORWARD)
 	if hit or p.t > p.life:
 		var at := Vector3(np.x, maxf(np.y, 0.0), np.z)
 		if p.kind == "mortar":
@@ -177,6 +238,8 @@ func _seg_block(a: Vector3, b: Vector3) -> Vector3:
 func _step_shell(p: Proj, dt: float) -> bool:
 	var np := p.pos + p.vel * dt
 	p.t += dt
+	if p.node:
+		p.node.position = np
 	var tgt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
 	# doğrudan isabet (araç/yapı gövdesi)
 	if tgt != null and tgt.alive and not (tgt is Soldier):

@@ -72,7 +72,7 @@ void fragment() {
 		// duman: önceden ışıklandırılmış puf; başta hızlı belir, sona doğru sön
 		float fade = smoothstep(0.0, 0.08, a) * (1.0 - smoothstep(0.55, 1.0, a));
 		ALBEDO = v_col.rgb * (0.45 + 0.75 * tx.r);
-		ALPHA = tx.a * v_col.a * fade;
+		ALPHA = tx.a * v_col.a * fade * 0.72;
 	} else if (mode == 1) {
 		float heat = 1.0 - a;
 		vec3 hot = vec3(1.0, 0.92, 0.7);

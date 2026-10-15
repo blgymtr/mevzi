@@ -222,6 +222,11 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 	Sfx.play3d("expl_big" if size >= 1.6 else ("expl_med" if size >= 1.0 else "expl_small"), p, 4.0 if size >= 1.6 else 1.0)
 	if p.y < 1.5:
 		fx.crater(p, radius * 1.15)
+		# gerçek çukur: top/havan/büyük patlama araziyi oyar (askerler içine girip siper alır)
+		if kind in ["shell", "big", "mine", "rpg"] and radius >= 3.0 and not grid.is_water(p) and grid.height_at(p) < 0.3:
+			var cr := radius * (0.45 if kind != "big" else 0.6)
+			terrain.carve_crater(p, cr, cr * 0.42)
+			grid.set_crater(p, cr * 0.8)
 		terrain.paint_circle(p, radius * 0.9, 2, 0.75)
 	blocks.blast(p, radius * (0.55 if kind == "grenade" else 0.75), size)
 	props.blast(p, radius, dmg)

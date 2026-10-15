@@ -35,6 +35,7 @@ var gunner: SoldierBody
 var M: Dictionary
 var armor := 0
 var ext := Vector2(1.5, 3.0)   # zemin izi yarı boyutları (genişlik, uzunluk) — modelden
+var deployed := 1.0       # topçu kurulum durumu: 1 kurulu (ateşe hazır), 0 toplanmış (yürüyüşe hazır)
 var vid := ""            # katalog kimliği (boşsa taban araç)
 var cat: Dictionary = {}
 # 4 yön x 2 tip zırh: [ön, yan, arka, üst] (kinetik / HEAT). Mayın alttan = üst değeri.
@@ -104,7 +105,7 @@ var rock := 0.0
 var rock_v := 0.0
 var burn_t := 0.0
 const ALT := 9.0
-const UAV_ALT := 24.0
+const UAV_ALT := 13.0
 var uav_ang := 0.0
 var missiles := 0
 var missile_cd := 0.0
@@ -214,6 +215,10 @@ func setup(t: int, vt: String) -> void:
 		D["title"] = cat.get("name", D["title"])
 		D["hp"] = float(cat.get("hp", D["hp"]))
 		D["speed"] = float(cat.get("speed", D["speed"]))
+		# ağır araç yavaş: ön zırh ve cana göre hız çarpanı
+		var fa: float = float(cat["armor"][0][0]) if cat.has("armor") else 6.0
+		D["speed"] *= clampf(1.15 - fa * 0.012 - float(D["hp"]) * 0.0002, 0.7, 1.1)
+		D["accel"] = float(D["accel"]) * clampf(1.2 - float(D["hp"]) * 0.0005, 0.6, 1.2)
 	title = D["title"]
 	max_hp = D["hp"]
 	hp = max_hp
@@ -284,6 +289,7 @@ func setup(t: int, vt: String) -> void:
 		Sfx.loop3d("drone", self, -6.0)
 	if vt in ["uav", "uav_armed"]:
 		hull.position.y = UAV_ALT
+		hull.scale = Vector3.ONE * 1.6
 		uav_ang = randf() * TAU
 		missiles = 4 if vt == "uav_armed" else 0
 		Sfx.loop3d("drone", self, -14.0)
@@ -638,11 +644,30 @@ func _process(dt: float) -> void:
 	_aim_fire(dt)
 	_visuals(dt)
 
+# tekerli mi (katalog ailesinden): lastikler patlar ve tamir edilir
+func needs_setup() -> bool:
+	return vtype in TOWED or vtype in ["arty", "mlrs"]
+
+func pack_time() -> float:
+	return {"howitzer": 9.0, "fieldgun": 5.0, "atgun": 4.0, "aagun": 4.0, "hmortar": 4.0, "mtngun": 5.0, "arty": 3.0, "mlrs": 4.0}.get(vtype, 4.0)
+
+func deploy_time() -> float:
+	return pack_time() * 1.2
+
+func wheeled() -> bool:
+	if vid != "":
+		var fam: String = cat.get("fam", "")
+		return not (fam.begins_with("mbt") or fam.contains("_tr") or fam in ["lt", "apc_box", "apc_amph", "apc_mtlb", "ifv_bmp", "ifv_bmd", "ifv_heavy", "bmpt", "td_box", "td_ontos", "spg", "spg_ru", "spg_open", "mortar_tr", "mlrs_t", "mlrs_tos", "eng_breach", "eng_dozer", "eng_bridge", "eng_recovery", "sam_ru_tr"]) and wheels.size() > 0
+	return vtype in WHEELED
+
+func tracked() -> bool:
+	return not wheeled() and not is_air() and not (vtype in TOWED)
+
 func immobile() -> bool:
-	return crit["mob"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (vtype in WHEELED and tires >= maxi(wheels.size(), 4))
+	return crit["mob"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (wheeled() and tires >= maxi(wheels.size(), 4))
 
 func speed_factor() -> float:
-	var mud: float = G.weather.mud() if G.weather != null and vtype in WHEELED else 1.0
+	var mud: float = G.weather.mud() if G.weather != null and wheeled() else 1.0
 	return clampf(1.0 - 0.2 * tires, 0.3, 1.0) * (0.55 if crit["mob"] == 1 else 1.0) * mud
 
 func has_crit() -> bool:
@@ -858,6 +883,18 @@ func _drive(dt: float) -> void:
 			if reverse:
 				target_speed = -minf(target_speed, speed_max * 0.45)
 			break
+	# çekili top / havan / roketatar / obüs: yürümeden önce toplanır, durunca kurulur
+	if needs_setup():
+		if absf(target_speed) > 0.05:
+			if deployed > 0.0:
+				deployed = maxf(0.0, deployed - dt / pack_time())
+				target_speed = 0.0
+				if deployed <= 0.0:
+					say("TOPLANDI, YÜRÜYÜŞE HAZIR")
+		elif absf(cur_speed) < 0.1 and deployed < 1.0:
+			deployed = minf(1.0, deployed + dt / deploy_time())
+			if deployed >= 1.0:
+				say("TOP KURULDU, ATEŞE HAZIR")
 	cur_speed = move_toward(cur_speed, target_speed, D["accel"] * dt * (2.0 if target_speed < cur_speed else 1.0))
 	if absf(cur_speed) < 0.01:
 		return
@@ -1035,6 +1072,8 @@ func _scan() -> void:
 
 func _aim_fire(dt: float) -> void:
 	if turret == null or G.deploy_t > 0.0:
+		return
+	if needs_setup() and deployed < 1.0:
 		return
 	if G.time < ground_until and fire_mode != 2:
 		var wl := wrapf(Soldier._yaw_of(ground_pt - position) - heading, -PI, PI)
@@ -1483,13 +1522,13 @@ func armor_text() -> String:
 func _subsystem_hit(dmg: float, src, k: String) -> void:
 	var boom := k in ["rpg", "atgm", "topatk", "fpv", "mortar", "ap", "he", "shell", "big", "mine", "grenade"]
 	# palet: patlama ve tanksavar
-	if vtype in TRACKED and tracks_broken <= 0.0:
+	if tracked() and tracks_broken <= 0.0:
 		var pc := {"mine": 1.0, "rpg": 0.2, "atgm": 0.2, "topatk": 0.1, "ap": 0.14, "he": 0.18, "shell": 0.22, "big": 0.3}.get(k, 0.0)
 		if randf() < pc:
 			tracks_broken = 45.0
 			say("PALET KOPTU!", 3.0)
 	# teker: kurşun / patlama
-	if vtype in WHEELED:
+	if wheeled():
 		var tc := {"bullet": 0.03, "hmg": 0.08, "auto": 0.15, "grenade": 0.35, "shell": 0.4, "big": 0.5, "rpg": 0.3, "mine": 0.9, "he": 0.4}.get(k, 0.0)
 		if randf() < tc and tires < maxi(wheels.size(), 4):
 			tires += 1

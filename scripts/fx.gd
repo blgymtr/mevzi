@@ -194,7 +194,7 @@ func emit(k: int, pos: Vector3, vel: Vector3, life: float, s0: float, s1: float,
 	mm.set_instance_color(i, col)
 	mm.set_instance_custom_data(i, Color(rng.randf() * TAU, spin if spin != 0.0 else rng.randf_range(-0.6, 0.6), float(rng.randi() % 4), rng.randf()))
 
-func tracer(a: Vector3, b: Vector3, speed: float, col := Color(1.0, 0.62, 0.25), width := 0.07, tail := 3.5) -> void:
+func tracer(a: Vector3, b: Vector3, speed: float, col := Color(1.0, 0.62, 0.25), width := 0.035, tail := 4.5) -> void:
 	var i := tr_head
 	tr_head = (tr_head + 1) % TR_CAP
 	var life := maxf(a.distance_to(b) / speed, 0.03)
@@ -410,14 +410,18 @@ func impact(p: Vector3, kind := "dirt") -> void:
 			for i in 5:
 				emit(P_SPARK, p, Vector3(rng.randf_range(-4, 4), rng.randf_range(1, 5), rng.randf_range(-4, 4)), rng.randf_range(0.15, 0.35), 0.05, 0.04, 9.8, 1.0, Color(1.0, 0.85, 0.5))
 		"blood":
-			emit(P_SMOKE, p, Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(0.3, 0.8), rng.randf_range(-0.4, 0.4)), 0.35, 0.15, 0.4, 3.0, 2.0, Color(0.45, 0.06, 0.04, 0.7))
+			emit(P_SMOKE, p, Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(0.3, 1.0), rng.randf_range(-0.6, 0.6)), 0.4, 0.12, 0.45, 3.0, 2.0, Color(0.42, 0.03, 0.02, 0.85))
+			for i in 6:
+				emit(P_STREAK, p, Vector3(rng.randf_range(-2.0, 2.0), rng.randf_range(0.5, 2.5), rng.randf_range(-2.0, 2.0)), rng.randf_range(0.35, 0.6), 0.03, 0.02, 10.0, 0.6, Color(0.38, 0.02, 0.02, 0.95))
+			if rng.randf() < 0.6:
+				_decal(Vector3(p.x + rng.randf_range(-0.6, 0.6), 0.0, p.z + rng.randf_range(-0.6, 0.6)), rng.randf_range(0.25, 0.55), scorch_tex, Color(0.3, 0.02, 0.01, 0.8))
 
 func rocket_trail(p: Vector3, dir := Vector3.ZERO) -> void:
 	# ince, uzun duman izi + motor alevi (parlak çekirdek, turuncu kuyruk)
 	emit(P_SMOKE, p, _rv(0.12), rng.randf_range(3.5, 5.5), 0.45, 1.4, -0.05, 1.6, Color(0.93, 0.92, 0.9, 0.55))
 	emit(P_SMOKE, p - dir * 0.5, _rv(0.12), rng.randf_range(3.5, 5.5), 0.45, 1.4, -0.05, 1.6, Color(0.93, 0.92, 0.9, 0.55))
-	emit(P_FIRE, p, -dir * 4.0, 0.08, 0.32, 0.08, 0.0, 1.0, Color(2.2, 1.6, 0.9, 1))
-	emit(P_FIRE, p - dir * 0.3, -dir * 6.0 + _rv(0.6), 0.12, 0.22, 0.05, 0.0, 1.0, Color(1.8, 0.7, 0.15, 1))
+	# motor alevi: hıza göre uzayan parlak çizgi (top değil)
+	emit(P_SPARK, p, -dir * 40.0, 0.05, 0.14, 0.08, 0.0, 6.0, Color(1.0, 0.75, 0.35, 1))
 
 func backblast(p: Vector3, dir: Vector3) -> void:
 	flash(p, 5.0, 6.0, 0.07, Color(1.0, 0.7, 0.35))
@@ -434,8 +438,8 @@ func vehicle_dust(p: Vector3) -> void:
 	var sand := _sand()
 	emit(P_SMOKE, p, Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(0.2, 0.6), rng.randf_range(-0.4, 0.4)), rng.randf_range(1.0, 1.8), 0.4, 1.6, -0.05, 1.5, Color(sand.r, sand.g, sand.b, 0.35))
 
-func blood_pool(p: Vector3) -> void:
-	_decal(p, rng.randf_range(0.6, 1.0), scorch_tex, Color(0.35, 0.05, 0.03, 0.75))
+func blood_pool(p: Vector3, big := false) -> void:
+	_decal(p, rng.randf_range(0.6, 1.1) if big else rng.randf_range(0.3, 0.55), scorch_tex, Color(0.3, 0.02, 0.01, 0.8))
 
 func burn(p: Vector3, dur: float, pw := 1.0) -> void:
 	emitters.append([p, G.time + dur, "burn", pw, 0.0])
