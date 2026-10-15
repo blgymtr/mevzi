@@ -232,6 +232,8 @@ func _build_model() -> void:
 	if btype == "hq":
 		model.scale = Vector3(1.35, 1.25, 1.35)
 	add_child(model)
+	if _glb_model():
+		return
 	var mb := MB.new()
 	var tc: Color = G.TEAM_COL[team] if team >= 0 else Color(0.8, 0.8, 0.8)
 	var winter := G.map_kind == "winter"
@@ -401,6 +403,141 @@ func _flag(mb: MB, p: Vector3, col: Color, h: float) -> void:
 	mb.quad(p + Vector3(0, h - 0.05, 0), p + Vector3(1.2, h - 0.12, 0.1), p + Vector3(1.2, h - 0.85, 0.1), p + Vector3(0, h - 0.8, 0), col, Vector3(0, 0, 1))
 	mb.quad(p + Vector3(0, h - 0.05, 0), p + Vector3(1.2, h - 0.12, 0.1), p + Vector3(1.2, h - 0.85, 0.1), p + Vector3(0, h - 0.8, 0), col.darkened(0.2), Vector3(0, 0, -1))
 
+# ------------------------------------------------------------ Blender modelleri
+# assets/models/struct_<tip>_<usa|rus>.glb (tools/blender/structures.py): tek ağ, yüzey başına malzeme adı
+# (vc, metal, glass, lamp*, cloth, flag), renk + pişmiş ortam kapanması tepe renginde. Yoksa yordamsal model.
+static var _sglb := {}
+static var _smat := {}
+var glb_model := false
+var glb_h := 0.0
+
+# yapı üslubu: NATO (usa) ya da Doğu (rus) — ulustan, yoksa takımdan
+static func struct_side(t: int) -> String:
+	var nat: String = G.nation[t] if t >= 0 and t < G.nation.size() else ""
+	if nat in ["rus", "chn"]:
+		return "rus"
+	if nat in ["usa", "gbr"]:
+		return "usa"
+	return "rus" if t == 1 else "usa"
+
+static func struct_model(bt: String, side: String) -> Dictionary:
+	var key := bt + "_" + side
+	if _sglb.has(key):
+		return _sglb[key]
+	var out := {"meshes": [], "h": 0.0}
+	var p := "res://assets/models/struct_%s.glb" % key
+	if ResourceLoader.exists(p):
+		var root: Node = (load(p) as PackedScene).instantiate()
+		_struct_collect(root, Transform3D(), out["meshes"])
+		root.free()
+		var f := FileAccess.open("res://assets/models/struct_%s.json" % key, FileAccess.READ)
+		var d = JSON.parse_string(f.get_as_text()) if f else null
+		if d is Dictionary:
+			out["h"] = float(d.get("h", 0.0))
+	_sglb[key] = out
+	return out
+
+static func _struct_collect(n: Node, xf: Transform3D, out: Array) -> void:
+	var t := xf
+	if n is Node3D:
+		t = xf * (n as Node3D).transform
+	if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+		var m: Mesh = (n as MeshInstance3D).mesh
+		var flag := -1
+		for i in m.get_surface_count():
+			var sm := m.surface_get_material(i)
+			var nm: String = sm.resource_name if sm else "vc"
+			if nm == "flag":
+				flag = i
+			m.surface_set_material(i, _struct_mat(nm))
+		out.append([m, t, flag])
+	for c in n.get_children():
+		_struct_collect(c, t, out)
+
+# tepe rengi doğrusal (glTF COLOR_0); vc/metal/cloth hafif dünya üç düzlemli gren dokusu
+static func _struct_mat(nm: String) -> Material:
+	if _smat.has(nm):
+		return _smat[nm]
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.86
+	match nm:
+		"metal":
+			m.roughness = 0.5
+			m.metallic = 0.35
+			m.metallic_specular = 0.6
+		"glass":
+			m.roughness = 0.1
+			m.metallic = 0.5
+			m.metallic_specular = 0.9
+		"lamp", "lamp_r", "lamp_g", "lamp_b":
+			m.emission_enabled = true
+			m.emission = {"lamp": Color(1.0, 0.86, 0.6), "lamp_r": Color(1.0, 0.12, 0.08), "lamp_g": Color(0.2, 1.0, 0.3), "lamp_b": Color(0.25, 0.45, 1.0)}[nm]
+			m.emission_energy_multiplier = 0.8
+		"cloth", "flag":
+			m.roughness = 0.95
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			var nt := Art.mat_tex("hessian_230", "normal")
+			if nt and nm == "cloth":
+				m.normal_enabled = true
+				m.normal_texture = nt
+				m.normal_scale = 0.6
+				m.uv1_triplanar = true
+				m.uv1_world_triplanar = true
+				m.uv1_scale = Vector3(1.2, 1.2, 1.2)
+	if nm in ["vc", "metal"]:
+		var nt2 := NoiseTexture2D.new()
+		nt2.width = 256
+		nt2.height = 256
+		nt2.seamless = true
+		var fn := FastNoiseLite.new()
+		fn.frequency = 0.05
+		fn.fractal_octaves = 4
+		nt2.noise = fn
+		var gr := Gradient.new()
+		gr.set_color(0, Color(0.82, 0.82, 0.82))
+		gr.set_color(1, Color(1.0, 1.0, 1.0))
+		nt2.color_ramp = gr
+		m.albedo_texture = nt2
+		m.uv1_triplanar = true
+		m.uv1_world_triplanar = true
+		m.uv1_scale = Vector3(0.7, 0.7, 0.7)
+	_smat[nm] = m
+	return m
+
+static func _flag_mat(col: Color) -> Material:
+	var key := "flag_" + col.to_html()
+	if not _smat.has(key):
+		var m := StandardMaterial3D.new()
+		m.albedo_color = col
+		m.roughness = 0.95
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_smat[key] = m
+	return _smat[key]
+
+func _glb_model() -> bool:
+	glb_model = false
+	var S := struct_model(btype, struct_side(team))
+	if S["meshes"].is_empty():
+		return false
+	glb_model = true
+	glb_h = S["h"]
+	model.scale = Vector3.ONE
+	var tc: Color = G.TEAM_COL[team] if team >= 0 else Color(0.8, 0.8, 0.8)
+	for e in S["meshes"]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = e[0]
+		mi.transform = e[1]
+		if e[2] >= 0:
+			mi.set_surface_override_material(e[2], _flag_mat(tc))
+		model.add_child(mi)
+	set_layer(model, 1)
+	return true
+
+# eski yordamsal karargâh modeli 1.35 kat büyütülür; Blender modeli gerçek ölçekte
+func _hq_k() -> float:
+	return 1.35 if btype == "hq" and not glb_model else 1.0
+
 # inşaat: duvarlar alttan yukarı örülür (kesme shader'ı), çevrede iskele, yanda malzeme yığını;
 # işçiler çevrede farklı yerlere dağılır (diz çökerek çakan, ayakta yukarı çakan, malzeme taşıyan).
 var scaffold: MeshInstance3D = null
@@ -418,7 +555,7 @@ func _model_meshes(n: Node, out: Array) -> void:
 func _apply_construct_look() -> void:
 	if model == null:
 		return
-	var bs := Vector3(1.35, 1.25, 1.35) if btype == "hq" else Vector3.ONE
+	var bs := Vector3(1.35, 1.25, 1.35) if btype == "hq" and not glb_model else Vector3.ONE
 	model.scale = bs
 	var ms: Array = []
 	_model_meshes(model, ms)
@@ -448,7 +585,8 @@ func _apply_construct_look() -> void:
 				xf = (n as Node3D).transform * xf
 				n = n.get_parent()
 			top = maxf(top, (xf * c.mesh.get_aabb()).end.y * bs.y)
-		model_h = top
+		# Blender modeli: gövde yüksekliği (direk/anten tepeleri bitişte tamamlanır)
+		model_h = minf(top, glb_h) if glb_model and glb_h > 0.0 else top
 		var lin := Mats.reveal(false)
 		var srg := Mats.reveal(true)
 		_reveal = [lin, srg]
@@ -474,8 +612,8 @@ func _build_scaffold() -> void:
 	var steel := Color(0.55, 0.56, 0.56)
 	var wood := Color(0.6, 0.47, 0.3)
 	var H := model_h + 0.9
-	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0)
-	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0)
+	var hx := size.x * 0.5 * _hq_k()
+	var hz := size.y * 0.5 * _hq_k()
 	for ring in 2:
 		var m := 0.45 + ring * 0.85
 		var ax := hx + m
@@ -535,8 +673,8 @@ func _build_pile() -> void:
 	pile.add_child(mi)
 
 func pile_pos() -> Vector3:
-	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0)
-	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0)
+	var hx := size.x * 0.5 * _hq_k()
+	var hz := size.y * 0.5 * _hq_k()
 	return position + Vector3(hx + 3.2, 0, hz * 0.4).rotated(Vector3.UP, rot)
 
 # çevrede en çok 6 işçi yeri: dikdörtgen çevresine eşit aralıklı, iskelenin hemen dışında
@@ -563,8 +701,8 @@ func active_workers() -> int:
 	return n
 
 func slot_pos(k: int) -> Vector3:
-	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0) + 0.95
-	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0) + 0.95
+	var hx := size.x * 0.5 * _hq_k() + 0.95
+	var hz := size.y * 0.5 * _hq_k() + 0.95
 	if is_line():
 		return position
 	# öncelik sırası: ön, arka, sağ, sol, ön-sağ, arka-sol ... (farklı yönler)
