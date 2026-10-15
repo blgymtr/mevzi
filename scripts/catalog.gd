@@ -14,7 +14,7 @@ const FAM_BASE := {
 	"mrap4": "technical", "mrap6": "technical", "lv_hmmwv": "technical", "lv_jltv": "technical", "lv_isv": "technical", "lv_tow": "technical",
 	"eng_breach": "apc", "eng_dozer": "apc", "eng_bridge": "apc", "eng_recovery": "apc", "eng_detect": "technical",
 	"heli_atk": "heli", "heli_slim": "heli", "heli_light": "heli",
-	"heli_utility": "transport", "heli_tandem": "transport", "heli_heavy": "transport", "tiltrotor": "transport",
+	"heli_utility": "transport", "cargo_ch47": "transport", "cargo_mi26": "transport", "heli_tandem": "transport", "heli_heavy": "transport", "tiltrotor": "transport",
 	"fpv": "fpv",
 	"mbt_ru": "tank", "mbt_t14": "tank", "apc_btr": "apc", "apc_mtlb": "apc", "ifv_bmp": "ifv", "ifv_bmd": "ifv", "ifv_heavy": "ifv",
 	"spg_ru": "arty", "mlrs_ru": "mlrs", "mlrs_tos": "mlrs", "missile_ru": "mlrs",

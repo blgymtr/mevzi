@@ -1080,7 +1080,7 @@
    "id": "rus_heli_mi26",
    "ref": "Mi-26",
    "name": "Dev Nakliye Helikopteri",
-   "fam": "heli_heavy",
+   "fam": "cargo_mi26",
    "v": {
     "mi26": true
    },

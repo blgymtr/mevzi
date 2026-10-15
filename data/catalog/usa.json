@@ -94,7 +94,7 @@
     {"cat": "heli_atk", "id": "usa_heli_oh58", "ref": "OH-58D Kiowa Warrior", "name": "Keşif Helikopteri", "fam": "heli_light", "v": {"mast": true}, "cost": 320, "hp": 260, "speed": 19.0},
 
     {"cat": "heli_tr", "id": "usa_heli_uh60", "ref": "UH-60M Black Hawk", "name": "Genel Maksat Helikopteri", "fam": "heli_utility", "cost": 420, "hp": 520, "speed": 20.0},
-    {"cat": "heli_tr", "id": "usa_heli_ch47", "ref": "CH-47F Chinook", "name": "Ağır Nakliye Helikopteri (tandem)", "fam": "heli_tandem", "cost": 560, "hp": 700, "speed": 17.0},
+    {"cat": "heli_tr", "id": "usa_heli_ch47", "ref": "CH-47F Chinook", "name": "Kargo Helikopteri (tandem)", "fam": "cargo_ch47", "cost": 560, "hp": 700, "speed": 17.0},
     {"cat": "heli_tr", "id": "usa_heli_ch53", "ref": "CH-53K King Stallion", "name": "Ağır Nakliye Helikopteri", "fam": "heli_heavy", "cost": 600, "hp": 760, "speed": 17.5},
     {"cat": "heli_tr", "id": "usa_heli_uh1y", "ref": "UH-1Y Venom", "name": "Hafif Genel Maksat Helikopteri", "fam": "heli_slim", "v": {"utility": true}, "cost": 360, "hp": 420, "speed": 19.0},
     {"cat": "heli_tr", "id": "usa_heli_uh72", "ref": "UH-72A Lakota", "name": "Hafif Nakliye Helikopteri", "fam": "heli_light", "v": {"cabin": true}, "cost": 260, "hp": 300, "speed": 20.0},

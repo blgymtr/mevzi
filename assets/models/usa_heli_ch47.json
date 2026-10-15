@@ -1,1 +1,1 @@
-{"pivots": {"body": [0, 0, 0], "rotor": [0, 4.0, -6.35], "trotor": [0, 5.2, 7.15]}, "meta": {"muzzle": [1.3, 2.0, -3.0], "radius": 6.0, "trotor_y": true}}
+{"pivots": {"body": [0, 0, 0], "rotor": [0, 4.48, -5.2], "trotor": [0, 5.8, 6.3], "ramp": [0, 0.75, 6.0]}, "meta": {"muzzle": [1.3, 2.0, -3.0], "radius": 6.5, "trotor_y": true, "ramp_open": 1.05, "hook": [0, 0.6, -0.2], "cargo": true}}

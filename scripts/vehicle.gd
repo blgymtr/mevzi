@@ -144,6 +144,44 @@ var mlrs_left := 0
 var mlrs_t := 0.0
 const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2}
 
+# hava araçları: yere düşen yumuşak gölge — irtifa arttıkça büyür, dağılır, güneş yönünde kayar
+var _shadow: Decal = null
+static var _shadow_tex: Texture2D = null
+
+func _air_shadow_tick() -> void:
+	if _shadow == null:
+		if _shadow_tex == null:
+			var gr := Gradient.new()
+			gr.set_color(0, Color(0, 0, 0, 1))
+			gr.set_color(1, Color(0, 0, 0, 0))
+			gr.add_point(0.55, Color(0, 0, 0, 0.75))
+			var gt := GradientTexture2D.new()
+			gt.gradient = gr
+			gt.fill = GradientTexture2D.FILL_RADIAL
+			gt.fill_from = Vector2(0.5, 0.5)
+			gt.fill_to = Vector2(0.5, 0.0)
+			gt.width = 128
+			gt.height = 128
+			_shadow_tex = gt
+		_shadow = Decal.new()
+		_shadow.texture_albedo = _shadow_tex
+		_shadow.cull_mask = 1
+		_shadow.upper_fade = 0.2
+		_shadow.lower_fade = 0.2
+		G.world.add_child(_shadow)
+		tree_exiting.connect(func(): if is_instance_valid(_shadow): _shadow.queue_free())
+	var gp := hull.global_position
+	var gh := G.terrain.ground_h(gp)
+	var alt := maxf(gp.y - gh, 0.0)
+	var sd := Vector3(0.35, 0, 0.2) * alt      # güneş eğimi: yükseldikçe gölge kayar
+	_shadow.global_position = Vector3(gp.x + sd.x, gh + 1.0, gp.z + sd.z)
+	_shadow.rotation.y = hull.global_rotation.y
+	var spread := 1.0 + alt * 0.035
+	var hs := hull.scale.x
+	_shadow.size = Vector3(minf(ext.x, 2.2) * 2.0 * spread * hs, 4.0, ext.y * 1.9 * spread * hs)
+	_shadow.modulate = Color(1, 1, 1, clampf(0.55 - alt * 0.015, 0.18, 0.5))
+	_shadow.visible = visible and hull.visible
+
 func is_air() -> bool:
 	return vtype in ["heli", "transport", "fpv", "uav", "uav_armed", "loiter"]
 
@@ -151,7 +189,66 @@ func is_drone() -> bool:
 	return vtype in ["fpv", "uav", "uav_armed", "loiter"]
 
 func capacity() -> int:
+	if is_cargo():
+		return 20 if heavy_lift() else 16
 	return CAPACITY.get(vtype, 0)
+
+func is_cargo() -> bool:
+	return M.get("meta", {}).get("cargo", false)
+
+func heavy_lift() -> bool:
+	return M.get("meta", {}).get("heavy_lift", false)
+
+func crates_max() -> int:
+	return 4 if heavy_lift() else 3
+
+# askıya alınabilir mi: hafif araçlar ve çekili toplar; ağır kaldırıcı (Mi-26 tipi) ZPT/PSA da taşır
+func can_sling(v) -> bool:
+	if not is_cargo() or v == null or not is_instance_valid(v) or v == self or not (v is Vehicle) or not v.alive:
+		return false
+	if v.is_air() or v.team != team or v.slung_by != null:
+		return false
+	if v.vtype in TOWED or v.vtype in ["technical", "truck"]:
+		return true
+	return heavy_lift() and v.vtype in ["apc", "ifv", "aa"]
+
+func cmd_sling(v: Vehicle) -> void:
+	if sling != null or not can_sling(v):
+		return
+	sling_tgt = v
+	drop_pt = Vector3.INF
+	landing = false
+	land_hold = false
+	order = "move"
+	dest = v.position
+	path = PackedVector3Array([dest])
+	path_i = 0
+	say("YÜKÜ ALIYORUZ")
+
+func cmd_airdrop(p: Vector3) -> bool:
+	if not is_cargo() or crates <= 0:
+		return false
+	drop_pt = G.on_ground(p)
+	sling_tgt = null
+	landing = false
+	land_hold = false
+	order = "move"
+	dest = drop_pt
+	path = PackedVector3Array([dest])
+	path_i = 0
+	say("İKMAL YOLDA")
+	return true
+
+# yolcu almak için bulunduğu yere in ve bekle
+func request_land() -> void:
+	if not is_air() or landing or sling != null:
+		return
+	landing = true
+	land_hold = true
+	dest = G.on_ground(position)
+	path = PackedVector3Array([dest])
+	path_i = 0
+	say("İNİŞE GEÇİYORUZ")
 
 func can_load() -> bool:
 	return alive and cargo.size() < capacity() and (not is_air() or hull.position.y < 2.5)
@@ -169,6 +266,11 @@ func seat_pos(s) -> Vector3:
 	return position + Vector3(0, -50, 0)
 
 func unload() -> void:
+	if sling != null:
+		sling_drop = true
+		dest = G.on_ground(position)
+		say("YÜK BIRAKILIYOR")
+		return
 	if cargo.is_empty():
 		return
 	if is_air() and hull.position.y > 1.2:
@@ -187,6 +289,136 @@ func unload() -> void:
 	landing = false
 	say("İNDİR!")
 
+func hook_pos() -> Vector3:
+	var hk = M.get("meta", {}).get("hook", Vector3(0, 0.6, 0))
+	var hv: Vector3 = hk if hk is Vector3 else Art.v3(hk)
+	return hull.global_transform * hv
+
+func _attach_sling(v: Vehicle) -> void:
+	sling = v
+	sling_tgt = null
+	v.slung_by = self
+	v.cmd_stop()
+	v.sling_vel = Vector3.ZERO
+	order = ""
+	say("YÜK ALINDI")
+
+func _release_sling() -> void:
+	var v := sling
+	sling = null
+	sling_drop = false
+	if v != null and is_instance_valid(v):
+		v.slung_by = null
+		v.position.y = G.terrain.ground_h(v.position)
+		v.position = G.grid.nearest_free(v.position, v.nav_mode, 12)
+		v.dest = v.position
+		v.hull.rotation.x = 0.0
+		v.hull.rotation.z = 0.0
+		G.fx.vehicle_dust(v.position)
+	say("YÜK BIRAKILDI")
+
+func _drop_crate() -> void:
+	drop_pt = Vector3.INF
+	order = ""
+	crates -= 1
+	var pal := MeshInstance3D.new()
+	pal.mesh = Building.cache_mesh()
+	G.world.add_child(pal)
+	pal.global_position = hook_pos()
+	var gp := G.on_ground(position)
+	var tw := pal.create_tween()
+	tw.tween_property(pal, "global_position", gp, 2.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	var tm := team
+	tw.tween_callback(func():
+		pal.queue_free()
+		var b: Building = G.main.place_building(tm, "cache", G.grid.nearest_free(gp, Grid.M_INF, 8), randf() * TAU)
+		if b != null:
+			b.complete()
+			b.stock = 320.0
+		G.fx.vehicle_dust(gp))
+	say("İKMAL BIRAKILDI")
+
+# askı halatı ve kayışlar + rampa + yerde palet yenileme
+func _cargo_visuals(dt: float) -> void:
+	if ramp:
+		var open := hull.position.y < 0.6 and (landing or land_hold or (not cargo.is_empty() and cur_speed < 0.3))
+		ramp_k = move_toward(ramp_k, 1.0 if open else 0.0, dt * 0.7)
+		ramp.rotation.x = ramp_k * float(M.get("meta", {}).get("ramp_open", 1.0))
+	if hull.position.y < 0.6 and crates < crates_max():
+		for b in G.near(position, 26.0):
+			if b is Building and b.team == team and b.btype in ["hq", "helipad", "fob"] and b.done:
+				crates = crates_max()
+				break
+	if sling == null or not is_instance_valid(sling):
+		for c in _cables:
+			c.visible = false
+		return
+	if _cables.is_empty():
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.03
+		cm.bottom_radius = 0.03
+		cm.height = 1.0
+		cm.radial_segments = 5
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.12, 0.12, 0.1)
+		mat.roughness = 0.8
+		for i in 5:
+			var mi := MeshInstance3D.new()
+			mi.mesh = cm
+			mi.material_override = mat
+			G.world.add_child(mi)
+			_cables.append(mi)
+		tree_exiting.connect(_free_cables)
+	var hk := hook_pos()
+	var top: Vector3 = sling.position + Vector3(0, sling.top_h + 1.2, 0)
+	_seg(_cables[0], hk, top)
+	var f := sling.forward()
+	var r := sling.right()
+	var k := 0
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			k += 1
+			var corner: Vector3 = sling.position + Vector3(0, sling.top_h * 0.85, 0) + r * sx * sling.ext.x * 0.8 + f * sz * sling.ext.y * 0.75
+			_seg(_cables[k], top, corner)
+
+func _free_cables() -> void:
+	for c in _cables:
+		if is_instance_valid(c):
+			c.queue_free()
+
+static func _seg(mi: MeshInstance3D, a: Vector3, b: Vector3) -> void:
+	mi.visible = true
+	var d := b - a
+	var L := maxf(d.length(), 0.01)
+	var y := d / L
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	var z := x.cross(y)
+	mi.global_transform = Transform3D(Basis(x, y * L, z), (a + b) * 0.5)
+
+# askıdaki araç: kancanın altında, gecikmeli salınım
+func _slung_tick(dt: float) -> void:
+	var h := slung_by
+	if h == null or not is_instance_valid(h) or not h.alive:
+		# helikopter düştü: yük serbest düşer
+		slung_by = null
+		var gy := G.terrain.ground_h(position)
+		var fall := position.y - gy
+		var tw := create_tween()
+		tw.tween_property(self, "position:y", gy, clampf(sqrt(maxf(fall, 0.1) / 4.9), 0.2, 2.0)).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.tween_callback(func():
+			G.fx.vehicle_dust(position)
+			take_damage(max_hp * clampf(fall * 0.06, 0.1, 0.9), null, "blast"))
+		return
+	var want: Vector3 = h.hook_pos() - Vector3(0, SLING_L + top_h + 1.2, 0)
+	var acc := (want - position) * 6.0 - sling_vel * 2.2
+	sling_vel += acc * dt
+	position += sling_vel * dt
+	heading = lerp_angle(heading, h.heading, dt * 1.5)
+	hull.rotation.y = heading
+	hull.rotation.x = clampf(-sling_vel.dot(forward()) * 0.04, -0.25, 0.25)
+	hull.rotation.z = clampf(sling_vel.dot(right()) * 0.04, -0.25, 0.25)
+	cur_speed = 0.0
+
 func _cargo_lost() -> void:
 	for s in cargo.duplicate():
 		if is_instance_valid(s) and s.alive:
@@ -199,6 +431,20 @@ func _cargo_lost() -> void:
 	cargo.clear()
 var rotor_blades: MeshInstance3D
 var rotor_disc: MeshInstance3D
+# kargo helikopteri: arka rampa, askı yükü (araç), havadan ikmal paletleri
+const SLING_L := 5.5
+var ramp: Node3D = null
+var ramp_k := 0.0
+var land_hold := false          # yolcu almak için inip bekle (indirme yapma)
+var sling: Vehicle = null       # askıdaki araç
+var sling_tgt: Vehicle = null   # alınacak araç
+var slung_by: Vehicle = null    # bu araç bir helikopterin askısında
+var sling_drop := false
+var sling_vel := Vector3.ZERO
+var drop_pt := Vector3.INF      # havadan ikmal noktası
+var crates := 0
+var top_h := 2.0
+var _cables: Array = []
 static var _disc_mat: ShaderMaterial
 
 func setup(t: int, vt: String) -> void:
@@ -324,6 +570,15 @@ func setup(t: int, vt: String) -> void:
 		var tmi2 := MeshInstance3D.new()
 		tmi2.mesh = M["trotor"]
 		trotor.add_child(tmi2)
+		if M.has("ramp"):
+			ramp = Node3D.new()
+			ramp.position = M["ramp_pos"]
+			hull.add_child(ramp)
+			var rmi2 := MeshInstance3D.new()
+			rmi2.mesh = M["ramp"]
+			ramp.add_child(rmi2)
+		if is_cargo():
+			crates = crates_max()
 	set_layer(self, 2)
 	_calc_ext()
 	heading = rotation.y
@@ -348,6 +603,7 @@ func _calc_ext() -> void:
 		first = false
 	if not first:
 		ext = Vector2(clampf(a.size.x * 0.5, 0.4, 3.0), clampf(a.size.z * 0.5, 0.4, 7.0))
+		top_h = clampf(a.end.y - hull.position.y, 0.8, 5.0)
 
 func right() -> Vector3:
 	return Vector3(cos(heading), 0, -sin(heading))
@@ -444,6 +700,10 @@ func cmd_move(p: Vector3, force := false) -> void:
 	ground_until = 0.0
 	dest = G.on_ground(p)
 	landing = false
+	land_hold = false
+	sling_tgt = null
+	sling_drop = false
+	drop_pt = Vector3.INF
 	if is_air():
 		path = PackedVector3Array([dest])
 	else:
@@ -603,6 +863,11 @@ func _process(dt: float) -> void:
 	if not G.running or dt <= 0.0:
 		return
 	tick_bubble(dt)
+	if is_air():
+		_air_shadow_tick()
+	if slung_by != null and alive:
+		_slung_tick(dt)
+		return
 	if not alive:
 		_wreck_tick(dt)
 		return
@@ -1577,6 +1842,13 @@ func _heli(dt: float) -> void:
 		return
 	var goal := dest
 	var t := target
+	if sling_tgt != null:
+		if can_sling(sling_tgt) and sling == null:
+			goal = sling_tgt.position
+		else:
+			sling_tgt = null
+	if drop_pt != Vector3.INF:
+		goal = drop_pt
 	if forced_target != null and is_instance_valid(forced_target) and forced_target.hostile():
 		var off := position - forced_target.position
 		off.y = 0
@@ -1606,18 +1878,39 @@ func _heli(dt: float) -> void:
 	heading = rotate_toward(heading, face, D["turn"] * dt)
 	if L < 1.5 and order == "move":
 		order = ""
-	var tgt_alt := ALT
+	var tgt_alt := ALT + (4.5 if sling != null else 0.0)
+	var hover := false
 	if landing:
-		tgt_alt = 0.6
-		if L < 1.5 and hull.position.y < 0.9:
+		tgt_alt = 0.02 if is_cargo() else 0.6
+		if L < 1.5 and hull.position.y < 0.9 and not land_hold:
 			unload()
+	if is_cargo():
+		var hook_dy := hook_pos().y - hull.global_position.y
+		if sling_tgt != null and L < 2.5:
+			# yükün üstünde dur, kancayı indir
+			tgt_alt = SLING_L + sling_tgt.top_h + 1.2 - hook_dy + 0.2
+			hover = true
+			if hull.position.y < tgt_alt + 0.35:
+				_attach_sling(sling_tgt)
+		elif sling != null and sling_drop:
+			tgt_alt = SLING_L + sling.top_h + 1.2 - hook_dy + 0.05
+			hover = true
+			hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt)
+			if hull.position.y < tgt_alt + 0.3:
+				_release_sling()
+		elif drop_pt != Vector3.INF and L < 3.0:
+			tgt_alt = 6.0
+			hover = true
+			if hull.position.y < 6.4:
+				_drop_crate()
+		_cargo_visuals(dt)
 	var local_v := hvel.rotated(Vector3.UP, -heading)
 	hull.rotation = Vector3(lerpf(hull.rotation.x, clampf(local_v.z * 0.025, -0.3, 0.3), dt * 3.0), heading, lerpf(hull.rotation.z, clampf(-local_v.x * 0.025, -0.3, 0.3), dt * 3.0))
 	_hb += dt
-	if landing or hull.position.y < ALT - 0.4:
+	if landing or hover or absf(hull.position.y - tgt_alt) > 0.4:
 		hull.position.y = move_toward(hull.position.y, tgt_alt, dt * 3.0)
 	else:
-		hull.position.y = ALT + sin(_hb * 1.3) * 0.25
+		hull.position.y = tgt_alt + sin(_hb * 1.3) * 0.25
 	rotor.rotation.y += dt * 28.0
 	if rotor_blades:
 		rotor_blades.visible = false

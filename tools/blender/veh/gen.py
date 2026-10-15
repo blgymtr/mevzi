@@ -9,6 +9,7 @@ import fam_tracked
 import fam_air
 import fam_ru
 import fam_uav
+import fam_cargo
 
 FAMS = {}
 FAMS.update(fam_tank.FAMILIES)
@@ -17,6 +18,7 @@ FAMS.update(fam_tracked.FAMILIES)
 FAMS.update(fam_air.FAMILIES)
 FAMS.update(fam_ru.FAMILIES)
 FAMS.update(fam_uav.FAMILIES)
+FAMS.update(fam_cargo.FAMILIES)
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 cat = json.load(open(argv[0], encoding="utf-8"))

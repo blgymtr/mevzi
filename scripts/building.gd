@@ -15,6 +15,7 @@ const BDEF := {
 	"wire": {"title": "Dikenli Tel", "hp": 100.0, "size": Vector2(1, 1), "cost": 3, "time": 0.6, "cap": 0, "sight": 10.0, "prod": [], "line": true, "desc": "Piyadeyi yavaşlatır."},
 	"trench": {"title": "Siper Hendeği", "hp": 100.0, "size": Vector2(1, 1), "cost": 4, "time": 1.4, "cap": 0, "sight": 10.0, "prod": [], "line": true, "desc": "Her yönden korunma sağlar."},
 	"coastal": {"title": "Sahil Topçusu", "hp": 2600.0, "size": Vector2(6, 6), "cost": 550, "time": 45.0, "cap": 0, "sight": 50.0, "prod": [], "desc": "Sabit ağır top: 190 m menzil, araçları ve yığınakları döver."},
+	"cache": {"title": "İkmal Sandıkları", "hp": 300.0, "size": Vector2(3, 3), "cost": 0, "time": 1.0, "cap": 0, "sight": 12.0, "prod": [], "desc": "Havadan bırakılan mühimmat paleti; yakındaki askerler ikmal alır, bitince kaybolur."},
 	"trap": {"title": "Tank Tuzağı", "hp": 100.0, "size": Vector2(2, 2), "cost": 30, "time": 6.0, "cap": 0, "sight": 10.0, "prod": [], "desc": "Araçları durdurur."},
 }
 
@@ -125,7 +126,40 @@ func draw_stock(kg: float) -> bool:
 	if stock < kg:
 		return false
 	stock -= kg
+	if btype == "cache" and stock < 1.0:
+		# palet boşaldı: boş sandıklar kalır, yapı kalkar
+		alive = false
+		G.grid.set_static_rect(position, size, rot, 0.0, Grid.K_NONE, true)
+		var tw := create_tween()
+		tw.tween_property(self, "scale", Vector3(1, 0.05, 1), 1.5)
+		tw.tween_callback(queue_free)
 	return true
+
+static var _cache_mesh: Mesh = null
+
+# ikmal paleti: tahta palet, kayışlı yeşil mühimmat sandıkları, üstünde ağ
+static func cache_mesh() -> Mesh:
+	if _cache_mesh != null:
+		return _cache_mesh
+	var mb := MB.new()
+	var wood := Color(0.52, 0.4, 0.26)
+	for i in 3:
+		mb.box(Vector3(0, 0.06, -0.55 + i * 0.55), Vector3(1.6, 0.12, 0.14), wood.darkened(0.1))
+	for i in 7:
+		mb.box(Vector3(-0.69 + i * 0.23, 0.15, 0), Vector3(0.18, 0.04, 1.3), wood)
+	var olive := Color(0.32, 0.35, 0.22)
+	for lx in 2:
+		for lz in 2:
+			for ly in 2:
+				var c := Vector3(-0.38 + lx * 0.76, 0.35 + ly * 0.38, -0.3 + lz * 0.6)
+				mb.box(c, Vector3(0.72, 0.36, 0.56), olive.darkened(0.06 * ((lx + lz + ly) % 2)))
+				mb.box(c + Vector3(0, 0.185, 0), Vector3(0.6, 0.02, 0.1), Color(0.2, 0.2, 0.16))
+				mb.box(c + Vector3(0.365, 0.0, 0), Vector3(0.02, 0.08, 0.3), Color(0.85, 0.75, 0.2))
+	for x in [-0.5, 0.5]:
+		mb.box(Vector3(x, 0.55, 0), Vector3(0.05, 0.82, 1.34), Color(0.75, 0.62, 0.2))
+	mb.box(Vector3(0, 0.94, 0), Vector3(1.52, 0.02, 1.22), Color(0.25, 0.28, 0.18))
+	_cache_mesh = mb.commit(Mats.vcs())
+	return _cache_mesh
 
 # üs yakınındaki araçları onar (stoktan): gövde, palet, teker, kritik
 func _service_vehicles() -> void:
@@ -204,6 +238,20 @@ func _build_model() -> void:
 	var olive := Color(0.36, 0.38, 0.26) if not winter else Color(0.72, 0.72, 0.66)
 	var tan := Color(0.74, 0.66, 0.48)
 	var white := Color(0.92, 0.91, 0.87)
+	if btype == "cache":
+		for k in 3:
+			var cm := MeshInstance3D.new()
+			cm.mesh = cache_mesh()
+			cm.position = [Vector3(-0.7, 0, -0.4), Vector3(0.8, 0, 0.3), Vector3(-0.2, 0, 1.0)][k]
+			cm.rotation.y = [0.1, -0.35, 0.6][k]
+			model.add_child(cm)
+		var chute := MB.new()
+		chute.box(Vector3(1.3, 0.08, -1.1), Vector3(1.4, 0.12, 0.9), Color(0.55, 0.55, 0.42))
+		_flag(chute, Vector3(-1.2, 0, 1.2), tc, 1.6)
+		var cmi := MeshInstance3D.new()
+		cmi.mesh = chute.commit(Mats.vcs())
+		model.add_child(cmi)
+		return
 	match btype:
 		"hq":
 			mb.box(Vector3(0, 2.0, 0), Vector3(12.0, 4.0, 8.0), white)
@@ -371,6 +419,8 @@ func occupy_grid() -> void:
 			h = 4.0
 		"fob", "mgnest":
 			h = 1.0
+		"cache":
+			h = 0.95
 		"coastal":
 			h = 1.1
 		"helipad":

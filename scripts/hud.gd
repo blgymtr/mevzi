@@ -26,7 +26,8 @@ const ORDERS := {
 	"retreat": {"t": "Geri Çekil", "k": "R", "tgt": false, "d": "En yakın üsse koşarak çekil; daha az hasar ve baskı alır."},
 	"fire": {"t": "Ateş Modu", "k": "V", "tgt": false, "d": "Serbest ateş / Sadece karşılık / Ateşi kes"},
 	"stance": {"t": "Duruş", "k": "C", "tgt": false, "d": "Otomatik / Ayakta / Çömel / Yat"},
-	"unload": {"t": "İndir", "k": "U", "tgt": false, "d": "Yolcuları indir."},
+	"unload": {"t": "İndir", "k": "U", "tgt": false, "d": "Yolcuları indir. Askıda araç varsa önce onu yere bırakır."},
+	"airdrop": {"t": "İkmal At", "k": "Y", "tgt": true, "d": "Kargo helikopteri seçilen noktaya mühimmat paleti bırakır; paletler üste/pistte yenilenir. Dost hafif araca sağ tık: askıya al."},
 	"refund": {"t": "Üsse Dön (İade)", "k": "J", "tgt": false, "d": "Birlik en yakın üsse döner ve sahadan çekilir; kalan değerinin %80'i iade edilir."},
 	"abandon": {"t": "Terk Et", "k": "K", "tgt": false, "d": "Mürettebat aracı terk eder; araç 6 sn sonra kendini imha eder."},
 	"grenade": {"t": "El Bombası", "k": "G", "tgt": true, "d": "Seçilen noktaya el bombası at."},
@@ -34,8 +35,8 @@ const ORDERS := {
 	"suppress": {"t": "Baskı Ateşi", "k": "B", "tgt": true, "d": "Bir bölgeyi 12 sn boyunca ateş altında tut."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "grenade", "smoke", "suppress", "refund", "abandon", "demolish"]
-const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_DELETE: "demolish"}
+const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "refund", "abandon", "demolish"]
+const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
 const STANCE_TXT := ["OTO", "AYAKTA", "ÇÖMEL", "YAT"]
 const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "atgm": "atgm_team", "medic": "medic_team", "sniper": "sniper_team", "engineer": "engineer_squad", "mortar": "mortar_team", "drone": "drone_team"}
@@ -359,7 +360,11 @@ func order_state(id: String, sel: Array) -> int:
 			"unload":
 				if veh and u.capacity() > 0:
 					any = true
-					ok = ok or not u.cargo.is_empty()
+					ok = ok or not u.cargo.is_empty() or u.sling != null
+			"airdrop":
+				if veh and u.is_cargo():
+					any = true
+					ok = ok or u.crates > 0
 			"grenade":
 				if sol:
 					any = true
@@ -468,6 +473,8 @@ func _update_cmds() -> void:
 					if is_instance_valid(u) and u is Vehicle:
 						n += u.cargo.size()
 				st.text = str(n) if n > 0 else ""
+			"airdrop":
+				st.text = str(_sum_val(sel, "crates"))
 			"hold":
 				ic.active = ic.active or _first_val(sel, "order", "") == "hold"
 
@@ -1635,6 +1642,11 @@ class CmdIcon extends Control:
 			"unload":
 				draw_rect(Rect2(c + Vector2(-12, -8), Vector2(14, 10)), col, false, 1.5)
 				_arrow(c + Vector2(0, 2), c + Vector2(12, 10), col, w)
+			"airdrop":
+				draw_arc(c + Vector2(0, -4), 10.0, PI, TAU, 12, col, 1.5)
+				draw_line(c + Vector2(-10, -4), c + Vector2(-3, 6), col, 1.2)
+				draw_line(c + Vector2(10, -4), c + Vector2(3, 6), col, 1.2)
+				draw_rect(Rect2(c + Vector2(-4, 5), Vector2(8, 7)), col)
 			"grenade":
 				draw_circle(c + Vector2(0, 3), 7.0, col)
 				draw_rect(Rect2(c + Vector2(-3, -8), Vector2(6, 4)), col)

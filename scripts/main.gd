@@ -69,6 +69,8 @@ func _ready() -> void:
 		_run_pose_test()
 	elif shot_dir != "" and shot_scene == "weathertest":
 		_run_weather_test()
+	elif shot_dir != "" and shot_scene == "cargotest":
+		_run_cargo_test()
 	elif shot_dir != "" and shot_scene == "supplytest":
 		_run_supply_test()
 	elif shot_dir != "" and shot_scene == "logitest":
@@ -1225,6 +1227,133 @@ func _run_weather_test() -> void:
 	if W.sight_mult() >= 1.0:
 		fails += 1
 	print("WEATHERTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_cargo_test() -> void:
+	# kargo helikopteri: yolcu alma (iniş + rampa), taşıma, indirme; araç askıya alma/bırakma; havadan ikmal paleti; gölge
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley")
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var c: Vector3 = G.hq_pos[0].lerp(G.hq_pos[1], 0.25)
+	var h := spawn_vehicle(0, "usa_heli_ch47", c, 0.0)
+	print("CARGO cap=%d cargo=%s crates=%d ramp=%s" % [h.capacity(), h.is_cargo(), h.crates, h.ramp != null])
+	if h.capacity() != 16 or h.ramp == null:
+		fails += 1
+	await _wait(2.0)
+	G.cam.size = 30.0
+	G.cam.target_size = 30.0
+	G.cam.jump_to(h.position, true)
+	await _wait(0.5)
+	await _shot("cargo_01_air_shadow")
+	var sq: Array = []
+	for i in 8:
+		var s := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-18 + (i % 4) * 1.5, 0, 14 + (i / 4) * 1.5), Grid.M_INF), null)
+		sq.append(s)
+	for s in sq:
+		s.cmd_board(h)
+	var t0 := 0
+	while t0 < 45 and h.cargo.size() < 8:
+		await _wait(1.0)
+		t0 += 1
+	G.cam.size = 20.0
+	G.cam.target_size = 20.0
+	G.cam.jump_to(h.position - h.forward() * 6.0, true)
+	await _wait(0.4)
+	await _shot("cargo_02_landed_ramp")
+	print("CARGO boarded=%d in %ds alt=%.1f ramp=%.2f" % [h.cargo.size(), t0, h.hull.position.y, h.ramp_k])
+	if h.cargo.size() < 8:
+		fails += 1
+	var p2 := G.grid.nearest_free(c + Vector3(40, 0, -30), Grid.M_INF)
+	h.cmd_move(p2)
+	await _wait(5.0)
+	var flew: bool = h.hull.position.y > 5.0
+	await _wait(8.0)
+	h.unload()
+	await _wait(12.0)
+	var out := 0
+	for s in sq:
+		if is_instance_valid(s) and s.vehicle_in == null and s.position.distance_to(p2) < 20.0:
+			out += 1
+	print("CARGO flew=%s unloaded=%d left=%d" % [flew, out, h.cargo.size()])
+	if not flew or out < 8:
+		fails += 1
+	# askı: teknik araç
+	var tech := spawn_vehicle(0, "technical", G.grid.nearest_free(c + Vector3(10, 0, 20), Grid.M_HEAVY), 0.0)
+	h.cmd_move(h.position + Vector3(0, 0, 1))
+	await _wait(1.0)
+	h.cmd_sling(tech)
+	t0 = 0
+	while t0 < 40 and h.sling == null:
+		await _wait(1.0)
+		t0 += 1
+	print("CARGO sling=%s in %ds" % [h.sling == tech, t0])
+	if h.sling != tech:
+		fails += 1
+	var p3 := G.grid.nearest_free(c + Vector3(-30, 0, -20), Grid.M_HEAVY)
+	h.cmd_move(p3)
+	await _wait(6.0)
+	G.cam.size = 26.0
+	G.cam.target_size = 26.0
+	G.cam.jump_to(h.position, true)
+	await _wait(0.4)
+	await _shot("cargo_03_slung")
+	var lifted: bool = tech.position.y > G.terrain.ground_h(tech.position) + 3.0
+	await _wait(10.0)
+	h.unload()
+	t0 = 0
+	while t0 < 25 and h.sling != null:
+		await _wait(1.0)
+		t0 += 1
+	var on_ground: bool = tech.slung_by == null and absf(tech.position.y - G.terrain.ground_h(tech.position)) < 0.3
+	print("CARGO lifted=%s released=%s dist=%.1f" % [lifted, on_ground, Vector2(tech.position.x - p3.x, tech.position.z - p3.z).length()])
+	if not lifted or not on_ground:
+		fails += 1
+	# havadan ikmal
+	var p4 := G.grid.nearest_free(c + Vector3(25, 0, 25), Grid.M_INF)
+	var cr0: int = h.crates
+	h.cmd_airdrop(p4)
+	await _wait(18.0)
+	var cache: Building = null
+	for u in G.units:
+		if is_instance_valid(u) and u is Building and u.btype == "cache":
+			cache = u
+	var r := spawn_soldier(0, "rifle", G.grid.nearest_free(p4 + Vector3(3, 0, 0), Grid.M_INF), null)
+	r.ammo = 0
+	r.cmd_hold()
+	await _wait(3.0)
+	G.cam.size = 12.0
+	G.cam.target_size = 12.0
+	if cache != null:
+		G.cam.jump_to(cache.position, true)
+	await _wait(0.4)
+	await _shot("cargo_04_cache")
+	print("CARGO crates %d -> %d cache=%s ammo=%d" % [cr0, h.crates, cache != null, r.ammo])
+	if cache == null or r.ammo <= 0 or h.crates != cr0 - 1:
+		fails += 1
+	# Mi-26: ZPT taşır
+	var mi := spawn_vehicle(1, "rus_heli_mi26", c + Vector3(0, 0, -40), 0.0)
+	var apc := spawn_vehicle(1, "apc", G.grid.nearest_free(c + Vector3(20, 0, -40), Grid.M_HEAVY), 0.0)
+	print("CARGO mi26 cap=%d can_apc=%s ch47_can_apc=%s" % [mi.capacity(), mi.can_sling(apc), h.can_sling(apc)])
+	mi.cmd_sling(apc)
+	t0 = 0
+	while t0 < 40 and mi.sling == null:
+		await _wait(1.0)
+		t0 += 1
+	mi.cmd_move(mi.position + Vector3(-20, 0, 10))
+	await _wait(5.0)
+	G.cam.size = 34.0
+	G.cam.target_size = 34.0
+	G.cam.jump_to(mi.position, true)
+	await _wait(0.4)
+	await _shot("cargo_05_mi26")
+	print("CARGO mi26 sling=%s" % [mi.sling == apc])
+	if mi.sling != apc or mi.capacity() != 20:
+		fails += 1
+	print("CARGOTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_supply_test() -> void:

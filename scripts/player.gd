@@ -199,6 +199,9 @@ func _finish_box(add: bool, ctrl: bool) -> void:
 
 func unload_selected() -> void:
 	for u in selected:
+		if is_instance_valid(u) and u is Vehicle and u.sling != null:
+			u.unload()
+	for u in selected:
 		if is_instance_valid(u) and u is Vehicle and not u.cargo.is_empty():
 			u.unload()
 
@@ -269,6 +272,18 @@ func exec_order(id: String, gp: Vector3) -> void:
 			Sfx.play2d("ui_click", -8.0)
 		"unload":
 			unload_selected()
+		"airdrop":
+			var n := 0
+			for u in mobile:
+				if u is Vehicle and gp != Vector3.INF and u.cmd_airdrop(gp):
+					n += 1
+					break
+			if n > 0:
+				markers.append([gp, G.time, Color(0.4, 0.9, 1.0)])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("İkmal paleti yok", Vector3.ZERO, team)
+				Sfx.play2d("ui_error", -6.0)
 		"grenade", "smoke":
 			var sm := id == "smoke"
 			var best: Soldier = null
@@ -359,6 +374,13 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 				i3 += 1
 			markers.append([tu.position, G.time, Color(0.5, 1.0, 0.6)])
 			_voice(inf3, ["Tankın arkasına!", "Aracı takip!"])
+			return
+	if tu != null and tu is Vehicle and tu.team == team:
+		var lifters := mobile.filter(func(u): return u is Vehicle and u.can_sling(tu))
+		if not lifters.is_empty():
+			lifters[0].cmd_sling(tu)
+			markers.append([tu.position, G.time, Color(0.4, 0.8, 1.0)])
+			Sfx.play2d("ui_move", -8.0)
 			return
 	if tu != null and tu is Vehicle and tu.team == team and tu.capacity() > 0:
 		var inf := mobile.filter(func(u): return u is Soldier and u.can_fight())

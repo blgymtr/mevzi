@@ -449,7 +449,9 @@ func cmd_board(v: Vehicle) -> void:
 	build_site = null
 	board_target = v
 	order = "board"
-	_set_path(v.position)
+	if v.is_air() and v.hull.position.y > 2.0:
+		v.request_land()
+	_set_path(v.position - v.forward() * (v.ext.y * 0.9) if v.is_air() else v.position)
 	state = "move"
 
 func board(v: Vehicle) -> void:
@@ -609,7 +611,7 @@ func _resupply() -> void:
 	if ammo >= W["ammo"] and (not (role in ["at", "atgm"]) or rockets >= 3) and grenades >= 2 and (role != "mortar" or mortar_rounds >= 24):
 		return
 	for u in G.near(position, 16.0):
-		if u is Building and u.team == team and u.done and u.is_base():
+		if u is Building and u.team == team and u.done and (u.is_base() or u.btype == "cache"):
 			# kg: 50 mermi 2 kg, roket 6 kg, 4 havan mermisi 8 kg, el bombası 1 kg
 			if ammo < W["ammo"] and u.draw_stock(2.0):
 				ammo = mini(W["ammo"], ammo + 50)
@@ -682,6 +684,11 @@ func _think() -> void:
 						return
 					if board_target.can_load():
 						board(board_target)
+						return
+					elif board_target.is_air() and board_target.cargo.size() < board_target.capacity():
+						# helikopter iniyor: rampada bekle
+						if not board_target.landing:
+							board_target.request_land()
 						return
 					else:
 						say("ARAÇ DOLU!")

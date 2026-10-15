@@ -368,7 +368,7 @@ static func vehicle_model(model: String, team: int) -> Dictionary:
 			var wm := skinned(model, key, team)
 			var r := wm.get_aabb().size.y * 0.5
 			out["wheels"].append([nd[key]["pos"], r, 0.4, wm])
-		elif key == "rotor" or key == "trotor":
+		elif key == "rotor" or key == "trotor" or key == "ramp":
 			out[key] = skinned(model, key, team)
 			out[key + "_pos"] = nd[key]["pos"]
 		else:
