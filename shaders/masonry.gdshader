@@ -10,6 +10,8 @@ uniform sampler2D brick_nrm : hint_normal, filter_linear_mipmap_anisotropic, rep
 uniform sampler2D concrete_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D concrete_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D streak_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D chip_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
 uniform float scale = 0.45;
 uniform vec4 grime_col : source_color = vec4(0.32, 0.27, 0.2, 1.0);
 uniform float grime_h = 1.1;
@@ -50,6 +52,14 @@ void fragment() {
 	} else {
 		col = vec3(lum(texture(plaster_alb, uv).rgb) / 0.4) * c;
 		nm = texture(plaster_nrm, uv).rgb;
+		// sıva dökülmesi: yer yer altındaki tuğla görünür (dipte ve rastgele lekelerde daha çok)
+		float nz = texture(noise_tex, wpos.xz * 0.11 + wpos.y * vec2(0.07, 0.13)).r * 0.65 + texture(noise_tex, uv * 0.9).r * 0.35;
+		float chip = smoothstep(0.76, 0.82, nz + clamp(1.0 - wpos.y / 1.4, 0.0, 1.0) * 0.12) * (1.0 - abs(n.y));
+		vec3 bk = texture(chip_alb, uv * 1.1).rgb;
+		col = mix(col, bk * 0.95, chip);
+		// leke / nem halkası
+		float stain = smoothstep(0.55, 0.8, texture(noise_tex, uv * 0.35 + 0.37).r);
+		col *= mix(1.0, 0.82, stain * 0.6);
 	}
 	// yağmur izi ve dipte kir
 	float sl = lum(texture(streak_tex, uv * vec2(0.7, 0.35)).rgb);

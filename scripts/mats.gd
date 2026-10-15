@@ -58,6 +58,16 @@ static func masonry() -> Material:
 		m.set_shader_parameter("concrete_alb", _mt("concrete_wall_005", "albedo"))
 		m.set_shader_parameter("concrete_nrm", _mt("concrete_wall_005", "normal"))
 		m.set_shader_parameter("streak_tex", _mt("rusty_painted_metal", "albedo"))
+		m.set_shader_parameter("chip_alb", _mt("rough_plaster_brick", "albedo"))
+		var nt := NoiseTexture2D.new()
+		nt.width = 256
+		nt.height = 256
+		nt.seamless = true
+		var fn := FastNoiseLite.new()
+		fn.frequency = 0.03
+		fn.fractal_octaves = 4
+		nt.noise = fn
+		m.set_shader_parameter("noise_tex", nt)
 		_c["masonry"] = m
 	return _c["masonry"]
 
@@ -67,8 +77,8 @@ static func roof(snow: bool) -> Material:
 	if not _c.has(key):
 		var m := ShaderMaterial.new()
 		m.shader = load("res://shaders/roof.gdshader")
-		m.set_shader_parameter("tile_alb", _mt("grey_roof_tiles", "albedo"))
-		m.set_shader_parameter("tile_nrm", _mt("grey_roof_tiles", "normal"))
+		m.set_shader_parameter("tile_alb", _mt("clay_roof_tiles_02", "albedo"))
+		m.set_shader_parameter("tile_nrm", _mt("clay_roof_tiles_02", "normal"))
 		var nt := NoiseTexture2D.new()
 		nt.width = 256
 		nt.height = 256

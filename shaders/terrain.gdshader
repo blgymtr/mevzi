@@ -30,6 +30,7 @@ uniform float normal_strength = 1.0;
 uniform float macro_strength = 0.18;
 uniform float rough = 0.92;
 uniform float road_amt = 1.0;
+uniform float paved = 0.0;   // 1: yollar parke taşı
 
 varying vec3 wpos;
 varying float vh;
@@ -84,8 +85,32 @@ void fragment() {
 	// yol
 	vec2 ur = w / scale_road;
 	float road = smoothstep(0.15, 0.7, m.r) * road_amt * (0.75 + 0.5 * texture(macro, w / 6.0).r);
-	base = mix(base, texture(tex_road, ur).rgb * tint_road, road);
-	nb = mix(nb, unpack_n(texture(nrm_road, ur)), road);
+	vec3 road_col = texture(tex_road, ur).rgb * tint_road;
+	vec3 road_n = unpack_n(texture(nrm_road, ur));
+	if (paved > 0.5) {
+		// parke taşı: voronoi hücreleri, taş arası koyu derz, taş başına ton farkı
+		vec2 g = w * 3.2;
+		vec2 gi = floor(g);
+		vec2 gf = fract(g);
+		float d1 = 8.0;
+		float d2 = 8.0;
+		float hid = 0.0;
+		for (int y = -1; y <= 1; y++) {
+			for (int x = -1; x <= 1; x++) {
+				vec2 o = vec2(float(x), float(y));
+				vec2 h = fract(sin(vec2(dot(gi + o, vec2(127.1, 311.7)), dot(gi + o, vec2(269.5, 183.3)))) * 43758.5453);
+				vec2 r = o + 0.15 + h * 0.7 - gf;
+				float dd = dot(r, r);
+				if (dd < d1) { d2 = d1; d1 = dd; hid = h.x; } else if (dd < d2) { d2 = dd; }
+			}
+		}
+		float edge = smoothstep(0.0, 0.12, sqrt(d2) - sqrt(d1));
+		vec3 stone = mix(vec3(0.2, 0.19, 0.18), vec3(0.34, 0.32, 0.29), hid) * (0.85 + 0.3 * texture(macro, w / 3.0).r);
+		road_col = mix(vec3(0.08, 0.075, 0.07), stone, edge);
+		road_n = normalize(vec3((gf - 0.5) * (1.0 - edge) * 0.6, 1.0));
+	}
+	base = mix(base, road_col, road);
+	nb = mix(nb, road_n, road);
 	// tekerlek / palet izi
 	float tr = clamp(m.g, 0.0, 1.0);
 	base = mix(base, base * tint_track, tr * 0.85);

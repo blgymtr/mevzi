@@ -24,6 +24,19 @@ const MAPS := {
 
 const STONE := Color(0.9, 0.8, 0.62)
 const WHITE := Color(0.94, 0.93, 0.89)
+const FACADES := [Color(0.86, 0.72, 0.5), Color(0.9, 0.82, 0.62), Color(0.82, 0.6, 0.5), Color(0.62, 0.7, 0.78), Color(0.88, 0.86, 0.78),
+	Color(0.78, 0.68, 0.56), Color(0.92, 0.88, 0.8), Color(0.72, 0.56, 0.42), Color(0.55, 0.62, 0.66), Color(0.86, 0.78, 0.68)]
+const ROOFS := [Color(0.62, 0.28, 0.16), Color(0.55, 0.24, 0.15), Color(0.68, 0.35, 0.2), Color(0.42, 0.3, 0.26), Color(0.5, 0.42, 0.38)]
+
+func facade() -> Color:
+	if kind == "desert":
+		return [WHITE, Color(0.9, 0.84, 0.72), Color(0.86, 0.78, 0.64)][rng.randi() % 3]
+	return FACADES[rng.randi() % FACADES.size()].darkened(rng.randf_range(0.0, 0.08))
+
+func roof_col() -> Color:
+	if kind == "desert":
+		return Color(0.62, 0.5, 0.35)
+	return ROOFS[rng.randi() % ROOFS.size()]
 const BH := 0.42
 
 func build(id: String, seed_v: int) -> void:
@@ -227,7 +240,7 @@ func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, co
 		deco.append([a - c, b - c, gaps, si])
 	# düz çatı + korkuluk + çatı eşyaları
 	var mb := MB.new()
-	var rc := Color(0.84, 0.83, 0.8)
+	var rc := Color(0.42, 0.41, 0.4)
 	mb.box(Vector3(0, top + 0.1, 0), Vector3(w + 0.5, 0.2, d + 0.5), rc)
 	var nx := int(w)
 	var nz := int(d)
@@ -235,7 +248,7 @@ func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, co
 		for iz in nz:
 			if (ix + iz) % 2 == 0:
 				mb.box(Vector3(-w * 0.5 + (ix + 0.5) * w / nx, top + 0.205, -d * 0.5 + (iz + 0.5) * d / nz), Vector3(w / nx * 0.96, 0.01, d / nz * 0.96), rc.darkened(0.05))
-	var pc := Color(0.93, 0.92, 0.88)
+	var pc := col.darkened(0.15)
 	mb.box(Vector3(0, top + 0.35, -d * 0.5 - 0.12), Vector3(w + 0.5, 0.35, 0.26), pc)
 	mb.box(Vector3(0, top + 0.35, d * 0.5 + 0.12), Vector3(w + 0.5, 0.35, 0.26), pc)
 	mb.box(Vector3(-w * 0.5 - 0.12, top + 0.35, 0), Vector3(0.26, 0.35, d + 0.5), pc)
@@ -253,7 +266,7 @@ func _x_house_flat(c: Vector3, w: float, d: float, rows := 6, rot90 := false, co
 				mb.box(Vector3(px, top + 0.7, pz), Vector3(1.4, 1.0, 1.2), pc.darkened(0.04))
 			3:
 				mb.cyl(Vector3(px, top + 0.2, pz), 0.04, 0.03, 2.6, 4, Color(0.3, 0.3, 0.3))
-	var rmesh := mb.commit(Mats.vc())
+	var rmesh := mb.commit(Mats.vcs())
 	roof.mesh = _facade(deco, top, t2, col, false, rmesh)
 	roof.position = Vector3(c.x, 0, c.z)
 	B.add_child(roof)
@@ -543,7 +556,7 @@ func _desert() -> void:
 		if rng.randf() < 0.22:
 			house_pitched(p, w, d, rot, WHITE, Color(0.62, 0.5, 0.35), false)
 		else:
-			house_flat(p, w, d, rng.randi_range(5, 7), rot)
+			house_flat(p, w, d, rng.randi_range(5, 7), rot, facade() if kind != "desert" else WHITE)
 		reserve(p, r + 1.0)
 		if rng.randf() < 0.55:
 			var cw := w + rng.randf_range(5, 8)
@@ -781,9 +794,9 @@ func _town(c: Vector3, radius: float, n: int, flat := true) -> void:
 			continue
 		var rot := rng.randf() < 0.5
 		if flat and rng.randf() > 0.2:
-			house_flat(p, w, d, rng.randi_range(5, 7), rot)
+			house_flat(p, w, d, rng.randi_range(5, 7), rot, facade() if kind != "desert" else WHITE)
 		else:
-			house_pitched(p, w, d, rot, WHITE, Color(0.62, 0.5, 0.35) if kind == "desert" else Color(0.5, 0.2, 0.14), kind == "winter")
+			house_pitched(p, w, d, rot, facade(), roof_col(), kind == "winter")
 		reserve(p, r + 1.0)
 		if rng.randf() < 0.45:
 			var cw := w + rng.randf_range(5, 8)
@@ -818,6 +831,12 @@ func _city() -> void:
 		road([Vector3(c0 - 10, 0, x), Vector3(c0 + 6 * step + 10, 0, x)], 5.0)
 	auto_bridges()
 	p_reeds_along(riv, 7.0)
+	# merkez: kaldırım/meydan dokusu (parke)
+	for gx in range(int(c0), int(c0 + 6 * step), 6):
+		for gz in range(int(c0), int(c0 + 6 * step), 6):
+			var gp := Vector3(gx + rng.randf_range(-2, 2), 0, gz + rng.randf_range(-2, 2))
+			if not (T.has_water and T.ground_h(gp) < -0.2):
+				T.paint_circle(gp, rng.randf_range(4.5, 6.5), 0, 0.55)
 	for i in 140:
 		patch(Vector3(rng.randf_range(0, S), 0, rng.randf_range(0, S)), rng.randf_range(5, 16), rng.randf_range(0.4, 0.9))
 	G.fob_sites = []
@@ -834,19 +853,19 @@ func _city() -> void:
 			if T.has_water and T.ground_h(bc) < -0.2:
 				continue
 			var centre := absf(bx - 2.5) < 1.6 and absf(bz - 2.5) < 1.6
-			var n := rng.randi_range(2, 4)
+			var n := rng.randi_range(4, 6) if centre else rng.randi_range(3, 4)
 			for k in n:
-				var w := rng.randf_range(6.0, 10.0)
-				var d := rng.randf_range(5.5, 8.0)
-				var r := maxf(w, d) * 0.72
-				var p := rand_free(r, 30, Rect2(bc.x - step * 0.5 + 4, bc.z - step * 0.5 + 4, step - 8, step - 8), 2.0)
+				var w := rng.randf_range(6.0, 9.0)
+				var d := rng.randf_range(5.5, 7.5)
+				var r := maxf(w, d) * 0.6
+				var p := rand_free(r, 40, Rect2(bc.x - step * 0.5 + 3.5, bc.z - step * 0.5 + 3.5, step - 7, step - 7), 1.5)
 				if p.x < 0:
 					continue
 				var rot := rng.randf() < 0.5
 				if centre and rng.randf() < 0.75:
-					house_flat(p, w, d, rng.randi_range(6, 8), rot)
+					house_flat(p, w, d, rng.randi_range(6, 8), rot, facade())
 				else:
-					house_pitched(p, w, d, rot, WHITE.darkened(rng.randf_range(0.0, 0.12)), Color(0.5, 0.2, 0.14).lerp(Color(0.35, 0.33, 0.3), rng.randf()), false)
+					house_pitched(p, w, d, rot, facade(), roof_col(), false)
 				reserve(p, r + 1.0)
 				houses += 1
 			# bahçe duvarı / çalılar
@@ -893,6 +912,20 @@ func _city() -> void:
 			else:
 				p_rock(p, rng.randf_range(0.6, 1.3))
 	_poles_along(roads[0], 18.0, 6.0)
+	# sokak eşyaları: varil grupları, kasa yığınları, çam sıraları
+	for i in 90:
+		var q := rand_free(1.0, 20, R, 1.0)
+		if q.x < 0 or road_dist(q) > 9.0:
+			continue
+		var r3 := rng.randf()
+		if r3 < 0.4:
+			for k in rng.randi_range(2, 5):
+				P.barrel(q + Vector3(rng.randf_range(-0.8, 0.8), 0, rng.randf_range(-0.8, 0.8)), [Color(0.55, 0.12, 0.08), Color(0.25, 0.32, 0.2), Color(0.3, 0.3, 0.32)][rng.randi() % 3])
+		elif r3 < 0.75:
+			for k in rng.randi_range(2, 4):
+				P.crate(q + Vector3(rng.randf_range(-0.9, 0.9), 0, rng.randf_range(-0.9, 0.9)), rng.randf() * TAU, rng.randf_range(0.7, 1.1))
+		else:
+			P.pine(q)
 	for i in 30:
 		var p := rand_free(2.2, 30, R, 0.0)
 		if p.x > 0 and road_dist(p) < 8.0:

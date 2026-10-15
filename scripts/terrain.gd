@@ -80,6 +80,7 @@ func _apply_material(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("normal_strength", b["nstr"])
 	m.set_shader_parameter("macro_strength", b["macro"])
 	m.set_shader_parameter("road_amt", b.get("road_amt", 1.0))
+	m.set_shader_parameter("paved", 1.0 if G.map_id in ["big_city", "winter_village", "desert_town"] else 0.0)
 
 func _noise_tex(size: int, freq: float, oct: int, frac: int, normal: bool, bump: float, seed_v: int) -> NoiseTexture2D:
 	var nt := NoiseTexture2D.new()

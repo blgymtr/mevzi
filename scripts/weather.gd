@@ -188,6 +188,9 @@ func _visuals() -> void:
 	var sun: DirectionalLight3D = G.main.sun
 	parts.emitting = kind != "clear"
 	env.fog_enabled = kind != "clear" or night
+	# sinematik renk derecelendirmesi
+	env.adjustment_saturation = 0.94
+	env.adjustment_contrast = 1.1
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	env.fog_sky_affect = 0.0
 	var sun_e: float = _base["sun_e"]
