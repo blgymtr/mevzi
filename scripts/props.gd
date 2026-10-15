@@ -91,8 +91,11 @@ func tree(p: Vector3) -> void:
 	var v := rng.randi() % 5
 	var key := ("wtree%d" if winter else "dtree%d") % v
 	var mesh := _cached(key, func(): return _tree_mesh(v, winter))
-	var mi := _place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.2))
-	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 70.0, "alive": true, "r": 0.4})
+	var sc: float = [rng.randf_range(0.55, 0.75), rng.randf_range(0.85, 1.15), rng.randf_range(1.3, 1.7)][rng.randi() % 3]
+	var mi := _place(mesh, p, rng.randf() * TAU, sc)
+	if rng.randf() < 0.22:
+		mi.scale = Vector3(0.55, 1.75, 0.55) * sc     # kavak: uzun ve ince
+	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 70.0 * sc, "alive": true, "r": 0.4})
 	G.grid.set_static_circle(p, 0.3, 3.0, Grid.K_TREE)
 
 func _leaf_material() -> StandardMaterial3D:
@@ -434,6 +437,48 @@ func plaza(c: Vector3) -> void:
 	G.grid.set_static_circle(c, 3.2, 0.5, Grid.K_WALL)
 	G.grid.set_static_circle(c, 0.8, 2.0, Grid.K_HOUSE, true)
 
+func awning(p: Vector3, rot: float, w: float, col: Color) -> void:
+	var mb := MB.new()
+	for i in int(w / 0.5):
+		var x := -w * 0.5 + (i + 0.5) * 0.5
+		mb.box(Vector3(x, 2.55, 0.55), Vector3(0.5, 0.05, 1.2), col if i % 2 == 0 else Color(0.92, 0.9, 0.84), Basis(Vector3.RIGHT, 0.32))
+	mb.box(Vector3(0, 3.25, 0.0), Vector3(w * 0.7, 0.45, 0.08), Color(0.12, 0.14, 0.16))           # tabela
+	mb.box(Vector3(0, 3.25, 0.05), Vector3(w * 0.6, 0.25, 0.02), col.lightened(0.4))
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	mi.position = p
+	mi.rotation.y = rot
+	add_child(mi)
+
+func spire(p: Vector3, h: float) -> void:
+	var mb := MB.new()
+	mb.cyl(Vector3(0, 0, 0), 2.3, 0.05, h, 4, Color(0.25, 0.3, 0.32), Basis(Vector3.UP, PI * 0.25))
+	mb.cyl(Vector3(0, h + 0.6, 0), 0.04, 0.04, 1.2, 4, Color(0.6, 0.55, 0.3))
+	mb.box(Vector3(0, h + 0.9, 0), Vector3(0.6, 0.06, 0.06), Color(0.6, 0.55, 0.3))
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	mi.position = p
+	add_child(mi)
+
+func gas_station(p: Vector3, rot: float) -> void:
+	var mb := MB.new()
+	for x in [-3.5, 3.5]:
+		for z in [-2.0, 2.0]:
+			mb.box(Vector3(x, 2.3, z), Vector3(0.3, 4.6, 0.3), Color(0.85, 0.85, 0.82))
+	mb.box(Vector3(0, 4.7, 0), Vector3(9.0, 0.45, 6.0), Color(0.9, 0.9, 0.88))
+	mb.box(Vector3(0, 4.7, 3.02), Vector3(9.0, 0.3, 0.05), Color(0.75, 0.12, 0.08))
+	for x in [-1.6, 1.6]:
+		mb.box(Vector3(x, 0.15, 0), Vector3(1.2, 0.3, 3.2), Color(0.55, 0.55, 0.52))
+		mb.box(Vector3(x, 0.9, 0), Vector3(0.5, 1.2, 0.8), Color(0.82, 0.18, 0.12))
+		mb.box(Vector3(x, 1.2, 0.41), Vector3(0.35, 0.3, 0.02), Color(0.1, 0.12, 0.14))
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	mi.position = p
+	mi.rotation.y = rot
+	add_child(mi)
+	for x in [-1.6, 1.6]:
+		G.grid.set_static_rect(p + Vector3(x, 0, 0).rotated(Vector3.UP, rot), Vector2(1.2, 3.2), rot, 0.4, Grid.K_WALL)
+
 func shed(p: Vector3, rot: float) -> void:
 	var mesh := _cached("shed", func():
 		var mb := MB.new()
@@ -512,7 +557,7 @@ func pine(p: Vector3) -> void:
 	var v := rng.randi() % 4
 	var key := ("pine_w%d" if winter else "pine%d") % v
 	var mesh := _cached(key, func(): return _pine_mesh(v, winter))
-	var mi := _place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.25))
+	var mi := _place(mesh, p, rng.randf() * TAU, [rng.randf_range(0.5, 0.75), rng.randf_range(0.9, 1.2), rng.randf_range(1.35, 1.8)][rng.randi() % 3])
 	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 70.0, "alive": true, "r": 0.4})
 	G.grid.set_static_circle(p, 0.3, 3.0, Grid.K_TREE)
 

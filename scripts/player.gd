@@ -350,6 +350,16 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 		Sfx.play2d("ui_attack", -8.0)
 		_voice(mobile, ["Saldırıyoruz!", "Hedef alındı!", "Ateş!"])
 		return
+	if tu != null and tu is Vehicle and tu.team == team and force and not tu.is_air():
+		var inf3 := mobile.filter(func(u): return u is Soldier and u.can_fight())
+		if not inf3.is_empty():
+			var i3 := 0
+			for u in inf3:
+				u.cmd_follow_vehicle(tu, i3, inf3.size())
+				i3 += 1
+			markers.append([tu.position, G.time, Color(0.5, 1.0, 0.6)])
+			_voice(inf3, ["Tankın arkasına!", "Aracı takip!"])
+			return
 	if tu != null and tu is Vehicle and tu.team == team and tu.capacity() > 0:
 		var inf := mobile.filter(func(u): return u is Soldier and u.can_fight())
 		if not inf.is_empty():

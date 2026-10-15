@@ -218,7 +218,16 @@ func on_ground(p: Vector3) -> Vector3:
 # kind: "grenade", "rpg", "shell", "big", "mine", "auto"
 func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src = null) -> void:
 	var size := clampf(radius / 3.0, 0.5, 3.0)
+	if p.y < 1.0 and grid.is_water(p):
+		fx.water_splash(p, size)
+		Sfx.play3d("expl_small", p, -2.0)
+		for u in near(p, radius * 1.5):
+			if u is Soldier and u.alive:
+				u.add_suppression(20.0, p)
+		return
 	fx.explosion(p, size, kind)
+	if kind in ["grenade", "mortar", "rpg"]:
+		fx.surface_burst(Vector3(p.x, 0.1, p.z), size)
 	Sfx.play3d("expl_big" if size >= 1.6 else ("expl_med" if size >= 1.0 else "expl_small"), p, 4.0 if size >= 1.6 else 1.0)
 	if p.y < 1.5:
 		fx.crater(p, radius * 1.15)

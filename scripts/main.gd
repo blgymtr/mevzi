@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "escorttest":
+		_run_escort_test()
 	elif shot_dir != "" and shot_scene == "projtest":
 		_run_proj_test()
 	elif shot_dir != "" and shot_scene == "trenchtest":
@@ -749,6 +751,50 @@ func _run_cat_test() -> void:
 	if e1.alive and e1.hp >= e1.max_hp:
 		fails += 1
 	print("CATTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_escort_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	start_game("green_valley", {}, true)
+	# su sütunu
+	var wp := Vector3.ZERO
+	for z in range(10, int(G.MAP) - 10, 4):
+		for x in range(10, int(G.MAP) - 10, 4):
+			if G.grid.is_water(Vector3(x, 0, z)) and wp == Vector3.ZERO:
+				wp = Vector3(x, 0, z)
+	G.cam.jump_to(wp, true)
+	G.cam.size = 20.0
+	G.cam.target_size = 20.0
+	await _wait(0.5)
+	for i in 3:
+		G.explode(wp + Vector3(i * 4 - 4, 0, 0), 4.5, 130.0, "shell", 1, null)
+	await _wait(0.3)
+	await _shot("water_01")
+	# tank eskortu
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var tk := spawn_vehicle(0, "usa_mbt_s3", c, 0.0)
+	var men: Array = []
+	for i in 4:
+		var s := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(i * 1.5, 0, 8), Grid.M_INF), null)
+		s.cmd_follow_vehicle(tk, i, 4)
+		men.append(s)
+	await _wait(3.0)
+	var dest := G.grid.nearest_free(c + Vector3(0, 0, -40), Grid.M_HEAVY)
+	tk.cmd_move(dest)
+	await _wait(14.0)
+	var near := 0
+	for s in men:
+		if s.position.distance_to(tk.position) < 9.0:
+			near += 1
+	G.cam.jump_to(tk.position, true)
+	await _wait(0.5)
+	await _shot("escort_01")
+	print("ESC tank_moved=%.1f soldiers_with_tank=%d/4" % [tk.position.distance_to(c), near])
+	if near < 3 or tk.position.distance_to(c) < 15.0:
+		fails += 1
+	print("ESCORTTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_proj_test() -> void:

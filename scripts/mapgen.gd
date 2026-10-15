@@ -896,7 +896,29 @@ func _city() -> void:
 				if p.x < 0:
 					continue
 				var rot := rng.randf() < 0.5
-				if centre and rng.randf() < 0.75:
+				var bt := rng.randf()
+				if centre and bt < 0.22 and free_at(p, 6.0, 1.5):
+					# apartman: 3-4 katlı geniş blok
+					house_flat(p, w + 3.0, d + 1.5, rng.randi_range(13, 16), rot, facade())
+				elif centre and bt < 0.42:
+					# dükkân: tente + tabela
+					house_flat(p, w, d, 7, rot, facade())
+					var fr := (d if not rot else w) * 0.5 + 0.1
+					P.awning(p + (Vector3(0, 0, fr) if not rot else Vector3(fr, 0, 0)), 0.0 if not rot else PI * 0.5, (w if not rot else d) * 0.8, [Color(0.7, 0.1, 0.08), Color(0.1, 0.35, 0.2), Color(0.12, 0.25, 0.55), Color(0.85, 0.6, 0.1)][rng.randi() % 4])
+				elif not centre and bt < 0.08 and free_at(p, 8.0, 2.0):
+					# kilise: uzun nef + taş kule + sivri
+					house_pitched(p, 8.0, 15.0, rot, Color(0.78, 0.74, 0.66), Color(0.32, 0.33, 0.34), false, 11)
+					var tp := p + (Vector3(0, 0, 9.5) if not rot else Vector3(9.5, 0, 0))
+					if free_at(tp, 2.5, 1.0):
+						house_flat(tp, 4.2, 4.2, 26, false, Color(0.76, 0.72, 0.64))
+						P.spire(tp + Vector3(0, 26 * BH + 0.5, 0), 6.0)
+						reserve(tp, 3.0)
+				elif not centre and bt < 0.18:
+					# ambar: büyük, ahşap kahve duvar, gri çatı
+					house_pitched(p, w + 3.0, d + 2.0, rot, Color(0.45, 0.32, 0.22), Color(0.4, 0.4, 0.42), false, 8)
+				elif not centre and bt < 0.22 and free_at(p, 7.0, 0.0) and road_dist(p) < 14.0:
+					P.gas_station(p, 0.0 if not rot else PI * 0.5)
+				elif centre and rng.randf() < 0.75:
 					house_flat(p, w, d, rng.randi_range(6, 8), rot, facade())
 				else:
 					house_pitched(p, w, d, rot, facade(), roof_col(), false)
@@ -955,6 +977,9 @@ func _city() -> void:
 			else:
 				p_rock(p, rng.randf_range(0.6, 1.3))
 	_poles_along(roads[0], 18.0, 6.0)
+	for k in 10:
+		var mp := riv[clampi(int(float(k) / 10.0 * riv.size()), 0, riv.size() - 1)]
+		G.fx.ground_mist(mp + Vector3(rng.randf_range(-12, 12), 0, rng.randf_range(-12, 12)), 14.0)
 	# sokak lambaları: ızgara sokaklar boyunca
 	for i in 7:
 		for k in 12:
@@ -1134,6 +1159,9 @@ func _green_valley() -> void:
 			p_car(p, rng.randf() * TAU)
 	_tracks(14, 0.25)
 	p_grass_field(16000, Color(0.42, 0.55, 0.24), Rect2(2, 2, 252, 252), 0.5)
+	for k in 6:
+		var mp := riv[clampi(int(float(k) / 6.0 * riv.size()), 0, riv.size() - 1)]
+		G.fx.ground_mist(mp + Vector3(rng.randf_range(-10, 10), 0, rng.randf_range(-10, 10)), 12.0)
 
 func _x_brick_ruin(c: Vector3, col: Color) -> void:
 	var ax := Vector3.RIGHT if rng.randf() < 0.5 else Vector3.BACK

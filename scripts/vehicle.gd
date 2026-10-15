@@ -1444,8 +1444,13 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 		if k in ["ap", "rpg", "atgm", "auto", "hmg", "topatk"]:
 			Sfx.play3d("ricochet", position, 2.0 if k in ["ap", "rpg", "atgm"] else -6.0)
 			if k in ["ap", "rpg", "atgm", "topatk"]:
-				G.fx.impact(aim_point(), "metal")
-				G.fx.flash(aim_point(), 3.0, 4.0, 0.08, Color(1.0, 0.85, 0.5))
+				var sd := (aim_point() - from).normalized() if from != Vector3.INF else -forward()
+				var nrm: Vector3 = [forward(), (right() if right().dot(from - position) > 0.0 else -right()), -forward(), Vector3.UP][clampi(last_side, 0, 3)]
+				if k == "ap":
+					G.fx.ricochet(aim_point(), sd, nrm)
+				else:
+					# HEAT delemedi: dışta patlar, reaktif zırh tuğlası infilakı
+					G.fx.explosion(aim_point() + nrm * 0.3, 0.8, "rpg")
 				if G.time - _nopen_t > 2.0:
 					_nopen_t = G.time
 					say("SEKTİ!" if last_side == 0 else "DELEMEDİ!")
@@ -1453,6 +1458,10 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	var dmg := amount * m
 	if dmg <= 0.0:
 		return
+	# delme efekti: geliş yönünde içe saçılma; HEAT'te jet parlaması
+	if k in ["ap", "rpg", "atgm", "topatk"] and m > 0.46:
+		var pd := (aim_point() - from).normalized() if from != Vector3.INF else -forward()
+		G.fx.penetration(aim_point(), pd, k != "ap")
 	hp -= dmg
 	last_hit = G.time
 	if src != null and is_instance_valid(src):
@@ -1913,6 +1922,19 @@ func destroy(src) -> void:
 	else:
 		mode = "catastrophic" if r < 0.25 else ("brew" if r < 0.75 else "knocked")
 	var cp := position + Vector3(0, 1.0, 0)
+	if G.grid.is_water(position):
+		G.fx.water_splash(position, 1.6)
+		for mi in _meshes(self):
+			mi.material_override = Mats.burnt()
+		var tw2 := create_tween()
+		tw2.tween_property(hull, "position:y", -2.6, 6.0).set_ease(Tween.EASE_IN)
+		tw2.parallel().tween_property(hull, "rotation:z", randf_range(-0.5, 0.5), 6.0)
+		tw2.tween_callback(func(): visible = false)
+		for i in 6:
+			var tw3 := create_tween()
+			tw3.tween_interval(randf_range(0.3, 5.0))
+			tw3.tween_callback(func(): G.fx.water_splash(position + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5)), 0.4))
+		return
 	match mode:
 		"catastrophic":
 			G.explode(cp, 6.5, 90.0, "big", team, self)

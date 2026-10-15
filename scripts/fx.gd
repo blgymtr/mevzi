@@ -252,6 +252,11 @@ func _run_emitter(e: Array, dt: float) -> void:
 				e[4] -= 0.12
 				var c := rng.randf_range(0.72, 0.86)
 				emit(P_SMOKE, p + _rv(1.2, 0.2), Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(0.2, 0.9), rng.randf_range(-1.2, 1.2)), rng.randf_range(4.0, 7.0), 1.5, 5.5 * pw, -0.05, 0.6, Color(c, c, c * 0.98, 0.75))
+		"mist":
+			while e[4] > 1.6:
+				e[4] -= 1.6
+				var q := p + Vector3(rng.randf_range(-pw, pw), 0.4, rng.randf_range(-pw, pw))
+				emit(P_SMOKE, q, Vector3(rng.randf_range(0.1, 0.35), 0.02, rng.randf_range(-0.1, 0.1)), rng.randf_range(9.0, 14.0), 3.0, rng.randf_range(6.0, 9.0), 0.0, 0.05, Color(0.92, 0.94, 0.95, 0.16))
 		"column":
 			var fade2 := clampf(left / 10.0, 0.2, 1.0)
 			while e[4] > 0.05:
@@ -361,6 +366,59 @@ func mushroom(p: Vector3, s: float) -> void:
 # uzun süren yangın + kara duman sütunu (yanan araç)
 func fire_column(p: Vector3, dur: float, pw := 1.0) -> void:
 	emitters.append([p, G.time + dur, "column", pw, 0.0])
+
+# suya düşen mermi/patlama: beyaz su sütunu + halka + serpinti
+func water_splash(p: Vector3, s: float) -> void:
+	for i in int(14 * s) + 4:
+		var d := Vector3(rng.randf_range(-0.25, 0.25), 1.0, rng.randf_range(-0.25, 0.25)).normalized()
+		emit(P_STREAK, Vector3(p.x, 0.0, p.z), d * rng.randf_range(6.0, 13.0) * sqrt(s), rng.randf_range(0.7, 1.2), 0.12 * s, 0.08, 9.8, 0.8, Color(0.85, 0.92, 0.95, 0.9))
+	for i in int(10 * s) + 3:
+		emit(P_SMOKE, Vector3(p.x, 0.2, p.z) + _rv(0.4 * s, 0.1), Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(2.0, 5.0) * s, rng.randf_range(-0.6, 0.6)), rng.randf_range(1.2, 2.2), 0.6 * s, rng.randf_range(2.0, 3.2) * s, 3.0, 1.6, Color(0.88, 0.93, 0.96, 0.75), rng.randf_range(0.0, 0.1))
+	for i in 16:
+		var a := TAU * i / 16.0
+		emit(P_SMOKE, Vector3(p.x, 0.1, p.z), Vector3(cos(a), 0.05, sin(a)) * rng.randf_range(2.0, 4.0) * s, rng.randf_range(0.8, 1.4), 0.5 * s, 1.6 * s, 0.0, 2.5, Color(0.92, 0.96, 0.98, 0.6))
+
+# zırhı delen isabet: içe doğru metal parçacık + kıvılcım duşu + kapaklardan sızan duman
+func penetration(p: Vector3, dir: Vector3, heat: bool) -> void:
+	flash(p, 4.0 if heat else 3.0, 6.0, 0.1, Color(1.0, 0.7, 0.35) if heat else Color(1.0, 0.85, 0.6))
+	for i in 18:
+		var d := (dir + _rv(0.7)).normalized()
+		emit(P_SPARK, p, d * rng.randf_range(8.0, 18.0), rng.randf_range(0.2, 0.5), 0.06, 0.04, 9.8, 1.5, Color(1.0, 0.8, 0.45))
+	if heat:
+		emit(P_FIRE, p, dir * 3.0, 0.15, 0.6, 1.4, 0.0, 3.0, Color(1.0, 0.8, 0.55, 1))
+	for i in 6:
+		var g := rng.randf_range(0.15, 0.3)
+		emit(P_SMOKE, p + Vector3(0, 0.4, 0), Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(1.5, 3.0), rng.randf_range(-0.4, 0.4)), rng.randf_range(2.0, 3.5), 0.4, 1.8, -0.2, 1.2, Color(g, g, g, 0.7), rng.randf_range(0.0, 0.3))
+
+# sekme: geliş açısına göre yansıyan kıvılcım yelpazesi
+func ricochet(p: Vector3, dir: Vector3, nrm: Vector3) -> void:
+	var r := (dir - nrm * 2.0 * dir.dot(nrm)).normalized()
+	for i in 14:
+		emit(P_SPARK, p, (r + _rv(0.35)).normalized() * rng.randf_range(10.0, 22.0), rng.randf_range(0.15, 0.35), 0.05, 0.035, 6.0, 1.0, Color(1.0, 0.9, 0.6))
+	flash(p, 2.0, 4.0, 0.06, Color(1.0, 0.9, 0.7))
+
+# yüzeye göre el bombası/küçük patlama ek efekti
+func surface_burst(p: Vector3, s: float) -> void:
+	var c: Color
+	match G.map_kind:
+		"winter":
+			c = Color(0.9, 0.92, 0.96)
+		"desert":
+			c = Color(0.82, 0.68, 0.46)
+		_:
+			c = Color(0.3, 0.24, 0.17)
+	if G.grid.height_at(p) > 0.05 or G.grid.kind_at(p) in [Grid.K_HOUSE, Grid.K_WALL]:
+		c = Color(0.75, 0.73, 0.7)   # beton/taş tozu
+	for i in int(10 * s) + 4:
+		var a := rng.randf() * TAU
+		var d := Vector3(cos(a), rng.randf_range(0.3, 1.2), sin(a)).normalized()
+		emit(P_STREAK, p, d * rng.randf_range(5.0, 10.0) * sqrt(s), rng.randf_range(0.4, 0.8), 0.06 * s, 0.04, 12.0, 0.8, Color(c.r, c.g, c.b, 0.95))
+	for i in int(6 * s) + 2:
+		emit(P_SMOKE, p + _rv(0.5 * s, 0.1), Vector3(rng.randf_range(-1, 1), rng.randf_range(0.5, 2.0), rng.randf_range(-1, 1)) * s, rng.randf_range(1.5, 2.6), 0.6 * s, 2.4 * s, 0.3, 1.5, Color(c.r, c.g, c.b, 0.7))
+
+# yere yakın sabit sis kümesi (ormanlık / nehir kıyısı)
+func ground_mist(p: Vector3, r: float) -> void:
+	emitters.append([p, 1e9, "mist", r, rng.randf() * 3.0])
 
 func dust_burst(p: Vector3, r: float) -> void:
 	var sand := _sand().lightened(0.1)

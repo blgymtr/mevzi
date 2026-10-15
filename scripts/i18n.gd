@@ -245,6 +245,8 @@ const EN := {
 	"SEKTİ!": "BOUNCED!",
 	"DELEMEDİ!": "NO PENETRATION!",
 	"PANİK!": "PANIC!",
+	"Tankın arkasına!": "Behind the tank!",
+	"Aracı takip!": "Follow the vehicle!",
 	"SARGI YAPIYORUM": "APPLYING BANDAGE",
 	"TOPLANIYOR": "PACKING",
 	"KURULUYOR": "DEPLOYING",

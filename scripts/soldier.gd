@@ -342,6 +342,35 @@ func sees(from: Vector3, p: Vector3, tgt = null) -> bool:
 	var sb := 2.3 if tgt != null and tgt is Soldier and tgt.house_id >= 0 else 0.3
 	return G.grid.los(from, p, sa, sb)
 
+# araç eskortu: aracın düşmana göre arkasında yan yana siper alıp onunla ilerler
+func cmd_follow_vehicle(v: Vehicle, slot: int, n: int) -> void:
+	_leave_house()
+	cover_veh = v
+	cover_type = 3
+	cover_slot = (float(slot) - (n - 1) * 0.5) * 1.1
+	order = "follow_veh"
+	force_move = false
+	_follow_veh_tick()
+
+func _follow_veh_tick() -> void:
+	if cover_veh == null or not is_instance_valid(cover_veh) or (not cover_veh.alive and not cover_veh.wreck):
+		order = ""
+		cover_type = 0
+		return
+	var back: Vector3 = -cover_veh.forward()
+	if G.time - threat_time < 8.0:
+		back = cover_veh.position - threat_pos
+		back.y = 0.0
+		back = back.normalized()
+	var side := Vector3(-back.z, 0, back.x)
+	var cp: Vector3 = cover_veh.position + back * (cover_veh.ext.y + 1.0) + side * cover_slot
+	cp = G.grid.nearest_free(cp, Grid.M_INF, 4)
+	if cp.distance_to(position) > 0.8:
+		if path_i >= path.size() or path.size() == 0 or path[path.size() - 1].distance_to(cp) > 1.5:
+			_set_path(cp)
+		state = "move"
+	cover_pos = cp
+
 func cmd_garrison(hid: int) -> bool:
 	if not can_fight() or state == "aboard":
 		return false
@@ -601,6 +630,8 @@ func _resupply() -> void:
 
 # ------------------------------------------------------------ karar
 func _think() -> void:
+	if order == "follow_veh" and alive and can_fight():
+		_follow_veh_tick()
 	match state:
 		"fly", "dive", "dragged", "healing", "aboard", "slide", "stretcher", "stretchered", "hospital", "melee":
 			return
@@ -699,6 +730,8 @@ func _arrive() -> void:
 		return
 	if order == "refund":
 		_refund_check()
+		return
+	if order == "follow_veh":
 		return
 	if order == "garrison":
 		order = "hold" if house_id >= 0 else ""
