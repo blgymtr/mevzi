@@ -30,9 +30,9 @@ const MAPS := {
 # şehir: sokak cephesi (bitişik nizam) ve blok ortası simge yapılar
 const FRONT := ["sira_ev", "sira_ev_3", "carsi_evi", "dukkanli_apt", "kose_dukkan", "eczane", "berber", "pastane", "kuruyemis", "sebzeci", "nalbur", "kahve_2kat",
 	"apartman_3", "bakkal", "kasap", "lokanta", "firin", "arasta", "sira_ev", "sira_ev_3", "lojman", "dukkanli_apt", "apartman_3"]
-const LANDMARK := ["merkez_camii", "belediye", "hastane", "lise", "kutuphane", "banka", "otel", "sinema", "hal", "otogar", "itfaiye", "emniyet", "spor_salonu",
-	"supermarket", "telekom", "dugun_salonu", "askerlik_subesi", "kultur_merkezi", "ishani", "panel_blok", "l_blok", "apartman_5", "apartman_4", "kilise",
-	"lojman_blok", "motel", "oto_galeri", "cami_mahalle"]
+const LANDMARK := ["belediye", "hastane", "lise", "kutuphane", "banka", "otel", "sinema", "hal", "otogar", "itfaiye", "emniyet", "spor_salonu",
+	"supermarket", "telekom", "dugun_salonu", "askerlik_subesi", "kultur_merkezi", "ishani", "panel_blok", "l_blok", "apartman_5", "apartman_4",
+	"lojman_blok", "motel", "oto_galeri"]
 
 const STONE := Color(0.9, 0.8, 0.62)
 const WHITE := Color(0.94, 0.93, 0.89)
@@ -291,6 +291,7 @@ func _house_slots(hid: int, a: Vector3, b: Vector3, gaps: Array, c: Vector3) -> 
 		inward = inward.normalized()
 		if int(g[2]) == 0:
 			h["door"] = p - inward * 1.4
+			G.grid.mark_door(p, dir, float(g[1]) - float(g[0]))
 		else:
 			h["slots"].append(p + inward * 1.05)
 			h["out"].append(-inward)
@@ -579,22 +580,53 @@ func _x_ruin_cluster(c: Vector3) -> void:
 					B.add_block(p + Vector3(rng.randf_range(-0.2, 0.2), 0.46, rng.randf_range(-0.2, 0.2)), Vector3(0.62, 0.46, 0.52), rng.randf() * TAU, MB.jit(STONE, rng, 0.08), Blocks.T_BOX, -1, 1, Grid.K_WALL, false)
 				var _u := id
 
+# Avlu duvarı — kusursuz dikdörtgen değil, gelişigüzel: köşeler hafif kayık (kenarlar paralel değil), kenar
+# başına farklı yükseklik ve yıpranma, bazen yalnız 2-3 kenar (L / U), rastgele gedikler, ara sıra bir kenar
+# ahşap/tel çit. Eskiden her evin çevresinde aynı tek kapılı taş dikdörtgen vardı (yapay duruyordu).
 func _x_compound(c: Vector3, w: float, d: float, rows: int, gate_side: int, col := STONE) -> void:
 	var x0 := c.x - w * 0.5
 	var x1 := c.x + w * 0.5
 	var z0 := c.z - d * 0.5
 	var z1 := c.z + d * 0.5
-	var segs := [[Vector3(x0, 0, z0), Vector3(x1, 0, z0)], [Vector3(x1, 0, z0), Vector3(x1, 0, z1)], [Vector3(x1, 0, z1), Vector3(x0, 0, z1)], [Vector3(x0, 0, z1), Vector3(x0, 0, z0)]]
+	var cs: Array = []
+	for p in [Vector3(x0, 0, z0), Vector3(x1, 0, z0), Vector3(x1, 0, z1), Vector3(x0, 0, z1)]:
+		cs.append(p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)))
+	var skip := {}
+	var shape := rng.randf()
+	if shape < 0.25:
+		skip[(gate_side + 2) % 4] = true                # U: kapının karşısı açık
+	elif shape < 0.45:
+		skip[(gate_side + 1) % 4] = true                # L: iki kenar
+		skip[(gate_side + 2) % 4] = true
 	for i in 4:
-		var a: Vector3 = segs[i][0]
-		var b: Vector3 = segs[i][1]
+		if skip.has(i):
+			continue
+		var a: Vector3 = cs[i]
+		var b: Vector3 = cs[(i + 1) % 4]
+		var L := a.distance_to(b)
+		if i != gate_side and rng.randf() < 0.15:
+			_x_fence(a, b, Color(0.5, 0.42, 0.32))     # bu kenar duvar değil eski çit
+			continue
+		var rws := clampi(rows + rng.randi_range(-1, 1), 2, 6)
+		var ruin := rng.randf_range(0.0, 0.25) if rng.randf() < 0.65 else rng.randf_range(0.35, 0.7)
+		var opt := {"len": 0.62, "h": 0.46, "t": 0.5, "jit": 0.07, "ruin": ruin}
+		# kesikler (0..1): kapı + rastgele gedik
+		var cuts: Array = []
 		if i == gate_side:
-			var m := (a + b) * 0.5
-			var dir := (b - a).normalized()
-			B.wall_line(a, m - dir * 2.0, rows, col, Grid.K_WALL, {"len": 0.62, "h": 0.46, "t": 0.5, "jit": 0.05})
-			B.wall_line(m + dir * 2.0, b, rows, col, Grid.K_WALL, {"len": 0.62, "h": 0.46, "t": 0.5, "jit": 0.05})
-		else:
-			B.wall_line(a, b, rows, col, Grid.K_WALL, {"len": 0.62, "h": 0.46, "t": 0.5, "jit": 0.05, "ruin": rng.randf_range(0.0, 0.3)})
+			var gt := rng.randf_range(0.3, 0.7)
+			cuts.append([gt - 2.0 / L, gt + 2.0 / L])
+		if L > 6.0 and rng.randf() < 0.4:
+			var t := rng.randf_range(0.15, 0.85)
+			var gw := rng.randf_range(1.2, 2.8) / L
+			cuts.append([t - gw * 0.5, t + gw * 0.5])
+		cuts.sort_custom(func(p, q): return p[0] < q[0])
+		var t0 := 0.0
+		for ct in cuts:
+			if float(ct[0]) > t0 + 0.04:
+				B.wall_line(a.lerp(b, t0), a.lerp(b, float(ct[0])), rws, col, Grid.K_WALL, opt)
+			t0 = maxf(t0, float(ct[1]))
+		if t0 < 0.96:
+			B.wall_line(a.lerp(b, t0), b, rws, col, Grid.K_WALL, opt)
 
 func _x_fence(a: Vector3, b: Vector3, col := Color(0.88, 0.86, 0.8)) -> void:
 	var L := a.distance_to(b)
@@ -643,7 +675,7 @@ func _desert() -> void:
 	for s in spots:
 		var p: Vector3 = s[0]
 		var r := arch_near(p, "town", pool, 14.0, 1.5)
-		if r > 0.0 and r < 6.5 and rng.randf() < 0.45:
+		if r > 0.0 and r < 6.5 and rng.randf() < 0.25:
 			var cw := r * 2.0 + rng.randf_range(4, 7)
 			var cp := p + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1))
 			if road_dist(cp) > cw * 0.5 + 1.5:
@@ -876,7 +908,7 @@ func _town(c: Vector3, radius: float, n: int, flat := true, pool: Array = [], ke
 		if p.x < 0:
 			continue
 		var r := arch_near(p, key, pool, 8.0, 1.5)
-		if r > 0.0 and r < 6.0 and rng.randf() < 0.4:
+		if r > 0.0 and r < 6.0 and rng.randf() < 0.22:
 			var cw := r * 2.0 + rng.randf_range(4, 7)
 			if road_dist(p) > cw * 0.5 + 1.5:
 				compound(p, cw, cw * rng.randf_range(0.85, 1.15), rng.randi_range(3, 5), rng.randi() % 4)
@@ -1025,7 +1057,7 @@ func _city() -> void:
 			continue
 		var rot := _face_rot(ip)
 		var r := arch_near(ip, "ind", ind, 4.0, 3.0)
-		if r > 0.0 and r < 11.0 and rng.randf() < 0.45 and road_dist(ip) > r + 6.0:
+		if r > 0.0 and r < 11.0 and rng.randf() < 0.35 and road_dist(ip) > r + 6.0:
 			compound(ip, r * 2.0 + 6.0, r * 2.0 + 5.0, 5, [2, 1, 0, 3][rot], Color(0.7, 0.68, 0.64))
 			reserve(ip, r + 4.0)
 	for i in 50:
@@ -1497,11 +1529,11 @@ func village_pool() -> Array:
 	match kind:
 		"desert":
 			var p := arch_pool(["col"])
-			p.append_array(["bakkal", "kahvehane", "kasap", "firin", "koy_camii", "muhtarlik", "kuyu_evi", "at_ahiri", "demirci", "kubbeli_cami", "saglik_ocagi", "jandarma"])
+			p.append_array(["bakkal", "kahvehane", "kasap", "firin", "muhtarlik", "kuyu_evi", "at_ahiri", "demirci", "saglik_ocagi", "jandarma"])
 			return p
 		"winter":
 			var p := arch_pool(["kis"])
-			p.append_array(["tas_ev", "koy_evi", "cumbali_ev", "lojman", "muhtarlik", "kahvehane", "firin", "koy_kilisesi", "ciftlik_evi", "yayla_evi", "kutuk_ev", "koy_konutu_tek", "jandarma"])
+			p.append_array(["tas_ev", "koy_evi", "cumbali_ev", "lojman", "muhtarlik", "kahvehane", "firin", "ciftlik_evi", "yayla_evi", "kutuk_ev", "koy_konutu_tek", "jandarma"])
 			return p
 	var g := arch_pool(["koy"])
 	g.append_array(["ciftlik_evi", "kuyu_evi", "bag_evi", "kumes", "traktor_garaji"])

@@ -1058,7 +1058,7 @@ func _run_garrison_test() -> void:
 		if h.has("slots") and h["slots"].size() >= 5 and G.blocks.house_free_slot(i) >= 0:
 			hid = i
 			break
-	print("GAR houses=%d with_slots=%d pick=%d" % [G.blocks.houses.size(), G.blocks.houses.filter(func(h): return h.has("slots")).size(), hid])
+	print("GAR houses=%d with_slots=%d pick=%d aid=%s" % [G.blocks.houses.size(), G.blocks.houses.filter(func(h): return h.has("slots")).size(), hid, G.blocks.houses[hid].get("aid", "?") if hid >= 0 else "-"])
 	if hid < 0:
 		print("GARRISONTEST RESULT fails=1")
 		get_tree().quit()
@@ -2597,6 +2597,7 @@ func _run_roundtrip() -> void:
 	await _wait(1.0)
 	await _shot("rt_b")
 	print("ROUNDTRIP a=%s b=%s json=%dKB" % [a, b, json.length() / 1024])
+	print("ROUNDTRIP RESULT fails=%d" % (0 if a == b else 1))
 	get_tree().quit()
 
 func _run_editor_test() -> void:
@@ -2652,6 +2653,7 @@ func _run_editor_test() -> void:
 	await _wait(1.0)
 	await _shot("ed_02_play")
 	print("EDTEST play units=%d running=%s map=%s" % [G.units.size(), G.running, G.map_id])
+	print("EDITORTEST RESULT fails=%d" % (0 if n_ops > 0 and G.running and G.units.size() > 0 else 1))
 	get_tree().quit()
 
 func _run_scen_test() -> void:
@@ -2699,6 +2701,8 @@ func _run_scen_test() -> void:
 		await get_tree().process_frame
 	await _shot("scen_02_play")
 	print("SCENTEST over=%s winner=%d t=%d" % [G.game_over, G.winner, int(G.time)])
+	# savaşın belirli sürede bitmesi beklenmez (birlikler binalara girince uzar): senaryo yüklendi, birlikler var, oyun ilerledi
+	print("SCENTEST RESULT fails=%d" % (0 if not G.scenario.is_empty() and any_blue > 0 and (G.game_over or G.time > 30.0) else 1))
 	get_tree().quit()
 
 # bina arketipleri vitrini: --scene=archtest[_desert|_winter][:kimlik1,kimlik2]
@@ -2728,6 +2732,30 @@ func _run_arch_test() -> void:
 	var t0 := Time.get_ticks_msec()
 	build_world("custom", 4242, {"biome": bio, "size": S, "ops": ops, "hq": [[S - 16, S - 16], [16, 16]], "fobs": []})
 	print("ARCH n=%d build_ms=%d houses=%d blocks=%d" % [ids.size(), Time.get_ticks_msec() - t0, G.blocks.houses.size(), G.blocks.bpos.size()])
+	# garnizon denetimi (Soldier.cmd_garrison ile aynı koşul): yuva en yakın boş hücreye kaydırılır, aynı
+	# evde kalmalı; binanın dışından (pencerenin 6 m önünden) yürünerek varılmalı — yol bulucu ulaşılamazda
+	# kısmi yol döndürdüğü için yolun SON noktası hedefe değmeli
+	var gbad := {}
+	var gtot := 0
+	var nbad := 0
+	for hid in G.blocks.houses.size():
+		var h: Dictionary = G.blocks.houses[hid]
+		if not h.has("slots"):
+			continue
+		for k in h["slots"].size():
+			gtot += 1
+			var sp: Vector3 = G.grid.nearest_free(h["slots"][k], Grid.M_INF, 3)
+			var from: Vector3 = G.grid.nearest_free(h["slots"][k] + h["out"][k] * 6.0, Grid.M_INF)
+			var pth := G.grid.find_path(from, sp, Grid.M_INF)
+			var ok := G.blocks.house_at(sp) == hid and pth.size() > 0 and Vector2(pth[pth.size() - 1].x - sp.x, pth[pth.size() - 1].z - sp.z).length() < 0.6
+			if not ok:
+				nbad += 1
+				var a: String = h.get("aid", "?")
+				gbad[a] = int(gbad.get(a, 0)) + 1
+	for a in gbad:
+		print("ARCH garrison-bad %s slots=%d" % [a, gbad[a]])
+	print("ARCH garrison slots=%d bad=%d bad_types=%d" % [gtot, nbad, gbad.size()])
+	var arch_fails := 1 if gtot > 0 and nbad * 100 > gtot * 6 else 0
 	for u in G.units.duplicate():
 		if u is Soldier or u is Vehicle:
 			u.queue_free()
@@ -2757,5 +2785,5 @@ func _run_arch_test() -> void:
 		i += 3
 		if i % cols == 0:
 			i += cols
-	print("ARCHTEST RESULT fails=0")
+	print("ARCHTEST RESULT fails=%d" % arch_fails)
 	get_tree().quit()

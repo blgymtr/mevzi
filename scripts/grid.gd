@@ -32,6 +32,7 @@ var kind := PackedByteArray()
 var trench := PackedByteArray()
 var water := PackedByteArray()
 var bridge := PackedByteArray()
+var door := PackedByteArray()       # kapı boşluğu ince hücreleri: piyade yol bulmasında o yol hücresi kapanmaz
 var base_l := PackedByteArray()
 var vault := PackedByteArray()      # piyadenin üstünden atlayabildiği alçak engel hücreleri
 var base_h := PackedByteArray()
@@ -47,6 +48,7 @@ func _init() -> void:
 	trench.resize(N * N)
 	water.resize(N * N)
 	bridge.resize(N * N)
+	door.resize(N * N)
 	base_l.resize(NN * NN)
 	vault.resize(NN * NN)
 	base_h.resize(NN * NN)
@@ -133,6 +135,19 @@ func set_static_circle(center: Vector3, r: float, height: float, k: int, replace
 				changed.append(i)
 	refresh(changed)
 
+# kapı boşluğu işaretle: c kapı merkezi (duvar çizgisi üzerinde), dir duvar doğrultusu, w açıklık genişliği;
+# duvarın iki yanına dep kadar (eşik + iç/dış basamak) — o hücreleri kapsayan yol hücreleri piyadeye açık kalır
+func mark_door(c: Vector3, dir: Vector3, w: float, dep := 0.9) -> void:
+	var d := Vector3(dir.x, 0, dir.z).normalized()
+	var nrm := Vector3(-d.z, 0, d.x)
+	var r := maxf(w * 0.5, dep) + CS
+	for z in range(maxi(0, ci(c.z - r)), mini(N - 1, ci(c.z + r)) + 1):
+		for x in range(maxi(0, ci(c.x - r)), mini(N - 1, ci(c.x + r)) + 1):
+			var p := Vector3((x + 0.5) * CS - c.x, 0, (z + 0.5) * CS - c.z)
+			if absf(p.dot(d)) <= w * 0.5 and absf(p.dot(nrm)) <= dep:
+				door[z * N + x] = 1
+				_dirty[Vector2i(x / FPN, z / FPN)] = true
+
 func set_crater(p: Vector3, r: float) -> void:
 	for z in range(ci(p.z - r), ci(p.z + r) + 1):
 		for x in range(ci(p.x - r), ci(p.x + r) + 1):
@@ -206,11 +221,14 @@ func _update_base(c: Vector2i) -> void:
 	var hard_h := false
 	var wall_h := false
 	var wet := false
+	var dr := false
 	for dz in FPN:
 		for dx in FPN:
 			var i := (c.y * FPN + dz) * N + c.x * FPN + dx
 			var v := h[i]
 			var k := kind[i]
+			if door[i] == 1 and v < 0.45:
+				dr = true
 			if water[i] >= 1 and bridge[i] == 0:
 				wet = true
 			mx = maxf(mx, v)
@@ -239,6 +257,10 @@ func _update_base(c: Vector2i) -> void:
 	var blk := mx >= 0.45 and not vlt
 	if FPN > 2:
 		blk = blk and nblk * 2 > FPN * FPN
+	# kapı boşluğu: 1 m'lik yol hücresi kapı pervazıyla kesişse de piyadeye açık (asıl geçiş ince ızgarada
+	# çarpışmayla) — 1,3 m'lik kapılar hizaya göre tam açık hücre bırakmıyor, bina içi erişilemez kalıyordu
+	if dr:
+		blk = false
 	inf.set_point_solid(c, blk or wet)
 	inf.set_point_weight_scale(c, 5.0 if wire else (6.0 if vlt else 1.0))
 	if not navw.is_empty():

@@ -613,16 +613,6 @@ func awning(p: Vector3, rot: float, w: float, col: Color) -> void:
 	mi.rotation.y = rot
 	add_child(mi)
 
-func spire(p: Vector3, h: float) -> void:
-	var mb := MB.new()
-	mb.cyl(Vector3(0, 0, 0), 2.3, 0.05, h, 4, Color(0.25, 0.3, 0.32), Basis(Vector3.UP, PI * 0.25))
-	mb.cyl(Vector3(0, h + 0.6, 0), 0.04, 0.04, 1.2, 4, Color(0.6, 0.55, 0.3))
-	mb.box(Vector3(0, h + 0.9, 0), Vector3(0.6, 0.06, 0.06), Color(0.6, 0.55, 0.3))
-	var mi := MeshInstance3D.new()
-	mi.mesh = mb.commit(Mats.vcs())
-	mi.position = p
-	add_child(mi)
-
 func gas_station(p: Vector3, rot: float) -> void:
 	var mb := MB.new()
 	for x in [-3.5, 3.5]:

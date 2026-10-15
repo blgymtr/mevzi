@@ -140,7 +140,7 @@ func house_free_slot(hid: int) -> int:
 	return -1
 
 func house_team(hid: int) -> int:
-	# pencere yuvası olmayan yapı (minare, silo, sera) kimse tarafından tutulmaz
+	# pencere yuvası olmayan yapı (silo, tank, sera) kimse tarafından tutulmaz
 	for o in houses[hid].get("occ", {}).values():
 		if o != null and is_instance_valid(o) and o.alive and o.house_id == hid:
 			return o.team
