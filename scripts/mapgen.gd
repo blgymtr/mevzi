@@ -845,6 +845,40 @@ func _city() -> void:
 		var fp := Vector3(S * 0.5 + cos(a) * S * 0.3, 0, S * 0.5 + sin(a) * S * 0.3)
 		G.fob_sites.append(fp)
 		reserve(fp, 10.0)
+	# meydan (merkez) + demiryolu (güney kenarı boyunca)
+	# meydan: sudan ve yoldan uzak bir blok ortası
+	for cand in [Vector2(2.5, 3.5), Vector2(3.5, 2.5), Vector2(1.5, 3.5), Vector2(3.5, 1.5), Vector2(2.5, 1.5)]:
+		var pc0 := Vector3(c0 + cand.x * step, 0, c0 + cand.y * step)
+		if T.has_water and T.ground_h(pc0) < -0.1:
+			continue
+		if road_dist(pc0) < 10.0 or G.grid.is_water(pc0):
+			continue
+		P.plaza(pc0)
+		reserve(pc0, 10.0)
+		break
+	var rail := PackedVector3Array()
+	for k in 17:
+		rail.append(Vector3(16.0 + k * (S - 32.0) / 16.0, 0, S * 0.86 + sin(k * 0.6) * 6.0))
+	for q in rail:
+		reserve(q, 3.0)
+	P.railway(rail)
+	# sıra evler: merkez bloklarda sokak cephesine bitişik, iki katlı
+	for bx in range(1, 5):
+		for bz in range(1, 5):
+			var bc2 := Vector3(c0 + (bx + 0.5) * step, 0, c0 + (bz + 0.5) * step)
+			if T.has_water and T.ground_h(bc2) < -0.2:
+				continue
+			var z0 := bc2.z - step * 0.5 + 6.0
+			var x := bc2.x - step * 0.5 + 6.0
+			while x < bc2.x + step * 0.5 - 6.0:
+				var w2 := rng.randf_range(5.6, 7.0)
+				var hp2 := Vector3(x + w2 * 0.5, 0, z0)
+				if free_at(hp2, 3.2, 1.5) and not (T.has_water and T.ground_h(hp2) < -0.2):
+					house_pitched(hp2, w2, 6.2, false, facade(), roof_col(), false, 9)
+					reserve(hp2, 3.4)
+					if rng.randf() < 0.22:
+						P.roof_damage(hp2, w2, 6.2, 9 * BH, 0.0)
+				x += w2 + 0.25
 	# bloklar: her blokta 2-4 girilebilir bina, merkezde düz çatı, kenarda kırma çatı
 	var houses := 0
 	for bx in 6:
@@ -866,6 +900,15 @@ func _city() -> void:
 					house_flat(p, w, d, rng.randi_range(6, 8), rot, facade())
 				else:
 					house_pitched(p, w, d, rot, facade(), roof_col(), false)
+					if rng.randf() < 0.2:
+						P.roof_damage(p, w, d, 6 * BH, PI * 0.5 if rot else 0.0)
+					# bahçe çiti
+					if not centre and rng.randf() < 0.5:
+						var fw := (d if rot else w) * 0.5 + 2.2
+						var fd := (w if rot else d) * 0.5 + 2.2
+						var fz := p.z + fd
+						if free_at(Vector3(p.x, 0, fz), 0.5, 1.0):
+							P.picket(Vector3(p.x - fw, 0, fz), Vector3(p.x + fw, 0, fz))
 				reserve(p, r + 1.0)
 				houses += 1
 			# bahçe duvarı / çalılar
@@ -912,6 +955,24 @@ func _city() -> void:
 			else:
 				p_rock(p, rng.randf_range(0.6, 1.3))
 	_poles_along(roads[0], 18.0, 6.0)
+	# sokak lambaları: ızgara sokaklar boyunca
+	for i in 7:
+		for k in 12:
+			var lx := c0 + i * step + 3.4
+			var lz := c0 + k * step * 0.5 + 2.0
+			for lp in [Vector3(lx, 0, lz), Vector3(lz, 0, lx)]:
+				if free_at(lp, 0.5, 0.0) and not (T.has_water and T.ground_h(lp) < -0.2):
+					P.pole(lp, true)
+	# savaş izleri: kraterler, yanık lekeleri, moloz
+	for i in 45:
+		var bp := Vector3(rng.randf_range(20, S - 20), 0, rng.randf_range(20, S - 20))
+		if T.has_water and T.ground_h(bp) < -0.2:
+			continue
+		var cr := rng.randf_range(2.0, 4.5)
+		G.fx.crater(bp, cr)
+		if rng.randf() < 0.5:
+			G.fx.scorch(bp + Vector3(rng.randf_range(-2, 2), 0, rng.randf_range(-2, 2)), cr * 1.4)
+		T.paint_circle(bp, cr * 0.9, 2, 0.6)
 	# sokak eşyaları: varil grupları, kasa yığınları, çam sıraları
 	for i in 90:
 		var q := rand_free(1.0, 20, R, 1.0)

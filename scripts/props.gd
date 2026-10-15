@@ -338,6 +338,102 @@ func barrel(p: Vector3, col := Color(0.25, 0.32, 0.2)) -> void:
 		return mb.commit(Mats.metal()))
 	_place(mesh, p, rng.randf() * TAU)
 
+# çatı yarası: kararmış delik + kırık kirişler + saçılmış kiremit (hasarlı bina)
+func roof_damage(p: Vector3, w: float, d: float, top: float, rot: float) -> void:
+	var mb := MB.new()
+	var hw := w * rng.randf_range(0.22, 0.34)
+	var hd := d * rng.randf_range(0.2, 0.32)
+	var off := Vector3(rng.randf_range(-w, w) * 0.15, 0, rng.randf_range(-d, d) * 0.15)
+	var ry := top + 0.9
+	mb.box(off + Vector3(0, ry, 0), Vector3(hw * 2.0, 0.05, hd * 2.0), Color(0.06, 0.05, 0.04))
+	# kirişler: delikten görünen, bazıları kırık/eğik
+	for i in 5:
+		var x := off.x - hw + (i + 0.5) * hw * 2.0 / 5.0
+		var tilt := rng.randf_range(-0.35, 0.35) if rng.randf() < 0.4 else 0.0
+		mb.box(Vector3(x, ry + 0.12, off.z), Vector3(0.12, 0.12, hd * 2.2), Color(0.32, 0.22, 0.14), Basis(Vector3.RIGHT, tilt))
+	mb.box(off + Vector3(0, ry + 0.25, 0), Vector3(hw * 2.4, 0.14, 0.14), Color(0.3, 0.2, 0.12), Basis(Vector3.FORWARD, rng.randf_range(-0.2, 0.2)))
+	# yere saçılmış kiremit / moloz
+	for i in 14:
+		var a := rng.randf() * TAU
+		var r := rng.randf_range(w * 0.55, w * 0.95)
+		var q := Vector3(cos(a) * r, 0.06, sin(a) * r * d / w)
+		mb.box(q, Vector3(rng.randf_range(0.2, 0.5), 0.06, rng.randf_range(0.15, 0.35)), Color(0.55, 0.26, 0.16).darkened(rng.randf_range(0.0, 0.3)), Basis(Vector3.UP, rng.randf() * TAU))
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	mi.position = p
+	mi.rotation.y = rot
+	add_child(mi)
+
+# ahşap bahçe çiti (tahta + direk), eğik/kırık parçalar
+func picket(a: Vector3, b: Vector3) -> void:
+	var mb := MB.new()
+	var L := a.distance_to(b)
+	var dir := (b - a).normalized()
+	var bas := Basis(Vector3.UP, atan2(-dir.z, dir.x))
+	var wood := Color(0.48, 0.38, 0.27)
+	var n := maxi(1, int(L / 0.16))
+	for i in n:
+		if rng.randf() < 0.06:
+			continue
+		var p := a.lerp(b, (i + 0.5) / n)
+		var h := rng.randf_range(0.85, 1.0)
+		mb.box(p + Vector3(0, h * 0.5, 0), Vector3(0.09, h, 0.025), wood.darkened(rng.randf_range(0.0, 0.18)), bas * Basis(Vector3.FORWARD, rng.randf_range(-0.05, 0.05)))
+	for y in [0.3, 0.72]:
+		mb.box((a + b) * 0.5 + Vector3(0, y, 0) - Vector3(0, 0, 0), Vector3(L, 0.06, 0.03), wood.darkened(0.25), bas)
+	var np := maxi(1, int(L / 2.0))
+	for i in np + 1:
+		mb.box(a.lerp(b, float(i) / np) + Vector3(0, 0.55, 0), Vector3(0.1, 1.1, 0.1), wood.darkened(0.35), bas)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	add_child(mi)
+	G.grid.set_static_rect((a + b) * 0.5, Vector2(L, 0.2), atan2(-dir.z, dir.x) * -1.0 + 0.0, 0.9, Grid.K_WALL)
+
+# demiryolu: balast + traversler + iki ray
+func railway(pts: PackedVector3Array) -> void:
+	var mb := MB.new()
+	for i in pts.size() - 1:
+		var a := pts[i]
+		var b := pts[i + 1]
+		var L := a.distance_to(b)
+		var dir := (b - a).normalized()
+		var side := Vector3(-dir.z, 0, dir.x)
+		var bas := Basis(Vector3.UP, atan2(-dir.z, dir.x))
+		mb.box((a + b) * 0.5 + Vector3(0, 0.08, 0), Vector3(L, 0.16, 3.2), Color(0.34, 0.32, 0.3), bas)
+		var n := maxi(1, int(L / 0.65))
+		for k in n:
+			var p := a.lerp(b, (k + 0.5) / n)
+			mb.box(p + Vector3(0, 0.2, 0), Vector3(0.24, 0.1, 2.5), Color(0.25, 0.19, 0.13).darkened(rng.randf_range(0.0, 0.2)), bas)
+		for sg in [-0.72, 0.72]:
+			mb.box((a + b) * 0.5 + side * sg + Vector3(0, 0.3, 0), Vector3(L + 0.05, 0.1, 0.08), Color(0.42, 0.36, 0.32), bas)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	add_child(mi)
+
+# meydan: taş havuzlu çeşme + kaideli heykel + banklar
+func plaza(c: Vector3) -> void:
+	var mb := MB.new()
+	var stone := Color(0.62, 0.6, 0.56)
+	mb.cyl(Vector3(0, 0.0, 0), 3.2, 3.2, 0.5, 16, stone)
+	mb.cyl(Vector3(0, 0.02, 0), 2.9, 2.9, 0.52, 16, Color(0.22, 0.32, 0.34))
+	mb.box(Vector3(0, 0.9, 0), Vector3(1.1, 1.8, 1.1), stone.darkened(0.1))
+	mb.box(Vector3(0, 1.85, 0), Vector3(1.3, 0.15, 1.3), stone)
+	var bronze := Color(0.22, 0.3, 0.26)
+	mb.cyl(Vector3(0, 2.6, 0), 0.22, 0.28, 1.4, 8, bronze)
+	mb.sphere(Vector3(0, 3.45, 0), Vector3(0.18, 0.22, 0.18), 8, 6, bronze)
+	mb.box(Vector3(0.35, 3.0, 0), Vector3(0.6, 0.1, 0.1), bronze, Basis(Vector3.FORWARD, 0.6))
+	for k in 4:
+		var a := k * TAU / 4.0 + PI * 0.25
+		var q := Vector3(cos(a) * 5.0, 0, sin(a) * 5.0)
+		var bb := Basis(Vector3.UP, -a)
+		mb.box(q + Vector3(0, 0.42, 0), Vector3(0.45, 0.06, 1.6), Color(0.42, 0.3, 0.2), bb)
+		mb.box(q + Vector3(0, 0.2, 0), Vector3(0.4, 0.4, 0.08), Color(0.2, 0.2, 0.2), bb)
+	var mi := MeshInstance3D.new()
+	mi.mesh = mb.commit(Mats.vcs())
+	mi.position = c
+	add_child(mi)
+	G.grid.set_static_circle(c, 3.2, 0.5, Grid.K_WALL)
+	G.grid.set_static_circle(c, 0.8, 2.0, Grid.K_HOUSE, true)
+
 func shed(p: Vector3, rot: float) -> void:
 	var mesh := _cached("shed", func():
 		var mb := MB.new()
