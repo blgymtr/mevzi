@@ -43,7 +43,7 @@ void vertex() {
 		vec3 right = (INV_VIEW_MATRIX[0]).xyz;
 		vec3 up = (INV_VIEW_MATRIX[1]).xyz;
 		vec3 wp;
-		if (mode == 2) {
+		if (mode == 2 || mode == 4) {
 			// hıza göre uzat
 			vec3 cv = vel * exp(-k * t) - vec3(0.0, grav * t, 0.0);
 			vec3 vd = cv - dot(cv, INV_VIEW_MATRIX[2].xyz) * INV_VIEW_MATRIX[2].xyz;
@@ -80,11 +80,16 @@ void fragment() {
 		vec3 cold = vec3(0.45, 0.08, 0.02);
 		vec3 c = mix(cold, mid, smoothstep(0.0, 0.6, heat * tx.r * 1.3));
 		c = mix(c, hot, smoothstep(0.55, 1.0, heat * tx.r * 1.2));
-		ALBEDO = c * intensity * v_col.rgb * (0.6 + heat);
-		ALPHA = tx.a * v_col.a * (1.0 - smoothstep(0.4, 1.0, a));
+		c = mix(c, vec3(0.08, 0.06, 0.05), smoothstep(0.55, 1.0, a));
+		ALBEDO = c * intensity * v_col.rgb * (0.75 + heat * 0.6);
+		ALPHA = clamp(tx.a * 1.4, 0.0, 1.0) * v_col.a * (1.0 - smoothstep(0.5, 1.0, a));
 	} else if (mode == 2) {
 		ALBEDO = v_col.rgb * intensity;
 		ALPHA = tx.a * (1.0 - a);
+	} else if (mode == 4) {
+		// toprak/şarapnel çizgisi: opak, sona doğru incelip söner
+		ALBEDO = v_col.rgb * (0.6 + 0.4 * tx.r);
+		ALPHA = tx.a * v_col.a * (1.0 - smoothstep(0.6, 1.0, a));
 	} else {
 		if (tx.a < 0.5) {
 			discard;

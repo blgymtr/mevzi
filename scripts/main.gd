@@ -47,6 +47,8 @@ func _ready() -> void:
 		_run_veh_test()
 	elif shot_dir != "" and shot_scene.begins_with("cattest"):
 		_run_cat_test()
+	elif shot_dir != "" and shot_scene == "vfxtest":
+		_run_vfx_test()
 	elif shot_dir != "" and shot_scene == "septest":
 		_run_sep_test()
 	elif shot_dir != "" and shot_scene.begins_with("maptest"):
@@ -743,6 +745,40 @@ func _run_cat_test() -> void:
 	if e1.alive and e1.hp >= e1.max_hp:
 		fails += 1
 	print("CATTEST RESULT fails=%d" % fails)
+	get_tree().quit()
+
+func _run_vfx_test() -> void:
+	get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	start_game("green_valley", {}, true)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.cam.jump_to(c, true)
+	G.cam.size = 34.0
+	G.cam.target_size = 34.0
+	var vs: Array = []
+	for i in 3:
+		var v := spawn_vehicle(1, ["rus_mbt_72b3", "rus_ifv_bmp3", "rus_mbt_90m"][i], G.grid.nearest_free(c + Vector3(-12 + i * 12, 0, 0), Grid.M_HEAVY), 0.3)
+		v.cmd_hold()
+		vs.append(v)
+	await _wait(1.0)
+	# roket izi
+	G.bal.rocket(c + Vector3(-30, 1.5, 22), vs[0].aim_point(), 0, null, vs[0])
+	await _wait(0.4)
+	await _shot("vfx_00_rocket")
+	for v in vs:
+		v.destroy(null)
+	await _wait(0.35)
+	await _shot("vfx_01_boom")
+	await _wait(1.0)
+	await _shot("vfx_02_fireball")
+	await _wait(3.0)
+	await _shot("vfx_03_smoke")
+	# topçu isabetleri (toprak tacı)
+	for i in 4:
+		G.explode(c + Vector3(-10 + i * 7, 0, 14), 4.5, 130.0, "shell", 1, null)
+	await _wait(0.25)
+	await _shot("vfx_04_shells")
+	print("VFXTEST RESULT fails=0")
 	get_tree().quit()
 
 func _run_sep_test() -> void:

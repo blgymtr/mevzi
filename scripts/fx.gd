@@ -1,11 +1,11 @@
 class_name Fx extends Node3D
 # Görsel efektler: GPU-hesaplı parçacık halkaları, iz mermileri, parlama ışıkları, krater izleri.
 
-enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS }
-const CAP := [5000, 2400, 3000, 1800]
+enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS, P_STREAK }
+const CAP := [7000, 4000, 3000, 1800, 2400]
 
 var mms: Array = []
-var heads := [0, 0, 0, 0]
+var heads := [0, 0, 0, 0, 0]
 var tr_mm: MultiMesh
 var tr_head := 0
 const TR_CAP := 900
@@ -34,7 +34,7 @@ func _ready() -> void:
 	add_sh.code = base.code.replace("render_mode unshaded", "render_mode blend_add, unshaded")
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1, 1)
-	for k in 4:
+	for k in 5:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
@@ -49,12 +49,12 @@ func _ready() -> void:
 		mi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(1300, 400, 1300))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var mat := ShaderMaterial.new()
-		mat.shader = add_sh if (k == P_FIRE or k == P_SPARK) else base
+		mat.shader = add_sh if k == P_SPARK else base
 		mat.set_shader_parameter("tex", dot_tex if k == P_SPARK else puff_tex)
 		mat.set_shader_parameter("mode", k)
-		mat.set_shader_parameter("intensity", 2.2 if k == P_FIRE else 4.0)
-		mat.set_shader_parameter("ground_stop", 1.0 if k == P_DEBRIS or k == P_SPARK else 0.0)
-		mat.render_priority = [1, 3, 4, 0][k]
+		mat.set_shader_parameter("intensity", 1.35 if k == P_FIRE else 4.0)
+		mat.set_shader_parameter("ground_stop", 1.0 if k == P_DEBRIS or k == P_SPARK or k == P_STREAK else 0.0)
+		mat.render_priority = [1, 3, 4, 0, 2][k]
 		mi.material_override = mat
 		add_child(mi)
 		mms.append(mm)
@@ -252,6 +252,14 @@ func _run_emitter(e: Array, dt: float) -> void:
 				e[4] -= 0.12
 				var c := rng.randf_range(0.72, 0.86)
 				emit(P_SMOKE, p + _rv(1.2, 0.2), Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(0.2, 0.9), rng.randf_range(-1.2, 1.2)), rng.randf_range(4.0, 7.0), 1.5, 5.5 * pw, -0.05, 0.6, Color(c, c, c * 0.98, 0.75))
+		"column":
+			var fade2 := clampf(left / 10.0, 0.2, 1.0)
+			while e[4] > 0.05:
+				e[4] -= 0.05
+				if rng.randf() < fade2:
+					emit(P_FIRE, p + _rv(0.6 * pw, 0.2), Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(2.0, 4.0), rng.randf_range(-0.4, 0.4)), rng.randf_range(0.5, 1.0), 0.9 * pw, 1.8 * pw, -1.0, 1.0, Color(1, 1, 1, 0.95))
+				var g := rng.randf_range(0.03, 0.09)
+				emit(P_SMOKE, p + _rv(0.5 * pw, 0.3) + Vector3(0, 1.0, 0), Vector3(rng.randf_range(0.2, 1.0), rng.randf_range(4.0, 7.0), rng.randf_range(-0.5, 0.3)), rng.randf_range(6.0, 9.0), 1.4 * pw, 6.5 * pw, -0.1, 0.25, Color(g, g, g, 0.92))
 		"smolder":
 			while e[4] > 0.25:
 				e[4] -= 0.25
@@ -268,13 +276,20 @@ func _sand() -> Color:
 func explosion(p: Vector3, size: float, kind := "") -> void:
 	var s := size
 	var ground := p.y < 1.0
-	flash(p, 6.0 * s, 6.0 + 7.0 * s, 0.3 + 0.12 * s)
-	# beyaz-sarı parlama çekirdeği
-	emit(P_FIRE, p + Vector3(0, 0.4 * s, 0), Vector3(0, 0.5, 0), 0.16 + 0.04 * s, 2.0 * s, 3.4 * s, 0.0, 1.0, Color(1.6, 1.5, 1.3, 1.0))
-	var nfire := int(9 * s)
+	if ground and kind != "auto":
+		dirt_crown(Vector3(p.x, 0.15, p.z), s)
+	if kind == "big" and s >= 1.4:
+		fireball(p + Vector3(0, 0.5, 0), s * 0.7)
+		if s >= 2.0:
+			mushroom(p, s * 0.6)
+	flash(p, (1.6 if kind in ["shell", "mine", "mortar", "grenade"] else 2.6) * s, 5.0 + 5.0 * s, 0.22 + 0.1 * s)
+	var shell := kind in ["shell", "mine", "mortar", "grenade"]
+	# parlama çekirdeği (kısa, turuncu-sarı)
+	emit(P_FIRE, p + Vector3(0, 0.4 * s, 0), Vector3(0, 0.5, 0), 0.1 + 0.03 * s, 1.2 * s, 2.2 * s, 0.0, 1.0, Color(1.05, 0.85, 0.6, 1.0))
+	var nfire := int((4 if shell else 9) * s)
 	for i in nfire:
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.3, 1.2), rng.randf_range(-1, 1)).normalized()
-		emit(P_FIRE, p + d * 0.3 * s, d * rng.randf_range(2.0, 5.0) * s, rng.randf_range(0.45, 0.9), 1.0 * s, rng.randf_range(2.0, 3.2) * s, -1.5, 3.0, Color(1, 1, 1, 1), rng.randf_range(0.0, 0.06))
+		emit(P_FIRE, p + d * 0.3 * s, d * rng.randf_range(2.0, 5.0) * s, rng.randf_range(0.3, 0.7) if shell else rng.randf_range(0.45, 0.9), 0.8 * s, rng.randf_range(1.6, 2.6) * s, -1.5, 3.0, Color(0.85, 0.7, 0.55, 1), rng.randf_range(0.0, 0.06))
 	# kara duman sütunu
 	var nsm := int(12 * s)
 	for i in nsm:
@@ -288,7 +303,8 @@ func explosion(p: Vector3, size: float, kind := "") -> void:
 		for i in int(10 * s):
 			var a := TAU * i / int(10 * s)
 			var d := Vector3(cos(a), 0.08, sin(a))
-			emit(P_SMOKE, p + d * 0.5 * s, d * rng.randf_range(4.0, 7.0) * s, rng.randf_range(1.3, 2.4), 1.0 * s, 3.2 * s, 0.0, 2.5, Color(sand.r, sand.g, sand.b, 0.75), 0.02)
+			var dsc := sand.darkened(0.3)
+			emit(P_SMOKE, p + d * 0.5 * s, d * rng.randf_range(4.0, 7.0) * s, rng.randf_range(1.3, 2.4), 1.0 * s, 3.2 * s, 0.0, 2.5, Color(dsc.r, dsc.g, dsc.b, 0.75), 0.02)
 	# kıvılcımlar
 	for i in int(22 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1.5), rng.randf_range(-1, 1)).normalized()
@@ -299,6 +315,52 @@ func explosion(p: Vector3, size: float, kind := "") -> void:
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.6, 1.8), rng.randf_range(-1, 1)).normalized()
 		var c := dc if rng.randf() < 0.6 else Color(0.15, 0.13, 0.12)
 		emit(P_DEBRIS, p + Vector3(0, 0.2, 0), d * rng.randf_range(4.0, 13.0) * sqrt(s), rng.randf_range(1.8, 3.2), rng.randf_range(0.1, 0.24) * sqrt(s), rng.randf_range(0.1, 0.24) * sqrt(s), 13.0, 0.25, c, 0.0, rng.randf_range(-6, 6))
+
+# toprak tacı: patlamadan yukarı/dışa fırlayan dikenli toprak çizgileri (mermi/top isabeti, havan)
+func dirt_crown(p: Vector3, s: float) -> void:
+	var sand := _sand().darkened(0.35)
+	for i in int(18 * s) + 6:
+		var d := Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(0.9, 1.6), rng.randf_range(-0.6, 0.6)).normalized()
+		var c := sand.lerp(Color(0.12, 0.1, 0.08), rng.randf() * 0.6)
+		emit(P_STREAK, p, d * rng.randf_range(7.0, 16.0) * sqrt(s), rng.randf_range(0.7, 1.3), rng.randf_range(0.06, 0.14) * sqrt(s), rng.randf_range(0.04, 0.09), 14.0, 0.6, Color(c.r, c.g, c.b, 0.95))
+	# toprak bulutu kolonu
+	for i in int(6 * s) + 3:
+		var g := _sand().darkened(rng.randf_range(0.1, 0.4))
+		emit(P_SMOKE, p + _rv(0.4 * s, 0.1), Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(2.5, 6.0) * s, rng.randf_range(-0.6, 0.6)), rng.randf_range(1.6, 3.0), 0.6 * s, rng.randf_range(2.0, 3.4) * s, 1.4, 1.6, Color(g.r, g.g, g.b, 0.85), rng.randf_range(0.0, 0.1))
+
+# büyük ateş topu: türbülanslı turuncu-sarı alev kütlesi, içinden kara duman çıkar
+func fireball(p: Vector3, s: float) -> void:
+	flash(p, 4.5 * s, 9.0 + 8.0 * s, 0.4 + 0.15 * s, Color(1.0, 0.6, 0.28))
+	emit(P_FIRE, p + Vector3(0, 0.6 * s, 0), Vector3(0, 1.0, 0), 0.16, 2.0 * s, 3.8 * s, 0.0, 1.0, Color(1.1, 0.9, 0.65, 1))
+	for i in int(34 * s):
+		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1.4), rng.randf_range(-1, 1)).normalized()
+		var hot := rng.randf()
+		var col := Color(0.95, 0.82, 0.62, 1.0) if hot < 0.3 else (Color(0.85, 0.6, 0.4, 1.0) if hot < 0.75 else Color(0.65, 0.32, 0.18, 1.0))
+		emit(P_FIRE, p + d * rng.randf_range(0.2, 1.0) * s, d * rng.randf_range(2.0, 6.5) * s + Vector3(0, 1.5 * s, 0), rng.randf_range(0.7, 1.6), rng.randf_range(0.9, 1.6) * s, rng.randf_range(2.4, 4.2) * s, -2.2, 2.2, col, rng.randf_range(0.0, 0.18))
+	# içten yükselen kara duman (alevin arasında)
+	for i in int(22 * s):
+		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.6, 1.8), rng.randf_range(-1, 1)).normalized()
+		var g := rng.randf_range(0.04, 0.12)
+		emit(P_SMOKE, p + d * 0.6 * s, d * rng.randf_range(1.5, 4.0) * s + Vector3(0, 2.2 * s, 0), rng.randf_range(4.0, 7.0), 1.6 * s, rng.randf_range(4.5, 7.5) * s, -0.6, 0.9, Color(g, g * 0.95, g * 0.9, 0.95), rng.randf_range(0.25, 0.7))
+	# alev dilleri: yukarı fırlayan ince ateş jetleri
+	for i in int(6 * s):
+		var d := Vector3(rng.randf_range(-0.35, 0.35), 1.0, rng.randf_range(-0.35, 0.35)).normalized()
+		for k in 5:
+			emit(P_FIRE, p + d * k * 0.5 * s, d * rng.randf_range(8.0, 14.0) * s, rng.randf_range(0.4, 0.7), 0.5 * s, 1.2 * s, -1.0, 1.8, Color(0.9, 0.65, 0.4, 1), k * 0.03)
+
+# mantar duman: hızla yükselen sap + üstte yayılan kara başlık
+func mushroom(p: Vector3, s: float) -> void:
+	for i in int(16 * s):
+		var g := rng.randf_range(0.05, 0.13)
+		emit(P_SMOKE, p + _rv(0.5 * s, 0.2), Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(9.0, 14.0) * s, rng.randf_range(-0.5, 0.5)), rng.randf_range(5.0, 8.0), 1.2 * s, rng.randf_range(3.0, 4.5) * s, 0.0, 1.0, Color(g, g, g, 0.9), rng.randf_range(0.1, 0.5))
+	for i in int(14 * s):
+		var a := rng.randf() * TAU
+		var g := rng.randf_range(0.06, 0.15)
+		emit(P_SMOKE, p + Vector3(0, 9.0 * s, 0), Vector3(cos(a) * rng.randf_range(2.0, 4.0), rng.randf_range(1.0, 2.5), sin(a) * rng.randf_range(2.0, 4.0)) * s, rng.randf_range(6.0, 9.0), 2.5 * s, rng.randf_range(6.0, 9.0) * s, -0.15, 0.8, Color(g, g, g, 0.9), rng.randf_range(0.6, 1.2))
+
+# uzun süren yangın + kara duman sütunu (yanan araç)
+func fire_column(p: Vector3, dur: float, pw := 1.0) -> void:
+	emitters.append([p, G.time + dur, "column", pw, 0.0])
 
 func dust_burst(p: Vector3, r: float) -> void:
 	var sand := _sand().lightened(0.1)
@@ -337,6 +399,9 @@ func impact(p: Vector3, kind := "dirt") -> void:
 			emit(P_SMOKE, p, Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(1.2, 2.4), rng.randf_range(-0.3, 0.3)), rng.randf_range(0.5, 0.9), 0.18, 0.7, 2.0, 1.5, Color(sand.r, sand.g, sand.b, 0.8))
 			for i in 2:
 				emit(P_DEBRIS, p, Vector3(rng.randf_range(-1.5, 1.5), rng.randf_range(2.0, 4.0), rng.randf_range(-1.5, 1.5)), 0.6, 0.06, 0.06, 12.0, 0.3, sand.darkened(0.3))
+			for i in 3:
+				var dc := sand.darkened(0.3)
+				emit(P_STREAK, p, Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(3.5, 6.0), rng.randf_range(-1.2, 1.2)), rng.randf_range(0.3, 0.5), 0.035, 0.02, 12.0, 0.8, Color(dc.r, dc.g, dc.b, 0.9))
 		"wall":
 			emit(P_SMOKE, p, Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(0.4, 1.2), rng.randf_range(-0.5, 0.5)), rng.randf_range(0.6, 1.0), 0.2, 0.8, 0.5, 1.5, Color(0.85, 0.8, 0.72, 0.8))
 			for i in 3:
@@ -349,7 +414,8 @@ func impact(p: Vector3, kind := "dirt") -> void:
 
 func rocket_trail(p: Vector3, dir := Vector3.ZERO) -> void:
 	# ince, uzun duman izi + motor alevi (parlak çekirdek, turuncu kuyruk)
-	emit(P_SMOKE, p, _rv(0.15), rng.randf_range(1.8, 3.0), 0.12, 0.9, -0.1, 1.2, Color(0.88, 0.87, 0.85, 0.5))
+	emit(P_SMOKE, p, _rv(0.12), rng.randf_range(3.5, 5.5), 0.45, 1.4, -0.05, 1.6, Color(0.93, 0.92, 0.9, 0.55))
+	emit(P_SMOKE, p - dir * 0.5, _rv(0.12), rng.randf_range(3.5, 5.5), 0.45, 1.4, -0.05, 1.6, Color(0.93, 0.92, 0.9, 0.55))
 	emit(P_FIRE, p, -dir * 4.0, 0.08, 0.32, 0.08, 0.0, 1.0, Color(2.2, 1.6, 0.9, 1))
 	emit(P_FIRE, p - dir * 0.3, -dir * 6.0 + _rv(0.6), 0.12, 0.22, 0.05, 0.0, 1.0, Color(1.8, 0.7, 0.15, 1))
 

@@ -239,7 +239,7 @@ func _step_rocket(p: Proj, dt: float) -> bool:
 	var np := p.pos + (p.vel + wob) * dt
 	p.trail -= dt
 	if p.trail <= 0.0:
-		p.trail = 0.012
+		p.trail = 0.008
 		G.fx.rocket_trail(p.pos, p.vel.normalized())
 	var tgt: Unit = p.target if p.target != null and is_instance_valid(p.target) else null
 	if tgt != null and tgt.alive and not (tgt is Soldier):

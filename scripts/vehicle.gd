@@ -1864,7 +1864,9 @@ func destroy(src) -> void:
 	match mode:
 		"catastrophic":
 			G.explode(cp, 6.5, 90.0, "big", team, self)
-			G.fx.flash(cp, 16.0, 22.0, 0.25, Color(1.0, 0.7, 0.35))
+			G.fx.fireball(cp + Vector3(0, 0.6, 0), 2.0 if heavy else 1.4)
+			G.fx.mushroom(cp, 1.6 if heavy else 1.0)
+			G.fx.fire_column(position + Vector3(0, 1.2, 0), randf_range(40.0, 70.0), 1.3)
 			G.fx.crater(position, D["len"] * 0.75)
 			_debris(8 if heavy else 5, 9.0)
 			G.fx.burn(position + Vector3(0, 1.0, 0), randf_range(40.0, 70.0), 1.5)
@@ -1872,6 +1874,8 @@ func destroy(src) -> void:
 			hull.position.y -= 0.15
 		"cookoff":
 			G.explode(cp, 4.5, 70.0, "big", team, self)
+			G.fx.fireball(cp + Vector3(0, 0.8, 0), 1.5)
+			G.fx.fire_column(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.2)
 			G.fx.crater(position, D["len"] * 0.55)
 			_debris(4, 6.0)
 			G.fx.burn(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.6)
@@ -1888,7 +1892,8 @@ func destroy(src) -> void:
 						G.fx.emit(Fx.P_FIRE, q, Vector3(randf_range(-1, 1), randf_range(6, 11), randf_range(-1, 1)), randf_range(0.4, 0.8), 0.6, 1.6, -2.0, 0.6, Color(1.8, 0.9, 0.3, 1)))
 		"brew":
 			G.explode(cp, 3.0, 40.0, "big", team, self)
-			G.fx.burn(position + Vector3(0, 1.3, 0), randf_range(30.0, 55.0), 1.2 if heavy else 0.9)
+			G.fx.fireball(cp, 0.9)
+			G.fx.fire_column(position + Vector3(0, 1.3, 0), randf_range(30.0, 55.0), 1.0 if heavy else 0.8)
 			_debris(2, 4.0)
 		_:
 			G.fx.explosion(cp, 0.8, "rpg")
