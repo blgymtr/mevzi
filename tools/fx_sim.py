@@ -162,6 +162,11 @@ for fr in range(NFR):
 	canvas = np.zeros((NY, NY, 4), np.float32)
 	ox = (NY - NX) // 2
 	canvas[:, ox:ox + NX] = img
+	# kenar sönümlemesi: alan sınırına değen duman/toz düz kenar yapmasın; 2 px saydam pay (atlas taşması)
+	yy, xx = np.mgrid[0:NY, 0:NY].astype(np.float32)
+	e = np.minimum(np.minimum(xx, NY - 1 - xx), np.minimum(yy, NY - 1 - yy))
+	edge = np.clip((e - 2.0) / (NY * 0.14), 0, 1)
+	canvas[..., 3] *= edge * edge * (3 - 2 * edge)
 	frames.append(Image.fromarray((canvas * 255).astype(np.uint8), "RGBA").resize((CELL, CELL), Image.BICUBIC))
 	print("FRAME", fr, "max_t=%.2f max_d=%.2f" % (float(temp.max()), float(dens.max())), flush=True)
 
