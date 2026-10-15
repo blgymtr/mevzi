@@ -2,6 +2,7 @@
 # büyük yol tekerleri + üst makaralar, tekne burunlu tekerlekli araçlar, kaputlu kamyon kabini.
 import math
 from vlib import *
+from fam_tracked import _ramp    # arka rampa (BMP-3 tipi ağır PÇA)
 
 # ------------------------------------------------------------ yardımcılar
 def ru_tracks(L, xc, tw, n, r, zt, rollers=3, front_idler=True, holes=8):
