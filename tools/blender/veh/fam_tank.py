@@ -172,7 +172,9 @@ def mbt(v):
     cyl((0, by + 5.015, bz), 0.062, 0.01, "dark", "Y", seg=12)
     box((0, by + 4.8, bz + 0.11), (0.08, 0.14, 0.06), "dark", bev=0.0)        # namlu referans sensörü
     pivots = {"body": (0, 0, 0), "turret": (0, 0.25, tz), "barrel": (0, by, bz)}
-    meta = {"muzzle": (0, by + 5.0, bz), "radius": 2.9}
+    # komutan kapağı (oyunda kapaktaki komutanın yeri): kubbe ya da uzaktan kumandalı silah yanındaki kapak
+    hx, hy, hz = (0.55, -0.35, R) if cupola in ("crows", "crows_low", "rws") else (0.6, 0.15, R + 0.24)
+    meta = {"muzzle": (0, by + 5.0, bz), "radius": 2.9, "hatch": (hx, hy, hz)}
     return pivots, meta
 
 def lt(v):

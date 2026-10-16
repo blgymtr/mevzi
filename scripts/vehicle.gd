@@ -582,11 +582,40 @@ func _cargo_lost(mode := "") -> void:
 		s.dismount(position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)))
 		s.add_stress(65.0)
 		var pdie := 0.95 if mode == "catastrophic" else (0.75 if mode in ["cookoff", "crash"] else (0.45 if mode in ["brew", "flip"] else (0.15 if mode == "knocked" else 0.5)))
+		# top / havan mermisi, bomba, üstten saldırı ile yok olan araçtan sağ çıkmak çok az (roadmap 114);
+		# zırhsız araçta (kamyon, pikap) patlayıcı isabet içeridekileri de öldürür
+		if kill_k in ["shell", "big", "mortar", "topatk", "fpv"] and mode != "knocked":
+			pdie = maxf(pdie, 0.92)
+		elif armor == 0 and kill_k in ["rpg", "atgm", "he", "shell", "big", "mortar"]:
+			pdie = maxf(pdie, 0.8)
 		if randf() < pdie:
 			s.die(null)
 		elif mode != "knocked" or randf() < 0.4:
 			s.take_damage(60.0, null, "blast")
 	cargo.clear()
+# çekili top / açık bölmeli obüs mürettebatı (süs gövdeleri) imhada yerinde çömelip kalıyordu (roadmap 99):
+# her biri gerçek askere dönüşür ve patlamadan payını alır — savrulur, çoğu ölür, kalanı yaralı / sersem
+func _crew_lost(mode: String) -> void:
+	if crew.is_empty() or G.main == null:
+		return
+	var heavy_hit := kill_k in ["shell", "big", "mortar", "topatk", "fpv"] or mode in ["catastrophic", "cookoff"]
+	for cb in crew:
+		if not is_instance_valid(cb):
+			continue
+		var gp: Vector3 = (cb as Node3D).global_position
+		gp.y = 0.0
+		cb.queue_free()
+		var s: Soldier = G.main.spawn_soldier(team, "crew", gp, null)
+		if s == null:
+			continue
+		var away := Vector3(gp.x - position.x, 0.0, gp.z - position.z)
+		away = away.normalized() if away.length() > 0.05 else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+		var k := 1.1 if heavy_hit else 0.6
+		var pd := 0.85 if heavy_hit else (0.45 if mode != "knocked" else 0.15)
+		s.throw_off(away * randf_range(2.0, 4.5) * k + Vector3(0, randf_range(1.6, 3.2) * k, 0), pd, 0.5 if heavy_hit else 0.0)
+	crew.clear()
+	_crew_spots.clear()
+
 var rotor_blades: MeshInstance3D
 var rotor_disc: MeshInstance3D
 var props_n: Array = []        # İHA pervaneleri: [düğüm, yerel dönüş ekseni] (roadmap 8)
@@ -775,7 +804,12 @@ func setup(t: int, vt: String) -> void:
 		var ta: AABB = (M["turret"] as Mesh).get_aabb()
 		if ta.size.y > 0.3:
 			cmdr = SoldierBody.new()
-			cmdr.position = Vector3(ta.position.x + ta.size.x * 0.68, ta.end.y - 1.08, ta.position.z + ta.size.z * 0.62)
+			if M.get("meta", {}).has("hatch"):
+				# modeldeki komutan kapağı: kapaktan beline kadar çıkmış (roadmap 97 — taret kutusunun tepesi antenle
+				# yükseliyor, komutan tavanda tam boy ayakta görünüyordu)
+				cmdr.position = Art.v3(M["meta"]["hatch"]) - M["turret_pos"] + Vector3(0, -1.05, 0)
+			else:
+				cmdr.position = Vector3(ta.position.x + ta.size.x * 0.68, ta.end.y - 1.08, ta.position.z + ta.size.z * 0.62)
 			turret.add_child(cmdr)
 			cmdr.build(t, "crew", G.map_kind == "winter")
 			cmdr.weapon.visible = false
@@ -940,7 +974,9 @@ func obb_push(p: Vector3, pad: float) -> Vector3:
 	return f * (pz * signf(lz if lz != 0.0 else 1.0))
 
 # araç–araç çakışması: yönlü dikdörtgenlerde ayırıcı eksen (SAT) ile en küçük itme
-func _sep_vehicles() -> void:
+func _sep_vehicles(dt: float) -> void:
+	var blocked_now := false
+	var push := Vector3.ZERO
 	for o in G.near(position, radius + 8.0):
 		if o == self or not (o is Vehicle) or o.is_air() or (not o.alive and not o.wreck):
 			continue
@@ -964,25 +1000,62 @@ func _sep_vehicles() -> void:
 		if sep:
 			continue
 		var other_static: bool = not o.alive or o.immobile() or absf(o.cur_speed) < 0.2
-		var me_moving := absf(cur_speed) > 0.3
-		var ahead: bool = d.dot(forward()) * signf(cur_speed) > 0.0
-		# önündekine doğru giden araç yana itilmez (köprü korkuluğuna sıkışmasın): yavaşlar/durur
-		if me_moving and ahead:
+		var sgn := signf(cur_speed) if absf(cur_speed) > 0.05 else (-1.0 if reverse else 1.0)
+		var wants_move := absf(cur_speed) > 0.3 or path_i < path.size()
+		var ahead: bool = d.dot(forward()) * sgn > 0.0
+		# araçlar birbirini itmez / yana kaydırmaz (roadmap 104: sıkışmada "saçılır gibi" yana kayıyorlardı):
+		# öndekine yaklaşan yavaşlar / durur; duran araç önünü kesiyorsa sürerek yanından dolaşır
+		if wants_move and ahead:
 			if not other_static:
 				# hareketli aracı takip et
-				cur_speed = signf(cur_speed) * minf(absf(cur_speed), absf(o.cur_speed) * 0.9 + 0.3)
+				cur_speed = sgn * minf(absf(cur_speed), absf(o.cur_speed) * 0.9 + 0.3)
 				continue
-			# duran araç/enkaz önde: yanından sıyrıl (yan eksende it), yavaşla
-			var sd2 := right() * (-1.0 if d.dot(right()) > 0.0 else 1.0)
-			var np2 := position + sd2 * minf(best, 0.4) * 0.35
-			if _cell_ok(np2) and G.grid.height_at(np2) < 0.3:
-				position = np2
 			cur_speed *= 0.85
+			blocked_now = true
+			_block_t += dt
+			if _block_t > 1.5:
+				_block_t = 0.0
+				if not _detour_around(o) and o.alive and o.team == team and not o.immobile() and o.path_i >= o.path.size() and o.order != "hold":
+					# yan yol yok (köprü, dar geçit): boşta bekleyen dost araç ileri çeker
+					var fwd: Vector3 = o.forward() if o.forward().dot(o.position - position) > 0.0 else -o.forward()
+					var pull: Vector3 = o.position + fwd * (o.ext.y + ext.y + 4.0)
+					if o._cell_ok(pull) and G.grid.walkable_line(o.position, pull, o.nav_mode):
+						o._repath(pull)
+			# yanından sıyrıl (aşağıda toplam hız sınırıyla)
+			push += right() * (-1.0 if d.dot(right()) > 0.0 else 1.0) * best
 			continue
-		var k := 1.0 if other_static else 0.5
-		var np := position + bax * minf(best, 0.6) * k
+		# gerçek örtüşme (aynı noktada doğma, enkaz düşmesi; temas payı hariç): yavaşça açılır — kare başına
+		# ışınlama değil; temas eden ama örtüşmeyen araç hiç itilmez
+		if best <= 0.15:
+			continue
+		push += bax * (best - 0.15) * (1.0 if other_static else 0.5)
+	# tüm komşulardan gelen itme toplanır ve karede bir kez, en çok 2,5 m/sn uygulanır — komşu başına ayrı
+	# itme kalabalıkta katlanıp araçları saçıyordu (roadmap 104)
+	if push != Vector3.ZERO:
+		var np := position + push.normalized() * minf(push.length(), 2.5 * dt)
 		if _cell_ok(np) and G.grid.height_at(np) < 0.3:
 			position = np
+	if not blocked_now:
+		_block_t = 0.0
+
+var _block_t := 0.0
+
+# önünü kesen duran aracın yanına ara nokta: araç dönüp gerçekten sürerek dolaşır (ışınlanmaz)
+func _detour_around(o: Vehicle) -> bool:
+	if path_i >= path.size():
+		return false
+	var d: Vector3 = o.position - position
+	d.y = 0.0
+	var f := forward()
+	var sd := Vector3(-f.z, 0, f.x)
+	var off: float = o.ext.x + ext.x + 1.6
+	for fo in [0.3, 1.0, 1.8]:
+		for sgn in ([1.0, -1.0] if sd.dot(d) < 0.0 else [-1.0, 1.0]):
+			var p: Vector3 = o.position + sd * off * sgn + f * (o.ext.y * fo)
+			if _cell_ok(p) and G.grid.height_at(p) < 0.3 and G.grid.walkable_line(position, p, nav_mode):
+				path.insert(path_i, p)
+				return true
+	return false
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0, -cos(heading))
@@ -1057,7 +1130,38 @@ func cmd_move(p: Vector3, force := false) -> void:
 		path = PackedVector3Array([dest])
 		path_i = 0
 	else:
+		dest = _free_dest(dest)
 		_repath(dest)
+
+# hedef yeri ayırma (roadmap 104): istenen noktada başka araç duruyorsa / oraya gidiyorsa yakındaki boş yer —
+# araçlar aynı noktaya yığılıp birbirini itmez, yan yana park eder
+func _free_dest(p: Vector3) -> Vector3:
+	var others: Array = []
+	# konumu ya da gittiği yer yakın olanlar (konvoyda öndeki araç henüz uzakta ama hedefi burada)
+	for o in G.units:
+		if o != self and is_instance_valid(o) and o is Vehicle and not o.is_air() and (o.alive or o.wreck):
+			if Vector2(o.position.x - p.x, o.position.z - p.z).length() < 30.0 or Vector2(o.dest.x - p.x, o.dest.z - p.z).length() < 30.0:
+				others.append(o)
+	if others.is_empty():
+		return p
+	var step := radius * 2.0 + 1.5
+	for ring in 4:
+		var n := 1 if ring == 0 else 8
+		for i in n:
+			var a := TAU * i / n + ring * 0.4
+			var c := p + Vector3(cos(a), 0, sin(a)) * step * ring
+			if ring > 0 and (not _cell_ok(c) or not G.grid.free_at(c, nav_mode)):
+				continue
+			var ok := true
+			for o in others:
+				var need: float = (radius + o.radius) * 0.9
+				var od: Vector3 = o.dest if (o.alive and o.path_i < o.path.size()) else o.position
+				if Vector2(c.x - o.position.x, c.z - o.position.z).length() < need or Vector2(c.x - od.x, c.z - od.z).length() < need:
+					ok = false
+					break
+			if ok:
+				return c
+	return p
 
 # saldırı emri yapılabilir mi: silah bu hedefe hiç ateş edemiyorsa nedeni ("" = yapılabilir).
 # Eskiden emir sessizce kabul ediliyor, araç hedefe bakıp sonsuza dek bekliyordu.
@@ -1369,7 +1473,7 @@ func _process(dt: float) -> void:
 	_drive(dt)
 	if prof_on:
 		t0 = _pf("drive", t0)
-	_sep_vehicles()
+	_sep_vehicles(dt)
 	if prof_on:
 		t0 = _pf("sep", t0)
 	_aim_fire(dt)
@@ -1787,16 +1891,16 @@ func _drive(dt: float) -> void:
 			if path_i < path.size():
 				_repath(path[path.size() - 1])
 		return
-	# diğer araçlarla ayrışma
+	# diğer araçlarla ayrışma: hızla sınırlı (en çok 2 m/sn) — kare başına itme sıkışmada araçları saçıyordu
 	for o in G.near(np, 7.0):
-		if o == self or not (o is Vehicle):
+		if o == self or not (o is Vehicle) or o.is_air():
 			continue
 		var dv = np - o.position
 		dv.y = 0
 		var dl = dv.length()
 		var rr: float = (radius + o.radius) * 0.75
 		if dl < rr and dl > 0.01:
-			np += dv / dl * (rr - dl) * 0.5
+			np += dv / dl * minf((rr - dl) * 0.5, 2.0 * dt)
 	np.x = clampf(np.x, 2.0, G.MAP - 2.0)
 	np.z = clampf(np.z, 2.0, G.MAP - 2.0)
 	if not _cell_ok(np):
@@ -3802,6 +3906,7 @@ func destroy(src) -> void:
 		mode = force_mode
 	kill_mode = mode
 	_cargo_lost(mode)
+	_crew_lost(mode)
 	var cp := position + Vector3(0, 1.0, 0)
 	if G.grid.is_water(position):
 		# gövde boyuna göre sıçrama ve dalga halkası (cip ~0.9, tank ~2.4)

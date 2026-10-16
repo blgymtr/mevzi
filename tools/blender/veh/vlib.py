@@ -945,6 +945,26 @@ def apply_fit(v, pivots, meta):
         for b in NODES.get(name, {}).values():
             for vt in b.verts:
                 vt.co += d
+    tk = float(v.get("turret_k", 1.0))
+    if tk != 1.0 and "turret" in pivots:
+        # taret yatayda pivotu çevresinde küçülür (roadmap 97); namlu boyu korunur, küçülen ön yüze taşınır
+        tp = pivots["turret"]
+        for b in NODES.get("turret", {}).values():
+            for vt in b.verts:
+                vt.co.x = tp[0] + (vt.co.x - tp[0]) * tk
+                vt.co.y = tp[1] + (vt.co.y - tp[1]) * tk
+        def _sc(q):
+            return (tp[0] + (q[0] - tp[0]) * tk, tp[1] + (q[1] - tp[1]) * tk, q[2])
+        if "barrel" in pivots:
+            bp = pivots["barrel"]
+            nb = _sc(bp)
+            _move("barrel", Vector((nb[0] - bp[0], nb[1] - bp[1], 0)))
+            pivots["barrel"] = nb
+            if "muzzle" in meta:
+                m = meta["muzzle"]
+                meta["muzzle"] = (m[0] + nb[0] - bp[0], m[1] + nb[1] - bp[1], m[2])
+        if "hatch" in meta:
+            meta["hatch"] = _sc(meta["hatch"])
     dy = float(v.get("turret_dy", 0.0))
     if dy:
         d = Vector((0, dy, 0))
@@ -953,9 +973,10 @@ def apply_fit(v, pivots, meta):
             if n in pivots:
                 p = pivots[n]
                 pivots[n] = (p[0], p[1] + dy, p[2])
-        if "muzzle" in meta:
-            m = meta["muzzle"]
-            meta["muzzle"] = (m[0], m[1] + dy, m[2])
+        for mk in ("muzzle", "hatch"):
+            if mk in meta:
+                m = meta[mk]
+                meta[mk] = (m[0], m[1] + dy, m[2])
     gk = float(v.get("gun_k", 1.0))
     if gk != 1.0 and "barrel" in pivots:
         o = pivots["barrel"]

@@ -163,6 +163,11 @@ var _sep_c := Vector3.ZERO
 var _veh_c := Vector3.ZERO
 var _vp_t := 0.0              # araç izi itmesi denetimi (10 kez/sn; araçlar yavaş yaklaşır)
 var _vp_c := Vector3.ZERO
+var _near_veh: Array = []        # 8 m içindeki araçlar (10 kez/sn tazelenir): adımda gövdeye girmeme
+var _escaping := false           # araç izinin içinde: dışarı çıkarken izdüşüm uygulanmaz (gövdeler arasından sıyrılır)
+var _slide_veh = null            # kenarı boyunca kayılan araç ve seçilen yön (+1 / -1)
+var _slide_sgn := 1.0
+var _slide_t := 0.0
 var vehicle_in: Vehicle = null
 var home_vehicle: Vehicle = null     # inmiş tank mürettebatının aracı (roadmap 11)
 var board_target: Vehicle = null
@@ -2043,11 +2048,42 @@ func _movement(dt: float) -> void:
 		if _vp_t <= 0.0:
 			_vp_t = 0.1
 			_vp_c = Vector3.ZERO
+			_near_veh.clear()
+			var n_in := 0
 			for o in G.near(position, 8.0):
 				if o is Vehicle and (o.alive or o.wreck) and not o.is_air() and state != "aboard":
+					_near_veh.append(o)
 					var pv: Vector3 = o.obb_push(position, 0.35)
 					if pv != Vector3.ZERO:
+						n_in += 1
 						_vp_c += pv.normalized() * clampf(pv.length() * 6.0, 1.2, 2.6)
+			_escaping = false
+			for o in _near_veh:
+				if o.obb_push(position, -0.05) != Vector3.ZERO:
+					_escaping = true          # gerçekten gövdenin içinde (doğma / araç üstüne geldi)
+					break
+			if n_in > 1 or _vp_c.length() < 1.0 and n_in > 0:
+				# iki araç arasına sıkıştı (itmeler birbirini götürüyor): tüm araçların dışındaki en yakın açık nokta —
+				# halkada itme yönüne en yakın olanı
+				var pref := _vp_c.normalized() if _vp_c.length() > 0.01 else Vector3.ZERO
+				_vp_c = Vector3.ZERO
+				for r in [0.6, 1.2, 2.0, 3.0, 4.0]:
+					var bestc := Vector3.INF
+					var bdot := -2.0
+					for i in 12:
+						var a := TAU * i / 12.0
+						var dirv := Vector3(cos(a), 0, sin(a))
+						var c: Vector3 = position + dirv * float(r)
+						var free := G.grid.height_at(c) < 0.45 and not G.grid.is_water(c)
+						for o in _near_veh:
+							if free and o.obb_push(c, 0.4) != Vector3.ZERO:
+								free = false
+						if free and dirv.dot(pref) > bdot:
+							bdot = dirv.dot(pref)
+							bestc = c
+					if bestc != Vector3.INF:
+						_vp_c = (bestc - position).normalized() * 2.4
+						break
 		veh_step += _vp_c
 		if G.time < yield_until and yield_veh != null and is_instance_valid(yield_veh) and state in ["idle", "move", "escort", "build"]:
 			veh_step += _yield_step()
@@ -2059,6 +2095,36 @@ func _movement(dt: float) -> void:
 	var mv := (want + sep) * dt
 	if mv.length_squared() > 0.0:
 		var np := position + mv
+		# araç gövdesinin içinden geçilmez (roadmap 105): adım aracın izine giriyorsa izin kenarına izdüşülür
+		# (asker aracın yanından kayarak dolaşır); zaten içindeyse (araç üstüne geldi) yukarıdaki itme çıkarır
+		if not _escaping:
+			for o in _near_veh:
+				if not is_instance_valid(o):
+					continue
+				if o == board_target and dist2_p(o.entry_point(0)) < 3.0:
+					continue          # binmeye gittiği aracın kapısında: kapıya yanaşabilsin
+				var pv: Vector3 = o.obb_push(np, 0.15)
+				if pv == Vector3.ZERO:
+					continue
+				np += pv
+				# gövde kenarı boyunca kay: adımın teğet yönü hedefe doğru; tam karşıdan geliyorsa yakın köşeye
+				# UP × dış normal: her yüzde aracın çevresinde aynı dönüş yönü — köşelerde de aynı yöne dolaşılır
+				var tn := Vector3.UP.cross(pv.normalized())
+				var md := mv.normalized()
+				if _slide_veh != o or G.time - _slide_t > 3.0:
+					# yön ilk temasta bir kez seçilir (tam karşıdan gelende sağ/sol arasında titremesin)
+					var td := tn.dot(md)
+					if absf(td) < 0.15:
+						td = (position - o.position).dot(tn)
+						if absf(td) < 0.05:
+							td = 1.0 if (get_instance_id() & 1) == 0 else -1.0
+					_slide_veh = o
+					_slide_sgn = signf(td)
+				_slide_t = G.time
+				tn *= _slide_sgn
+				np += tn * mv.length()
+				if o.obb_push(np, 0.15) != Vector3.ZERO:
+					np = position + tn * mv.length()
 		np.x = clampf(np.x, 1.0, G.MAP - 1.0)
 		np.z = clampf(np.z, 1.0, G.MAP - 1.0)
 		var hn := G.grid.height_at(np)

@@ -59,6 +59,10 @@ func run(scene: String) -> void:
 			await missile_test()
 		"aimatch":
 			await ai_match()
+		"mbtgallery":
+			await mbt_gallery()
+		"crewkilltest":
+			await crew_kill_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -594,6 +598,9 @@ func crew_test() -> void:
 	print("CREW boarded=%d t=%.1f" % [apc.cargo.size(), G.time - t1])
 	if apc.cargo.size() < 6:
 		fails += 1
+		for s in ss:
+			if not apc.cargo.has(s):
+				print("CREW not_boarded state=%s order=%s pos=%s entry=%s d_entry=%.2f bt=%s path=%d/%d esc=%s cap=%d needs_crew=%s can_load=%s" % [s.state, s.order, s.position, apc.entry_point(0), s.dist2_p(apc.entry_point(0)), s.board_target != null, s.path_i, s.path.size(), s._escaping, apc.capacity(), apc.needs_crew(), apc.can_load()])
 	apc.unload()
 	var shot_out := 0
 	var t2 := G.time
@@ -1701,6 +1708,93 @@ func ai_match() -> void:
 
 # taban tip modelleri (roadmap 10) ve rotorlar (39/44): iki ulusun tüm taban araçları yan yana; helikopterler
 # havada pervane dönerken; yakın çekimler
+# 99 / 114: top mermisi yiyen çekili topun mürettebatı ve araçtaki yolcular "hiçbir şey olmamış gibi" kalmaz
+func crew_kill_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var gun: Vehicle = m.spawn_vehicle(1, "howitzer", c, 0.0)
+	gun.cmd_hold()
+	gun.fire_mode = 2
+	var isv: Vehicle = m.spawn_vehicle(0, "usa_lv_isv", G.grid.nearest_free(c + Vector3(25, 0, 0), Grid.M_LIGHT), 0.0)
+	isv.cmd_hold()
+	for i in 8:
+		var s: Soldier = m.spawn_soldier(0, "rifle", isv.position + Vector3(0, 0, 4), null)
+		s.board(isv)
+	await m._wait(2.0)
+	var n_bodies := gun.crew.size()
+	var before := G.units.size()
+	gun.hp = gun.max_hp * 0.3
+	G.explode(gun.position + Vector3(0, 0.5, 0), 4.5, 300.0, "shell", 0, null)
+	isv.hp = isv.max_hp * 0.3
+	G.explode(isv.position + Vector3(0, 0.5, 0), 4.5, 300.0, "shell", 1, null)
+	await m._wait(4.0)
+	var crew_dead := 0
+	var crew_alive := 0
+	var pax_dead := 0
+	var pax_alive := 0
+	for u in G.units:
+		if u is Soldier and is_instance_valid(u):
+			if u.team == 1 and u.role == "crew" and u.position.distance_to(c) < 15.0:
+				if u.alive:
+					crew_alive += 1
+				else:
+					crew_dead += 1
+	for u in G.units:
+		if u is Soldier and is_instance_valid(u) and u.team == 0 and u.role == "rifle" and u.position.distance_to(isv.position) < 15.0:
+			if u.alive:
+				pax_alive += 1
+			else:
+				pax_dead += 1
+	_cam(c, 14.0)
+	await m._wait(0.4)
+	await m._shot("crewkill_gun")
+	print("CREWKILL gun_alive=%s bodies=%d -> left=%d crew dead=%d alive=%d | isv_alive=%s pax dead=%d alive=%d units %d->%d" % [gun.alive, n_bodies, gun.crew.size(), crew_dead, crew_alive, isv.alive, pax_dead, pax_alive, before, G.units.size()])
+	if gun.alive or gun.crew.size() > 0 or crew_dead + crew_alive < n_bodies or crew_dead < crew_alive:
+		fails += 1
+	if isv.alive or pax_dead < 6:
+		fails += 1
+	print("CREWKILLTEST RESULT fails=%d" % fails)
+
+# 97: ABD tankları yan yana (I, II, II-D, III) — taret / kubbe karşılaştırması, yakın çekim
+func mbt_gallery() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var ids := ["usa_mbt_a1", "usa_mbt_a2", "usa_mbt_s2", "usa_mbt_s3"]
+	var vs: Array = []
+	for i in ids.size():
+		var v = m.spawn_vehicle(0, ids[i], c + Vector3(-15.0 + i * 10.0, 0, 0), PI * 0.75)
+		v.cmd_hold()
+		v.fire_mode = 2
+		vs.append(v)
+	await m._wait(2.0)
+	_cam(c, 26.0)
+	await m._wait(0.6)
+	await m._shot("mbt_00_all")
+	for i in vs.size():
+		var v: Vehicle = vs[i]
+		var ta := (v.turret_mi.mesh as Mesh).get_aabb() if v.turret_mi != null else AABB()
+		var ha := (v.hull_mi.mesh as Mesh).get_aabb() if v.hull_mi != null else AABB()
+		print("MBTGAL %s turret_aabb=%s hull_aabb=%s turret_pos=%s hull_scale=%s" % [ids[i], ta.size, ha.size, v.turret.position if v.turret else Vector3.ZERO, v.hull.scale])
+		_cam(v.position, 9.0)
+		await m._wait(0.4)
+		await m._shot("mbt_%02d_%s" % [i + 1, ids[i]])
+	print("MBTGALLERY RESULT fails=0")
+
 func base_gallery() -> void:
 	m.get_window().size = Vector2i(1920, 1080)
 	Sfx.muted = true

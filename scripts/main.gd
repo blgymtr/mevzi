@@ -48,7 +48,7 @@ func _ready() -> void:
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -1118,7 +1118,25 @@ func _run_sep_test() -> void:
 		var s := spawn_soldier(0, "rifle", c + Vector3(randf_range(-0.3, 0.3), 0, randf_range(-0.3, 0.3)), null)
 		s.cmd_hold()
 		ss.append(s)
-	await _wait(4.0)
+	# 104: üst üste doğan araçlar yavaşça açılır — kare başına ışınlanıp "saçılmaz" (en yüksek hız ölçülür)
+	var last_p: Array = []
+	for v in vs:
+		last_p.append(v.position)
+	var vmax := 0.0
+	var tt0 := G.time
+	var tprev := G.time
+	while G.time - tt0 < 4.0:
+		await get_tree().process_frame
+		var gdt := G.time - tprev
+		tprev = G.time
+		if gdt <= 0.0:
+			continue
+		for i in vs.size():
+			vmax = maxf(vmax, vs[i].position.distance_to(last_p[i]) / gdt)
+			last_p[i] = vs[i].position
+	print("SEP vehicle_max_shove_speed=%.2f" % vmax)
+	if vmax > 3.0:
+		fails += 1
 	var vo := 0
 	for i in vs.size():
 		for j in range(i + 1, vs.size()):
@@ -1131,6 +1149,7 @@ func _run_sep_test() -> void:
 		for v in vs:
 			if v.obb_push(s.position, 0.0) != Vector3.ZERO:
 				inside += 1
+				print("SEP inside soldier state=%s pos=%s veh=%s veh_pos=%s push=%s h=%.2f vp=%s" % [s.state, s.position, v.vid, v.position, v.obb_push(s.position, 0.0), G.grid.height_at(s.position), s._vp_c])
 	var close := 0
 	for i in ss.size():
 		for j in range(i + 1, ss.size()):
@@ -1142,7 +1161,37 @@ func _run_sep_test() -> void:
 	await _wait(1.0)
 	await _shot("sep_01")
 	print("SEP vehicle_overlaps=%d soldiers_inside_vehicles=%d soldier_pairs_too_close=%d" % [vo, inside, close])
-	if vo > 0 or inside > 0 or close > 2:
+	# araçların ortasında doğan askerler: araçlar yavaş (2,5 m/sn) açıldığı için 4 sn'de birkaçı hâlâ izde olabilir;
+	# 8 sn'de hepsi dışarıda olmalı
+	await _wait(4.0)
+	var inside8 := 0
+	for s in ss:
+		for v in vs:
+			if v.obb_push(s.position, 0.0) != Vector3.ZERO:
+				inside8 += 1
+	print("SEP soldiers_inside_after_8s=%d" % inside8)
+	if vo > 0 or inside8 > 0 or close > 2:
+		fails += 1
+	# 105: asker duran aracın içinden yürüyerek geçmez — kamyonun öbür yanına giden asker yandan dolaşır
+	var c2 := G.grid.nearest_free(c + Vector3(0, 0, 40), Grid.M_HEAVY)
+	var trk := spawn_vehicle(0, "truck", c2, 0.0)
+	trk.cmd_hold()
+	await _wait(0.5)
+	var walk_in := 0
+	var walkers: Array = []
+	for i in 4:
+		var w := spawn_soldier(0, "rifle", G.grid.nearest_free(trk.position + trk.forward() * (trk.ext.y + 4.0) + trk.right() * (i - 1.5) * 0.8, Grid.M_INF), null)
+		w.cmd_move(G.grid.nearest_free(trk.position - trk.forward() * (trk.ext.y + 4.0) + trk.right() * (i - 1.5) * 0.8, Grid.M_INF))
+		walkers.append(w)
+	var tw0 := G.time
+	while G.time - tw0 < 14.0:
+		await _wait(0.1)
+		for w in walkers:
+			if trk.obb_push(w.position, -0.1) != Vector3.ZERO:
+				walk_in += 1
+	var arrived := walkers.filter(func(x): return x.position.distance_to(trk.position - trk.forward() * (trk.ext.y + 4.0)) < 4.0).size()
+	print("SEP walk_through_truck inside_samples=%d arrived=%d/4" % [walk_in, arrived])
+	if walk_in > 0 or arrived < 4:
 		fails += 1
 	print("SEPTEST RESULT fails=%d" % fails)
 	get_tree().quit()
@@ -2244,7 +2293,7 @@ func _run_veh_test() -> void:
 			wet += 1
 	print("VEH bridge crossed=%d/5 wet=%d fps=%d t=%.1f" % [crossed, wet, Engine.get_frames_per_second(), G.time])
 	for v in vs:
-		print("VEH  %s along=%.1f path=%d/%d spd=%.1f imm=%s" % [v.vtype, (v.position - bc).dot(ax), v.path_i, v.path.size(), v.cur_speed, v.immobile()])
+		print("VEH  %s along=%.1f dest_along=%.1f dest_side=%.1f path=%d/%d spd=%.1f imm=%s hp=%d mob=%d eng=%d trk=%.1f drv=%s crew=%d tires=%d atk=%s" % [v.vtype, (v.position - bc).dot(ax), (v.dest - bc).dot(ax), (v.dest - bc).dot(Vector3(-ax.z, 0, ax.x)), v.path_i, v.path.size(), v.cur_speed, v.immobile(), int(v.hp), v.crit["mob"], v.crit["eng"], v.tracks_broken, v.driver_ok, v.crew_n, v.tires, v.attacker.name if v.attacker != null and is_instance_valid(v.attacker) else "-"])
 	if crossed < 5 or wet > 0:
 		fails += 1
 	# palet
