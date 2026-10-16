@@ -136,6 +136,14 @@ func hotkey(act: String, shift := false) -> void:
 			_select_type_on_screen("inf")
 		"sel.veh":
 			_select_type_on_screen("veh")
+		"cam.rot_l":
+			G.cam.rotate_step(-1.0)
+		"cam.rot_r":
+			G.cam.rotate_step(1.0)
+		"cam.reset":
+			G.cam.reset_view()
+		"cam.follow":
+			G.cam.toggle_follow(selected[0] if not selected.is_empty() and G.cam.follow_unit == null else null)
 
 func _process(_dt: float) -> void:
 	if place_type != "":

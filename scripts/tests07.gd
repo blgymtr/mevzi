@@ -103,6 +103,8 @@ func run(scene: String) -> void:
 			await nade_test()
 		"fobdark":
 			await fobdark_test()
+		"camtest":
+			await cam_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -504,6 +506,56 @@ func wound_test() -> void:
 	await m._wait(1.0)
 	await m._shot("wound_09_sever")
 	print("WOUNDTEST RESULT fails=%d" % fails)
+
+# 136: kamera 360° döner (45° adım), serbest bakışta eğilir, seçili birime kilitlenir ve bırakılır
+func cam_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var tk: Vehicle = m.spawn_vehicle(0, "tank", c, 0.0)
+	tk.fire_mode = 2
+	_cam(c, 30.0)
+	await m._wait(0.5)
+	var vp := m.get_viewport().get_visible_rect().size
+	var r0 := G.cam.right_vec()
+	var center_err := 0.0
+	for k in 4:
+		await m._shot("cam_yaw_%d" % k)
+		var g := G.cam.mouse_ground(vp * 0.5)
+		center_err = maxf(center_err, Vector2(g.x - G.cam.focus.x, g.z - G.cam.focus.z).length())
+		G.cam.rotate_step(1.0)
+		await m._wait(0.8)
+	var r4 := G.cam.right_vec()
+	print("CAM after 4 steps yaw=%.2f right %s -> %s dot=%.2f center_err=%.2f" % [G.cam.yaw, r0, r4, r0.dot(r4), center_err])
+	if r0.dot(r4) > -0.95 or center_err > 1.0:
+		fails += 1
+	# serbest bakış: dik eğim
+	G.cam.target_pitch = 70.0
+	await m._wait(0.8)
+	await m._shot("cam_pitch70")
+	G.cam.reset_view()
+	await m._wait(0.9)
+	var back_ok := absf(angle_difference(G.cam.yaw, CamRig.YAW0)) < 0.02 and absf(G.cam.pitch - CamRig.PITCH) < 0.5
+	print("CAM reset yaw=%.2f pitch=%.1f ok=%s" % [G.cam.yaw, G.cam.pitch, back_ok])
+	if not back_ok:
+		fails += 1
+	# kilit: hareket eden tankı izler
+	G.cam.toggle_follow(tk)
+	tk.cmd_move(G.grid.nearest_free(c + Vector3(40, 0, 25), Grid.M_HEAVY))
+	await m._wait(6.0)
+	var lag := Vector2(G.cam.focus.x - tk.position.x, G.cam.focus.z - tk.position.z).length()
+	G.cam.toggle_follow(null)
+	var released := G.cam.follow_unit == null
+	print("CAM follow lag=%.2f moved=%.1f released=%s" % [lag, tk.position.distance_to(c), released])
+	if lag > 2.0 or tk.position.distance_to(c) < 10.0 or not released:
+		fails += 1
+	print("CAMTEST RESULT fails=%d" % fails)
 
 # 120: ikmal hattı kesilen ileri üs kararır (üretim durur, görüş daralır), teslimat gelince canlanır; normal
 # ikmal döngüsünde kararmaz

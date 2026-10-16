@@ -59,6 +59,11 @@ static func _build_defs() -> void:
 	_add("speed.1", "Oyun hızı ×1", "game", "global", KEY_F1)
 	_add("speed.2", "Oyun hızı ×2", "game", "global", KEY_F2)
 	_add("speed.3", "Oyun hızı ×3", "game", "global", KEY_F3)
+	# kamera (136)
+	_add("cam.rot_l", "Kamerayı sola döndür (45°)", "game", "global", KEY_COMMA)
+	_add("cam.rot_r", "Kamerayı sağa döndür (45°)", "game", "global", KEY_PERIOD)
+	_add("cam.follow", "Kamerayı seçili birime kilitle / bırak", "game", "global", KEY_SPACE)
+	_add("cam.reset", "Kamerayı varsayılan açıya döndür", "game", "global", KEY_END)
 	# sabit: atanamaz, çakışma denetimi için listede
 	_add("esc", "İptal / duraklatma menüsü", "fixed", "global", KEY_ESCAPE, 0, true)
 	_add("cam.up", "Kamera: yukarı", "fixed", "global", KEY_W, KEY_UP, true, true)

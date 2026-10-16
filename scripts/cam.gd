@@ -6,6 +6,16 @@ class_name CamRig extends Node3D
 
 const PITCH := 40.0
 const DIST := 120.0
+const YAW0 := PI * 0.25
+# (136) 360° döndürme: ',' / '.' 45° adım, Alt + orta tuşla sürükleme serbest bakış (yön + eğim);
+# Boşluk seçili birime kilitlenir (yeniden basınca ya da elle kaydırınca çıkar); End varsayılan görünüm
+var yaw := YAW0
+var target_yaw := YAW0
+var pitch := PITCH
+var target_pitch := PITCH
+var follow_unit: Node3D = null
+var _look := false
+var _look_from := Vector2.ZERO
 var cam: Camera3D
 var listener: AudioListener3D
 var size := 40.0
@@ -38,10 +48,26 @@ func _ready() -> void:
 	_apply()
 
 func right_vec() -> Vector3:
-	return Vector3(1, 0, -1).normalized()
+	return Vector3(cos(yaw), 0, -sin(yaw))
 
 func up_vec() -> Vector3:
-	return Vector3(-1, 0, -1).normalized()
+	return Vector3(-sin(yaw), 0, -cos(yaw))
+
+func rotate_step(dir: float) -> void:
+	target_yaw += dir * PI * 0.25
+
+func reset_view() -> void:
+	# en yakın 360° katına dön (bir tur geri dolanmasın)
+	target_yaw = YAW0 + round((target_yaw - YAW0) / TAU) * TAU
+	target_pitch = PITCH
+
+func toggle_follow(u: Node3D) -> void:
+	if follow_unit != null or u == null:
+		follow_unit = null
+		G.say("Kamera serbest", focus, G.player_team)
+	else:
+		follow_unit = u
+		G.say("Kamera birime kilitlendi", u.position, G.player_team)
 
 # haritaya göre azami görüş: ≤1 km 115 m; büyük haritada stratejik görüş
 func setup_for_map(map_size: float) -> void:
@@ -62,9 +88,9 @@ var shadows_on := true          # Ayarlar > Gölgeler
 var _zoom_band := -1
 
 func _apply() -> void:
-	var p := deg_to_rad(PITCH)
+	var p := deg_to_rad(pitch)
 	var dist := _dist()
-	var off := Vector3(1, 0, 1).normalized() * cos(p) * dist + Vector3(0, sin(p) * dist, 0)
+	var off := Vector3(sin(yaw), 0, cos(yaw)) * cos(p) * dist + Vector3(0, sin(p) * dist, 0)
 	var sh := Vector3.ZERO
 	if _shake > 0.0:
 		sh = (right_vec() * randf_range(-1, 1) + up_vec() * randf_range(-1, 1)) * _shake * 0.6
@@ -127,15 +153,32 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN and mb.pressed:
 			target_size = minf(max_size, target_size * (1.13 if target_size < 115.0 else 1.25))
 		elif mb.button_index == MOUSE_BUTTON_MIDDLE:
-			_drag = mb.pressed
+			if mb.pressed and mb.alt_pressed:
+				# serbest bakış: sürükleme yönü döndürür, dikey eğer
+				_look = true
+				_look_from = mb.position
+				return
+			if not mb.pressed:
+				_look = false
+			_drag = mb.pressed and not _look
 			_drag_from = mb.position
 			_drag_focus = target_focus
+			if _drag:
+				follow_unit = null
+	elif e is InputEventMouseMotion and _look:
+		var ml := e as InputEventMouseMotion
+		var dl := ml.position - _look_from
+		_look_from = ml.position
+		target_yaw -= dl.x * 0.006
+		target_pitch = clampf(target_pitch + dl.y * 0.12, 25.0, 75.0)
+		yaw = target_yaw
+		pitch = target_pitch
 	elif e is InputEventMouseMotion and _drag:
 		var mm := e as InputEventMouseMotion
 		var vp := get_viewport().get_visible_rect().size
 		var wpp := size / vp.y
 		var d := mm.position - _drag_from
-		target_focus = _clamp(_drag_focus - right_vec() * d.x * wpp + up_vec() * d.y * wpp / sin(deg_to_rad(PITCH)))
+		target_focus = _clamp(_drag_focus - right_vec() * d.x * wpp + up_vec() * d.y * wpp / sin(deg_to_rad(pitch)))
 		focus = target_focus
 
 # kameranın gördüğü zemin dikdörtgeni (kare başına bir kez; birimlerin animasyon ayrıntı düzeyi için)
@@ -184,15 +227,26 @@ func _process(dt: float) -> void:
 				elif m.y > vp.y - 7:
 					mv.y -= 1
 		if mv != Vector2.ZERO:
+			# elle kaydırma kilidi bırakır
+			follow_unit = null
 			var sp := size * 1.1 * rdt
 			if Input.is_key_pressed(KEY_SHIFT):
 				sp *= 2.0
-			target_focus = _clamp(target_focus + right_vec() * mv.x * sp + up_vec() * mv.y * sp / sin(deg_to_rad(PITCH)))
+			target_focus = _clamp(target_focus + right_vec() * mv.x * sp + up_vec() * mv.y * sp / sin(deg_to_rad(pitch)))
 	if auto_pan:
 		_auto_t += rdt
 		target_focus = _clamp(Vector3(128 + sin(_auto_t * 0.05) * 50.0, 0, 128 + cos(_auto_t * 0.037) * 50.0))
+	# birime kilit: birim ölür / gemiye biner / kaybolursa bırakılır
+	if follow_unit != null:
+		if not is_instance_valid(follow_unit) or not follow_unit.get("alive") or not follow_unit.visible:
+			follow_unit = null
+		else:
+			target_focus = _clamp(follow_unit.global_position)
 	focus = focus.lerp(target_focus, clampf(rdt * 10.0, 0.0, 1.0))
 	size = lerpf(size, target_size, clampf(rdt * 9.0, 0.0, 1.0))
+	# hedef açı sarılmadan birikir (her adım ±45°): doğrusal izleme doğru yönde döner
+	yaw = lerpf(yaw, target_yaw, clampf(rdt * 8.0, 0.0, 1.0))
+	pitch = lerpf(pitch, target_pitch, clampf(rdt * 8.0, 0.0, 1.0))
 	_shake = maxf(0.0, _shake - rdt * 2.5)
 	_apply()
 
