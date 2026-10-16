@@ -1,7 +1,25 @@
 class_name SoldierBody extends Node3D
-# Prosedürel asker figürü ve kodla poz animasyonu. İleri yön: -Z.
+# Asker gövdesi (derili gerçekçi model ya da yedek segment gövde) ve kodla poz animasyonu. İleri yön: -Z,
+# anatomik sağ +X (arm_r/leg_r +X'te).
+# Pozlar (animate, _weapon_xf, IK) tarihsel olarak AYNA uzayında yazılıdır (sağ kol -X'te idi): uygulanırken
+# X'e göre aynalanır — konum x → -x, Euler (x, y, z) → (x, -y, -z) (_mx/_mr/_mxf). Böylece asker sağ elle
+# nişan alır ve tüm elle ayarlanmış poz sayıları geçerli kalır.
 
 const HIP := 0.92
+# iskelet ölçüleri (tools/anim/build_soldier.py ile aynı; MakeHuman 1,78 m erkek oranları)
+const SH_X := 0.19        # omuz eklemi, gövde ekseninden
+const SH_Y := 0.46        # omuz eklemi, kalça üstü (1,38 m)
+const UPPER := 0.26       # omuz → dirsek
+const LEG_X := 0.1
+const THIGH := 0.40       # kalça → diz
+const SHIN := 0.52        # diz → taban
+
+static func _mx(v: Vector3) -> Vector3:
+	return Vector3(-v.x, v.y, v.z)
+
+static func _mxf(t: Transform3D) -> Transform3D:
+	var M := Basis(Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1))
+	return Transform3D(M * t.basis * M, _mx(t.origin))
 static var _mesh := {}
 
 var pelvis: Node3D
@@ -27,6 +45,11 @@ var role := "rifle"
 var dead_pose := {}
 var pistol := false
 var pistol_k := 0.0              # 0 kılıfta, 1 çekili ve nişanda
+var recoil := 0.0                # atış geri tepmesi (kick() ile, hızla söner)
+var reload_k := -1.0             # şarjör değiştirme ilerlemesi 0..1 (Soldier her kare yazar; -1 yok)
+
+func kick() -> void:
+	recoil = minf(recoil + (0.55 if role == "mg" else (1.4 if role == "sniper" else 1.0)), 1.6)
 var _pistol_mi: MeshInstance3D = null
 static var _pistol_mesh: Mesh = null
 
@@ -43,7 +66,7 @@ func _pistol_model() -> void:
 		_pistol_mi = MeshInstance3D.new()
 		_pistol_mi.mesh = nw
 		fore_r.add_child(_pistol_mi)
-		_pistol_mi.position = Vector3(0, -0.31, -0.02)
+		_pistol_mi.position = Vector3(0, -HAND_LEN, -0.02)
 		_pistol_mi.rotation = Vector3(-PI * 0.5, 0, 0)
 		return
 	if _pistol_mesh == null:
@@ -58,7 +81,7 @@ func _pistol_model() -> void:
 	_pistol_mi.mesh = _pistol_mesh
 	fore_r.add_child(_pistol_mi)
 	# el kemiği ucunda; namlu önkolun -Y yönünde (kol uzanınca ileri bakar)
-	_pistol_mi.position = Vector3(0, -0.31, -0.02)
+	_pistol_mi.position = Vector3(0, -HAND_LEN, -0.02)
 	_pistol_mi.rotation = Vector3(-PI * 0.5, 0, 0)
 	_pistol_mi.visible = false
 
@@ -78,14 +101,14 @@ func build(team: int, rl: String, winter: bool) -> void:
 	pelvis.add_child(spine)
 	var rig_model := "soldier_%s_rig" % ("usa" if team == 0 else "rus")
 	var skinned := Art.has(rig_model)
-	arm_r = _pivot(spine, Vector3(-0.21, 0.5, 0))
-	fore_r = _pivot(arm_r, Vector3(0, -0.29, 0))
-	arm_l = _pivot(spine, Vector3(0.21, 0.5, 0))
-	fore_l = _pivot(arm_l, Vector3(0, -0.29, 0))
-	leg_r = _pivot(pelvis, Vector3(-0.1, 0, 0))
-	knee_r = _pivot(leg_r, Vector3(0, -0.44, 0))
-	leg_l = _pivot(pelvis, Vector3(0.1, 0, 0))
-	knee_l = _pivot(leg_l, Vector3(0, -0.44, 0))
+	arm_r = _pivot(spine, Vector3(SH_X, SH_Y, 0))
+	fore_r = _pivot(arm_r, Vector3(0, -UPPER, 0))
+	arm_l = _pivot(spine, Vector3(-SH_X, SH_Y, 0))
+	fore_l = _pivot(arm_l, Vector3(0, -UPPER, 0))
+	leg_r = _pivot(pelvis, Vector3(LEG_X, 0, 0))
+	knee_r = _pivot(leg_r, Vector3(0, -THIGH, 0))
+	leg_l = _pivot(pelvis, Vector3(-LEG_X, 0, 0))
+	knee_l = _pivot(leg_l, Vector3(0, -THIGH, 0))
 	if skinned:
 		_build_skin(rig_model, team)
 	else:
@@ -104,7 +127,7 @@ func build(team: int, rl: String, winter: bool) -> void:
 		_mi(spine, M["extra"])
 	phase = rng.randf() * TAU
 	for n in [spine, arm_r, arm_l, fore_r, fore_l, leg_r, leg_l, knee_r, knee_l]:
-		rest[n] = n.position
+		rest[n] = _mx(n.position)     # poz (ayna) uzayında
 
 var rest := {}
 
@@ -139,22 +162,23 @@ func set_injury(kind: String) -> void:
 				mb.cyl(Vector3(0, -0.29, 0), 0.052, 0.052, 0.02, 10, gauze.darkened(0.08))
 			"leg":
 				mb.cyl(Vector3(0, -0.2, 0), 0.088, 0.085, 0.13, 10, gauze)
-				mb.box(Vector3(0, -0.2, 0.082), Vector3(0.06, 0.07, 0.012), blood)
+				mb.box(Vector3(0, -0.2, -0.082), Vector3(0.06, 0.07, 0.012), blood)
 			"shoulder":
 				mb.cyl(Vector3(0, -0.06, 0), 0.075, 0.072, 0.11, 10, gauze)
-				mb.box(Vector3(-0.03, -0.05, 0.07), Vector3(0.05, 0.05, 0.012), blood)
+				mb.box(Vector3(0.03, -0.05, -0.07), Vector3(0.05, 0.05, 0.012), blood)
 			"head":
-				mb.cyl(Vector3(0, 0.0, 0), 0.118, 0.118, 0.05, 14, gauze)
-				mb.box(Vector3(0.05, -0.005, 0.105), Vector3(0.05, 0.04, 0.02), blood.lightened(0.15))
+				mb.cyl(Vector3(0, 0.0, 0), 0.094, 0.094, 0.045, 14, gauze)
+				mb.box(Vector3(0.04, -0.005, -0.1), Vector3(0.045, 0.035, 0.02), blood.lightened(0.15))
 			"torso":
 				mb.cyl(Vector3(0, 0.0, 0), 0.19, 0.19, 0.09, 14, gauze)
-				mb.box(Vector3(0.06, 0.0, 0.185), Vector3(0.07, 0.06, 0.015), blood)
+				mb.box(Vector3(0.06, 0.0, -0.185), Vector3(0.07, 0.06, 0.015), blood)
 		_inj_mesh[kind] = mb.commit(Mats.vcs())
 		if kind == "arm":
 			# üçgen kol askısı: boyundan göğse
 			var sl := MB.new()
-			sl.quad(Vector3(-0.12, 0.56, 0.08), Vector3(0.14, 0.56, 0.06), Vector3(0.1, 0.28, 0.17), Vector3(-0.06, 0.3, 0.17), gauze.darkened(0.05), Vector3(0, 0, 1))
-			sl.tri(Vector3(-0.06, 0.3, 0.17), Vector3(0.1, 0.28, 0.17), Vector3(0.05, 0.22, 0.15), gauze.darkened(0.1), Vector3(0, 0, 1))
+			# sol kol -X'te: askı boyunun sağından sol göğse iner (çift yüzlü)
+			sl.quad(Vector3(0.12, 0.54, -0.08), Vector3(-0.14, 0.54, -0.06), Vector3(-0.1, 0.26, -0.17), Vector3(0.06, 0.28, -0.17), gauze.darkened(0.05), Vector3(0, 0, -1))
+			sl.tri(Vector3(0.06, 0.28, -0.17), Vector3(-0.1, 0.26, -0.17), Vector3(-0.05, 0.2, -0.15), gauze.darkened(0.1), Vector3(0, 0, -1))
 			_inj_mesh["sling"] = sl.commit(Mats.vc2())
 	var mi := MeshInstance3D.new()
 	mi.mesh = _inj_mesh[kind]
@@ -171,7 +195,8 @@ func set_injury(kind: String) -> void:
 			arm_r.add_child(mi)
 		"head":
 			spine.add_child(mi)
-			mi.position = Vector3(0, 0.715, 0.005)
+			mi.position = Vector3(0, 0.765, -0.045)
+			mi.scale = Vector3(1.0, 1.0, 1.18)
 		"torso":
 			spine.add_child(mi)
 			mi.position = Vector3(0, 0.1, 0)
@@ -201,6 +226,21 @@ func set_tool(kind: String) -> void:
 			# top mermisi: kovanlı, sarı tapalı (göğüs önünde iki elle)
 			mb.cyl(Vector3(0, 0, 0), 0.07, 0.07, 0.5, 10, Color(0.75, 0.58, 0.24), Basis(Vector3.FORWARD, PI * 0.5))
 			mb.cyl(Vector3(-0.35, 0, 0), 0.07, 0.0, 0.22, 10, Color(0.32, 0.35, 0.26), Basis(Vector3.FORWARD, PI * 0.5))
+		elif kind == "shovel":
+			# katlanır kürek (piyade kazma küreği): sap ellerde, ağız yere doğru
+			mb.cyl(Vector3(0, -0.32, 0), 0.016, 0.016, 0.7, 6, Color(0.35, 0.3, 0.22))
+			mb.box(Vector3(0, -0.72, -0.02), Vector3(0.17, 0.2, 0.012), Color(0.3, 0.32, 0.28))
+			mb.box(Vector3(0, 0.04, 0), Vector3(0.1, 0.03, 0.03), Color(0.2, 0.2, 0.18))
+		elif kind == "flag":
+			# beyaz bayrak: el boyu sopa + beyaz bez (tişört / sargı bezi), sopanın ucunda yana sarkar
+			mb.cyl(Vector3(0, -0.3, 0), 0.012, 0.01, 0.62, 6, Color(0.45, 0.32, 0.2))
+			var wc := Color(0.93, 0.92, 0.88)
+			mb.quad(Vector3(0, -0.6, 0), Vector3(0, -0.6, -0.34), Vector3(0.02, -0.36, -0.3), Vector3(0, -0.36, 0), wc, Vector3(1, 0, 0))
+			mb.quad(Vector3(0, -0.36, 0), Vector3(0.02, -0.36, -0.3), Vector3(0, -0.6, -0.34), Vector3(0, -0.6, 0), wc.darkened(0.06), Vector3(-1, 0, 0))
+		elif kind == "bandage":
+			# sargı rulosu (sağ elde) + açık ilk yardım çantası (dizin yanında, yerde)
+			mb.cyl(Vector3(0, 0, 0), 0.035, 0.035, 0.09, 8, Color(0.92, 0.9, 0.85), Basis(Vector3.FORWARD, PI * 0.5))
+			mb.box(Vector3(0, 0.0, 0.05), Vector3(0.02, 0.01, 0.12), Color(0.9, 0.88, 0.82))
 		elif kind == "rc":
 			# drone kumandası: iki çubuklu verici + iki anten (iki elle göğüs önünde)
 			mb.box(Vector3(0, 0, 0), Vector3(0.2, 0.035, 0.12), Color(0.16, 0.17, 0.16))
@@ -229,8 +269,22 @@ func set_tool(kind: String) -> void:
 	_tool_mi.mesh = _tool_mesh[kind]
 	if kind == "hammer":
 		fore_r.add_child(_tool_mi)
-		_tool_mi.position = Vector3(0, -0.3, 0)
+		_tool_mi.position = Vector3(0, -HAND_LEN + 0.02, 0)
 		_tool_mi.rotation.x = -0.4
+	elif kind == "shovel":
+		# sağ el sapın üst ucunda; sap ön kolun devamında aşağı-ileri
+		fore_r.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, -HAND_LEN + 0.04, 0)
+		_tool_mi.rotation.x = -0.35
+		weapon.visible = true
+	elif kind == "flag":
+		fore_r.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, -HAND_LEN + 0.02, 0)
+		weapon.visible = false
+	elif kind == "bandage":
+		fore_r.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, -HAND_LEN + 0.03, -0.03)
+		weapon.visible = true
 	elif kind == "shell":
 		spine.add_child(_tool_mi)
 		_tool_mi.position = Vector3(0, 0.3, -0.3)
@@ -252,7 +306,17 @@ func set_tool(kind: String) -> void:
 
 # ------------------------------------------------------------ iskeletli (Blender) gövde
 var skel: Skeleton3D = null
-var bone_map: Array = []       # [kemik indeksi, pivot düğümü, dinlenme farkı D]
+var bone_map: Array = []       # [kemik indeksi, pivot düğümü, dinlenme farkı D, pivot adı]
+var severed := {}              # kopan uzuvlar (pivot adı): kemiği büzülür, segment örgüsü gizlenir
+
+func sever(pn: String) -> void:
+	severed[pn] = true
+	var piv: Node3D = get(pn)
+	if piv:
+		for c in piv.get_children():
+			if c is MeshInstance3D:
+				(c as MeshInstance3D).visible = false
+	sync_skin()
 static var _rig_scenes := {}
 
 func _build_skin(model: String, team: int) -> void:
@@ -270,7 +334,8 @@ func _build_skin(model: String, team: int) -> void:
 			for i in mi.mesh.get_surface_count():
 				var sm := mi.mesh.surface_get_material(i)
 				var nm := String(sm.resource_name) if sm else "uniform"
-				mi.set_surface_override_material(i, Art.material(nm, team))
+				# tek yüzeyli gerçekçi asker (kimlik UV2'de) ya da eski çok yüzeyli gövde
+				mi.set_surface_override_material(i, Art.soldier_material(model, team) if nm == "soldier" else Art.material(nm, team))
 	var pv := {"pelvis": pelvis, "spine": spine, "arm_r": arm_r, "fore_r": fore_r, "arm_l": arm_l, "fore_l": fore_l, "leg_r": leg_r, "knee_r": knee_r, "leg_l": leg_l, "knee_l": knee_l}
 	var S := _rel(skel)
 	for i in skel.get_bone_count():
@@ -279,7 +344,7 @@ func _build_skin(model: String, team: int) -> void:
 			continue
 		var P_rest: Transform3D = S.affine_inverse() * _rel(pv[bn])
 		var D := P_rest.affine_inverse() * skel.get_bone_global_rest(i)
-		bone_map.append([i, pv[bn], D])
+		bone_map.append([i, pv[bn], D, bn])
 
 func _find_skel(n: Node) -> Skeleton3D:
 	if n is Skeleton3D:
@@ -305,13 +370,16 @@ func sync_skin() -> void:
 		return
 	var Si := _rel(skel).affine_inverse()
 	for e in bone_map:
-		skel.set_bone_global_pose(e[0], Si * _rel(e[1]) * e[2])
+		var t: Transform3D = Si * _rel(e[1]) * e[2]
+		if not severed.is_empty() and severed.has(e[3]):
+			t.basis = t.basis.scaled(Vector3(0.02, 0.02, 0.02))
+		skel.set_bone_global_pose(e[0], t)
 
 # ragdoll sonrası iskeleti kurulum konumlarına döndür
 func reset_rig() -> void:
 	pelvis.transform = Transform3D(Basis(), Vector3(0, HIP, 0))
 	for n in rest:
-		n.transform = Transform3D(Basis(), rest[n])
+		n.transform = Transform3D(Basis(), _mx(rest[n]))
 	wp_cur = Transform3D()
 
 func _pivot(parent: Node3D, p: Vector3) -> Node3D:
@@ -451,7 +519,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			wpn = 2
 			if pose == "aim" and moving:
 				var sw3 := clampf(speed / 2.2, 0.0, 1.0)
-				T["py"] = HIP - 0.07 - absf(s) * 0.015 * sw3
+				T["py"] = HIP - 0.045 - absf(s) * 0.015 * sw3
 				T["lrx"] = 0.3 + s * 0.42 * sw3
 				T["llx"] = 0.3 - s * 0.42 * sw3
 				T["krx"] = -0.5 - maxf(0.0, -c) * 0.55 * sw3
@@ -484,7 +552,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["alz"] = 0.0
 				T["krx"] = T["krx"] - 0.35
 				T["klx"] = T["klx"] - 0.35
-				T["py"] = HIP - 0.1
+				T["py"] = HIP - 0.07
 				wpn = 4
 			elif pose == "surrender":
 				T["arx"] = 3.0
@@ -513,9 +581,9 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["flx"] = 0.35
 				wpn = 4
 			elif pose == "build":
-				T["py"] = 0.62
-				T["lrx"] = 1.4
-				T["krx"] = -1.45
+				T["py"] = 0.53
+				T["lrx"] = 1.45
+				T["krx"] = -1.47
 				T["llx"] = -0.1
 				T["klx"] = -1.6
 				T["srx"] = 0.5
@@ -566,9 +634,63 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["arx"] = 0.45
 				T["frx"] = 1.0
 				wpn = 2
+		"dig":
+			# kürekle kazma: ayaklar açık, dizler bükük; batır (gövde öne, kollar aşağı itme) → kaldır → yana at
+			var w := fmod(G.time * 0.45 + phase * 0.16, 1.0)
+			var push := smoothstep(0.0, 0.35, w) * (1.0 - smoothstep(0.45, 0.6, w))
+			var throw_k := smoothstep(0.55, 0.8, w) * (1.0 - smoothstep(0.85, 1.0, w))
+			T["py"] = HIP - 0.06 - push * 0.12
+			T["lrx"] = 0.25 + push * 0.35
+			T["krx"] = -0.25 - push * 0.55
+			T["llx"] = -0.15
+			T["klx"] = -0.2 - push * 0.3
+			T["lrz"] = 0.1
+			T["llz"] = -0.1
+			T["srx"] = 0.3 + push * 0.45 - throw_k * 0.2
+			T["sry"] = throw_k * 0.6
+			T["arx"] = 0.55 + push * 0.35 + throw_k * 0.6
+			T["arz"] = 0.15
+			T["frx"] = 0.6 - push * 0.3
+			T["alx"] = 0.95 + push * 0.4 + throw_k * 0.5
+			T["alz"] = -0.25
+			T["flx"] = 0.9
+			wpn = 4
+		"lift":
+			# kutuyu yerden alma / yere bırakma: çömel, öne eğil, kollar aşağı
+			var bend := sin(clampf(extra, 0.0, 1.0) * PI)
+			T["py"] = HIP - 0.04 - bend * 0.36
+			T["lrx"] = bend * 1.05
+			T["llx"] = bend * 0.95
+			T["krx"] = -bend * 1.7
+			T["klx"] = -bend * 1.6
+			T["srx"] = 0.12 + bend * 0.55
+			T["arx"] = 0.45 + bend * 0.45
+			T["alx"] = 0.45 + bend * 0.45
+			T["arz"] = 0.3
+			T["alz"] = -0.3
+			T["frx"] = 1.2 - bend * 0.7
+			T["flx"] = 1.2 - bend * 0.7
+			wpn = 4
+		"treat":
+			# ilk yardım: yaralının yanında diz çöker, öne eğilir; iki el yaranın üstünde sırayla sargı sarar /
+			# bastırır (turnike, basınçlı sargı)
+			var tw := sin(G.time * 5.0 + phase)
+			T["py"] = 0.53
+			T["lrx"] = 1.45
+			T["krx"] = -1.47
+			T["llx"] = -0.1
+			T["klx"] = -1.6
+			T["srx"] = 0.75
+			T["arx"] = 1.05 + tw * 0.18
+			T["arz"] = 0.15
+			T["frx"] = 0.75 - tw * 0.2
+			T["alx"] = 0.95 - tw * 0.18
+			T["alz"] = -0.2
+			T["flx"] = 0.85 + tw * 0.2
+			wpn = 4
 		"flinch":
 			# patlama yakınında: çömel, kollar başı korur
-			T["py"] = 0.56
+			T["py"] = 0.5
 			T["prx"] = 0.0
 			T["srx"] = 0.7
 			T["lrx"] = 1.5
@@ -616,9 +738,9 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			wpn = 2
 		"blind", "blind_side":
 			# kör ateş: çömelik, silah başın üstünden (duvar) veya yandan (köşe) uzatılmış
-			T["py"] = 0.58
-			T["lrx"] = 1.45
-			T["krx"] = -1.5
+			T["py"] = 0.5
+			T["lrx"] = 1.5
+			T["krx"] = -1.52
 			T["llx"] = -0.05
 			T["klx"] = -1.62
 			T["srx"] = 0.35
@@ -640,11 +762,11 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["flx"] = 0.2
 				wpn = 9
 		"cover", "lay", "ram", "drop":
-			# top başında: çömelik taban
-			T["py"] = 0.6
+			# top başında: çömelik taban (arka diz yerde)
+			T["py"] = 0.5
 			T["srx"] = 0.35
-			T["lrx"] = 1.45
-			T["krx"] = -1.5
+			T["lrx"] = 1.5
+			T["krx"] = -1.52
 			T["llx"] = -0.05
 			T["klx"] = -1.62
 			wpn = 4
@@ -671,7 +793,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				"ram":
 					# mermiyi kamaya sür: iki kol öne uzanır, gövde ileri itilir
 					var k := clampf(extra, 0.0, 1.0)
-					T["py"] = 0.66
+					T["py"] = 0.52
 					T["srx"] = 0.55 + k * 0.25
 					T["arx"] = lerpf(1.0, 1.55, k)
 					T["alx"] = lerpf(1.0, 1.55, k)
@@ -679,21 +801,22 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 					T["alz"] = -0.05
 					T["frx"] = lerpf(1.2, 0.15, k)
 					T["flx"] = lerpf(1.2, 0.15, k)
-					T["lrx"] = 1.1
-					T["llx"] = -0.35
+					T["lrx"] = 1.5
+					T["llx"] = -0.3
 				"drop":
 					# havan: mermiyi namlu ağzına kaldır, bırak, eğil
 					var k2 := clampf(extra, 0.0, 1.0)
-					T["py"] = lerpf(HIP - 0.05, 0.6, maxf(0.0, k2 - 0.7) / 0.3)
+					var q := maxf(0.0, k2 - 0.7) / 0.3
+					T["py"] = lerpf(HIP - 0.05, 0.5, q)
 					T["srx"] = lerpf(0.1, 0.7, maxf(0.0, k2 - 0.7) / 0.3)
 					T["arx"] = lerpf(1.2, 2.2, minf(k2 / 0.6, 1.0))
 					T["alx"] = lerpf(1.2, 2.2, minf(k2 / 0.6, 1.0))
 					T["frx"] = 0.6
 					T["flx"] = 0.6
-					T["lrx"] = 0.1
-					T["llx"] = 0.0
-					T["krx"] = -0.1
-					T["klx"] = -0.1
+					T["lrx"] = lerpf(0.1, 1.5, q)
+					T["llx"] = lerpf(0.0, -0.05, q)
+					T["krx"] = lerpf(-0.1, -1.52, q)
+					T["klx"] = lerpf(-0.1, -1.62, q)
 		"sling", "unsling":
 			# tüfeği sağ omuz üstünden sırta atma / sırttan alma (extra: 0..1 ilerleme)
 			var k := clampf(extra, 0.0, 1.0)
@@ -751,11 +874,11 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["klx"] = -0.55 - sl * 0.2
 			wpn = 4
 		"crouch", "crouch_aim":
-			T["py"] = 0.6
+			T["py"] = 0.5
 			T["prx"] = 0.0
 			T["srx"] = 0.28
-			T["lrx"] = 1.45
-			T["krx"] = -1.5
+			T["lrx"] = 1.5
+			T["krx"] = -1.52
 			T["llx"] = -0.05
 			T["klx"] = -1.62
 			T["arx"] = 0.7
@@ -766,7 +889,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["flx"] = 0.8
 			wpn = 2
 			if moving:
-				T["py"] = 0.68 - absf(s) * 0.04
+				T["py"] = 0.75 - absf(s) * 0.04
 				T["lrx"] = 0.7 + s * 0.6
 				T["llx"] = 0.7 - s * 0.6
 				T["krx"] = -1.2
@@ -866,19 +989,26 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["krx"] = -0.6
 			T["klx"] = -0.9
 			wpn = 6
-	if moving and pose in ["aim", "stand", "walk", "run", "crouch", "crouch_aim"]:
-		var a := move_yaw
+	# mocap yürüyüş: bacak, kalça ve gövde salınımı gerçek hareket verisinden (CMU, build_loco.py); kollar IK'da kalır
+	var loco_pry := 0.0
+	var loco := false
+	if pose in ["aim", "stand", "walk", "run", "crouch", "crouch_aim", "surrender", "carry"] and injury != "leg" and _loco_ready():
+		loco = true
+		loco_pry = _loco_apply(T, dt, pose, speed, moving)
+	if moving and pose in ["aim", "stand", "walk", "run", "crouch", "crouch_aim", "surrender"]:
+		var a := -move_yaw      # ayna uzayı: uygulanırken yeniden işaret değiştirir
 		var back := absf(a) > 1.9
 		if back:
 			a = wrapf(a - PI, -PI, PI)
-			for lk in ["lrx", "llx"]:
-				if T.has(lk):
-					T[lk] = -T[lk] + (0.6 if pose == "aim" else 0.0)
+			if not loco:
+				for lk in ["lrx", "llx"]:
+					if T.has(lk):
+						T[lk] = -T[lk] + (0.6 if pose == "aim" else 0.0)
 		var py_ := clampf(a, -1.2, 1.2)
-		T["pry"] = py_
+		T["pry"] = py_ + loco_pry
 		T["sry"] = float(T.get("sry", 0.0)) - py_
 	else:
-		T["pry"] = 0.0
+		T["pry"] = loco_pry
 	# tabanca: sağ el önce kılıfa iner (k<0.45), sonra tabancayı nişana kaldırır; destek eli kavrar
 	pistol_k = move_toward(pistol_k, 1.0 if pistol else 0.0, dt * 2.4)
 	if pistol_k > 0.0 and fore_r and pose in ["stand", "walk", "run", "aim", "crouch", "crouch_aim", "dragged"]:
@@ -913,6 +1043,31 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		T["alx"] = ik[1].x
 		T["alz"] = ik[1].y
 		T["flx"] = ik[1].z
+	# şarjör değiştirme: sol el şarjör yuvası → yelekteki cep → yuvaya takar → el kundağı; tüfek sola yatar
+	var reloading := reload_k >= 0.0 and wpn in [1, 2] and not pistol and pistol_k <= 0.0 and rest.has(arm_l) and not (role in ["at", "atgm", "mortar"]) and pose in ["stand", "aim", "walk", "run", "crouch", "crouch_aim"]
+	if reloading:
+		var hg := Vector3(float(T.get("alx", 1.4)), float(T.get("alz", -0.45)), float(T.get("flx", 0.2)))
+		var mg := _ik_extra("mag", wpn)
+		var pc := _ik_extra("pouch", wpn)
+		var k := clampf(reload_k, 0.0, 1.0)
+		var al := hg
+		if k < 0.2:
+			al = hg.lerp(mg, smoothstep(0.0, 0.2, k))
+		elif k < 0.45:
+			al = mg.lerp(pc, smoothstep(0.2, 0.45, k))
+		elif k < 0.7:
+			al = pc.lerp(mg, smoothstep(0.45, 0.7, k))
+		elif k < 0.82:
+			al = mg
+		else:
+			al = mg.lerp(hg, smoothstep(0.82, 1.0, k))
+		T["alx"] = al.x
+		T["alz"] = al.y
+		T["flx"] = al.z
+	# geri tepme: omuz geri itilir (namlu kalkışı silah dönüşünde)
+	recoil = maxf(0.0, recoil - dt * 8.0)
+	if recoil > 0.0 and wpn == 1:
+		T["srx"] = float(T.get("srx", 0.0)) - 0.045 * recoil
 	# kol alçıda: destek kolu askıda göğse katlı, silah yalnız sağ elde
 	if injury == "arm" and pose in ["stand", "aim", "walk", "run", "crouch", "crouch_aim", "build", "build_hi", "carry", "throw"]:
 		T["alx"] = 0.45
@@ -932,26 +1087,135 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	for k in ["prz", "lrz", "llz", "sry"]:
 		if not T.has(k):
 			j[k] = lerpf(j[k], 0.0, rate)
+	# ayna uzayından gerçek gövdeye: Euler (x, y, z) → (x, -y, -z)
 	pelvis.position.y = j["py"]
-	pelvis.rotation = Vector3(j["prx"], j["pry"], j["prz"])
-	spine.rotation = Vector3(j["srx"], j["sry"], 0)
-	arm_r.rotation = Vector3(j["arx"], 0, j["arz"])
+	pelvis.rotation = Vector3(j["prx"], -j["pry"], -j["prz"])
+	spine.rotation = Vector3(j["srx"], -j["sry"], 0)
+	arm_r.rotation = Vector3(j["arx"], 0, -j["arz"])
 	fore_r.rotation = Vector3(j["frx"], 0, 0)
-	arm_l.rotation = Vector3(j["alx"], 0, j["alz"])
+	arm_l.rotation = Vector3(j["alx"], 0, -j["alz"])
 	fore_l.rotation = Vector3(j["flx"], 0, 0)
-	leg_r.rotation = Vector3(j["lrx"], 0, j["lrz"])
+	leg_r.rotation = Vector3(j["lrx"], 0, -j["lrz"])
 	knee_r.rotation = Vector3(j["krx"], 0, 0)
-	leg_l.rotation = Vector3(j["llx"], 0, j["llz"])
+	leg_l.rotation = Vector3(j["llx"], 0, -j["llz"])
 	knee_l.rotation = Vector3(j["klx"], 0, 0)
 	var wt := _weapon_xf(wpn)
+	if reloading or (recoil > 0.0 and wpn == 1):
+		# kabza (sağ el) çevresinde: şarjörde sola yatırma, atışta namlu kalkışı
+		var g0: Vector3 = _grip_points()[0]
+		var rb := Basis(Vector3.FORWARD, -0.55 * sin(clampf(reload_k, 0.0, 1.0) * PI)) if reloading else Basis()
+		rb = Basis(Vector3.RIGHT, 0.06 * recoil) * rb
+		wt = wt * Transform3D(Basis(), g0) * Transform3D(rb, Vector3(0, 0, 0.02 * recoil)) * Transform3D(Basis(), -g0)
 	wp_cur = wp_cur.interpolate_with(wt, rate)
-	weapon.transform = wp_cur
+	weapon.transform = _mxf(wp_cur)
 	sync_skin()
+
+# ---------------- mocap yürüyüş verisi (assets/anim/loco.json)
+static var _loco := {}
+static var _loco_tried := false
+const LOCO_CH := ["py", "prx", "pry", "prz", "srx", "sry", "lrx", "lrz", "krx", "llx", "llz", "klx"]
+var loco_ph := 0.0           # yürüme döngüsü evresi (0..1)
+var idle_ph := 0.0
+
+static func _loco_ready() -> bool:
+	if not _loco_tried:
+		_loco_tried = true
+		var f := FileAccess.open("res://assets/anim/loco.json", FileAccess.READ)
+		if f:
+			var js = JSON.parse_string(f.get_as_text())
+			if js is Dictionary and js.has("clips"):
+				for k in js["clips"]:
+					var c: Dictionary = js["clips"][k]
+					var rows: Array = c["data"]
+					var d := PackedFloat32Array()
+					for r in rows:
+						for v in r:
+							d.append(float(v))
+					_loco[k] = {"n": rows.size() - 1, "ch": (rows[0] as Array).size(), "d": d, "len": float(c["length"]),
+						"speed": float(c["speed"]), "ph0": float(c.get("ph0", 0.0))}
+	return not _loco.is_empty()
+
+static func _loco_sample(name: String, ph: float) -> PackedFloat32Array:
+	var c: Dictionary = _loco[name]
+	var n: int = c["n"]
+	var ch: int = c["ch"]
+	var x := fposmod(ph + float(c["ph0"]), 1.0) * n
+	var i := mini(int(x), n - 1)
+	var f := x - i
+	var d: PackedFloat32Array = c["d"]
+	var out := PackedFloat32Array()
+	out.resize(ch)
+	for k in ch:
+		out[k] = lerpf(d[i * ch + k], d[(i + 1) * ch + k], f)
+	return out
+
+# yürüme / koşu / depar / geri / tetikte / çömelerek yürüyüş ve ayakta bekleme salınımı; kalça yalpasını döndürür
+func _loco_apply(T: Dictionary, dt: float, pose: String, speed: float, moving: bool) -> float:
+	if not moving:
+		# ayakta bekleme: ağırlık aktarma ve nefes (yalnız kalça yüksekliği ve yan eğimleri, hafifçe)
+		if not (pose in ["stand", "aim"]):
+			return 0.0
+		var ci: Dictionary = _loco["idle"]
+		idle_ph = fposmod(idle_ph + dt / float(ci["len"]), 1.0)
+		var I := _loco_sample("idle", idle_ph)
+		T["py"] = float(T.get("py", HIP)) + (I[0] - HIP) * 0.6
+		T["prz"] = float(T.get("prz", 0.0)) + I[3] * 0.6
+		T["lrz"] = float(T.get("lrz", 0.0)) + I[7] * 0.6
+		T["llz"] = float(T.get("llz", 0.0)) + I[10] * 0.6
+		return I[2] * 0.4
+	var back := absf(move_yaw) > 1.9
+	var a := "walk"
+	var b := "walk"
+	var w := 0.0
+	if pose in ["crouch", "crouch_aim"]:
+		a = "crouch_walk"
+		b = a
+	elif back:
+		a = "walk_back"
+		b = a
+	elif pose == "aim":
+		# tetikte yürüyüş: dizler bükük, adımlar kısa, gövde nişanda sabit
+		a = "crouch_walk"
+		b = "walk"
+		w = 0.55
+	elif speed > 3.15:
+		a = "run"
+		b = "sprint"
+		w = clampf((speed - 3.15) / 1.4, 0.0, 1.0)
+	elif speed > 1.3:
+		a = "walk"
+		b = "run"
+		w = clampf((speed - 1.3) / 1.85, 0.0, 1.0)
+	var ca: Dictionary = _loco[a]
+	var cb: Dictionary = _loco[b]
+	# evre: bir döngüde alınan yol kadar ilerlendikçe tamamlanır (ayak kaymaz)
+	var stride := lerpf(float(ca["len"]) * float(ca["speed"]), float(cb["len"]) * float(cb["speed"]), w)
+	loco_ph = fposmod(loco_ph + dt * speed / maxf(stride, 0.25), 1.0)
+	var A := _loco_sample(a, loco_ph)
+	var Bv := A if b == a else _loco_sample(b, loco_ph)
+	var v := PackedFloat32Array()
+	v.resize(A.size())
+	for k in A.size():
+		v[k] = lerpf(A[k], Bv[k], w)
+	T["py"] = v[0]
+	T["prx"] = v[1]
+	T["prz"] = v[3]
+	T["lrx"] = v[6]
+	T["lrz"] = v[7]
+	T["krx"] = v[8]
+	T["llx"] = v[9]
+	T["llz"] = v[10]
+	T["klx"] = v[11]
+	if not (pose in ["aim", "crouch_aim"]):
+		# gövde öne eğilir, omuzlar kalçanın tersine döner (nişanda gövde hedefte sabit kalır)
+		T["srx"] = float(T.get("srx", 0.0)) * 0.4 + v[4]
+		T["sry"] = v[5]
+	return v[2]
 
 # ---------------- silah tutuşu: iki kemikli ters kinematik (önbellekli)
 # Sağ el kabzaya, sol el el kundağına (RPG'de tüpün altına) oturur. Çözüm spine uzayında, poz başına bir kez.
 static var _ik_cache := {}
-const HAND_LEN := 0.31
+const HAND_LEN := 0.33     # dirsek → avuç (kabza noktası)
 
 func _hand_fk(ap: Vector3, fp: Vector3, rx: float, rz: float, fx: float) -> Vector3:
 	var ba := Basis.from_euler(Vector3(rx, 0.0, rz))
@@ -1005,6 +1269,21 @@ func _ik_pose(w: int) -> Array:
 	var out := [r, l]
 	_ik_cache[key] = out
 	return out
+
+# şarjör değiştirmede sol elin ek hedefleri (poz uzayı): tüfeğin şarjör yuvası ve yelekteki şarjör cebi
+func _ik_extra(kind: String, w: int) -> Vector3:
+	var key := "%s|%d|%s" % [role, w, kind]
+	if _ik_cache.has(key):
+		return _ik_cache[key]
+	var tl := Vector3(0.03, 0.3, -0.23)
+	var guess := Vector3(0.6, -0.2, 1.4)
+	if kind == "mag":
+		var a: AABB = weapon.mesh.get_aabb() if weapon and weapon.mesh else AABB(Vector3(-0.03, -0.08, -0.7), Vector3(0.06, 0.16, 1.0))
+		tl = _weapon_xf(w) * Vector3(0, a.position.y + a.size.y * 0.12, a.position.z + a.size.z * 0.58)
+		guess = Vector3(1.2, -0.4, 0.6)
+	var r := _solve_arm(rest[arm_l], rest[fore_l], tl, guess, -1.0)
+	_ik_cache[key] = r
+	return r
 
 func _weapon_xf(w: int) -> Transform3D:
 	match w:

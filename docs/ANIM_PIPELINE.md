@@ -180,8 +180,8 @@ Bugünkü `SoldierBody` 10 pivotlu prosedürel figür + `_build_skin` ile 10 kem
   işaretlerine çekilmeli — mevcut `_grip_points()` mantığı aynen işaret noktası üretir. Sıra: AnimationTree →
   Aim/LookAt → TwoBoneIK3D (sol el, gerekirse sağ el) → BoneAttachment3D (silah RightHand'de).
 * **Ölçek / kemik konumu:** oyundaki HIP 0.92 m; bu modelde kalça eklemi ~0.93 m — doğrudan uyumlu.
-* **Taraf uyarısı:** eski figürde `arm_r` −X'te (−Z'ye bakan figürde anatomik sol); yeni modelde silah
-  anatomik sağ elde (+X). Kamera/namlu ofsetleri (`muzzle_pos`) yeni modele göre yeniden ölçülmeli.
+* **Taraf (çözüldü):** eski figürde `arm_r` −X'teydi (−Z'ye bakan figürde anatomik sol: asker solak nişan
+  alıyordu); artık +X — bkz. §9.
 * **Takım renkleri:** malzeme adları `uniform`, `helmet`, `boots`, `gloves`, `skin` — `Art.material(ad, takım)`
   ile değiştirilebilir (mevcut `_build_skin` deseni).
 * **Performans:** 10.9k üçgen + otomatik LOD, 35 kemik. 100+ asker için `AnimationTree` yerine uzak
@@ -209,3 +209,36 @@ hareketleri için genişletilebilir.
 * Tek seferlik kliplerde ayak kilidi yok (yalnız döngülerde); kök hareketi yumuşatıldığı için kalkma/diz
   çökme sırasında küçük ayak kaymaları görülebilir.
 * Tüfek pozu tek karabina ölçüsüne göre; büyük silahlar için TwoBoneIK3D gerekli (§7).
+
+## 9. Oyundaki gerçekçi asker (Roadmap 1) — `tools/anim/build_soldier.py`
+
+`blender -b --factory-startup -P tools/anim/build_soldier.py -- --nation usa|rus [--preview shots/x.png]`
+→ `assets/models/soldier_<ulus>_rig.glb` (+ `.json` ölçüler, `soldier_<ulus>_fold_n.png` kıvrım normali).
+
+* **Gövde:** MakeHuman taban örgü (CC0), yalnız görünen kısımlar (baş, boyun, eller, gözler); parmaklar
+  MakeHuman'ın 3 boğumlu parmak kemikleriyle kabza tutuşuna kıvrılır (sağ: işaret parmağı tetik boyunca).
+* **Kıyafet:** MakeHuman CC0 sistem varlık paketi (sha256 doğrulamalı) — `.mhclo`: her kıyafet köşesi
+  3 taban köşesinin ağırlıklı toplamı + ölçekli öteleme; ağırlıklar aynı referanslardan. ABD
+  `male_casualsuit02`, Rusya `male_casualsuit05`, bot `shoes03` (çorap konçu deri konç olur).
+  Kıyafetin AO dokusu köşe rengine, normal dokusu 1024² oyun dokusuna.
+* **Duruş:** MakeHuman A-pozu → oyunun dinlenme pozu (kol ve bacaklar dümdüz aşağı), DQS ile; kolu indirmenin
+  %35'i köprücükte (omuz şişmez); ön kol 90° çevrilir (avuç içe). Sonra eklemler oyun iskeletine taşınır
+  (kemik başına öteleme + kemik ekseninde ölçek; oranlar zaten ≈1).
+* **İskelet (oyunla aynı):** kalça 0,92 · omuz (±0,19; 1,38) · üst kol 0,26 · dirsek→avuç 0,33 ·
+  bacak ±0,10 · uyluk 0,40 · diz→taban 0,52 m. Anatomik sağ +X (`arm_r`/`leg_r`).
+* **Tek yüzey:** malzeme kimliği UV2.x'te (`MAT_ID`), köşe rengi = AO / ten ayrıntısı; `shaders/soldier.gdshader`
+  kimliğe göre kamuflaj (UV × `camo_k`), yelek dokusu, deri, renk, pürüzlülük, metal, ışıma seçer
+  (`Art.soldier_material`). 14 yüzeyli eski gövdeye göre 14 kat az çizim çağrısı.
+* **Poz uzayı:** `soldier_body.gd` pozları tarihsel olarak ayna uzayında yazılı (eskiden sağ kol −X'teydi);
+  uygulanırken X'e göre aynalanır: konum x → −x, Euler (x, y, z) → (x, −y, −z).
+
+## 10. Mocap yürüyüş — `tools/anim/build_loco.py`
+
+`blender -b --factory-startup -P tools/anim/build_loco.py` → `assets/anim/loco.json` (~40 KB).
+`build_anims.py`'nin yeniden hedefleme ve döngü kesimi aynen kullanılır; her karede kalça, göğüs, uyluk ve
+baldırın dünya dönüşü oyunun dinlenme çerçevesine göre yerel açılara (poz uzayı, Euler YXZ) çevrilir.
+Kanallar: `py prx pry prz srx sry lrx lrz krx llx llz klx`. Klipler: idle, walk, run, sprint, walk_back,
+strafe_left/right, crouch_walk, crawl, prone_idle, kneel_idle; `ph0` = sağ uyluğun en önde olduğu evre
+(klipler harmanlanırken adımlar hizalı). Oyunda (`SoldierBody._loco_apply`): hızla yürüme → koşu → depar
+harmanı, geri yürüme, tetikte yürüyüş (çömelerek yürüme %55 + yürüme), çömelerek yürüme; evre alınan yolla
+ilerler (ayak kaymaz); duran askerde bekleme klibinden ağırlık aktarma. Kollar silaha IK ile oturmaya devam eder.

@@ -594,6 +594,9 @@ func _work() -> void:
 		_deliver.call_deferred(j[0], res)
 
 func _deliver(key: Vector4i, res: PackedVector3Array) -> void:
+	# çıkışta işçinin ertelenmiş teslimi G serbest kaldıktan sonra gelebilir
+	if not is_instance_valid(G):
+		return
 	_cache_tick()
 	_pcache[key] = res
 	var ws: Array = _waiters.get(key, [])

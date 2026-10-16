@@ -367,6 +367,11 @@ func exec_order(id: String, gp: Vector3) -> void:
 		"abandon":
 			for v in veh:
 				v.cmd_abandon()
+		"merge":
+			var into := Squad.merge_selected(selected)
+			if into != null:
+				_voice(sol, ["Manga toplandı!", "Birleştik!"])
+				Sfx.play2d("ui_move", -8.0)
 		"dismount":
 			for v in veh:
 				v.cmd_dismount_crew()

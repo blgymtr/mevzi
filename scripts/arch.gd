@@ -2693,7 +2693,7 @@ func _extras() -> void:
 	# askerî / güvenlik
 	if X.has("sandbag"):
 		for sx: float in [-1.0, 1.0]:
-			B.wall_line(_w(Vector3(sx * 1.2, 0, fz + 2.4)), _w(Vector3(sx * 3.8, 0, fz + 2.4)), 3, Color(0.62, 0.56, 0.4), Grid.K_WALL, {"len": 0.75, "h": 0.3, "t": 0.6, "jit": 0.06, "type": Blocks.T_SANDBAG})
+			B.wall_line(_w(Vector3(sx * 1.2, 0, fz + 2.4)), _w(Vector3(sx * 3.8, 0, fz + 2.4)), 5, Color(0.86, 0.8, 0.64), Grid.K_WALL, {"len": 0.64, "h": 0.17, "t": 0.42, "jit": 0.07, "type": Blocks.T_SANDBAG})
 	if X.has("barriers"):
 		for sx: float in [-1.0, 1.0]:
 			B.wall_line(_w(Vector3(sx * 2.0, 0, fz + 4.0)), _w(Vector3(sx * 5.0, 0, fz + 4.0)), 2, Color(0.78, 0.78, 0.76, 0.0), Grid.K_WALL, {"len": 1.0, "h": 0.42, "t": 0.6, "jit": 0.02, "type": Blocks.T_CONCRETE})

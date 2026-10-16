@@ -42,6 +42,22 @@ static func metal() -> StandardMaterial3D:
 		_c["metal"] = m
 	return _c["metal"]
 
+# kum torbası: çuval (hessian, CC0) dokusu × blok rengi
+static func sandbag() -> Material:
+	if not _c.has("sandbag"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.albedo_texture = _mt("hessian_230", "albedo")
+		var nt := _mt("hessian_230", "normal")
+		if nt:
+			m.normal_enabled = true
+			m.normal_texture = nt
+			m.normal_scale = 1.2
+		m.roughness = 0.96
+		m.uv1_scale = Vector3(2.2, 2.2, 1.0)
+		_c["sandbag"] = m
+	return _c["sandbag"]
+
 static func _mt(id: String, map: String) -> Texture2D:
 	var p := "res://assets/materials/%s/%s.jpg" % [id, map]
 	return load(p) if ResourceLoader.exists(p) else null

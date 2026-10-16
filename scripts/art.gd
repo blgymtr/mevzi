@@ -80,6 +80,77 @@ static func vest_tex(team: int) -> String:
 	return "fab_coyote" if team == 0 else ("fab_emr_desert" if G.map_kind == "desert" else "fab_ratnik")
 
 static var _armor_shader: Shader
+static var _soldier_shader: Shader
+
+# derili asker (tools/anim/build_soldier.py): tek yüzey, malzeme kimliği UV2.x'te → kimliğe göre renk/doku
+# sıra build_soldier.MAT_ID ile aynı: uniform vest pack helmet boot glove skin dark gun team lens red rubber canvas eye strap
+static func soldier_material(model: String, team: int) -> Material:
+	var key := "soldier|%s|%d|%s" % [model, team, G.map_kind]
+	if _mat.has(key):
+		return _mat[key]
+	if _soldier_shader == null:
+		_soldier_shader = load("res://shaders/soldier.gdshader")
+	var sm := ShaderMaterial.new()
+	sm.shader = _soldier_shader
+	sm.set_shader_parameter("camo_a", tex(uniform_tex(team)))
+	sm.set_shader_parameter("camo_b", tex(vest_tex(team)))
+	sm.set_shader_parameter("leather", tex("leather"))
+	sm.set_shader_parameter("fab_nrm", mat_tex("hessian_230", "normal"))
+	sm.set_shader_parameter("grime_tex", mat_tex("rust_coarse_01", "albedo"))
+	var fp := "res://assets/models/%s_fold_n.png" % model.trim_suffix("_rig")
+	sm.set_shader_parameter("has_fold", ResourceLoader.exists(fp))
+	if ResourceLoader.exists(fp):
+		sm.set_shader_parameter("fold_nrm", load(fp))
+	var k := 3.2
+	var jf := FileAccess.open("res://assets/models/%s.json" % model, FileAccess.READ)
+	if jf:
+		var js = JSON.parse_string(jf.get_as_text())
+		if js is Dictionary and js.has("camo_k"):
+			k = float(js["camo_k"])
+	sm.set_shader_parameter("camo_k", k)
+	var winter: bool = G.map_kind == "winter"
+	var us := team == 0
+	var boot := Color(0.62, 0.5, 0.36) if us else Color(0.09, 0.08, 0.07)
+	var glove := Color(0.55, 0.47, 0.35) if us else Color(0.16, 0.16, 0.15)
+	var strap := Color(0.47, 0.4, 0.29) if us else Color(0.26, 0.28, 0.19)
+	if winter:
+		glove = Color(0.75, 0.75, 0.72)
+		strap = Color(0.8, 0.8, 0.78)
+	var team_c: Color = Color(0.12, 0.45, 0.95) if us else Color(0.85, 0.12, 0.08)
+	# [renk (sRGB), pürüzlülük, metal, doku, ışıma]
+	var spec := [
+		[Color(1, 1, 1), 0.95, 0.0, 1, 0.0],            # 0 üniforma
+		[Color(1, 1, 1), 0.95, 0.0, 2, 0.0],            # 1 yelek
+		[Color(0.9, 0.9, 0.88), 0.95, 0.0, 2, 0.0],     # 2 çanta / cep
+		[Color(0.92, 0.92, 0.9), 0.8, 0.0, 2, 0.0],     # 3 kask
+		[boot, 0.75, 0.0, 3, 0.0],                      # 4 bot
+		[glove, 0.9, 0.0, 0, 0.0],                      # 5 eldiven
+		[Color(0.72, 0.55, 0.42), 0.6, 0.0, 0, 0.0],    # 6 ten
+		[Color(0.07, 0.07, 0.07), 0.55, 0.0, 0, 0.0],   # 7 koyu plastik
+		[Color(0.13, 0.13, 0.13), 0.45, 0.5, 0, 0.0],   # 8 metal / şarjör
+		[team_c, 0.6, 0.0, 0, 0.25],                    # 9 takım rengi
+		[Color(0.95, 0.5, 0.08), 0.15, 0.3, 0, 0.25],   # 10 mercek
+		[Color(0.8, 0.08, 0.08), 0.7, 0.0, 0, 0.0],     # 11 kırmızı (turnike)
+		[Color(0.06, 0.06, 0.06), 0.95, 0.0, 0, 0.0],   # 12 kauçuk
+		[Color(0.6, 0.56, 0.42), 0.95, 0.0, 0, 0.0],    # 13 branda
+		[Color(0.85, 0.85, 0.83), 0.3, 0.0, 0, 0.0],    # 14 göz
+		[strap, 0.9, 0.0, 0, 0.0],                      # 15 kayış (dokuma)
+	]
+	# Vector4 dizileri: Color dizisi verilirse motor sRGB→doğrusal çevirir (doku seçicisi bozulur)
+	var tints := PackedVector4Array()
+	var props := PackedVector4Array()
+	for s in spec:
+		var c: Color = (s[0] as Color).srgb_to_linear()
+		tints.append(Vector4(c.r, c.g, c.b, 1.0))
+		props.append(Vector4(s[1], s[2], float(s[3]), s[4]))
+	sm.set_shader_parameter("tints", tints)
+	sm.set_shader_parameter("props", props)
+	var dd := _dirt()
+	sm.set_shader_parameter("dirt_col", dd["dirt"])
+	sm.set_shader_parameter("dust_col", dd["dust"])
+	sm.set_shader_parameter("dust_amount", dd["dust_a"])
+	_mat[key] = sm
+	return sm
 
 static func mat_tex(id: String, map: String) -> Texture2D:
 	var p := "res://assets/materials/%s/%s.jpg" % [id, map]

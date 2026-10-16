@@ -839,7 +839,7 @@ func _make_line() -> void:
 	match btype:
 		"sandbags":
 			var from := G.blocks.bpos.size()
-			G.blocks.wall_line(a, b, 3, Color(0.73, 0.64, 0.44), Grid.K_WALL, {"len": 0.62, "h": 0.27, "t": 0.42, "type": Blocks.T_SANDBAG, "jit": 0.06})
+			G.blocks.wall_line(a, b, 5, Color(0.93, 0.87, 0.72), Grid.K_WALL, {"len": 0.62, "h": 0.17, "t": 0.4, "type": Blocks.T_SANDBAG, "jit": 0.07})
 			G.blocks.commit_runtime(from)
 		"concrete":
 			var from := G.blocks.bpos.size()

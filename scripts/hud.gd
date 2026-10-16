@@ -40,8 +40,9 @@ const ORDERS := {
 	"minidrone": {"t": "Mini Drone Kaldır", "k": "L", "tgt": true, "d": "Operatör sırt çantasından FPV drone çıkarıp elden kaldırır. Düşmana tıkla: saldırır; boş noktaya tıkla: orada asılı kalıp tarar."},
 	"dronestation": {"t": "Drone İstasyonu Kur", "k": "O", "tgt": true, "d": "Operatör seçilen yere yer kontrol istasyonu kurar (16 sn). Bitince mancınıktan keşif İHA'sı fırlatılır: yüksek irtifa, geniş görüş, vurulması zor."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
+	"merge": {"t": "Timleri Birleştir", "k": "-", "tgt": false, "d": "Seçili piyade timleri tek manga olur (en çok 13 kişi); komutu en kalabalık timin lideri alır."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronestation", "refund", "dismount", "mount", "abandon", "demolish"]
+const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronestation", "refund", "merge", "dismount", "mount", "abandon", "demolish"]
 # emir kısayollarının VARSAYILANLARI; oyuncu atamaları ve eşleşme Keybinds üzerinden (Ayarlar > Klavye Ayarları)
 const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_L: "minidrone", KEY_O: "dronestation", KEY_I: "fastrope", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
@@ -420,12 +421,17 @@ func order_state(id: String, sel: Array) -> int:
 				if veh and u.crew_max > 0 and not u.is_air():
 					any = true
 					ok = ok or (u.crew_n > 0 and u.abandon_t < 0.0)
+			"merge":
+				if sol and u.squad != null:
+					any = true
 			"mount":
 				if veh and u.crew_max > 0 and not u.is_air():
 					any = true
 					ok = ok or (u.crew_n < u.crew_max and not u.crew_out.is_empty())
 	if not any:
 		return -1
+	if id == "merge":
+		return 1 if Squad.merge_ok(sel) else 0
 	return 1 if ok else 0
 
 func _rebuild_cmds() -> void:
@@ -1648,13 +1654,8 @@ class Overlay extends Control:
 				continue
 			var own: bool = u.team == G.player_team and not G.spectate
 			if u.selected:
-				var col: Color = Color(0.55, 0.95, 0.65, 0.85) if own else Color(1.0, 0.45, 0.35, 0.85)
-				var r: float = 0.38 if u is Soldier else u.radius + 0.3
-				if u is Building:
-					r = u.radius * 0.95
-				_ellipse(p, r, col, 1.0 if u is Soldier else 1.4)
-				if not (u is Soldier):
-					_brackets(p, r, col)
+				var col: Color = Color(0.55, 0.95, 0.65, 0.9) if own else Color(1.0, 0.45, 0.35, 0.9)
+				_sel_mark(u, p, col)
 			# can çubuğu
 			var show_bar: bool = u.selected or (G.time - u.last_hit < 3.0 and u.hp < u.max_hp)
 			if u is Building and not u.done:
@@ -1824,6 +1825,44 @@ class Overlay extends Control:
 			var a := TAU * i / 24.0
 			pts.append(G.cam.screen(p + Vector3(cos(a) * r, 0.05, sin(a) * r)))
 		draw_polyline(pts, col, w, true)
+
+	# seçim işareti (MEVZİ): zemine yatırılmış köşeli parantezler + bakış yönü çentiği. Asker: küçük baklava
+	# (köşe uçları), araç: gövde izine hizalı dikdörtgen köşeleri, yapı: taban izi köşeleri. Kapalı halka yok,
+	# kalabalıkta üst üste binen halka gürültüsü olmaz; çentik birimin baktığı yönü (siper/ateş açısı) gösterir.
+	func _sel_mark(u, p: Vector3, col: Color) -> void:
+		var yaw: float = u.rotation.y
+		var hx := 0.42
+		var hz := 0.42
+		var diamond := u is Soldier
+		if u is Vehicle:
+			hx = u.ext.x + 0.35
+			hz = u.ext.y + 0.35
+		elif u is Building:
+			hx = u.size.x * 0.5 * u._hq_k() + 0.4
+			hz = u.size.y * 0.5 * u._hq_k() + 0.4
+			yaw = u.rot
+		var fw := Vector3(-sin(yaw), 0, -cos(yaw))
+		var rt := Vector3(cos(yaw), 0, -sin(yaw))
+		var y := Vector3(0, 0.06, 0)
+		var w := 1.6 if diamond else 2.0
+		var corners: Array = []
+		if diamond:
+			corners = [p + fw * hz, p + rt * hx, p - fw * hz, p - rt * hx]
+		else:
+			corners = [p + fw * hz + rt * hx, p - fw * hz + rt * hx, p - fw * hz - rt * hx, p + fw * hz - rt * hx]
+		var k := 0.32 if diamond else minf(0.28, 1.6 / maxf(hx, hz))
+		for i in 4:
+			var c0: Vector3 = corners[i]
+			var c1: Vector3 = corners[(i + 1) % 4]
+			var cm: Vector3 = corners[(i + 3) % 4]
+			var a := G.cam.screen(c0 + y)
+			draw_line(a, G.cam.screen(c0 + (c1 - c0) * k + y), col, w, true)
+			draw_line(a, G.cam.screen(c0 + (cm - c0) * k + y), col, w, true)
+		# bakış yönü çentiği: önde küçük dolu üçgen
+		var tip := p + fw * (hz + (0.22 if diamond else 0.45))
+		var bl := p + fw * (hz + 0.04) - rt * (0.1 if diamond else 0.22)
+		var br := p + fw * (hz + 0.04) + rt * (0.1 if diamond else 0.22)
+		draw_colored_polygon(PackedVector2Array([G.cam.screen(tip + y), G.cam.screen(bl + y), G.cam.screen(br + y)]), col)
 
 	func _brackets(p: Vector3, r: float, col: Color) -> void:
 		var c := G.cam.screen(p + Vector3(0, 0.8, 0))

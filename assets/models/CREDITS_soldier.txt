@@ -1,0 +1,28 @@
+MEVZİ — gerçekçi asker modeli (assets/models/soldier_usa_rig.glb, soldier_rus_rig.glb,
+soldier_usa_fold_n.png, soldier_rus_fold_n.png) kaynakları ve lisansları
+=====================================================================================
+Üretim betiği: tools/anim/build_soldier.py (Blender 5.2 ile; kaynakları aşağıdaki adreslerden indirir
+ve sha256 / işleme numarasıyla doğrular). Tüm kaynaklar ticari kullanıma (Steam'de satış dahil) izin verir.
+
+1) İnsan taban örgüsü, eklem tanımları, deri ağırlıkları, makro hedefler
+   Kaynak : MakeHuman 1.x (makehumancommunity/makehuman), işleme a8bc2d54ff0ac92e78ff71431b1023eda42bf482
+   Dosyalar: base.obj (hm08), default.mhskel, default_weights.mhw, macrodetails/*.target
+   Lisans : CC0 1.0 (ayrıntı: assets/anim/CREDITS.txt, madde 1)
+
+2) Kıyafet, bot ve ten dokusu (MakeHuman sistem varlık paketi)
+   Kaynak : https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip
+            sha256 b542127a8e25547c7c29c19f2d1d2adb9a664c80396ecd694095dbc8028a0107
+   Kullanılanlar:
+            clothes/male_casualsuit02  (ABD: uzun kollu üst + pantolon → OCP muharebe gömleği/pantolonu)
+            clothes/male_casualsuit05  (Rusya: ceket + pantolon → Ratnik ceketi/pantolonu)
+            clothes/shoes03            (ayakkabı + çorap konçu → 8 inç muharebe botu)
+            skins/young_caucasian_male (ten dokusu → yalnız köşe rengi ayrıntısı: kaş, dudak)
+            kıyafetlerin *_ao.png (kıvrım gölgesi → köşe rengi) ve *_normal.png (kıvrım normali,
+            1024² küçültülmüş → soldier_*_fold_n.png)
+   Lisans : her dosyanın başlığında: "This asset was explicitly released as CC0 in september 2020"
+            (Data Collection AB, Joel Palmius, Jonas Hauquier). CC0 1.0 — kamu malı.
+   Not    : kıyafetler mhclo tanımıyla (3 referans köşe + ölçekli öteleme) bizim gövdeye oturtuldu,
+            renk dokuları kullanılmadı (kamuflaj oyunun kendi dokuları: assets/gen/fab_*.png).
+
+3) Teçhizat (kask, plaka taşıyıcı, şarjör cepleri, telsiz, kemer, çanta, dizlik, kulaklık, gözlük,
+   IFF bandı, bot körüğü) ve iskelet: tools/anim/build_soldier.py içinde üretiliyor (bizim).

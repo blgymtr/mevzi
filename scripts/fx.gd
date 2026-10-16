@@ -292,6 +292,75 @@ func _process(dt: float) -> void:
 		else:
 			_run_emitter(e, dt)
 		i -= 1
+	if not gibs.is_empty():
+		_gib_tick(dt)
+
+# ------------------------------------------------------------ kopan uzuv (patlamada)
+# [düğüm, hız, dönme ekseni, dönme hızı, yaş, yerde mi]; yere düşünce yatar, kan lekesi bırakır, 2 dk sonra kalkar
+var gibs: Array = []
+static var _gib_mesh := {}
+const GIB_CAP := 40
+
+func gib(p: Vector3, basis: Basis, v: Vector3, team: int, leg: bool) -> void:
+	var key := "%d%s|%s" % [team, "l" if leg else "a", G.map_kind]
+	if not _gib_mesh.has(key):
+		var mb := MB.new()
+		var winter_k: bool = G.map_kind == "winter"
+		var uni := Color(0.55, 0.5, 0.38) if team == 0 else Color(0.32, 0.36, 0.24)
+		if winter_k:
+			uni = Color(0.8, 0.8, 0.78)
+		var L := 0.4 if leg else 0.27
+		mb.cyl(Vector3(0, -L * 0.5, 0), 0.058 if leg else 0.045, 0.048 if leg else 0.036, L, 8, uni)
+		mb.cyl(Vector3(0, 0.0, 0), 0.05 if leg else 0.04, 0.05 if leg else 0.04, 0.025, 8, Color(0.42, 0.04, 0.03))   # yara ucu
+		if leg:
+			var boot := Color(0.5, 0.4, 0.28) if team == 0 else Color(0.08, 0.08, 0.07)
+			mb.cyl(Vector3(0, -L - 0.06, 0), 0.06, 0.06, 0.14, 8, boot)
+			mb.box(Vector3(0, -L - 0.12, -0.06), Vector3(0.1, 0.07, 0.25), boot)
+		else:
+			var glove := Color(0.55, 0.47, 0.35) if team == 0 else Color(0.15, 0.15, 0.14)
+			mb.box(Vector3(0, -L - 0.05, 0), Vector3(0.06, 0.1, 0.085), glove)
+		_gib_mesh[key] = mb.commit(Mats.vcs())
+	if gibs.size() >= GIB_CAP:
+		var old: Array = gibs.pop_front()
+		if is_instance_valid(old[0]):
+			old[0].queue_free()
+	var mi := MeshInstance3D.new()
+	mi.mesh = _gib_mesh[key]
+	add_child(mi)
+	mi.global_transform = Transform3D(basis.orthonormalized(), p)
+	gibs.append([mi, v, Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized(), rng.randf_range(6.0, 14.0), 0.0, false])
+
+func _gib_tick(dt: float) -> void:
+	var i := gibs.size() - 1
+	while i >= 0:
+		var g: Array = gibs[i]
+		var n: MeshInstance3D = g[0]
+		if not is_instance_valid(n):
+			gibs.remove_at(i)
+			i -= 1
+			continue
+		g[4] += dt
+		if not g[5]:
+			var v: Vector3 = g[1]
+			v.y -= 9.8 * dt
+			n.global_position += v * dt
+			n.rotate(g[2], g[3] * dt)
+			var gh: float = G.terrain.ground_h(n.global_position) if G.terrain else 0.0
+			if n.global_position.y < gh + 0.06:
+				n.global_position.y = gh + 0.06
+				if absf(v.y) < 2.5 or g[4] > 4.0:
+					g[5] = true
+					n.rotation = Vector3(PI * 0.5, rng.randf() * TAU, 0.0)
+					n.global_position.y = gh + 0.05
+					blood_pool(n.global_position)
+				else:
+					v = Vector3(v.x * 0.45, -v.y * 0.3, v.z * 0.45)
+					g[3] *= 0.5
+			g[1] = v
+		elif g[4] > 120.0:
+			n.queue_free()
+			gibs.remove_at(i)
+		i -= 1
 
 func _run_emitter(e: Array, dt: float) -> void:
 	var p: Vector3 = e[0]

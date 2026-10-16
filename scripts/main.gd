@@ -46,7 +46,7 @@ func _ready() -> void:
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -1307,39 +1307,102 @@ func _run_pose_test() -> void:
 			u.queue_free()
 	await get_tree().process_frame
 	var c := Vector3(170, 0, 170)
-	G.props.clear_area(c, 30.0)
-	var poses := [["stand", 0.0, 0.0], ["walk", 1.6, 0.0], ["run", 4.0, 0.0], ["aim", 0.0, 0.0], ["aim", 2.0, 0.0], ["aim", 2.0, 1.57], ["aim", 2.0, 3.14], ["crouch_aim", 0.0, 0.0], ["prone", 0.0, 0.0], ["crawl", 0.6, 0.0], ["vault", 0.0, 0.0], ["wounded", 0.0, 0.0]]
+	G.props.clear_area(c, 40.0)
+	# [poz, hız, hareket açısı, ek (ilerleme)]; her sıra 6 poz, her poz için ABD ve Rusya yan yana
+	var poses := [["stand", 0.0, 0.0, 0.5], ["walk", 1.6, 0.0, 0.5], ["run", 4.0, 0.0, 0.5], ["aim", 0.0, 0.0, 0.5], ["aim", 2.0, 1.57, 0.5], ["aim", 2.0, 3.14, 0.5],
+		["crouch", 0.0, 0.0, 0.5], ["crouch_aim", 0.0, 0.0, 0.5], ["crouch", 1.5, 0.0, 0.5], ["prone_aim", 0.0, 0.0, 0.5], ["crawl", 0.6, 0.0, 0.5], ["vault", 0.0, 0.0, 0.5],
+		["build", 0.0, 0.0, 0.5], ["build_hi", 0.0, 0.0, 0.5], ["throw", 0.0, 0.0, 0.3], ["surrender", 0.0, 0.0, 0.5], ["flinch", 0.0, 0.0, 0.5], ["carry", 0.0, 0.0, 0.8],
+		["cover", 0.0, 0.0, 0.5], ["lay", 0.0, 0.0, 0.5], ["ram", 0.0, 0.0, 0.5], ["drop", 0.0, 0.0, 0.5], ["blind", 0.0, 0.0, 0.5], ["blind_side", 0.0, 0.0, 0.5],
+		["sling", 0.0, 0.0, 0.5], ["dragging", 1.0, 0.0, 0.5], ["melee", 0.0, 0.0, 0.5], ["wounded", 0.0, 0.0, 0.5], ["dead", 0.0, 0.0, 0.5], ["slide", 0.0, 0.0, 0.5],
+		# şarjör değiştirme evreleri ve atış geri tepmesi: [.., şarjör ilerlemesi, geri tepme]
+		["aim", 0.0, 0.0, 0.5, 0.12, 0.0], ["aim", 0.0, 0.0, 0.5, 0.35, 0.0], ["stand", 0.0, 0.0, 0.5, 0.55, 0.0], ["crouch_aim", 0.0, 0.0, 0.5, 0.75, 0.0], ["aim", 0.0, 0.0, 0.5, -1.0, 1.0], ["run", 3.7, 0.0, 0.5, -1.0, 0.0],
+		# inşaat / ilk yardım / esir: kürekle kazma, kutu alma, sargı sarma, eller havada yürüyen esir, kutu taşıma
+		["dig", 0.0, 0.0, 0.5], ["dig", 0.0, 0.0, 0.5], ["lift", 0.0, 0.0, 0.5], ["treat", 0.0, 0.0, 0.5], ["surrender", 1.4, 0.0, 0.5], ["carry", 1.4, 0.0, 1.0]]
 	var bodies: Array = []
-	for t in 2:
-		for i in poses.size():
-			var s := spawn_soldier(t, ["rifle", "mg", "at", "rifle"][i % 4], c + Vector3(-11 + i * 2.0, 0, t * 3.2), null)
-			s.position = c + Vector3(-11 + i * 2.0, 0, t * 3.2)
-			s.rotation.y = PI * 1.3 + PI * 0.5
+	var roles := ["rifle", "mg", "at", "rifle", "sniper", "medic"]
+	# sıralar ekranda yatay: kamera sağ ekseni boyunca, sıralar ekranın yukarı ekseninde
+	var rv: Vector3 = G.cam.right_vec()
+	var uv: Vector3 = G.cam.up_vec()
+	var row_c := func(row: int) -> Vector3: return c + uv * (8.0 - row * 4.0)
+	for i in poses.size():
+		var row := i / 6
+		var col := i % 6
+		for t in 2:
+			var p: Vector3 = row_c.call(row) + rv * (-7.0 + col * 2.8 + t * 1.1)
+			var s := spawn_soldier(t, roles[col], p, null)
+			s.position = p
+			# 3/4 önden: kameraya dönük, ekranın sağına doğru
+			var fdir: Vector3 = (-uv + rv * 0.7).normalized()
+			s.rotation.y = atan2(-fdir.x, -fdir.z)
 			s.set_process(false)
 			bodies.append([s, poses[i]])
 	G.running = false
 	G.cam.input_enabled = false
+	var fails := 0
 	for k in 40:
 		for b in bodies:
 			b[0].body.move_yaw = b[1][2]
-			b[0].body.animate(0.033, b[1][0], b[1][1], 0.5)
+			b[0].body.reload_k = b[1][4] if b[1].size() > 4 else -1.0
+			if b[1].size() > 5 and b[1][5] > 0.0:
+				b[0].body.recoil = b[1][5]
+			b[0].body.animate(0.033, b[1][0], b[1][1], b[1][3])
 		await get_tree().process_frame
-	G.cam.jump_to(c + Vector3(0, 0, 1.6), true)
-	G.cam.size = 13.0
-	G.cam.target_size = 13.0
+	# ayak/diz zemine gömülmesin, havada kalmasın (dik pozlarda taban yere değsin)
+	for b in bodies:
+		var bd: SoldierBody = b[0].body
+		var gy: float = b[0].global_position.y
+		var fr: float = (bd.knee_r.global_transform * Vector3(0, -SoldierBody.SHIN, 0)).y - gy
+		var fl: float = (bd.knee_l.global_transform * Vector3(0, -SoldierBody.SHIN, 0)).y - gy
+		var lo := minf(fr, fl)
+		print("POSE %-10s t=%d foot_r=%.2f foot_l=%.2f knee_r=%.2f knee_l=%.2f" % [b[1][0], b[0].team, fr, fl, bd.knee_r.global_position.y - gy, bd.knee_l.global_position.y - gy])
+		if b[1][0] in ["stand", "aim", "build_hi", "surrender", "throw", "carry", "sling"] and b[1][1] == 0.0 and (lo < -0.08 or lo > 0.1):
+			fails += 1
+			print("POSE FAIL %s ayak yüksekliği %.2f" % [b[1][0], lo])
+		# tek diz yerde: arka diz zemine değer, öndeki ayak tabanı yerde
+		var kl: float = bd.knee_l.global_position.y - gy
+		if b[1][0] in ["crouch", "crouch_aim", "cover", "lay", "ram", "blind", "blind_side", "build", "flinch"] and b[1][1] == 0.0 and (kl < 0.03 or kl > 0.17 or fr < -0.1 or fr > 0.07):
+			fails += 1
+			print("POSE FAIL %s diz %.2f ön ayak %.2f" % [b[1][0], kl, fr])
+	G.cam.jump_to(c + Vector3(0, 0, 1.0), true)
+	G.cam.size = 22.0
+	G.cam.target_size = 22.0
 	await _wait(0.8)
 	await _shot("pose_all")
-	G.cam.jump_to(c + Vector3(-2, 0, 0.5), true)
-	G.cam.size = 5.0
-	G.cam.target_size = 5.0
-	for f in 3:
-		for k in 8:
-			for b in bodies:
-				b[0].body.move_yaw = b[1][2]
-				b[0].body.animate(0.033, b[1][0], b[1][1], 0.5)
+	G.cam.size = 5.2
+	G.cam.target_size = 5.2
+	for row in 7:
+		for half in 2:
+			G.cam.jump_to(row_c.call(row) + rv * (-4.2 + half * 8.4) - uv * 0.6, true)
+			for k in 8:
+				for b in bodies:
+					b[0].body.move_yaw = b[1][2]
+					b[0].body.reload_k = b[1][4] if b[1].size() > 4 else -1.0
+					if b[1].size() > 5 and b[1][5] > 0.0:
+						b[0].body.recoil = b[1][5]
+					b[0].body.animate(0.033, b[1][0], b[1][1], b[1][3])
+				await get_tree().process_frame
+			await _shot("pose_row_%d%s" % [row, "ab"[half]])
+	# şarjör değiştirme dizisi yakın çekim (ABD ve Rus tüfekçi, yandan)
+	var rp := c + uv * 14.0
+	var pair: Array = []
+	for t in 2:
+		var s := spawn_soldier(t, "rifle", rp + rv * (t * 1.0 - 0.5), null)
+		s.position = rp + rv * (t * 1.0 - 0.5)
+		var fd: Vector3 = (-uv + rv * 1.6).normalized()
+		s.rotation.y = atan2(-fd.x, -fd.z)
+		s.set_process(false)
+		pair.append(s)
+	G.cam.size = 2.6
+	G.cam.target_size = 2.6
+	G.cam.jump_to(rp + Vector3(0, 0.0, 0), true)
+	for f in 6:
+		for k in 10:
+			for s2 in pair:
+				s2.body.reload_k = f / 5.0
+				s2.body.animate(0.033, "aim", 0.0, 0.5)
 			await get_tree().process_frame
-		await _shot("pose_close_%d" % f)
-	print("POSETEST DONE")
+		await _shot("reload_%d" % f)
+	print("POSETEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_weather_test() -> void:
@@ -1558,6 +1621,23 @@ func _run_build_test() -> void:
 	print("BUILD slots=%d spread=%.1f progress=%.2f scaffold=%s hauling=%d" % [slots.size(), spread, b.progress, b.scaffold != null, hauls])
 	if slots.size() < 6 or spread < 6.0 or b.scaffold == null or hauls == 0:
 		fails += 1
+	# 37: işçiler binanın içine girmez (iskele dışında çalışır); tüfek sırtta, elde alet; taşıyıcı eğilip kutu alır
+	var inside := 0
+	var lifts := 0
+	var tools := {}
+	for k in 24:
+		await _wait(0.25)
+		for s in ws:
+			if s.state == "build":
+				var lp: Vector3 = (s.position - b.position).rotated(Vector3.UP, -b.rot)
+				if absf(lp.x) < b.size.x * 0.5 * b._hq_k() - 0.2 and absf(lp.z) < b.size.y * 0.5 * b._hq_k() - 0.2:
+					inside += 1
+				if s.lift_t > 0.0:
+					lifts += 1
+			tools[s.body._tool] = true
+	print("BUILD inside=%d lifts=%d tools=%s" % [inside, lifts, tools.keys()])
+	if inside > 0 or lifts == 0 or not tools.has("hammer"):
+		fails += 1
 	await _wait(4.0)
 	await _shot("build_02_mid")
 	var t0 := 0
@@ -1723,7 +1803,11 @@ func _run_supply_test() -> void:
 	var n: int = tr.get_meta("porters", []).size()
 	print("SUPPLY porters=%d" % n)
 	tr.job["t"] = 0.1
-	await _wait(1.0)
+	# kamyon yola çıkınca hamallar gider (kare süresine bağlı kalmamak için koşul beklenir)
+	for k in 16:
+		await _wait(0.25)
+		if tr.job.get("state", "") != "unload" and tr.get_meta("porters", []).is_empty():
+			break
 	print("SUPPLY after=%d state=%s" % [tr.get_meta("porters", []).size(), tr.job.get("state", "")])
 	print("SUPPLYTEST RESULT fails=%d" % (0 if n == 2 and tr.get_meta("porters", []).is_empty() else 1))
 	get_tree().quit()
@@ -2296,7 +2380,33 @@ func _run_behav_test() -> void:
 	print("BEH surrender->%s killer=%s" % [lone.state, (lone.attacker.role if lone.attacker is Soldier else str(lone.attacker)) if lone.attacker != null and is_instance_valid(lone.attacker) else "none"])
 	if not pris:
 		fails += 1
-	await _wait(8.0)
+	# 13: beyaz bayrak, esir eller havada yürür, esir alan asker silah doğrultarak arkasından götürür
+	var flag: bool = lone.body._tool == "flag"
+	var guard_ok: bool = cap.state == "guard" and cap.guard_of == lone
+	var gd_min := 99.0
+	var gd_max := 0.0
+	var aimed := 0
+	for k in 40:
+		await _wait(0.2)
+		if not is_instance_valid(lone) or lone.state != "prisoner":
+			break
+		var gd := cap.position.distance_to(lone.position)
+		gd_min = minf(gd_min, gd)
+		gd_max = maxf(gd_max, gd)
+		var fwd := -cap.global_transform.basis.z
+		var to := (lone.position - cap.position)
+		to.y = 0
+		if to.length() > 0.1 and fwd.dot(to.normalized()) > 0.8:
+			aimed += 1
+	G.cam.jump_to(cap.position, true)
+	G.cam.size = 9.0
+	G.cam.target_size = 9.0
+	await _wait(0.3)
+	await _shot("behav_04b_escort")
+	print("BEH white_flag=%s guard=%s dist=%.1f-%.1f aimed=%d" % [flag, guard_ok, gd_min, gd_max, aimed])
+	if not flag or not guard_ok or gd_max > 6.0 or aimed < 10:
+		fails += 1
+	await _wait(2.0)
 	await _shot("behav_05_intel")
 	# 4) yakın dövüş
 	var m1 := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-8, 0, 6), Grid.M_INF), null)

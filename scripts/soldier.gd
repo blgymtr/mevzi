@@ -94,6 +94,8 @@ var covering_until := 0.0
 var build_site: Node3D = null
 var build_slot := -1
 var haul := false           # malzeme taşıyor (inşaat)
+var lift_t := 0.0           # kutuyu alma / bırakma hareketi (sn)
+const LIFT_T := 0.9
 var build_goal := Vector3.INF
 var loot := 0
 var dead_t := 0.0
@@ -176,6 +178,8 @@ var captor := -1
 var intel_n := 0
 var intel_t := 0.0
 var escort_of: Soldier = null
+var guard_of: Soldier = null      # esiri silah doğrultarak karargâha götüren muhafız
+var guard_by: Soldier = null      # (esirde) muhafızı
 var flinch_t := 0.0
 var melee_cd := 0.0
 var melee_target: Soldier = null
@@ -1031,7 +1035,7 @@ func _process(dt: float) -> void:
 	body.move_yaw = angle_difference(rotation.y, _yaw_of(vel)) if sp > 0.3 else 0.0
 	body.pistol = G.time - pistol_t < 2.5 or (one_armed() and G.time - threat_time < 10.0)
 	body.limp = injury == "leg"
-	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if (state == "build" or (G.time < repair_vis_t and state == "idle")) else ("drone" if state == "launch" and state_t < 1.4 else ("rc" if _piloting() else ""))))
+	body.set_tool(_tool_kind())
 	# animasyon ayrıntı düzeyi: sisin içindeki ya da ekran dışındaki asker ~3 kez/sn, stratejik yakınlaştırmada
 	# (simgeler) ~10 kez/sn güncellenir — yüzlerce askerde iskelet animasyonu kare süresinin büyük payıydı
 	_anim_acc += dt
@@ -1041,7 +1045,8 @@ func _process(dt: float) -> void:
 	elif G.cam.size > 220.0:
 		alim = 0.1
 	if _anim_acc >= alim:
-		body.animate(_anim_acc, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
+		body.reload_k = (1.0 - reload_t / maxf(float(weapon()["reload"]) * (1.0 + stress_lv * 0.4), 0.1)) if reload_t > 0.0 else -1.0
+		body.animate(_anim_acc, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (lift_t / LIFT_T if (state == "build" and lift_t > 0.0) else (1.0 if haul else 0.0)))))
 		_anim_acc = 0.0
 	if Vehicle.prof_on:
 		Vehicle._pf("s_anim", t0)
@@ -1056,7 +1061,7 @@ func _process(dt: float) -> void:
 # geçişte sıfırlanmadığı için ayrı sayaç tutulur).
 const STATE_MAX := {"entering": 8.0, "exiting": 20.0, "rope": 30.0, "rope_wait": 75.0, "rope_up": 45.0,
 	"para": 45.0, "fly": 8.0, "dive": 4.0, "slide": 4.0, "throw": 5.0, "melee": 6.0, "dazed": 8.0,
-	"launch": 12.0, "setup": 120.0, "rescue": 90.0, "drag": 30.0, "heal": 30.0, "escort": 30.0,
+	"launch": 12.0, "setup": 120.0, "rescue": 90.0, "drag": 30.0, "heal": 30.0, "escort": 30.0, "guard": 260.0,
 	"stretcher": 240.0, "dragged": 60.0, "healing": 60.0}
 const MOVE_REPATH := 8.0      # yer değiştirmeyen yürüyüş bu kadar sn sonra yeniden yol arar
 const MOVE_GIVEUP := 30.0     # ... bu kadar sn sonra bırakılır
@@ -1295,6 +1300,9 @@ func _think() -> void:
 			return
 		"escort":
 			_think_escort()
+			return
+		"guard":
+			_think_guard()
 			return
 		"throw":
 			return
@@ -1866,7 +1874,7 @@ func _stance() -> void:
 	if stress_lv == 2 and state == "idle":
 		stance = PRONE
 		return
-	if state == "escort":
+	if state == "escort" or state == "guard":
 		stance = CROUCH if suppression > 50 else STAND
 		return
 	if stance_lock >= 0 and state in ["idle", "move"] and not force_move:
@@ -1924,6 +1932,8 @@ func _movement(dt: float) -> void:
 			want = _follow(spd)
 		"escort":
 			want = _escort_move()
+		"guard":
+			want = _guard_move()
 		"stretcher":
 			want = _stretcher_move()
 		"prisoner":
@@ -2031,12 +2041,14 @@ func _movement(dt: float) -> void:
 	var hh := G.grid.height_at(position)
 	body_lift = lerpf(body_lift, hh + 0.02 if (hh >= 0.3 and hh < 1.15) else 0.0, clampf(dt * 14.0, 0, 1))
 	# yön
-	var aiming := target != null and is_instance_valid(target) and can_fight() and state in ["idle", "move", "escort"] and (burst_left > 0 or fire_cd < 0.6 or popped)
+	var aiming := target != null and is_instance_valid(target) and can_fight() and state in ["idle", "move", "escort", "guard"] and (burst_left > 0 or fire_cd < 0.6 or popped)
 	if state == "melee" and melee_target != null and is_instance_valid(melee_target):
 		face_yaw = _yaw_of(melee_target.position - position)
 	elif state == "drag" or (state == "stretcher" and _stretcher_back()):
 		if want.length() > 0.05:
 			face_yaw = _yaw_of(-want)
+	elif state == "guard" and guard_of != null and is_instance_valid(guard_of) and not aiming:
+		face_yaw = _yaw_of(guard_of.position - position)
 	elif state == "escort" and not aiming:
 		face_yaw = _yaw_of(threat_pos - position) if G.time - threat_time < 10.0 else _yaw_of(want) if want.length() > 0.2 else face_yaw
 	elif state == "heal" or state == "build" or state == "rescue":
@@ -2336,6 +2348,7 @@ func _shoot(t: Unit) -> void:
 	ammo -= 1
 	shots += 1
 	fired_t = G.time
+	body.kick()
 	if ammo < 40 and not low_ammo_said:
 		low_ammo_said = true
 		say("MERMİ AZ!")
@@ -2400,6 +2413,7 @@ func _area_fire(center := Vector3.INF, spread := 3.0) -> void:
 	mag -= 1
 	ammo -= 1
 	shots += 1
+	body.kick()
 	if mag <= 0:
 		reload_t = W["reload"] * (1.0 + stress_lv * 0.4)
 	G.fx.muzzle(mp, (p - mp).normalized(), role == "mg")
@@ -2522,16 +2536,64 @@ func _vest_mult(kind: String) -> float:
 		return 0.7 if v == "plate" else 0.85
 	return 1.0
 
+# isabet bölgesi: baş / gövde / kol / bacak — yüzüstü, siperde ya da siper arkasında baş ve omuz daha açık
+var last_zone := ""
+
+func _hit_zone() -> String:
+	var r := randf()
+	if stance == PRONE or cover_type > 0 or G.grid.in_trench(position):
+		return "head" if r < 0.2 else ("torso" if r < 0.6 else ("arm" if r < 0.9 else "leg"))
+	return "head" if r < 0.08 else ("torso" if r < 0.5 else ("arm" if r < 0.7 else "leg"))
+
+# bölgeye göre hasar çarpanı: kask parçaların çoğunu, tüfek mermisini nadiren durdurur; plaka gövdenin
+# ortasını (isabetlerin ~%65'i) korur, yumuşak yelek tabanca/parça düzeyinde; uzuv isabeti daha az öldürücü
+func _zone_mult(zone: String, kind: String) -> float:
+	var v := String(VEST.get(role, "soft"))
+	var frag := kind in ["grenade", "shell", "mortar", "blast", "big", "auto", "rpg"]
+	match zone:
+		"head":
+			if frag:
+				return 0.3 if randf() < 0.7 else 1.8
+			return 0.35 if randf() < 0.12 else 2.6
+		"torso":
+			if frag:
+				return 0.6 if v == "plate" else 0.85
+			if v == "plate" and randf() < 0.65:
+				return {"bullet": 0.2, "sniper": 0.55, "hmg": 0.85}.get(kind, 1.0)
+			if v == "soft" and kind == "bullet" and randf() < 0.3:
+				return 0.6
+			return 1.0
+		"arm":
+			return 0.55
+		"leg":
+			return 0.7
+	return 1.0
+
+# isabet bölgesinin dünyadaki yeri (kan sıçraması orada)
+func zone_point(zone: String) -> Vector3:
+	if body == null or body.spine == null:
+		return aim_point()
+	match zone:
+		"head":
+			return body.spine.global_transform * Vector3(0, 0.77, -0.04)
+		"arm":
+			return (body.arm_r if randf() < 0.5 else body.arm_l).global_transform * Vector3(0, -0.14, 0)
+		"leg":
+			return (body.leg_r if randf() < 0.5 else body.leg_l).global_transform * Vector3(0, -0.2, 0)
+	return body.spine.global_transform * Vector3(0, 0.3, -0.06)
+
 func take_damage(amount: float, src, _kind := "bullet") -> void:
 	if not alive:
 		return
-	amount *= _vest_mult(_kind)
+	var zone := _hit_zone()
+	last_zone = zone
+	amount *= _zone_mult(zone, _kind)
 	if src != null and is_instance_valid(src):
 		attacker = src
 		threat_pos = src.position
 		threat_time = G.time
 	last_hit = G.time
-	G.fx.impact(aim_point(), "blood")
+	G.fx.impact(zone_point(zone), "blood")
 	if incapacitated():
 		if _kind != "bullet" or randf() < 0.6:
 			die(src)
@@ -2570,7 +2632,12 @@ func on_blast(p: Vector3, r: float, dmg: float, d: float, src) -> void:
 			flinch_t = randf_range(0.35, 0.6)
 		return
 	var k := 1.0 - clampf(d / r, 0.0, 1.0)
+	blast_k = k if dmg >= 50.0 else 0.0
+	blast_t = G.time
+	blast_p = p
 	var blocked := not G.grid.los(p + Vector3(0, 0.4, 0), aim_point(), 0.2, 0.2)
+	if blocked:
+		blast_k = 0.0
 	var dm := dmg * (0.3 + 0.7 * k)
 	if blocked:
 		dm *= 0.25
@@ -2608,7 +2675,7 @@ func on_blast(p: Vector3, r: float, dmg: float, d: float, src) -> void:
 func _down(src, explosive := false) -> void:
 	if not alive:
 		return
-	var p_die := 0.3 + 0.18 * downs + (0.3 if explosive else 0.0)
+	var p_die := 0.3 + 0.18 * downs + (0.3 if explosive else 0.0) + (0.45 if last_zone == "head" and not explosive else 0.0)
 	if downs >= 2 or hp < -70.0 or randf() < p_die:
 		die(src)
 		return
@@ -2648,6 +2715,17 @@ func _injure(explosive: bool) -> void:
 		if r <= 0.0:
 			pick = k
 			break
+	if not explosive and last_zone != "":
+		# kurşun yarası isabet bölgesinde
+		match last_zone:
+			"head":
+				pick = "head"
+			"torso":
+				pick = "torso" if randf() < 0.7 else "shoulder"
+			"arm":
+				pick = "arm" if randf() < 0.65 else "shoulder"
+			"leg":
+				pick = "leg"
 	# daha ağır yara öncekini ezer (bacak/kol en kalıcı)
 	if injury == "" or ["head", "torso", "shoulder", "arm", "leg"].find(pick) >= ["head", "torso", "shoulder", "arm", "leg"].find(injury):
 		injury = pick
@@ -2684,10 +2762,35 @@ func injury_acc() -> float:
 func one_armed() -> bool:
 	return injury == "arm" and role in ["mg", "at", "atgm", "sniper", "mortar"]
 
+# yakın ağır patlamada ölen askerde uzuv kopar (iskelette kemik büzülür, uzuv parçası savrulur, kan)
+var blast_k := 0.0
+var blast_t := -10.0
+var blast_p := Vector3.ZERO
+
+func _sever() -> void:
+	if body == null or body.spine == null:
+		return
+	var parts := ["fore_r", "fore_l", "knee_r", "knee_l"]
+	parts.shuffle()
+	var n := 1 if randf() < 0.7 else 2
+	for i in n:
+		var pn: String = parts[i]
+		var piv: Node3D = body.get(pn)
+		var at := piv.global_position
+		var away := at - blast_p
+		away.y = 0.0
+		away = away.normalized() if away.length() > 0.01 else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+		body.sever(pn)
+		G.fx.gib(at, piv.global_transform.basis, away * randf_range(3.0, 7.0) + Vector3(0, randf_range(3.0, 6.0), 0), team, pn.begins_with("knee"))
+		G.fx.impact(at, "blood")
+	G.fx.blood_pool(position, true)
+
 func die(src, keep_fly := false) -> void:
 	if not alive:
 		return
 	alive = false
+	if G.time - blast_t < 0.1 and blast_k > 0.55 and randf() < 0.35 + blast_k * 0.5:
+		_sever()
 	_release_patient()
 	if rescuer != null and is_instance_valid(rescuer):
 		rescuer.patient = null
@@ -2949,6 +3052,30 @@ func on_grenade(g_pos: Vector3, fuse_left: float, thrower: Unit) -> bool:
 			say("BOMBA!")
 	return false
 
+# elde / göğüste taşınan alet
+func _tool_kind() -> String:
+	if state in ["surrender", "prisoner"]:
+		return "flag"
+	if haul and order == "build" and state == "move":
+		return "crate"
+	if state == "build":
+		if lift_t > 0.0:
+			var k := lift_t / LIFT_T
+			# yığından alırken yarıdan sonra elinde, iskeleye bırakırken yarıya kadar elinde
+			return "crate" if ((not haul and k > 0.5) or (haul and k < 0.5)) else ""
+		return "shovel" if _digging() else "hammer"
+	if G.time < repair_vis_t and state == "idle":
+		return "hammer"
+	if state == "heal":
+		return "bandage"
+	if state == "launch" and state_t < 1.4:
+		return "drone"
+	return "rc" if _piloting() else ""
+
+# siper hendeği / kum torbası: kürekle kazılır, torba doldurulur
+func _digging() -> bool:
+	return build_site != null and is_instance_valid(build_site) and build_site is Building and build_site.btype in ["trench", "sandbags"]
+
 func _pose() -> String:
 	if role == "mortar" and state == "idle":
 		if mortar_setup > 0.0 and mortar_setup < 4.0:
@@ -2959,7 +3086,7 @@ func _pose() -> String:
 			return "drop"                             # sıradaki mermiyi namluya bırakır
 		if mortar_cd > 2.5:
 			return "crouch_aim"
-	if flinch_t > 0.0 and state in ["idle", "move", "escort"]:
+	if flinch_t > 0.0 and state in ["idle", "move", "escort", "guard"]:
 		return "flinch"
 	if body_lift > 0.2 and state in ["move", "rescue", "escort", "prisoner", "stretcher"]:
 		return "vault"
@@ -2976,6 +3103,8 @@ func _pose() -> String:
 			return "healing"
 		"escort":
 			return "aim" if target != null else "stand"
+		"guard":
+			return "aim"                                # tüfek esire doğrultulmuş
 		"dead":
 			return "dead"
 		"wounded":
@@ -2995,8 +3124,12 @@ func _pose() -> String:
 		"drag":
 			return "dragging"
 		"heal":
-			return "build"
+			return "treat"
 		"build":
+			if lift_t > 0.0:
+				return "lift"                               # eğilip kutuyu yığından alır / iskeleye bırakır
+			if _digging():
+				return "dig"
 			return "build_hi" if build_slot >= 0 and build_slot % 3 == 1 else "build"
 		"setup":
 			return "build_hi" if fmod(state_t, 7.0) > 4.5 else "build"
@@ -3036,7 +3169,12 @@ func _physics_process(dt: float) -> void:
 					build_goal = tgt
 					_set_path(tgt)
 					state = "move"
+					lift_t = 0.0
 					return
+				if lift_t < LIFT_T:
+					lift_t += dt                            # eğil, kutuyu kavra / yere koy
+					return
+				lift_t = 0.0
 				if haul:
 					build_site.add_work(2.4 * mult)
 				haul = not haul
@@ -3084,7 +3222,7 @@ func _pistol() -> void:
 	if best == null:
 		return
 	pistol_t = G.time
-	var mp := body.fore_r.global_transform * Vector3(0, -0.32, 0)
+	var mp := body.fore_r.global_transform * Vector3(0, -SoldierBody.HAND_LEN - 0.14, -0.02)
 	var tp := best.aim_point()
 	G.fx.muzzle(mp, (tp - mp).normalized(), false)
 	Sfx.play3d("pistol", mp, -5.0, 0.1, 0.02)
@@ -3175,6 +3313,9 @@ func _think_surrender_wait() -> void:
 		best.add_xp(10)
 		state = "prisoner"
 		state_t = 0.0
+		# esir alan asker (meşgul değilse) esiri silah doğrultarak karargâha götürür
+		if best.state in ["idle", "move"] and best.order != "hold" and best.vehicle_in == null and best.guard_of == null:
+			best.start_guard(self)
 		intel_t = G.time + 3.0
 		var dst := _captor_base()
 		if dst != null:
@@ -3299,6 +3440,50 @@ func start_escort(dragger: Soldier) -> void:
 	path = PackedVector3Array()
 	build_site = null
 	say("ÖRTME ATEŞİ!")
+
+func start_guard(p: Soldier) -> void:
+	guard_of = p
+	p.guard_by = self
+	state = "guard"
+	state_t = 0.0
+	order = ""
+	target = null
+	path = PackedVector3Array()
+
+func _think_guard() -> void:
+	# esir teslim edildi / kaçtı / öldü: muhafız timine döner
+	if guard_of == null or not is_instance_valid(guard_of) or not guard_of.alive or guard_of.state != "prisoner" or state_t > 240.0:
+		if guard_of != null and is_instance_valid(guard_of):
+			guard_of.guard_by = null
+		guard_of = null
+		state = "idle"
+		if squad != null:
+			var ab: Array = squad.able().filter(func(x): return x != self)
+			if not ab.is_empty():
+				cmd_move(G.grid.nearest_free(ab[0].position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)), Grid.M_INF))
+		return
+	# yakın tehdit: esiri bırakmadan karşılık verir
+	_scan()
+
+# muhafız esirin 2,5 m arkasında, hafif yanında yürür
+func _guard_move() -> Vector3:
+	if guard_of == null or not is_instance_valid(guard_of):
+		return Vector3.ZERO
+	var mv := guard_of.vel
+	mv.y = 0
+	var back := (position - guard_of.position)
+	back.y = 0
+	back = back.normalized() if back.length() > 0.1 else Vector3(0, 0, 1)
+	if mv.length() > 0.2:
+		back = -mv.normalized()
+	var side := Vector3(-back.z, 0, back.x) * 0.7
+	var want_p := guard_of.position + back * 2.5 + side
+	var d := want_p - position
+	d.y = 0
+	var L := d.length()
+	if L < 0.35:
+		return Vector3.ZERO
+	return d / L * minf(L * 1.6, 2.4)
 
 func _think_escort() -> void:
 	_scan()

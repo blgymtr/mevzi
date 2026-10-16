@@ -9,6 +9,8 @@ func _init(main: Main) -> void:
 func run(scene: String) -> void:
 	m.start_units = false
 	match scene:
+		"yieldtest":
+			await yield_test()
 		"treetest":
 			await tree_test()
 		"dronetest":
@@ -75,6 +77,8 @@ func run(scene: String) -> void:
 			await crewvis_test()
 		"mortartest":
 			await mortar_test()
+		"ruintest":
+			await ruin_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -383,6 +387,56 @@ func wound_test() -> void:
 	print("WOUND squad_merge moved=%d/4 sq2=%d" % [moved, sq2.able().size()])
 	if moved < 4:
 		fails += 1
+	# 9: oyuncu emriyle tim birleştirme (4 + 4 → tek manga)
+	var sa := Squad.new(G.player_team, "Tim")
+	var sb := Squad.new(G.player_team, "Tim")
+	G.squads.append(sa)
+	G.squads.append(sb)
+	var sel: Array = []
+	for i in 8:
+		var x: Soldier = m.spawn_soldier(G.player_team, ["leader", "rifle", "rifle", "mg"][i % 4], c + Vector3(10 + i, 0, 20), sa if i < 4 else sb)
+		sel.append(x)
+	var into := Squad.merge_selected(sel)
+	var same := 0
+	for x in sel:
+		if x.squad == into:
+			same += 1
+	print("WOUND merge_cmd into=%s same=%d/8 merge_ok_after=%s" % [into != null, same, Squad.merge_ok(sel)])
+	if into == null or same < 8:
+		fails += 1
+	# 9: isabet bölgesi → kan yeri ve yara türü; baş isabeti daha öldürücü
+	var zc := {}
+	var hs: Soldier = m.spawn_soldier(G.player_team, "rifle", c + Vector3(30, 0, 30), null)
+	for i in 400:
+		var z: String = hs._hit_zone()
+		zc[z] = zc.get(z, 0) + 1
+	print("WOUND zones %s" % [zc])
+	if zc.get("head", 0) < 10 or zc.get("torso", 0) < 120 or zc.get("arm", 0) < 40 or zc.get("leg", 0) < 60:
+		fails += 1
+	var hp0 := hs.hp
+	hs.last_zone = "leg"
+	hs._injure(false)
+	print("WOUND leg_zone_injury=%s" % hs.injury)
+	if hs.injury != "leg":
+		fails += 1
+	hs.hp = hp0
+	# 9: yakın ağır patlamada ölen askerde uzuv kopar, parça savrulur
+	var g0: int = G.fx.gibs.size()
+	var severed := 0
+	for i in 6:
+		var v: Soldier = m.spawn_soldier(1 - G.player_team, "rifle", c + Vector3(40 + i * 6, 0, 40), null)
+		v.hp = 5.0
+		v.downs = 2
+		v.on_blast(v.position + Vector3(0.6, 0, 0), 6.0, 160.0, 0.6, null)
+		if not v.alive and v.body.severed.size() > 0:
+			severed += 1
+	await m._wait(1.5)
+	print("WOUND sever=%d/6 gibs=%d" % [severed, G.fx.gibs.size() - g0])
+	if severed < 2 or G.fx.gibs.size() - g0 < 2:
+		fails += 1
+	_cam(c + Vector3(55, 0, 40), 14.0)
+	await m._wait(1.0)
+	await m._shot("wound_09_sever")
 	print("WOUNDTEST RESULT fails=%d" % fails)
 
 # halatla iniş: kargo helikopteri 8 askeri iki halattan indirir, halatlar bırakılır; sonra SPIES ile geri alır
@@ -2085,3 +2139,135 @@ func rock_test() -> void:
 		await m._shot("rock_%s_mid" % mp)
 		print("ROCK map=%s soldier=%s" % [mp, sq != null])
 	print("ROCKTEST RESULT fails=0")
+
+# 52: bina yıkımı — kısmi delik (kırık kenar, yerinden oynamış bloklar, düzensiz parçalar, toz) ve tam çökme
+# (çatı eğilerek iner, duvarlar tepeden aşağı yıkılır, kalıntı duvar parçaları + moloz tepesi kalır)
+func ruin_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 43)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var B: Blocks = G.blocks
+	# merkeze en yakın iki sağlam ev
+	var mid := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	var hs: Array = []
+	for i in B.houses.size():
+		var h: Dictionary = B.houses[i]
+		if not h["collapsed"] and h["total"] > 60:
+			hs.append(i)
+	hs.sort_custom(func(a, b): return (B.houses[a]["center"] as Vector3).distance_to(mid) < (B.houses[b]["center"] as Vector3).distance_to(mid))
+	if hs.size() < 2:
+		print("RUIN houses=%d" % hs.size())
+		print("RUINTEST RESULT fails=1")
+		return
+	var h1: Dictionary = B.houses[hs[0]]
+	var h2: Dictionary = B.houses[hs[1]]
+	var c1: Vector3 = h1["center"]
+	var sz1: Vector2 = h1["size"]
+	# 1) kısmi: duvara tek top mermisi
+	var wall_p := c1 + Vector3(sz1.x * 0.5, 1.6, 0)
+	_cam(c1, 16.0)
+	await m._wait(0.6)
+	await m._shot("ruin_00_before")
+	var r0: int = B.rubble_n
+	var k0: int = B.blast(wall_p, 1.6, 1.2)
+	await m._wait(0.25)
+	await m._shot("ruin_01_hole_fly")
+	await m._wait(3.0)
+	await m._shot("ruin_02_hole_settled")
+	var scars := 0
+	for v in B.bscar:
+		scars += v
+	print("RUIN partial killed=%d scars=%d rubble=+%d collapsed=%s" % [k0, scars, B.rubble_n - r0, h1["collapsed"]])
+	if k0 < 3 or scars < 5 or B.rubble_n - r0 < k0:
+		fails += 1
+	# 2) tam çökme: ikinci binaya ağır topçu ateşi
+	var c2: Vector3 = h2["center"]
+	var sz2: Vector2 = h2["size"]
+	_cam(c2, 22.0)
+	await m._wait(0.5)
+	await m._shot("ruin_03_before_collapse")
+	var r1: int = B.rubble_n
+	for j in 4:
+		G.explode(c2 + Vector3(randf_range(-sz2.x, sz2.x) * 0.35, 2.0, randf_range(-sz2.y, sz2.y) * 0.35), 4.0, 200.0, "shell", 1)
+		await m._wait(0.15)
+	await m._wait(0.4)
+	await m._shot("ruin_04_collapsing")
+	await m._wait(1.2)
+	await m._shot("ruin_05_falling")
+	await m._wait(3.5)
+	await m._shot("ruin_06_rubble")
+	var alive := 0
+	for w in B.walls:
+		if w["house"] == hs[1]:
+			for id in w["blocks"]:
+				alive += B.balive[id]
+	print("RUIN collapse collapsed=%s alive_left=%d/%d rubble=+%d collapsing_left=%d roof_hidden=%s" % [h2["collapsed"], alive, h2["total"], B.rubble_n - r1, B.collapsing.size(), not (h2["roof"] != null and is_instance_valid(h2["roof"]) and h2["roof"].visible)])
+	if not h2["collapsed"] or alive == 0 or B.rubble_n - r1 < 40 or not B.collapsing.is_empty():
+		fails += 1
+	_cam(c2, 9.0)
+	await m._wait(0.4)
+	await m._shot("ruin_07_close")
+	# 36: kum torbası siperi (yastık torbalar, çuval dokusu) ve yırtılan torbalar
+	var sp := G.grid.nearest_open(c1 + Vector3(0, 0, sz1.y * 0.5 + 12.0), Grid.M_INF)
+	G.props.clear_area(sp, 8.0)
+	var line: Building = m.place_line(0, "sandbags", sp + Vector3(-3, 0, 0), sp + Vector3(3, 0, 0.6))
+	line.complete()
+	_cam(sp, 5.0)
+	await m._wait(0.5)
+	await m._shot("ruin_08_sandbags")
+	var bn0: int = B.bag_n
+	B.blast(sp + Vector3(1.0, 0.4, 0.3), 1.0, 0.8)
+	await m._wait(1.5)
+	await m._shot("ruin_09_sandbags_hit")
+	print("RUIN sandbags burst=%d" % (B.bag_n - bn0))
+	if B.bag_n - bn0 < 2:
+		fails += 1
+	print("RUINTEST RESULT fails=%d" % fails)
+
+# askerler yaklaşan araca yol verir: yolda duran tim kenara çekilir, araç durmadan geçer
+func yield_test() -> void:
+	m.get_window().size = Vector2i(1280, 720)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 43)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	# karargâhtan merkeze doğru, 60 m'lik düz ve engelsiz bir şerit ara (nehir/orman olmasın)
+	var c := G.grid.nearest_open(G.hq_pos[0], Grid.M_HEAVY)
+	for k in 40:
+		var cand := G.grid.nearest_open(G.hq_pos[0].lerp(G.hq_pos[1], 0.08 + k * 0.02), Grid.M_HEAVY)
+		if G.grid.walkable_line(cand + Vector3(-32, 0, 0), cand + Vector3(32, 0, 0), Grid.M_HEAVY) and not G.grid.is_water(cand):
+			c = cand
+			break
+	G.props.clear_area(c, 36.0)
+	var v: Vehicle = m.spawn_vehicle(0, "usa_lv_m1151", c + Vector3(-30, 0, 0), PI * 0.5)
+	var ss: Array = []
+	for i in 6:
+		var s: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-6 + i * 2.4, 0, randf_range(-0.4, 0.4)), Grid.M_INF), null)
+		ss.append(s)
+	await m._wait(1.0)
+	v.cmd_move(c + Vector3(30, 0, 0))
+	var yielded := 0
+	var min_d := 99.0
+	for k in 160:
+		await m._wait(0.1)
+		for s in ss:
+			if s.yield_veh == v and G.time < s.yield_until:
+				yielded += 1
+			min_d = minf(min_d, Vector2(s.position.x - v.position.x, s.position.z - v.position.z).length())
+		if v.position.x > c.x + 26.0:
+			break
+	var passed := v.position.x > c.x + 20.0
+	_cam(c, 30.0)
+	await m._shot("yield_01")
+	print("YIELD passed=%s yield_frames=%d min_dist=%.2f vehx=%.1f" % [passed, yielded, min_d, v.position.x - c.x])
+	if not passed or yielded == 0 or min_d < 0.5:
+		fails += 1
+	print("YIELDTEST RESULT fails=%d" % fails)

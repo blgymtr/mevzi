@@ -57,6 +57,52 @@ func has_leader() -> bool:
 func able() -> Array:
 	return members.filter(func(m): return is_instance_valid(m) and m.alive and m.can_fight() and m.squad == self and m.state != "hospital")
 
+# ------------------------------------------------------------ oyuncu emriyle tim birleştirme (tim + tim = manga)
+const MERGE_MAX := 13
+
+static func _sel_squads(sel: Array) -> Array:
+	var out: Array = []
+	for u in sel:
+		if is_instance_valid(u) and u is Soldier and u.alive and u.squad != null and u.squad.team >= 0 and not out.has(u.squad):
+			out.append(u.squad)
+	return out
+
+static func merge_ok(sel: Array) -> bool:
+	var sqs := _sel_squads(sel)
+	if sqs.size() < 2:
+		return false
+	var n := 0
+	for sq in sqs:
+		n += (sq as Squad).able().size()
+	return n <= MERGE_MAX
+
+# en kalabalık (eşitse liderli) tim kalır; diğerlerinin savaşabilen üyeleri ona katılıp yanına toplanır
+static func merge_selected(sel: Array) -> Squad:
+	if not merge_ok(sel):
+		return null
+	var sqs := _sel_squads(sel)
+	var into: Squad = sqs[0]
+	for sq in sqs:
+		var a: int = (sq as Squad).able().size() * 2 + (1 if (sq as Squad).has_leader() else 0)
+		var b: int = into.able().size() * 2 + (1 if into.has_leader() else 0)
+		if a > b:
+			into = sq
+	var lead: Soldier = null
+	for m in into.able():
+		if lead == null or m.role == "leader":
+			lead = m
+	for sq in sqs:
+		if sq == into:
+			continue
+		for m in (sq as Squad).able():
+			(sq as Squad).members.erase(m)
+			into.add(m)
+			if lead != null and m.order in ["", "move"] and m.state in ["idle", "move"]:
+				m.cmd_move(G.grid.nearest_free(lead.position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)), Grid.M_INF))
+	into.peak = maxi(into.peak, into.able().size())
+	into.had_leader = into.had_leader or into.has_leader()
+	return into
+
 # Lideri ölen ya da 2 kişiye düşen tim dağılır: tedavi gereken yaralılar sahra hastanesine
 # yürür, kalanlar yakındaki liderli dost time katılıp onun yanına gider.
 func _reorganize() -> void:

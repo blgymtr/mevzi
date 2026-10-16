@@ -24,19 +24,19 @@ func start(body: SoldierBody, vel: Vector3, spin := 0.0) -> void:
 	p.resize(17)
 	p[HIP] = body.pelvis.global_position
 	p[NECK] = sp * Vector3(0, spine_len, 0)
-	p[HEAD] = sp * Vector3(0, 0.78, 0)
+	p[HEAD] = sp * Vector3(0, 0.77, 0)
 	p[SH_R] = body.arm_r.global_position
 	p[EL_R] = fr.origin
-	p[HA_R] = fr * Vector3(0, -0.3, 0)
+	p[HA_R] = fr * Vector3(0, -SoldierBody.HAND_LEN, 0)
 	p[SH_L] = body.arm_l.global_position
 	p[EL_L] = fl.origin
-	p[HA_L] = fl * Vector3(0, -0.3, 0)
+	p[HA_L] = fl * Vector3(0, -SoldierBody.HAND_LEN, 0)
 	p[HP_R] = body.leg_r.global_position
 	p[KN_R] = kr.origin
-	p[FT_R] = kr * Vector3(0, -0.46, 0)
+	p[FT_R] = kr * Vector3(0, -SoldierBody.SHIN, 0)
 	p[HP_L] = body.leg_l.global_position
 	p[KN_L] = kl.origin
-	p[FT_L] = kl * Vector3(0, -0.46, 0)
+	p[FT_L] = kl * Vector3(0, -SoldierBody.SHIN, 0)
 	var wt := body.weapon.global_transform
 	p[W0] = wt.origin
 	p[W1] = wt * Vector3(0, 0, -0.7)
@@ -145,8 +145,9 @@ func _basis(y_axis: Vector3, x_ref: Vector3) -> Basis:
 	return Basis(X, Y, Z)
 
 func _apply() -> void:
-	var hx := p[HP_L] - p[HP_R]
-	var sx := p[SH_L] - p[SH_R]
+	# pivotların yerel +X ekseni anatomik sağa (arm_r/leg_r +X'te) bakar
+	var hx := p[HP_R] - p[HP_L]
+	var sx := p[SH_R] - p[SH_L]
 	var up := p[NECK] - p[HIP]
 	var pb := _basis(up, hx)
 	b.pelvis.global_transform = Transform3D(pb, p[HIP])
