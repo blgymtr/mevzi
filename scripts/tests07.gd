@@ -89,6 +89,12 @@ func run(scene: String) -> void:
 			await tow_test()
 		"cratertypes":
 			await cratertypes_test()
+		"backfiretest":
+			await backfire_test()
+		"crowdtest":
+			await crowd_test()
+		"trenchpose":
+			await trenchpose_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -2258,6 +2264,167 @@ func crew_kill_test() -> void:
 		fails += 1
 	print("CREWKILLTEST RESULT fails=%d" % fails)
 
+# 89: siper derinliğine göre duruş — derin siperde ateş ederken ayakta, gözü korkuluğun hemen üstünde; ağır
+# baskıda kenarın altına çömelir; kraterde / sığ çukurda alçak duruş
+func trenchpose_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var tr := m.place_line(0, "trench", c + Vector3(-6.0, 0, 0.0), c + Vector3(6.0, 0, 0.0))
+	tr.add_work(99999.0)
+	await m._wait(1.0)
+	var cp := c + Vector3(0, 0, 9)
+	G.explode(cp, 4.5, 5.0, "shell", 1, null)
+	var rp := c + Vector3(8, 0, 9)
+	G.explode(rp, 3.0, 5.0, "rpg", 1, null)
+	await m._wait(0.5)
+	var en: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(0, 0, -26), Grid.M_INF), null)
+	en.cmd_hold()
+	en.fire_mode = 2
+	en.hp = 999999.0
+	en.stance_lock = Soldier.STAND
+	var ts: Array = []
+	for i in 3:
+		var s: Soldier = m.spawn_soldier(0, "rifle", c + Vector3(-3.0 + i * 3.0, 0, 0.0), null)
+		s.cmd_hold()
+		ts.append(s)
+	var cs: Soldier = m.spawn_soldier(0, "rifle", cp, null)
+	cs.cmd_hold()
+	var rs: Soldier = m.spawn_soldier(0, "rifle", rp, null)
+	rs.cmd_hold()
+	await m._wait(5.0)
+	var names := ["STAND", "CROUCH", "PRONE"]
+	for s in ts:
+		print("TPOSE trench depth=%.2f stance=%s eye_above_lip=%.2f target=%s popped=%s" % [s.trench_depth(), names[s.stance], s.eye_point().y, s.target != null, s.popped])
+		if s.target != null and (s.stance != Soldier.STAND or s.eye_point().y < 0.05 or s.eye_point().y > 0.7):
+			fails += 1
+	print("TPOSE crater depth=%.2f stance=%s | rpg pit depth=%.2f stance=%s" % [cs.trench_depth(), names[cs.stance], rs.trench_depth(), names[rs.stance]])
+	_cam(c, 12.0)
+	await m._wait(0.2)
+	await m._shot("trench_fire")
+	# ağır baskı: kenarın altına çömelir
+	for s in ts:
+		s.add_suppression(95.0, en.position)
+	await m._wait(0.6)
+	for s in ts:
+		print("TPOSE suppressed stance=%s eye_above_lip=%.2f" % [names[s.stance], s.eye_point().y])
+		if s.stance == Soldier.STAND or s.eye_point().y > -0.05:
+			fails += 1
+	await m._shot("trench_duck")
+	print("TRENCHPOSE RESULT fails=%d" % fails)
+
+# 84: kalabalık tankın yanına yığılınca askerler iç içe girmez, tankın içine girmez, takılıp kalmaz
+func crowd_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var tk: Vehicle = m.spawn_vehicle(0, "tank", c, 0.3)
+	tk.cmd_hold()
+	tk.fire_mode = 2
+	var ss: Array = []
+	for i in 24:
+		var p := G.grid.nearest_free(c + Vector3(-18 + (i % 6) * 1.5, 0, 14 + (i / 6) * 1.5), Grid.M_INF)
+		ss.append(m.spawn_soldier(0, "rifle", p, null))
+	await m._wait(1.0)
+	# hepsi tankın iki yanındaki iki noktaya (kalabalık, tankın dibinde)
+	for i in ss.size():
+		var side := 1.0 if i % 2 == 0 else -1.0
+		ss[i].cmd_move(tk.position + tk.right() * side * (tk.ext.x + 1.2))
+	# iç içe girme: omuz genişliği ~0,45 m — merkezler 0,4 m'den yakınsa gövdeler görünür biçimde iç içe
+	var worst_pairs := 0
+	var min_d := 99.0
+	for k in 24:
+		await m._wait(0.5)
+		if k >= 16:
+			var pairs := 0
+			for a in ss.size():
+				for b in range(a + 1, ss.size()):
+					var dd := Vector2(ss[a].position.x - ss[b].position.x, ss[a].position.z - ss[b].position.z).length()
+					min_d = minf(min_d, dd)
+					if dd < 0.4:
+						pairs += 1
+			worst_pairs = maxi(worst_pairs, pairs)
+	var inside := 0
+	var moving := 0
+	for s in ss:
+		var q: Vector3 = tk.obb_closest(s.position)
+		if Vector2(q.x - s.position.x, q.z - s.position.z).length() < 0.05:
+			inside += 1
+		if s.state == "move":
+			moving += 1
+			var dq: Vector3 = s.path[s.path.size() - 1] if s.path.size() > 0 else s.position
+			var wp: Vector3 = s.path[s.path_i] if s.path_i < s.path.size() else s.position
+			var wq: Vector3 = tk.obb_closest(wp)
+			print("CROWD stuck L=%.2f sep=%.2f path=%d/%d d_tank=%.2f wp_dist=%.2f wp_in_tank=%.2f slide=%s detour=%s" % [Vector2(dq.x - s.position.x, dq.z - s.position.z).length(), s._sep_c.length(), s.path_i, s.path.size(), Vector2(q.x - s.position.x, q.z - s.position.z).length(), Vector2(wp.x - s.position.x, wp.z - s.position.z).length(), Vector2(wq.x - wp.x, wq.z - wp.z).length(), s._slide_sgn, s.get("_detour_t")])
+	_cam(c, 16.0)
+	await m._wait(0.2)
+	await m._shot("crowd_tank")
+	print("CROWD pairs_lt_0.4m=%d min_dist=%.2f inside_tank=%d still_moving=%d" % [worst_pairs, min_d, inside, moving])
+	if worst_pairs > 1 or inside > 0 or moving > 2:
+		fails += 1
+	print("CROWDTEST RESULT fails=%d" % fails)
+
+# 83: geri çekilen asker arkasına bakmadan ateş etmez — normal harekette hedef arkadaysa geri geri yürüyerek
+# (koşmadan) ve gövdesi hedefe dönükken ateş eder; geri çekilme emrinde dönüp koşar, ateş etmez
+func backfire_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_INF)
+	G.props.clear_area(c, 40.0)
+	var en: Vehicle = m.spawn_vehicle(1, "truck", c + Vector3(0, 0, -34), 0.0)
+	en.cmd_hold()
+	en.hp = 999999.0
+	var s1: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-3, 0, 0), Grid.M_INF), null)
+	var s2: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(3, 0, 0), Grid.M_INF), null)
+	await m._wait(3.0)
+	s1.cmd_move(G.grid.nearest_free(s1.position + Vector3(0, 0, 26), Grid.M_INF))
+	s2.cmd_move(G.grid.nearest_free(s2.position + Vector3(0, 0, 26), Grid.M_INF))
+	s2.order = "retreat"
+	var r := {s1: [0, 0, 0.0], s2: [0, 0, 0.0]}   # atış, arkaya bakmadan atış, hedef arkadayken en yüksek hız
+	var am := {s1: s1.ammo, s2: s2.ammo}
+	var p0 := {s1: s1.position, s2: s2.position}
+	for k in 160:
+		await m._wait(0.05)
+		for s in [s1, s2]:
+			var shot: bool = s.ammo < am[s]
+			am[s] = s.ammo
+			var off := absf(angle_difference(s.rotation.y, Soldier._yaw_of(en.position - s.position)))
+			if shot:
+				r[s][0] += 1
+				if off > 0.5:
+					r[s][1] += 1
+			if k % 10 == 9:
+				if s.state == "move" and s._back_to_target():
+					var sp := Vector2(s.position.x - p0[s].x, s.position.z - p0[s].z).length() / 0.5
+					r[s][2] = maxf(r[s][2], sp)
+				p0[s] = s.position
+	print("BACKFIRE move shots=%d blind=%d back_speed=%.1f | retreat shots=%d blind=%d" % [r[s1][0], r[s1][1], r[s1][2], r[s2][0], r[s2][1]])
+	if r[s1][1] > 0 or r[s2][0] > 0 or r[s1][2] > 1.9:
+		fails += 1
+	print("BACKFIRETEST RESULT fails=%d" % fails)
+
 # 138: krater mühimmata göre değişir — gerçek patlama yarıçaplarıyla sırayla patlatılır, çukurun derinliği ve
 # çapı araziden ölçülür
 func cratertypes_test() -> void:
@@ -2792,6 +2959,32 @@ func deck_test() -> void:
 		print("DECK %s %s seats_y=%s hull_top=%.2f%s%s" % [ids[i], v.vtype, ys, a.end.y, cm, " BAD" if bad else ""])
 		if bad:
 			fails += 1
+	# 92: açık nişancı (kapak / kasa) — ayakları gövde yüzeyinin altında (kapağın içinde) olmalı, tavanda ayakta değil
+	var gun_bad := 0
+	for o in Catalog.order:
+		if Catalog.base(o[2]) not in ["apc", "ifv", "technical", "aa", "tank"]:
+			continue
+		var gv: Vehicle = m.spawn_vehicle(0, o[2], c + Vector3(0, 0, 40), 0.0)
+		if gv.gunner != null:
+			var hf := PackedVector3Array()
+			for ch in gv.hull.get_children():
+				if ch is MeshInstance3D and (ch as MeshInstance3D).mesh != null:
+					var f := (ch as MeshInstance3D).mesh.get_faces()
+					for k in f.size():
+						f[k] = (ch as MeshInstance3D).transform * f[k]
+					hf.append_array(f)
+			var gl: Vector3 = gv.hull.to_local(gv.gunner.global_position)
+			var surf := Vehicle._deck_h(hf, gl.x, gl.z, -1.0)
+			var line := "DECK gunner %s %s feet=%.2f hull_surface=%.2f" % [o[2], gv.vtype, gl.y, surf]
+			if surf > 0.0 and gl.y > surf - 0.35:
+				line += " STANDING_ON_TOP"
+				gun_bad += 1
+			print(line)
+		G.remove_unit(gv)
+		gv.queue_free()
+	print("DECK gunners_on_top=%d" % gun_bad)
+	if gun_bad > 0:
+		fails += 1
 	_cam(c + Vector3(-4, 0, -12), 40.0)
 	await m._wait(0.5)
 	await m._shot("deck_00_all")

@@ -1974,6 +1974,12 @@ func _scan() -> void:
 			threat_time = G.time
 			return
 
+# bulunduğu yerin çevre zemine göre derinliği (siper, krater)
+func trench_depth() -> float:
+	if G.terrain == null:
+		return 0.0
+	return maxf(0.0, -G.terrain.ground_hs(position))
+
 func _stance() -> void:
 	if stress_lv == 2 and state == "idle":
 		stance = PRONE
@@ -1993,7 +1999,20 @@ func _stance() -> void:
 		return
 	var recent := G.time - threat_time < 8.0
 	if G.grid.in_trench(position):
-		stance = CROUCH if (popped or target != null) else PRONE
+		# (89) siper derinliğine göre: derin siperde (≥1 m) ayakta korkuluk üstünden ateş, saklanırken
+		# kenarın altına çömelir; yarım siper / büyük kraterde diz çöküp ateş, saklanırken yatar; sığ
+		# çukurda yüzüstü (kenardan ateş). Eskiden derin siperde çömelik ateş eden askerin gözü kenarın altında
+		# kalıyor, saklanırken siper tabanına boylu boyunca yatıyordu.
+		var dpt := trench_depth()
+		# ateş altında değilken korkuluk üstünden gözetler (yoksa gözü kenarın altında kalıp düşmanı hiç görmez);
+		# baskı artınca kenarın altına iner
+		var fire := (popped or target != null or suppression < 45.0) and suppression < 85.0
+		if dpt >= 1.0:
+			stance = STAND if fire else CROUCH
+		elif dpt >= 0.45:
+			stance = CROUCH if fire else PRONE
+		else:
+			stance = PRONE
 		return
 	if cover_type == 1:
 		stance = STAND if popped else CROUCH
@@ -2017,6 +2036,9 @@ func _movement(dt: float) -> void:
 			spd = RUN_SPEED
 			if target != null and is_instance_valid(target) and (popped or burst_left > 0) and not force_move and state == "move":
 				spd = 2.0
+				# hedef arkada kalıyorsa (geri çekilirken ateş): geri geri yürür — koşmaz (83)
+				if path_i < path.size() and _back_to_target():
+					spd = BACK_WALK
 			if stance == CROUCH:
 				spd = 1.9
 			elif stance == PRONE:
@@ -2089,6 +2111,7 @@ func _movement(dt: float) -> void:
 			want = (want + veh_step).limit_length(RUN_SPEED)
 	elif state != "dragged" and state != "drag":
 		_sep_t = 0.2
+		var hard := Vector3.ZERO
 		for o in G.near(position, 1.6):
 			if o == self or o == patient:
 				continue
@@ -2100,10 +2123,19 @@ func _movement(dt: float) -> void:
 					continue
 				if dl < 0.75 and dl > 0.001:
 					sep += dv / dl * (0.75 - dl) * 7.0
+					# (84) gövdeler iç içe girmez: 0,42 m'den yakın komşudan örtüşmenin yarısı kadar konumla açılır
+					# (yumuşak ayrışma hızı kalabalıkta yürüme isteğine yeniliyordu)
+					if dl < 0.42 and o.state not in ["aboard", "hospital", "wounded"] and state not in ["wounded"]:
+						hard += dv / dl * (0.42 - dl) * 0.5
 				elif dl <= 0.001:
 					sep += Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
 			elif o is Vehicle and o.alive:
 				pass
+		if hard != Vector3.ZERO and house_id < 0:
+			var hp2: Vector3 = position + hard.limit_length(0.12)
+			if G.grid.height_at(hp2) < 0.45 and not G.grid.is_water(hp2):
+				position.x = hp2.x
+				position.z = hp2.z
 		# araç izi içindeysek araç itmez: asker kendi adımlarıyla izin dışına yürür (10 kez/sn denetim)
 		_vp_t -= dt
 		if _vp_t <= 0.0:
@@ -2214,7 +2246,7 @@ func _movement(dt: float) -> void:
 	var hh := G.grid.height_at(position)
 	body_lift = lerpf(body_lift, hh + 0.02 if (hh >= 0.3 and hh < 1.15) else 0.0, clampf(dt * 14.0, 0, 1))
 	# yön
-	var aiming := target != null and is_instance_valid(target) and can_fight() and state in ["idle", "move", "escort", "guard"] and (burst_left > 0 or fire_cd < 0.6 or popped)
+	var aiming := target != null and is_instance_valid(target) and can_fight() and state in ["idle", "move", "escort", "guard"] and (burst_left > 0 or fire_cd < 0.6 or popped) and not _fleeing()
 	if state == "melee" and melee_target != null and is_instance_valid(melee_target):
 		face_yaw = _yaw_of(melee_target.position - position)
 	elif state == "drag" or (state == "stretcher" and _stretcher_back()):
@@ -2238,7 +2270,32 @@ func _movement(dt: float) -> void:
 		face_yaw = _yaw_of(threat_pos - position)
 	rotation.y = lerp_angle(rotation.y, face_yaw, clampf(dt * 8.0, 0, 1))
 
+# geri çekilme / kaçış (83): emirle geri çekilen ya da paniğe kapılan asker dönüp koşar, arkasına ateş etmez
+const BACK_WALK := 1.3
+
+func _fleeing() -> bool:
+	return state == "move" and (order == "retreat" or stress_lv == 2)
+
+# gidiş yönü ile hedef yönü arasında ~100°'den fazla açı: hedef arkada
+func _back_to_target() -> bool:
+	if target == null or not is_instance_valid(target) or path_i >= path.size():
+		return false
+	var mv := path[path_i] - position
+	mv.y = 0.0
+	var tv := target.position - position
+	tv.y = 0.0
+	if mv.length() < 0.2 or tv.length() < 0.2:
+		return false
+	return mv.normalized().dot(tv.normalized()) < -0.17
+
 func _follow(spd: float) -> Vector3:
+	# (84) son nokta yakında ve önündeki ara noktadan daha yakınsa, düz hat açıksa doğrudan son noktaya:
+	# kalabalıkta itilip yolundan çıkan asker hedefinin dibindeyken uzaktaki köşe ara noktasına geri dönmesin
+	if path.size() - path_i >= 2:
+		var lp := path[path.size() - 1]
+		var le := Vector2(lp.x - position.x, lp.z - position.z).length()
+		if le < 4.0 and le < Vector2(path[path_i].x - position.x, path[path_i].z - position.z).length() and G.grid.walkable_line(position, lp, Grid.M_INF):
+			path_i = path.size() - 1
 	while path_i < path.size():
 		var tp := path[path_i]
 		var d := Vector3(tp.x - position.x, 0, tp.z - position.z)
@@ -2247,7 +2304,16 @@ func _follow(spd: float) -> Vector3:
 		# aynı noktaya giden komşu itiyorsa (ayrışma) 1 m'de varmış say — ikisi de 0,25 m'ye giremeyip sonsuza dek
 		# kıpırdanıyordu (roadmap 116: "sıkışmış gibi sağa sola kayma")
 		var crowded := near_end and _sep_c.length() > 0.4
-		if L < (0.25 if not near_end else (1.0 if crowded else 0.25)) or (not near_end and L < 0.6):
+		var arr_r := 1.0
+		if crowded and L < 4.0:
+			# (84) hedefte çok asker toplandıysa varış yarıçapı kalabalıkla büyür: dıştakiler ortaya girmeye
+			# çalışıp kalabalığı itmez, kenarında durur
+			var n := 0
+			for o in G.near(tp, 2.0):
+				if o != self and o is Soldier and o.team == team and o.alive:
+					n += 1
+			arr_r = maxf(1.0, 0.55 * sqrt(float(n + 1)) + 0.5)
+		if L < (0.25 if not near_end else (arr_r if crowded else 0.25)) or (not near_end and L < 0.6):
 			path_i += 1
 			continue
 		var s := spd
@@ -2381,7 +2447,7 @@ func _combat(_dt: float) -> void:
 		if covering and G.time - threat_time < 6.0 and fire_cd <= 0.0 and ammo > 0:
 			_area_fire()
 		return
-	if state == "move" and (force_move or stance == PRONE):
+	if state == "move" and (force_move or stance == PRONE or _fleeing()):
 		return
 	if role == "mortar":
 		return
@@ -2444,6 +2510,9 @@ func _combat(_dt: float) -> void:
 		if suppression > 88.0 and randf() < 0.7:
 			return
 	if fire_cd > 0.0 or stress_lv == 2:
+		return
+	# gövde hedefe dönmeden nişanlı atış yok (83: geriye koşarken arkasına bakmadan ateş ediyordu)
+	if absf(angle_difference(rotation.y, _yaw_of(t.position - position))) > 0.4:
 		return
 	var W := weapon()
 	if burst_left <= 0:
