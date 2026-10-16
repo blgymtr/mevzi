@@ -395,16 +395,94 @@ func can_load() -> bool:
 
 func riders_visible() -> bool:
 	# açık kasalı pikap (technical) ve tank güvertesi; kapalı gövdeli hafif araçta yolcu içeride
-	return vtype == "tank" or (vtype == "technical" and not SEATS_FAM.has(String(cat.get("fam", ""))))
+	# katalogdaki "technical" tabanlı aileler (MRAP, HMMWV, JLTV, TOW, Husky) kapalı kabinli: yolcu tavanda
+	# oturtuluyor, havada duruyor gibi görünüyordu (129) — yalnız katalog dışı açık kasalı taban pikap
+	return vtype == "tank" or (vtype == "technical" and String(cat.get("fam", "")) == "")
 
 func seat_pos(s) -> Vector3:
 	var i := cargo.find(s)
-	if vtype == "tank":
-		var seats := [Vector3(-1.1, 1.55, 1.2), Vector3(1.1, 1.55, 1.2), Vector3(-1.1, 1.55, 2.4), Vector3(1.1, 1.55, 2.4)]
-		return hull.global_transform * seats[clampi(i, 0, 3)]
-	if vtype == "technical" and riders_visible():
-		return hull.global_transform * Vector3(0.5 * (1 if i % 2 == 0 else -1), 1.0, 1.6)
+	if vtype == "tank" or (vtype == "technical" and riders_visible()):
+		var seats := _deck_seats()
+		return hull.global_transform * (seats[clampi(i, 0, seats.size() - 1)] as Vector3)
 	return position + Vector3(0, -50, 0)
+
+# güverte / kasa oturakları (129): eskiden her tankta sabit 1,55 m yükseklik ve ±1,1 m yan — alçak gövdeli
+# ve dar araçlarda askerler havada duruyordu. Gövde modelinin üçgenlerine yukarıdan bakılarak gerçek
+# güverte yüksekliği bulunur (taretin arkası, motor güvertesi; pikapta kasa tabanı); model başına önbellek
+static var _deck_cache := {}
+var _deck: Array = []
+
+func _deck_seats() -> Array:
+	if not _deck.is_empty():
+		return _deck
+	var key := "%s|%s|%d" % [vid, vtype, hull_mi.mesh.get_instance_id() if hull_mi != null and hull_mi.mesh != null else 0]
+	if _deck_cache.has(key):
+		_deck = _deck_cache[key]
+		return _deck
+	var tris := PackedVector3Array()
+	var a := AABB()
+	var first := true
+	for ch in hull.get_children():
+		if ch is MeshInstance3D and (ch as MeshInstance3D).mesh != null:
+			var mi := ch as MeshInstance3D
+			var f := mi.mesh.get_faces()
+			for k in f.size():
+				f[k] = mi.transform * f[k]
+			tris.append_array(f)
+			var bb: AABB = mi.transform * mi.mesh.get_aabb()
+			a = bb if first else a.merge(bb)
+			first = false
+	var out: Array = []
+	if first:
+		out = [Vector3(-0.8, 1.4, 1.0), Vector3(0.8, 1.4, 1.0), Vector3(-0.8, 1.4, 2.0), Vector3(0.8, 1.4, 2.0)]
+	else:
+		var cx := a.get_center().x
+		var hx := a.size.x * 0.5 * (0.6 if vtype == "tank" else 0.4)
+		# taretin arka kenarından gövde sonuna kadar (taretsiz: gövdenin arka yarısı)
+		var z0 := a.get_center().z
+		if turret != null and turret_mi != null and turret_mi.mesh != null:
+			var tb: AABB = turret.transform * turret_mi.mesh.get_aabb()
+			z0 = clampf(tb.end.z + 0.15, a.position.z + a.size.z * 0.3, a.end.z - 0.6)
+		var z1 := a.end.z - 0.45
+		if z1 - z0 > 1.2 or turret == null:
+			for z in [lerpf(z0, z1, 0.2), lerpf(z0, z1, 0.75)]:
+				for sx in [-1.0, 1.0]:
+					var x: float = cx + sx * hx
+					out.append(Vector3(x, _deck_h(tris, x, z, a.end.y * 0.75), z))
+		else:
+			# kısa arka güverte (uzun taretli tank; taret çamurluğun üstüne taştığı için yan oturak olmaz):
+			# dördü arka güvertede yan yana
+			var zr := lerpf(z0, z1, 0.5)
+			var hw := a.size.x * 0.5 * 0.72
+			for f in [-1.0, -0.33, 0.33, 1.0]:
+				var x: float = cx + f * hw
+				out.append(Vector3(x, _deck_h(tris, x, zr, a.end.y * 0.75), zr))
+	_deck_cache[key] = out
+	_deck = out
+	return out
+
+# (x, z) noktasında yukarıdan bakınca en üstteki gövde yüzeyi
+static func _deck_h(tris: PackedVector3Array, x: float, z: float, fallback: float) -> float:
+	var best := -INF
+	var n := tris.size() - 2
+	var i := 0
+	while i < n:
+		var p0 := tris[i]
+		var p1 := tris[i + 1]
+		var p2 := tris[i + 2]
+		i += 3
+		if (x < p0.x and x < p1.x and x < p2.x) or (x > p0.x and x > p1.x and x > p2.x) or (z < p0.z and z < p1.z and z < p2.z) or (z > p0.z and z > p1.z and z > p2.z):
+			continue
+		var d := (p1.z - p2.z) * (p0.x - p2.x) + (p2.x - p1.x) * (p0.z - p2.z)
+		if absf(d) < 1e-8:
+			continue
+		var w0 := ((p1.z - p2.z) * (x - p2.x) + (p2.x - p1.x) * (z - p2.z)) / d
+		var w1 := ((p2.z - p0.z) * (x - p2.x) + (p0.x - p2.x) * (z - p2.z)) / d
+		var w2 := 1.0 - w0 - w1
+		if w0 < -1e-4 or w1 < -1e-4 or w2 < -1e-4:
+			continue
+		best = maxf(best, w0 * p0.y + w1 * p1.y + w2 * p2.y)
+	return best if best > -INF else fallback
 
 func unload() -> void:
 	if sling != null:
@@ -844,15 +922,27 @@ func setup(t: int, vt: String) -> void:
 				# yükseliyor, komutan tavanda tam boy ayakta görünüyordu)
 				cmdr.position = Art.v3(M["meta"]["hatch"]) - M["turret_pos"] + Vector3(0, -1.05, 0)
 			else:
-				cmdr.position = Vector3(ta.position.x + ta.size.x * 0.68, ta.end.y - 1.08, ta.position.z + ta.size.z * 0.62)
+				# kapak hizasındaki gerçek taret tavanı (kutu tepesi anten / sensör direğiyle yükselip komutanı havada bırakıyordu — 129)
+				var hx := ta.position.x + ta.size.x * 0.68
+				var hz := ta.position.z + ta.size.z * 0.62
+				cmdr.position = Vector3(hx, _deck_h((M["turret"] as Mesh).get_faces(), hx, hz, ta.end.y) - 1.08, hz)
 			turret.add_child(cmdr)
 			cmdr.build(t, "crew", G.map_kind == "winter")
 			cmdr.weapon.visible = false
 			cmdr.visible = false
 	if cat.get("fam", "") == "spg_open":
 		# açık bölmeli obüs (M110, M107, 2S7 Malka): güvertede nişancı ve doldurucu, yerde cephaneci
-		crew_deck = 1.4 * hull.scale.y
-		var dspots := [Vector3(-1.0, crew_deck, 1.7), Vector3(1.0, crew_deck, 1.5), Vector3(0.5, 0, ext.y + 1.4)]
+		var hf := PackedVector3Array()
+		for ch in hull.get_children():
+			if ch is MeshInstance3D and (ch as MeshInstance3D).mesh != null:
+				var f := (ch as MeshInstance3D).mesh.get_faces()
+				for k in f.size():
+					f[k] = (ch as MeshInstance3D).transform * f[k]
+				hf.append_array(f)
+		# güverte yüksekliği modelden (sabit 1,4 m bazı obüslerde havada / gövdenin içinde bırakıyordu — 129)
+		var dk := _deck_h(hf, 0.0, 1.6, 1.4)
+		crew_deck = dk * hull.scale.y
+		var dspots := [Vector3(-1.0, _deck_h(hf, -1.0, 1.7, dk), 1.7), Vector3(1.0, _deck_h(hf, 1.0, 1.5, dk), 1.5), Vector3(0.5, 0, ext.y + 1.4)]
 		for i in 3:
 			var cb2 := SoldierBody.new()
 			cb2.position = dspots[i]
@@ -1013,7 +1103,7 @@ func _sep_vehicles(dt: float) -> void:
 	var blocked_now := false
 	var push := Vector3.ZERO
 	for o in G.near(position, radius + 8.0):
-		if o == self or not (o is Vehicle) or o.is_air() or (not o.alive and not o.wreck):
+		if o == self or o == clear_tgt or not (o is Vehicle) or o.is_air() or (not o.alive and not o.wreck):
 			continue
 		var d: Vector3 = o.position - position
 		d.y = 0.0
@@ -1035,6 +1125,13 @@ func _sep_vehicles(dt: float) -> void:
 		if sep:
 			continue
 		var other_static: bool = not o.alive or o.immobile() or absf(o.cur_speed) < 0.2
+		# karşıdan gelen araç takip edilecek trafik değil, engeldir (köprüde burun buruna geçip birbirinin
+		# içinden geçiyorlardı — 133)
+		var dn := d.normalized() if d.length() > 0.01 else forward()
+		var o_dir: Vector3 = o.forward() * (-1.0 if (o.reverse or o.cur_speed < -0.05) else 1.0)
+		var oncoming: bool = o.alive and (o.path_i < o.path.size() or absf(o.cur_speed) > 0.3) and o_dir.dot(-dn) > 0.5
+		if oncoming:
+			other_static = true
 		var sgn := signf(cur_speed) if absf(cur_speed) > 0.05 else (-1.0 if reverse else 1.0)
 		var wants_move := absf(cur_speed) > 0.3 or path_i < path.size()
 		var ahead: bool = d.dot(forward()) * sgn > 0.0
@@ -1047,17 +1144,33 @@ func _sep_vehicles(dt: float) -> void:
 				continue
 			cur_speed *= 0.85
 			blocked_now = true
+			# taraf bir kez seçilir ve sıkışma boyunca korunur (130: her karede engelin hangi yanda kaldığına göre
+			# yeniden seçilince araç döndükçe taraf değişiyor, kamyon sağa sola yalpalayıp kalıyordu)
+			var side := _pick_side(-1.0 if d.dot(right()) > 0.0 else 1.0)
 			_block_t += dt
 			if _block_t > 1.5:
 				_block_t = 0.0
-				if not _detour_around(o) and o.alive and o.team == team and not o.immobile() and o.path_i >= o.path.size() and o.order != "hold":
-					# yan yol yok (köprü, dar geçit): boşta bekleyen dost araç ileri çeker
-					var fwd: Vector3 = o.forward() if o.forward().dot(o.position - position) > 0.0 else -o.forward()
-					var pull: Vector3 = o.position + fwd * (o.ext.y + ext.y + 4.0)
-					if o._cell_ok(pull) and G.grid.walkable_line(o.position, pull, o.nav_mode):
-						o._repath(pull)
-			# yanından sıyrıl (aşağıda toplam hız sınırıyla)
-			push += right() * (-1.0 if d.dot(right()) > 0.0 else 1.0) * best
+				var on_br := not G.grid.bridge_at(position).is_empty() or not G.grid.bridge_at(o.position).is_empty()
+				if on_br and _yield_to == null and o.alive and o.path_i < o.path.size() and o._yield_to == null and get_instance_id() > o.get_instance_id():
+					# köprüde burun buruna: biri (sabit kural: kimliği büyük olan) köprüden geri çıkar, öteki geçer
+					_yield_bridge(o)
+				elif not _detour_around(o, side):
+					var pulled := false
+					if o.alive and o.team == team and not o.immobile() and o.path_i >= o.path.size() and o.order != "hold":
+						# yan yol yok (köprü, dar geçit): boşta bekleyen dost araç ileri çeker
+						var fwd: Vector3 = o.forward() if o.forward().dot(o.position - position) > 0.0 else -o.forward()
+						var pull: Vector3 = o.position + fwd * (o.ext.y + ext.y + 4.0)
+						if o._cell_ok(pull) and G.grid.walkable_line(o.position, pull, o.nav_mode):
+							o._repath(pull)
+							pulled = true
+					if not pulled:
+						_begin_unstick()
+			# yanından sıyrıl (aşağıda toplam hız sınırıyla): seçilen taraf engelden uzaklaştırıyorsa ona, yoksa
+			# engelden dışarı (seçilen taraf engelin üstüne itmesin)
+			if d.dot(right()) * side < 0.0:
+				push += right() * side * best
+			else:
+				push += bax * best * 0.5
 			continue
 		# gerçek örtüşme (aynı noktada doğma, enkaz düşmesi; temas payı hariç): yavaşça açılır — kare başına
 		# ışınlama değil; temas eden ama örtüşmeyen araç hiç itilmez
@@ -1075,22 +1188,420 @@ func _sep_vehicles(dt: float) -> void:
 
 var _block_t := 0.0
 
-# önünü kesen duran aracın yanına ara nokta: araç dönüp gerçekten sürerek dolaşır (ışınlanmaz)
-func _detour_around(o: Vehicle) -> bool:
+# önünü kesen duran aracın yanına ara nokta: araç dönüp gerçekten sürerek dolaşır (ışınlanmaz). Önce
+# sıkışmada seçilen taraf denenir; nokta başka bir aracın izine düşmemeli (yan yana park etmiş iki aracın
+# arasına / içine ara nokta konuyordu), sığmazsa daha geniş dolaşılır
+# köprüde gövde döşemenin içinde kalır (133): sıkışmada yan itme / yerinde dönme yalnız merkez noktayı
+# denetliyordu, tankın burnu korkuluğun içinden suya taşıyordu. Köşeler döşeme yarı genişliğini aşmayacak
+# şekilde eksenden sapma açısı ve yanal kayma sınırlanır.
+func _bridge_keep() -> void:
+	if not alive or slung_by != null:
+		return
+	var br := G.grid.bridge_at(position)
+	if br.is_empty():
+		return
+	var d: Vector3 = br["d"]
+	var rel: Vector3 = position - br["c"]
+	rel.y = 0.0
+	var along := rel.dot(d)
+	var half: float = float(br["w"]) * 0.5
+	if absf(along) > float(br["L"]) * 0.5 + 0.5:
+		return
+	var lat := rel.cross(d).y
+	var lmax := maxf(half - ext.x - 0.05, 0.0)
+	# yanal: gövde yarı genişliği döşemeye sığacak kadar eksene çekilir
+	if absf(lat) > lmax:
+		var fix := (absf(lat) - lmax) * signf(lat)
+		var n := Vector3(-d.z, 0, d.x)          # rel.cross(d).y = rel · n
+		position -= n * fix
+		lat = signf(lat) * lmax
+	# açı: |lat| + boy·|sin a| + en·|cos a| ≤ yarı genişlik
+	var ax := d if forward().dot(d) >= 0.0 else -d
+	var axh := Soldier._yaw_of(ax)
+	var dev := angle_difference(axh, heading)
+	var room := half - absf(lat) - ext.x * cos(dev) - 0.05
+	var smax := clampf(room / maxf(ext.y * 0.85, 0.5), 0.0, 1.0)
+	var amax := asin(smax)
+	if absf(dev) > amax:
+		heading = axh + signf(dev) * amax
+
+# ------------------------------------------------------------ enkaz kaldırma (134)
+# Yol açma dozeri (ve kurtarma aracı) yolu kapatan hurdayı kaldırır: düz ve açık hatta bıçağıyla önüne
+# katıp yol dışına iter, olmazsa halatı bağlayıp sürükler (kurtarma aracı hep çeker). Boşta duran dozer
+# 45 m çevresindeki yoldaki hurdayı kendiliğinden kaldırır.
+var clear_tgt: Vehicle = null
+var clear_mode := ""            # "push" | "tow"
+var clear_stage := ""           # "approach" | "hook" | "haul"
+var clear_dump := Vector3.ZERO
+var _clear_t := 0.0
+var _clear_auto_t := 0.0
+var _cable: MeshInstance3D = null
+
+func can_clear() -> bool:
+	return alive and String(cat.get("fam", "")) in ["eng_dozer", "eng_recovery"]
+
+func has_blade() -> bool:
+	return String(cat.get("fam", "")) == "eng_dozer"
+
+# p noktasının üstündeki hurda (izin içinde ya da 1,5 m yakınında)
+static func wreck_at(p: Vector3) -> Vehicle:
+	var best: Vehicle = null
+	var bd := 1.5
+	for u in G.near(p, 10.0):
+		if u is Vehicle and not u.alive and u.wreck and not u.is_air():
+			var q: Vector3 = u.obb_closest(p)
+			var dd := Vector2(q.x - p.x, q.z - p.z).length()
+			if dd < bd:
+				bd = dd
+				best = u
+	return best
+
+func _dump_spot(w: Vehicle) -> Vector3:
+	# yol dışında, yürünebilir, başka hurdaya / araca değmeyen en yakın yer (12–24 m)
+	var best := Vector3.INF
+	var bd := 1e9
+	for ring in [12.0, 16.0, 20.0, 24.0]:
+		for k in 16:
+			var a := k * TAU / 16.0
+			var q: Vector3 = w.position + Vector3(cos(a), 0, sin(a)) * ring
+			q.y = 0.0
+			if not _cell_ok(q) or G.grid.height_at(q) >= 0.3 or not _veh_clear(q, maxf(w.ext.x, w.ext.y) + 1.0):
+				continue
+			if G.terrain != null and G.terrain.on_road(q):
+				continue
+			if not G.grid.bridge_at(q).is_empty():
+				continue
+			var dd: float = q.distance_to(position) * 0.3 + float(ring)
+			if dd < bd:
+				bd = dd
+				best = q
+		if best != Vector3.INF:
+			break
+	return best
+
+func cmd_clear(w: Vehicle) -> void:
+	if not can_clear() or w == null or not is_instance_valid(w) or w.alive:
+		return
+	_clear_release(false)
+	var dump := _dump_spot(w)
+	if dump == Vector3.INF:
+		say("ENKAZI KOYACAK YER YOK", 2.0)
+		return
+	clear_tgt = w
+	clear_dump = dump
+	var dir := dump - w.position
+	dir.y = 0.0
+	dir = dir.normalized()
+	# bıçakla itme: hurdanın gideceği hat açık ve düz olmalı; değilse halat
+	var straight := G.grid.walkable_line(w.position + dir * (w.ext.y + 1.0), dump, nav_mode)
+	clear_mode = "push" if has_blade() and straight else "tow"
+	clear_stage = "approach"
+	var ap: Vector3
+	if clear_mode == "push":
+		ap = w.position - dir * (maxf(w.ext.x, w.ext.y) + ext.y + 1.5)
+	else:
+		ap = w.position + dir * (maxf(w.ext.x, w.ext.y) + ext.y + 3.0)
+	ap = G.grid.nearest_free(ap, nav_mode)
+	cmd_move(ap)
+	order = "clear"
+	say("ENKAZI KALDIRIYORUM", 2.0)
+
+func _clear_release(mark := true) -> void:
+	if _cable != null and is_instance_valid(_cable):
+		_cable.queue_free()
+	_cable = null
+	var w := clear_tgt
+	clear_tgt = null
+	clear_stage = ""
+	if mark and w != null and is_instance_valid(w):
+		G.grid.set_static_rect(w.position, Vector2(w.D["len"] * 0.45, w.D["len"] * 0.85), w.heading, 1.3, Grid.K_WRECK)
+		G.grid.flush_nav()
+		if G.logi:
+			G.logi.static_changed()
+	if order == "clear":
+		order = ""
+
+func _clear_auto() -> void:
+	if not can_clear() or clear_tgt != null or order != "" or path_i < path.size() or immobile():
+		return
+	if G.time < _clear_auto_t:
+		return
+	_clear_auto_t = G.time + 3.0
+	for u in G.near(position, 45.0):
+		if u is Vehicle and not u.alive and u.wreck and not u.is_air() and is_instance_valid(u) and not u.get_meta("cleared", false):
+			if G.terrain != null and (G.terrain.on_road(u.position) or not G.grid.bridge_at(u.position).is_empty()):
+				cmd_clear(u)
+				return
+
+func _clear_tick(dt: float) -> void:
+	if clear_tgt == null:
+		return
+	var w := clear_tgt
+	if not is_instance_valid(w) or immobile():
+		_clear_release(is_instance_valid(w))
+		return
+	if order != "clear":
+		# oyuncu başka emir verdi: hurda olduğu yerde bırakılır
+		_clear_release(clear_stage == "haul")
+		return
+	var dir := clear_dump - w.position
+	dir.y = 0.0
+	if clear_stage == "approach":
+		if path_i >= path.size() and absf(cur_speed) < 0.4:
+			clear_stage = "hook"
+			_clear_t = 2.5 if clear_mode == "tow" else 0.8
+			_face_h = Soldier._yaw_of(dir if clear_mode == "push" else dir)
+		return
+	if clear_stage == "hook":
+		heading = rotate_toward(heading, Soldier._yaw_of(dir), float(D["turn"]) * 0.7 * dt)
+		_clear_t -= dt
+		if _clear_t <= 0.0 and absf(angle_difference(heading, Soldier._yaw_of(dir))) < 0.2:
+			clear_stage = "haul"
+			# hurdanın ızgara izi kalkar (taşınırken engel değil), varınca yeni yerinde işaretlenir
+			G.grid.set_static_rect(w.position, Vector2(w.D["len"] * 0.45, w.D["len"] * 0.85), w.heading, 0.0, Grid.K_NONE, true)
+			if clear_mode == "tow":
+				say("HALAT BAĞLANDI", 1.5)
+				_make_cable()
+			else:
+				say("İTİYORUM", 1.5)
+			var goal := clear_dump + dir.normalized() * (ext.y + maxf(w.ext.x, w.ext.y) + (1.0 if clear_mode == "push" else 4.0))
+			path = PackedVector3Array([G.grid.nearest_free(goal, nav_mode)])
+			path_i = 0
+		return
+	# haul: hurda bıçağın önünde sürünür ya da halatın ucunda izler
+	if clear_mode == "push":
+		var front := position + forward() * (ext.y + maxf(w.ext.x, w.ext.y) * 0.6 + 0.3)
+		w.position = Vector3(front.x, w.position.y, front.z)
+		cur_speed = minf(cur_speed, speed_max * 0.35)
+	else:
+		var L := ext.y + w.ext.y + 3.5
+		var to_me := position - w.position
+		to_me.y = 0.0
+		if to_me.length() > L:
+			w.position += to_me.normalized() * (to_me.length() - L)
+		w.heading = rotate_toward(w.heading, Soldier._yaw_of(to_me), 0.8 * dt)
+		if w.hull:
+			w.hull.rotation.y = w.heading
+		cur_speed = minf(cur_speed, speed_max * 0.3)
+		_cable_update()
+	if absf(cur_speed) > 0.3 and randf() < dt * 6.0:
+		G.fx.vehicle_dust(w.position)
+	if Vector2(w.position.x - clear_dump.x, w.position.z - clear_dump.z).length() < 2.5 or path_i >= path.size():
+		w.set_meta("cleared", true)
+		say("ENKAZ KALDIRILDI", 2.0)
+		_clear_release(true)
+		cmd_stop()
+
+func _make_cable() -> void:
+	_cable = MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.035
+	cm.bottom_radius = 0.035
+	cm.height = 1.0
+	cm.radial_segments = 6
+	_cable.mesh = cm
+	var mt := StandardMaterial3D.new()
+	mt.albedo_color = Color(0.12, 0.11, 0.1)
+	mt.metallic = 0.6
+	mt.roughness = 0.5
+	_cable.material_override = mt
+	G.main.add_child(_cable)
+	_cable_update()
+
+func _cable_update() -> void:
+	if _cable == null or clear_tgt == null or not is_instance_valid(clear_tgt):
+		return
+	var a := position - forward() * (ext.y - 0.1) + Vector3(0, 0.9, 0)
+	var b := clear_tgt.position + (position - clear_tgt.position).normalized() * (clear_tgt.ext.y - 0.2) + Vector3(0, 0.7, 0)
+	var mid := (a + b) * 0.5
+	var L := a.distance_to(b)
+	# gergin halat: hafif sarkma ortada
+	mid.y -= clampf(0.4 - L * 0.02, 0.0, 0.3)
+	var up := (b - a).normalized()
+	var side := up.cross(Vector3.UP)
+	if side.length() < 0.01:
+		side = Vector3.RIGHT
+	side = side.normalized()
+	var fwd := side.cross(up).normalized()
+	_cable.global_transform = Transform3D(Basis(side, up * L, fwd), mid)
+
+# köprüde yol verme: geri vitesle köprünün kendi ucundan çıkar, karşıdan gelen köprüyü boşaltınca eski
+# emrine döner
+var _yield_to: Vehicle = null
+var _yield_dest := Vector3.INF
+var _yield_order := ""
+var _yield_until := 0.0
+
+func _yield_bridge(o: Vehicle) -> void:
+	var br := G.grid.bridge_at(position)
+	if br.is_empty():
+		br = G.grid.bridge_at(o.position)
+	if br.is_empty() or path_i >= path.size():
+		return
+	var ax: Vector3 = br["d"]
+	if (forward() * (signf(cur_speed) if absf(cur_speed) > 0.05 else 1.0)).dot(ax) < 0.0:
+		ax = -ax
+	var back: Vector3 = br["c"] - ax * (float(br["L"]) * 0.5 + ext.y + 5.0)
+	back.y = 0.0
+	back = G.grid.nearest_free(back, nav_mode)
+	# köprü ağzında yolun üstünde beklerse karşıdan gelenin önünü yine keser: önce eksen boyunca düz geri
+	# (köprüdeyken yana dönemez), sonra yolun kenarına çekilir
+	var side_v := Vector3(-ax.z, 0, ax.x)
+	var aside := Vector3.INF
+	for sv in [side_v * 7.0, -side_v * 7.0, side_v * 11.0, -side_v * 11.0]:
+		var q: Vector3 = back + sv
+		if _cell_ok(q) and _veh_clear(q, ext.x + 1.0) and G.grid.walkable_line(back, q, nav_mode):
+			aside = q
+			break
+	var keep_dest := path[path.size() - 1]
+	var keep_order := order
+	cmd_reverse(back)
+	# köprüdeyken eksen dışı ara nokta olmasın: düz geri hattı
+	path = PackedVector3Array([back])
+	path_i = 0
+	if aside != Vector3.INF:
+		path.append(aside)
+	_yield_to = o
+	_yield_dest = keep_dest
+	_yield_order = keep_order
+	_yield_until = G.time + 25.0
+	say("YOL VERİYORUM", 2.0)
+
+func _yield_tick() -> void:
+	if _yield_to == null:
+		return
+	var gone := not is_instance_valid(_yield_to) or not _yield_to.alive or G.grid.bridge_at(_yield_to.position).is_empty()
+	if (path_i >= path.size() and gone) or G.time > _yield_until:
+		var dd := _yield_dest
+		var od := _yield_order
+		_yield_to = null
+		if dd != Vector3.INF:
+			cmd_move(dd)
+			if od == "amove":
+				order = "amove"
+				amove_dest = dest
+
+var _detour_pts: Array = []
+
+func _detour_around(o: Vehicle, side := 0.0) -> bool:
 	if path_i >= path.size():
 		return false
+	# zaten bir dolaşma noktasına gidiyorsa yenisi eklenmez (her 1,5 sn'de araç yönüne göre yeni nokta
+	# eklenince yol 20+ noktaya çıkıp aracı engelin iki yanına sürüklüyordu)
+	if _detour_pts.has(path[path_i]):
+		return false
+	# geometri aracın o anki burnuna göre değil, gidilecek yöne göre kurulur (araç dönünce noktalar kaymaz)
+	var g: Vector3 = path[path.size() - 1] - position
+	g.y = 0.0
+	if g.length() < 0.5:
+		return false
+	g = g.normalized()
+	var gr := Vector3(-g.z, 0, g.x)
 	var d: Vector3 = o.position - position
 	d.y = 0.0
-	var f := forward()
-	var sd := Vector3(-f.z, 0, f.x)
-	var off: float = o.ext.x + ext.x + 1.6
-	for fo in [0.3, 1.0, 1.8]:
-		for sgn in ([1.0, -1.0] if sd.dot(d) < 0.0 else [-1.0, 1.0]):
-			var p: Vector3 = o.position + sd * off * sgn + f * (o.ext.y * fo)
-			if _cell_ok(p) and G.grid.height_at(p) < 0.3 and G.grid.walkable_line(position, p, nav_mode):
-				path.insert(path_i, p)
+	if side == 0.0:
+		side = -1.0 if gr.dot(d) > 0.0 else 1.0
+	# engelin gidiş yönüne göre izdüşüm yarı genişliği / yarı boyu
+	var wp: float = absf(o.forward().dot(gr)) * o.ext.y + absf(o.right().dot(gr)) * o.ext.x
+	var lp: float = absf(o.forward().dot(g)) * o.ext.y + absf(o.right().dot(g)) * o.ext.x
+	var oc: Vector3 = o.position
+	oc.y = position.y
+	for sgn in [side, -side]:
+		for wide in [0.0, 3.5, 7.0]:
+			var off: float = wp + ext.x + 1.4 + wide
+			var a: Vector3 = oc + gr * off * sgn - g * minf(lp, 2.0)       # engelin yanı (önüne yakın)
+			var b: Vector3 = oc + gr * off * sgn + g * (lp + ext.y + 1.0)  # engelin ötesi
+			var ok := true
+			for p in [a, b]:
+				if not (_cell_ok(p) and G.grid.height_at(p) < 0.3 and _veh_clear(p, ext.x + 0.6)):
+					ok = false
+			if ok and G.grid.walkable_line(position, a, nav_mode) and G.grid.walkable_line(a, b, nav_mode):
+				path.insert(path_i, b)
+				path.insert(path_i, a)
+				# eski yolun engelin üstüne düşen ara noktaları atılır (dolaştıktan sonra engelin arasına geri dönmesin)
+				var k := path_i + 2
+				while k < path.size() - 1 and Vector2(path[k].x - oc.x, path[k].z - oc.z).length() < maxf(wp, lp) + ext.y:
+					path.remove_at(k)
+				_detour_pts = [a, b]
+				_unstick_side = sgn
 				return true
 	return false
+
+# p noktasının çevresinde (r) başka kara aracının izi yok mu
+func _veh_clear(p: Vector3, r: float) -> bool:
+	for o2 in G.near(p, r + 8.0):
+		if o2 == self or o2 == clear_tgt or not (o2 is Vehicle) or o2.is_air() or (not o2.alive and not o2.wreck):
+			continue
+		var q: Vector3 = o2.obb_closest(p)
+		if Vector2(q.x - p.x, q.z - p.z).length() < r:
+			return false
+	return true
+
+# sıkışma tarafı (130): sıkışma süresince sabit; +1 sağ, -1 sol. Ara verip 6 sn sıkışmazsa sıfırlanır.
+var _unstick_side := 0.0
+var _unstick_last := -100.0
+var _unstick_t := 0.0
+var _unstick_tries := 0
+
+var _unstick_total := 0
+var _jam_wait := 0.0
+var _jam_said := false
+
+func _pick_side(pref: float) -> float:
+	if _unstick_side == 0.0 or G.time - _unstick_last > 6.0:
+		_unstick_tries = 0
+		_unstick_total = 0
+		_jam_said = false
+		# yolun devamı hangi yandaysa o yan (yoksa engelin boş tarafı)
+		var s := pref
+		if path_i < path.size():
+			var nx := path[mini(path_i + 1, path.size() - 1)] - position
+			nx.y = 0.0
+			if absf(nx.dot(right())) > 2.0:
+				s = signf(nx.dot(right()))
+		_unstick_side = s if s != 0.0 else 1.0
+	_unstick_last = G.time
+	return _unstick_side
+
+# geri manevra: seçilen tarafa burnunu çevirerek ~2 sn geri gider, sonra yeniden yol arar. Üç denemede
+# geçemezse diğer tarafı dener.
+func _begin_unstick() -> void:
+	if _unstick_t > 0.0:
+		return
+	_unstick_last = G.time
+	# köprüde / köprü ağzında manevra yeri yok; uzun süren sıkışmada da sürekli ileri geri yalpalamak yerine
+	# durup bekler (önündeki açılınca yoluna devam eder)
+	_unstick_total += 1
+	if _unstick_total > 6 or not G.grid.bridge_at(position).is_empty() or not G.grid.bridge_at(position + forward() * (ext.y + 2.0)).is_empty():
+		_jam_wait = G.time + 4.0
+		cur_speed = 0.0
+		if not _jam_said:
+			_jam_said = true
+			say("YOL KAPALI, BEKLİYORUM", 2.5)
+		return
+	_unstick_tries += 1
+	if _unstick_tries > 3:
+		_unstick_tries = 1
+		_unstick_side = -_unstick_side
+	_unstick_t = 1.8
+	_unstick_last = G.time
+
+func _unstick_tick(dt: float) -> void:
+	_unstick_t -= dt
+	var back := -forward()
+	cur_speed = -minf(speed_max * 0.35, 2.5)
+	var np := position + back * absf(cur_speed) * dt
+	if _cell_ok(np + back * ext.y) and _veh_clear(np + back * ext.y, ext.x * 0.8):
+		position = np
+		# geri giderken burun seçilen tarafa döner (yön açısı azalınca burun sağa)
+		heading -= _unstick_side * float(D["turn"]) * 0.7 * dt
+	else:
+		_unstick_t = 0.0
+	if _unstick_t <= 0.0:
+		_unstick_t = 0.0
+		cur_speed = 0.0
+		if path.size() > 0:
+			_repath(path[path.size() - 1])
 
 func forward() -> Vector3:
 	return Vector3(-sin(heading), 0, -cos(heading))
@@ -1149,6 +1660,7 @@ func cmd_move(p: Vector3, force := false) -> void:
 	order = "move"
 	force_move = force
 	forced_target = null
+	_yield_to = null
 	reverse = false
 	retreating = false
 	_face_h = INF
@@ -1215,6 +1727,10 @@ func _attack_block(u: Unit) -> String:
 		return "ZIRHA ETKİSİZ"
 	if vtype == "aa" and u is Building:
 		return "YALNIZ HAVA HEDEFİ"
+	# çekili dolaylı atışlı top kendi kendine çekilemez: asgari menzilin içindeki hedef emri baştan reddedilir
+	# (eskiden ~30 sn kurulduktan sonraki ilk taramada bırakılıyordu)
+	if vtype in INDIRECT and vtype not in ["arty", "mlrs"] and dist2(u) < _min_range():
+		return "ASGARİ MENZİLİN İÇİNDE"
 	return ""
 
 # dolaylı atışlı topçunun asgari menzili (bunun içindeki hedefe ateş edemez)
@@ -1546,6 +2062,7 @@ func _process(dt: float) -> void:
 			_pf("scan", tq)
 		_refund_check()
 		_tactics()
+		_clear_auto()
 	atgm_cd -= dt
 	sam_cd -= dt
 	if flare_q > 0:
@@ -1569,10 +2086,12 @@ func _process(dt: float) -> void:
 	_guard_drive(dt)
 	if prof_on:
 		t0 = _pf("guard", t0)
+	_clear_tick(dt)
 	_drive(dt)
 	if prof_on:
 		t0 = _pf("drive", t0)
 	_sep_vehicles(dt)
+	_bridge_keep()
 	if prof_on:
 		t0 = _pf("sep", t0)
 	_aim_fire(dt)
@@ -1611,7 +2130,7 @@ func tracked() -> bool:
 	return not wheeled() and not is_air() and not (vtype in TOWED)
 
 func immobile() -> bool:
-	return crit["mob"] >= 2 or crit["eng"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (wheeled() and tires >= maxi(wheels.size(), 4))
+	return tipped or crit["mob"] >= 2 or crit["eng"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (wheeled() and tires >= maxi(wheels.size(), 4))
 
 # piyade eskortu: araç arkasındaki piyadenin koşusuna uyar (koşudan biraz yavaş), geride kalanı bekler
 func _escort_pace() -> float:
@@ -1981,6 +2500,16 @@ func _drive(dt: float) -> void:
 	if _runaway > 0.0:
 		_runaway_tick(dt)
 		return
+	if _unstick_t > 0.0:
+		if immobile() or path_i >= path.size():
+			_unstick_t = 0.0
+		else:
+			_unstick_tick(dt)
+			return
+	_yield_tick()
+	if G.time < _jam_wait and path_i < path.size():
+		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
+		return
 	if immobile():
 		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
 	var target_speed := 0.0
@@ -2000,9 +2529,10 @@ func _drive(dt: float) -> void:
 			# köprüde: eksene hizalan, korkuluğa sürtünme
 			var br := G.grid.bridge_at(position)
 			if not br.is_empty():
+				# eksen gidiş yönüne (ara noktaya) çevrilir; geri viteste burun aşağıda ters çevrilir (eskiden
+				# eksen iki kez ters çevrilip köprüde geri giden araç yerinde kalıyordu)
 				var ax: Vector3 = br["d"]
-				var mv := -d if reverse else d
-				if ax.dot(mv) < 0.0:
+				if ax.dot(d) < 0.0:
 					ax = -ax
 				var rel: Vector3 = position - br["c"]
 				rel.y = 0
@@ -2068,28 +2598,28 @@ func _drive(dt: float) -> void:
 	var kf := G.grid.kind_at(front)
 	var blocked := (hf >= 0.3 and kf != Grid.K_TREE and not (nav_mode == Grid.M_HEAVY and kf == Grid.K_WALL)) or kf == Grid.K_TRAP
 	if blocked:
-		# boş tarafa dönerek kaymaya çalış
-		var sd := Vector3(-f.z, 0, f.x)
-		var lf := _cell_ok(front + sd * 1.4)
-		var rf := _cell_ok(front - sd * 1.4)
-		if lf and not rf:
-			heading -= D["turn"] * dt
-		elif rf and not lf:
-			heading += D["turn"] * dt
+		# boş tarafa dönerek kaymaya çalış — taraf sıkışma boyunca sabit (130: iki yan da boşken / yol
+		# yönlendirmesi geri çevirdikçe her karede taraf değişip sağa sola yalpalıyordu)
+		var sd := right()
+		var rf := _cell_ok(front + sd * 1.4)
+		var lf := _cell_ok(front - sd * 1.4)
+		var side := _pick_side(1.0 if rf and not lf else (-1.0 if lf and not rf else 0.0))
+		if G.grid.bridge_at(position).is_empty():
+			heading -= side * D["turn"] * dt
+		var was_fwd := cur_speed >= 0.0
 		cur_speed = 0.0
 		_stuck_t += dt
 		if _stuck_t > 1.2:
 			_stuck_t = 0.0
-			# biraz geri çekil ve yeniden yol bul
-			var bp := position - f * signf(cur_speed + 0.001) * 0.8
-			if _cell_ok(bp):
-				position = bp
-			if path_i < path.size():
+			# kısa geri manevra (ışınlama yok), sonra yeniden yol
+			if was_fwd:
+				_begin_unstick()
+			elif path_i < path.size():
 				_repath(path[path.size() - 1])
 		return
 	# diğer araçlarla ayrışma: hızla sınırlı (en çok 2 m/sn) — kare başına itme sıkışmada araçları saçıyordu
 	for o in G.near(np, 7.0):
-		if o == self or not (o is Vehicle) or o.is_air():
+		if o == self or o == clear_tgt or not (o is Vehicle) or o.is_air():
 			continue
 		var dv = np - o.position
 		dv.y = 0
@@ -2235,7 +2765,7 @@ func _scan() -> void:
 		return
 	# "ateş kes" kendiliğinden ateşi keser; oyuncunun açık saldırı emri (forced_target) bunu geçersiz kılar
 	var hold := fire_mode == 2 and not (order == "attack" and forced_target != null)
-	if retreating or hold or (fire_mode == 1 and G.time - last_hit > 10.0) or not gunner_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0:
+	if retreating or hold or tipped or (fire_mode == 1 and G.time - last_hit > 10.0) or not gunner_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0:
 		target = null
 		coax_target = null
 		return
@@ -2383,6 +2913,7 @@ func _aim_fire(dt: float) -> void:
 	if turret == null or G.deploy_t > 0.0:
 		return
 	if needs_setup() and deployed < 1.0:
+		_crew_anim(dt)
 		return
 	if G.time < ground_until and fire_mode != 2:
 		var wl := wrapf(Soldier._yaw_of(ground_pt - position) - heading, -PI, PI)
@@ -2399,6 +2930,9 @@ func _aim_fire(dt: float) -> void:
 	if t != null and is_instance_valid(t) and t.alive:
 		var d := t.position - position
 		want_local = wrapf(Soldier._yaw_of(d) - heading, -PI, PI)
+	elif vtype == "tank" and coax_target != null and is_instance_valid(coax_target) and coax_target.alive:
+		# ana hedef yokken taret piyadeye döner (eş eksenli makineli ancak taretin baktığı yöne ateş eder)
+		want_local = wrapf(Soldier._yaw_of(coax_target.position - position) - heading, -PI, PI)
 	turret_yaw = rotate_toward(turret_yaw, want_local, D["tturn"] * tturn_mult() * dt)
 	turret.rotation.y = turret_yaw
 	if barrel:
@@ -2726,6 +3260,14 @@ func _crew_anim(dt: float) -> void:
 		return
 	if _crew_spots.is_empty():
 		_crew_setup_props()
+	# toplanma / yürüyüş (137): cephane yığını toplanır (top kurulu değilken yerde durmaz — eskiden topla
+	# birlikte süzülüyordu), mürettebat topun kuyruğundan ve tekerleklerinden tutup yürür
+	var packed := needs_setup() and deployed < 0.999
+	if _ammo_pile:
+		_ammo_pile.visible = not packed
+	if packed or absf(cur_speed) > 0.15:
+		_crew_march(dt)
+		return
 	var busy := crew_cycle > 0.0 and main_cd > 0.0 and alive
 	var p := 1.0 - clampf(main_cd / maxf(crew_cycle, 0.01), 0.0, 1.0) if busy else 1.0
 	var br := _breech_local()
@@ -2800,6 +3342,61 @@ func _crew_anim(dt: float) -> void:
 		cb.set_tool(tool)
 		cb.weapon.visible = false
 		cb.animate(dt, pose, spd, extra)
+
+# toplanırken: cephaneci yığındaki mermileri sandığa kaldırıp taşır, diğerleri topun başında çalışır (ayak,
+# kuyruk); yürürken: ikisi kuyruğu (çatal ayak) kaldırıp iter, biri tekerleğin yanında yürür — topla aynı hızda
+func _crew_march(dt: float) -> void:
+	var moving := absf(cur_speed) > 0.15
+	var rear := ext.y * 0.85
+	var spots := [Vector3(-0.45, 0, rear + 0.5), Vector3(0.45, 0, rear + 0.5), Vector3(ext.x + 0.55, 0, -0.2)]
+	var pile: Vector3 = _ammo_pile.position + Vector3(0.3, 0, -0.35) if _ammo_pile else Vector3(1, 0, 3)
+	var towed := vtype in TOWED
+	for i in crew.size():
+		var cb: SoldierBody = crew[i]
+		if not towed:
+			# kundağı motorlu (açık bölmeli obüs): mürettebat güvertede gider, yerdeki cephaneci de güverteye çıkar
+			var home: Vector3 = _crew_spots[i] if i < _crew_spots.size() else cb.position
+			if home.y < 0.3:
+				home = Vector3(0.0, crew_deck / maxf(hull.scale.y, 0.01), ext.y * 0.55)
+			cb.position = cb.position.move_toward(home, dt * 2.6)
+			cb.set_meta("walk", false)
+			cb.set_tool("")
+			cb.weapon.visible = false
+			cb.animate(dt, "crouch", 0.0)
+			continue
+		var goal: Vector3 = spots[mini(i, 2)]
+		var pose := "stand"
+		var tool := ""
+		var extra := 0.0
+		var face: Vector3 = goal + Vector3(0, 0, -1)          # topun gidiş yönü (yerel -z)
+		if not moving:
+			# toplanma: cephaneci yığından mermi taşır, öbürleri ayakları / namlu kilidini toplar
+			if i == 2 and deployed > 0.3:
+				var ph := fmod(deployed * 3.0, 1.0)
+				goal = pile if ph < 0.5 else Vector3(0.6, 0, rear + 0.2)
+				pose = "build" if ph < 0.5 else "carry"
+				tool = "" if ph < 0.5 else "shell"
+				extra = 0.0 if ph < 0.5 else 1.0
+				face = pile if ph < 0.5 else Vector3(0, 0, rear)
+			else:
+				pose = "build"
+				face = Vector3(goal.x * 0.3, 0, goal.z - 0.6)
+		var cur := cb.position
+		var mv := goal - cur
+		mv.y = 0.0
+		var spd := absf(cur_speed) if moving else 0.0
+		if mv.length() > 0.08:
+			cb.position = cur + mv.normalized() * minf(mv.length(), dt * 2.6)
+			spd = maxf(spd, 2.0)
+			if not moving:
+				face = goal + mv.normalized()
+		var fd := face - cb.position
+		if fd.length() > 0.05:
+			cb.rotation.y = lerp_angle(cb.rotation.y, atan2(-fd.x, -fd.z), clampf(dt * 6.0, 0.0, 1.0))
+		cb.set_meta("walk", spd > 0.3)
+		cb.set_tool(tool)
+		cb.weapon.visible = false
+		cb.animate(dt, pose if spd < 0.3 else "stand", spd, extra)
 
 func dist2_p(p: Vector3) -> float:
 	return Vector2(position.x - p.x, position.z - p.z).length()
@@ -3042,17 +3639,28 @@ func _coax(_dt: float) -> void:
 	var t := coax_target
 	if t == null or not is_instance_valid(t) or not t.alive:
 		return
+	# eş eksenli makineli topla aynı yöne bakar: hedef taretin baktığı yönde değilse ateş etmez (132: mermi
+	# taretin bakmadığı yöne gidiyordu — çıkış noktası gövde önü, yön serbestti). Taret başka yöne dönükken
+	# yalnız kapaktaki komutan kubbe makinelisiyle (kendi yerinden, daha isabetsiz) ateş edebilir.
+	var bear := Soldier._yaw_of(t.position - position)
+	var coax_ok := absf(angle_difference(heading + turret_yaw, bear)) < 0.12
+	var cmdr_ok := cmdr != null and cmdr.visible and not _cmdr_dead
+	if not coax_ok and not cmdr_ok:
+		return
 	if coax_burst <= 0:
 		coax_burst = randi_range(6, 12)
 	coax_burst -= 1
 	coax_cd = 0.1 if coax_burst > 0 else randf_range(0.8, 1.6)
-	_hitscan(t, 18.0, 0.32, 9.0, "bullet", false)
+	if coax_ok:
+		_hitscan(t, 18.0, 0.32, 9.0, "bullet", true)
+	else:
+		_hitscan(t, 18.0, 0.22, 9.0, "bullet", false, cmdr.global_position + Vector3(0, 1.45, 0))
 	Sfx.play3d("mg", position, -1.0, 0.08, 0.03)
 
-func _hitscan(t: Unit, dmg: float, acc: float, sup: float, k: String, from_barrel: bool) -> void:
+func _hitscan(t: Unit, dmg: float, acc: float, sup: float, k: String, from_barrel: bool, origin := Vector3.INF) -> void:
 	shots += 1
 	fired_t = G.time
-	var mp := muzzle_world() if from_barrel else turret_world_pos() + forward() * 1.2 + Vector3(0, 0.3, 0)
+	var mp := muzzle_world() if from_barrel else (origin if origin != Vector3.INF else turret_world_pos() + Vector3(0, 0.3, 0))
 	var tp := t.aim_point()
 	var dir := (tp - mp).normalized()
 	if from_barrel:
@@ -3082,12 +3690,52 @@ func _hitscan(t: Unit, dmg: float, acc: float, sup: float, k: String, from_barre
 	if shots % 2 == 0:
 		G.fx.tracer_cal(mp, impact, 260.0, Ammo.team_tracer(team), 12.7 if k == "hmg" else 7.62)
 
+# ------------------------------------------------------------ arazi uyumu (roadmap 128)
+# Gövde araziye oturur: ön / arka / sağ / sol yükseklikten yükseklik, yunuslama ve yatma (krater, şev, nehir
+# kıyısı). Kraterin kenarına düşen araç ~43°'den fazla yana yatarsa devrilir (yan yatar, hareketsiz).
+var _gy := 0.0
+var _gpitch := 0.0
+var _groll := 0.0
+var tipped := false
+const TIP_ROLL := 0.75
+
+func _gh(p: Vector3) -> float:
+	if G.terrain == null or G.grid.on_bridge(p):
+		return 0.0
+	return G.terrain.ground_hs(p)
+
+func _ground_conform(dt: float, k: float) -> void:
+	var f := forward()
+	var r := right()
+	var lx: float = maxf(ext.x * 0.8, 0.6)
+	var lz: float = maxf(ext.y * 0.8, 0.8)
+	var hf := _gh(position + f * lz)
+	var hb := _gh(position - f * lz)
+	var hr := _gh(position + r * lx)
+	var hl := _gh(position - r * lx)
+	var a := clampf(k * dt, 0.0, 1.0)
+	_gy = lerpf(_gy, (hf + hb + hr + hl) * 0.25, a)
+	_gpitch = lerpf(_gpitch, atan2(hf - hb, 2.0 * lz), a)
+	_groll = lerpf(_groll, atan2(hr - hl, 2.0 * lx), a)
+
 func _visuals(dt: float) -> void:
 	hull.rotation.y = heading
 	# yaylanma
 	rock_v += (-rock * 30.0 - rock_v * 5.0) * dt
 	rock += rock_v * dt
 	hull.rotation.x = rock * 0.02
+	if not is_air() and slung_by == null:
+		_ground_conform(dt, 6.0)
+		hull.position.y = _gy
+		hull.rotation.x += _gpitch
+		if not tipped and absf(_groll) > TIP_ROLL:
+			tipped = true
+			crit["mob"] = 2
+			cur_speed = 0.0
+			path = PackedVector3Array()
+			add_vstress(60.0)
+			say("DEVRİLDİ!", 3.0)
+		hull.rotation.z = move_toward(hull.rotation.z, signf(_groll) * 1.45, dt * 1.6) if tipped else _groll
 	var spin := cur_speed * dt
 	for w in wheels:
 		var wn: MeshInstance3D = w[0]
@@ -4496,7 +5144,7 @@ func _cmdr_tick(dt: float) -> void:
 	if _cmdr_t > 0.0:
 		return
 	_cmdr_t = 0.5
-	var out := alive and not _cmdr_dead and crew_n >= 2 and G.time - last_hit > 12.0 and target == null and vstress < 30.0 and abandon_t < 0.0
+	var out := alive and not tipped and not _cmdr_dead and crew_n >= 2 and G.time - last_hit > 12.0 and target == null and vstress < 30.0 and abandon_t < 0.0
 	cmdr.visible = out and visible
 	if cmdr.visible:
 		cmdr.animate(0.5, "stand", 0.0)
@@ -4510,5 +5158,17 @@ func _meshes(n: Node) -> Array:
 			out.append_array(_meshes(c))
 	return out
 
-func _wreck_tick(_dt: float) -> void:
-	pass
+var _wreck_conf_t := 0.0
+
+# hurda da altında açılan kratere / oyuğa oturur (ters dönmüş ya da suda batan hurda hariç)
+func _wreck_tick(dt: float) -> void:
+	_wreck_conf_t -= dt
+	if _wreck_conf_t > 0.0:
+		return
+	_wreck_conf_t = 0.25
+	if is_air() or kill_mode == "flip" or G.grid.is_water(position) or hull == null:
+		return
+	_ground_conform(0.25, 3.0)
+	hull.position.y = _gy
+	hull.rotation.x = _gpitch
+	hull.rotation.z = _groll

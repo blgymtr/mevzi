@@ -420,6 +420,15 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 				markers.append([u.rally, G.time, Color(0.4, 0.9, 1.0)])
 		return
 	var tu := unit_at(sp)
+	# enkaza sağ tık: seçili dozer / kurtarma aracı enkazı yoldan kaldırır (bıçakla iter ya da halatla çeker)
+	var clearers := mobile.filter(func(u): return u is Vehicle and u.can_clear())
+	if not clearers.is_empty():
+		var wr: Vehicle = Vehicle.wreck_at(gp)
+		if wr != null:
+			clearers[0].cmd_clear(wr)
+			markers.append([wr.position, G.time, Color(1.0, 0.8, 0.3)])
+			Sfx.play2d("ui_move", -8.0)
+			return
 	if tu != null and tu.team != team and tu.team >= 0:
 		for u in mobile:
 			u.cmd_attack(tu)

@@ -48,7 +48,7 @@ func _ready() -> void:
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest", "cratertest", "decktest", "jamtest", "aimtest", "smokepasstest", "dozertest", "towtest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -2358,6 +2358,9 @@ func _run_veh_test() -> void:
 		tech.take_damage(5.0, sn, "bullet")
 	var g_dead := not tech.gunner_ok
 	sn.die(null)
+	# keskin nişancı sürücüyü de vurmuş olabilir (112): yeni gelen önce sürücü koltuğuna geçer; bu adım yalnız nişancıyı ölçer
+	tech.driver_ok = true
+	tech._runaway = 0.0
 	tech.cmd_stop()
 	var rep := spawn_soldier(0, "rifle", G.grid.nearest_free(tech.position + Vector3(4, 0, 0), Grid.M_INF), null)
 	rep.cmd_board(tech)
@@ -2370,7 +2373,12 @@ func _run_veh_test() -> void:
 		tech.take_damage(5.0, null, "grenade")
 	var flat := tech.tires
 	var eng := spawn_soldier(0, "engineer", G.grid.nearest_free(tech.position + Vector3(-3, 0, 0), Grid.M_INF), null)
-	await _wait(18.0)
+	# istihkâmcı tehdit tepkisinden sonra ve yakındaki diğer hasarlı araçlara göre sırayla onarır: 30 sn'ye kadar bekle
+	var tw := 0.0
+	while tw < 30.0 and tech.tires >= flat:
+		await _wait(1.0)
+		tw += 1.0
+	await _wait(2.0)
 	print("VEH tires flat=%d after_engineer=%d" % [flat, tech.tires])
 	if flat == 0 or tech.tires >= flat:
 		fails += 1

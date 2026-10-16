@@ -544,7 +544,7 @@ func crate(p: Vector3, rot: float, s := 1.0) -> void:
 		mb.box(Vector3(0, 0.35, 0), Vector3(1.1, 0.7, 0.7), Color(0.45, 0.4, 0.26))
 		mb.box(Vector3(0, 0.71, 0), Vector3(1.12, 0.03, 0.2), Color(0.35, 0.3, 0.2))
 		return mb.commit(Mats.vc()))
-	_place(mesh, p, rot, s)
+	_loose(_place(mesh, p, rot, s), p, "crate", 0.35 * s, 0.7 * s)
 
 func barrel(p: Vector3, col := Color(0.25, 0.32, 0.2)) -> void:
 	var key := "barrel" + col.to_html()
@@ -553,7 +553,7 @@ func barrel(p: Vector3, col := Color(0.25, 0.32, 0.2)) -> void:
 		mb.cyl(Vector3.ZERO, 0.3, 0.3, 0.9, 9, col)
 		mb.cyl(Vector3(0, 0.3, 0), 0.31, 0.31, 0.05, 9, col.darkened(0.2))
 		return mb.commit(Mats.metal()))
-	_place(mesh, p, rng.randf() * TAU)
+	_loose(_place(mesh, p, rng.randf() * TAU), p, "barrel", 0.3, 0.9)
 
 # çatı yarası: kararmış delik + kırık kirişler + saçılmış kiremit (hasarlı bina)
 func roof_damage(p: Vector3, w: float, d: float, top: float, rot: float) -> void:
@@ -813,7 +813,7 @@ func bush(p: Vector3, big := false) -> void:
 	var v := rng.randi() % 5
 	var key := ("bushw%d" if winter else "bush%d") % v
 	var mesh := _cached(key, func(): return _bush_mesh(v))
-	_place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.4) * (1.6 if big else 1.0))
+	_loose(_place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.4) * (1.6 if big else 1.0)), p, "bush", 0.6, 0.8)
 
 func _bush_mesh(v: int) -> ArrayMesh:
 	var r0 := RandomNumberGenerator.new()
@@ -850,6 +850,7 @@ func rock(p: Vector3, s := 1.0) -> void:
 	# hafif eğik oturur, yarı gömülü
 	mi.rotation.x = rng.randf_range(-0.12, 0.12)
 	mi.rotation.z = rng.randf_range(-0.12, 0.12)
+	_loose(mi, p, "rock", 0.6 * s, 0.5 * s)
 	if s > 0.9:
 		G.grid.set_static_circle(p, 0.7 * s, 0.8 * s, Grid.K_WRECK)
 
@@ -929,7 +930,7 @@ static func rock_mesh(v: int, winter: bool, moss: bool, lvl: int) -> ArrayMesh:
 
 func hay(p: Vector3) -> void:
 	var mesh := _cached("hay", func(): return _hay_mesh())
-	_place(mesh, p, rng.randf() * TAU)
+	_loose(_place(mesh, p, rng.randf() * TAU), p, "hay", 0.6, 1.2)
 	G.grid.set_static_circle(p, 0.6, 1.1, Grid.K_WRECK)
 
 func _hay_mesh() -> ArrayMesh:
@@ -1627,3 +1628,108 @@ func _set_fade(it: Dictionary, a: float) -> void:
 			_mm_fade(it, a)
 	elif it["node"] != null and is_instance_valid(it["node"]):
 		(it["node"] as GeometryInstance3D).transparency = a
+
+# ------------------------------------------------------------ kratere oturma / devrilme (128)
+# kayıtsız dekor (sandık, varil, saman, kaya, çalı): yalnız krater oturtması için
+var loose: Array = []   # {node, kind, r, h}
+var _lhash := {}
+
+func _loose(mi: MeshInstance3D, p: Vector3, kind: String, r: float, h: float) -> void:
+	var it := {"node": mi, "kind": kind, "r": r, "h": h}
+	loose.append(it)
+	var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
+	if _lhash.has(k):
+		_lhash[k].append(it)
+	else:
+		_lhash[k] = [it]
+
+func _gh(p: Vector3) -> float:
+	if G.terrain == null or G.grid.on_bridge(p):
+		return 0.0
+	return G.terrain.ground_hs(p)
+
+# taban eğimi: [aşağı yön (yatay, birim), eğim açısı]
+func _slope(p: Vector3, s: float) -> Array:
+	var gx := (_gh(p + Vector3(s, 0, 0)) - _gh(p - Vector3(s, 0, 0))) / (2.0 * s)
+	var gz := (_gh(p + Vector3(0, 0, s)) - _gh(p - Vector3(0, 0, s))) / (2.0 * s)
+	var g := Vector2(gx, gz)
+	return [Vector3(-gx, 0, -gz).normalized() if g.length() > 0.001 else Vector3.ZERO, atan(g.length())]
+
+# krater oyulduktan sonra çevresindeki nesneler yeni zemine oturur: hafif eğimde zemine yatar,
+# dik kenarda (ağırlık merkezi tabanın dışına taşınca) çukura devrilip kayar; ağacın kökü açıkta kalırsa içine yıkılır
+func settle(c: Vector3, r: float) -> void:
+	var reach := r * 1.5
+	var objs: Array = []
+	for it in _items_near(c, reach + 2.0):
+		if it["kind"] != "bridge":
+			objs.append(it)
+	for dz in range(int((c.z - reach - 2.0) / 16.0), int((c.z + reach + 2.0) / 16.0) + 1):
+		for dx in range(int((c.x - reach - 2.0) / 16.0), int((c.x + reach + 2.0) / 16.0) + 1):
+			var arr = _lhash.get(Vector2i(dx, dz))
+			if arr != null:
+				objs.append_array(arr)
+	for it in objs:
+		var mi = it["node"]
+		var p: Vector3 = (mi as Node3D).position if mi != null and is_instance_valid(mi) else it.get("pos", Vector3.ZERO)
+		var d := Vector2(p.x - c.x, p.z - c.z).length()
+		if d > reach + float(it.get("r", 0.5)):
+			continue
+		var kind: String = it["kind"]
+		if kind == "tree":
+			# kökü çukurun içinde kalan ağaç çukura yıkılır
+			if it.get("alive", true) and d < r * 0.95 and float(_slope(p, 0.5)[1]) > 0.22:
+				var to_c := Vector3(c.x - p.x, 0, c.z - p.z)
+				_fell(it, to_c.normalized() if to_c.length() > 0.1 else Vector3.RIGHT)
+				var fm = it["node"]
+				if fm != null and is_instance_valid(fm):
+					(fm as Node3D).position.y = _gh(p)
+			continue
+		if mi == null:
+			if not it.has("bank") or not it.get("alive", true):
+				continue
+			mi = _detach(it)
+		if not is_instance_valid(mi) or not (mi as Node3D).visible:
+			continue
+		_settle_one(it, mi as Node3D, p, c, r)
+
+func _settle_one(it: Dictionary, mi: Node3D, p: Vector3, c: Vector3, r: float) -> void:
+	var kind: String = it["kind"]
+	var rad: float = float(it.get("r", 0.5))
+	var h: float = float(it.get("h", 1.4 if kind == "car" else 0.8))
+	var sl: Array = _slope(p, maxf(rad, 0.4))
+	var down: Vector3 = sl[0]
+	var ang: float = sl[1]
+	# devrilme eşiği: taban yarı genişliği / ağırlık merkezi yüksekliği (kaya ve çalı devrilmez, oturur)
+	var tip_at := atan((0.9 if kind == "car" else rad) / maxf(h * 0.5, 0.1))
+	var tips: bool = kind not in ["rock", "bush"] and ang > tip_at * 0.8 and down != Vector3.ZERO
+	var start := mi.transform.basis
+	var tgt := p
+	var nb: Basis
+	if tips:
+		# çukurun dibine doğru yuvarlanıp yan yatar
+		var to_c := Vector3(c.x - p.x, 0, c.z - p.z)
+		var slide := minf(to_c.length() * 0.55, r * 0.6)
+		tgt = p + (to_c.normalized() if to_c.length() > 0.1 else down) * slide
+		var axis := Vector3(down.z, 0, -down.x).normalized()
+		nb = Basis(axis, PI * 0.5 if kind in ["barrel", "hay"] else 1.45) * start
+		tgt.y = _gh(tgt) + (rad * 0.85 if kind in ["barrel", "hay"] else h * 0.15)
+	else:
+		# zemine yatar: yukarı ekseni yüzey normaline döner
+		var n := Vector3(-tan(ang) * down.x, 1.0, -tan(ang) * down.z).normalized() if down != Vector3.ZERO else Vector3.UP
+		nb = Basis(Quaternion(Vector3.UP, n)) * start
+		tgt.y = _gh(p) - (0.15 * rad if kind == "rock" else 0.0)
+	if tgt.distance_to(p) < 0.02 and nb.is_equal_approx(start):
+		return
+	it["tipped"] = tips
+	var q0 := start.get_rotation_quaternion()
+	var q1 := nb.get_rotation_quaternion()
+	var sc := start.get_scale()
+	var lift := 0.08 if tips else 0.0
+	var tw := create_tween()
+	tw.tween_method(func(t: float):
+		if not is_instance_valid(mi):
+			return
+		var e := t * t
+		mi.transform = Transform3D(Basis(q0.slerp(q1, e)).scaled(sc), p.lerp(tgt, e) + Vector3(0, sin(t * PI) * lift, 0)), 0.0, 1.0, 0.7 if tips else 0.35)
+	if tips:
+		Sfx.play3d("crumble", tgt, -10.0)

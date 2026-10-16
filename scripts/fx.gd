@@ -89,6 +89,8 @@ func _ready() -> void:
 		mat.set_shader_parameter("ground_stop", 1.0 if k == P_DEBRIS or k == P_SPARK or k == P_STREAK else 0.0)
 		mat.render_priority = [1, 3, 4, 0, 2, 3, 1, 1, 3][k]
 		mi.material_override = mat
+		if k in [P_SMOKE, P_FLIPS, P_FLIPD]:
+			_mover_mats.append(mat)
 		add_child(mi)
 		mms.append(mm)
 	tr_mm = MultiMesh.new()
@@ -312,6 +314,68 @@ func _process(dt: float) -> void:
 		i -= 1
 	if not gibs.is_empty():
 		_gib_tick(dt)
+	_movers_tick(dt)
+
+# ------------------------------------------------------------ dumanın içinden geçen birlikler (131)
+# Parçacıklar GPU'da durumsuz hesaplanır; kameranın çevresindeki hareketli araç / askerler (en çok 16) duman
+# gölgelendiricisine verilir: gövde dumanı yanlara iter, arkasında sürüklenen, kıvrılan iz bırakır. Sis
+# perdesinin içinden geçen araç ayrıca arkasında çalkalanan duman bulutları bırakır.
+var _mover_mats: Array = []
+var _trail_t := 0.0
+const MOVER_CAP := 16
+
+func _movers_tick(dt: float) -> void:
+	if _mover_mats.is_empty() or G.cam == null:
+		return
+	var f: Vector3 = G.cam.focus
+	var reach: float = maxf(G.cam.size * 1.6, 50.0)
+	var cands: Array = []
+	for u in G.near(f, reach):
+		if not u.alive or not u.visible:
+			continue
+		if u is Vehicle:
+			if u.is_air() or absf(u.cur_speed) < 0.25:
+				continue
+			cands.append([2.0 + absf(u.cur_speed), u])
+		elif u is Soldier:
+			if u.vehicle_in != null or u.vel.length() < 0.3:
+				continue
+			cands.append([u.vel.length() * 0.3, u])
+	if cands.size() > MOVER_CAP:
+		cands.sort_custom(func(a, b): return a[0] > b[0])
+		cands.resize(MOVER_CAP)
+	var pos := PackedVector4Array()
+	var vel := PackedVector4Array()
+	pos.resize(MOVER_CAP)
+	vel.resize(MOVER_CAP)
+	_trail_t -= dt
+	var trail := _trail_t <= 0.0
+	if trail:
+		_trail_t = 0.12
+	for i in cands.size():
+		var u = cands[i][1]
+		if u is Vehicle:
+			var v: Vehicle = u
+			var fw := v.forward() * v.cur_speed
+			pos[i] = Vector4(v.position.x, v.position.y, v.position.z, maxf(v.ext.x, v.ext.y) + 0.8)
+			vel[i] = Vector4(fw.x, 0.0, fw.z, v.top_h)
+			if trail and not G.smokes.is_empty():
+				for s in G.smokes:
+					var sc: Vector3 = s[0]
+					if Vector2(sc.x - v.position.x, sc.z - v.position.z).length() < float(s[1]):
+						# sis perdesinden geçen araç: arkasında çalkalanan, hız yönünde sürüklenen bulut
+						var back := v.position - v.forward() * signf(v.cur_speed) * (v.ext.y + 0.5)
+						var sd := v.right() * rng.randf_range(-v.ext.x, v.ext.x)
+						emit(P_SMOKE, back + sd + Vector3(0, rng.randf_range(0.4, 1.4), 0), fw * 0.45 + sd * 0.6 + Vector3(0, rng.randf_range(0.2, 0.6), 0), rng.randf_range(2.5, 4.0), 1.2, rng.randf_range(3.0, 4.5), -0.04, 0.9, Color(0.86, 0.88, 0.9, 0.3))
+						break
+		else:
+			var sv: Vector3 = u.vel
+			pos[i] = Vector4(u.position.x, u.position.y, u.position.z, 0.8)
+			vel[i] = Vector4(sv.x, 0.0, sv.z, 1.8)
+	for mat in _mover_mats:
+		(mat as ShaderMaterial).set_shader_parameter("mover_n", cands.size())
+		(mat as ShaderMaterial).set_shader_parameter("movers", pos)
+		(mat as ShaderMaterial).set_shader_parameter("mover_vel", vel)
 
 # ------------------------------------------------------------ kopan uzuv (patlamada)
 # [düğüm, hız, dönme ekseni, dönme hızı, yaş, yerde mi]; yere düşünce yatar, kan lekesi bırakır, 2 dk sonra kalkar

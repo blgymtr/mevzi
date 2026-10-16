@@ -29,9 +29,8 @@ def aagun(v):
     vads = vlib.NAT == "usa" or v.get("vads", False)
     # iki tekerlekli kundak + açılır dengeleme ayakları
     za = 0.42
-    for s in (-1, 1):
-        cyl((s * 0.95, 0.0, za), za, 0.24, "rubber", "X", seg=16)
-        cyl((s * 0.95, 0.0, za), za * 0.55, 0.26, "metal", "X", seg=12)
+    for i, s in enumerate((-1, 1)):
+        tyre(i, s * 0.95, 0.0, za, za, 0.24, s, hub="metal")                                    # döner teker (ayrı düğüm, 137)
         box((s * 0.8, 0.0, za + 0.18), (0.22, 0.9, 0.06), "paint", bev=0.006)                 # çamurluk
         rod((s * 0.5, 0.9, 0.5), (s * 1.6, 1.6, 0.08), 0.05, "metal", 6)                       # dengeleme ayağı
         cyl((s * 1.6, 1.6, 0.04), 0.13, 0.05, "metal", seg=12)

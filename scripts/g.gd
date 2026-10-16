@@ -461,6 +461,8 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 			var cr := radius * (0.45 if kind != "big" else 0.6)
 			terrain.carve_crater(p, cr, cr * 0.42)
 			grid.set_crater(p, cr * 0.8)
+			# çevredeki dekor yeni zemine oturur / çukura devrilir (yanan arabanın sıçrama tween'i bittikten sonra)
+			get_tree().create_timer(0.45).timeout.connect(props.settle.bind(p, cr))
 		terrain.paint_circle(p, radius * 0.9, 2, 0.75)
 	blocks.blast(p, radius * (0.55 if kind == "grenade" else 0.75), size)
 	props.blast(p, radius, dmg)

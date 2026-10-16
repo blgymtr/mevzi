@@ -17,6 +17,10 @@ uniform float intensity = 1.0;
 uniform float ground_stop = 0.0;
 uniform float soft = 0.0;      // yumuşak parçacık mesafesi (m); 0 kapalı
 uniform vec3 sun_dir = vec3(0.217, 0.5, -0.866);   // güneşe doğru (dünya)
+// dumanın içinden geçen birlikler (131): xyz konum, w yarıçap · hız xyz, w gövde yüksekliği
+uniform int mover_n = 0;
+uniform vec4 movers[16];
+uniform vec4 mover_vel[16];
 
 varying vec4 v_col;
 varying float v_age;
@@ -24,8 +28,10 @@ varying vec2 v_uv;
 varying vec2 v_rot;
 varying float v_vz;
 varying float v_seed;
+varying float v_thin;
 
 void vertex() {
+	v_thin = 0.0;
 	vec3 o = MODEL_MATRIX[3].xyz;
 	vec3 vel = MODEL_MATRIX[0].xyz;
 	float t0 = MODEL_MATRIX[1].x;
@@ -50,6 +56,39 @@ void vertex() {
 		p.y -= 0.5 * grav * t * t;
 		if (ground_stop > 0.5) {
 			p.y = max(p.y, 0.04);
+		}
+		// dumanın içinden geçen araç / asker: gövde dumanı yanlara iter (çekirdek incelir), arkasında iz —
+		// duman hareket yönünde sürüklenir, yanlara kıvrılır, hafif yükselir; geçtikten sonra yavaşça kapanır
+		if ((mode == 0 || mode == 6 || mode == 7) && mover_n > 0) {
+			for (int i = 0; i < mover_n; i++) {
+				vec3 m = movers[i].xyz;
+				float r = movers[i].w;
+				vec3 mv = mover_vel[i].xyz;
+				float hh = mover_vel[i].w;
+				vec2 d = p.xz - m.xz;
+				float dl = length(d);
+				if (dl > r * 5.0) {
+					continue;
+				}
+				float hf = 1.0 - smoothstep(hh * 0.8, hh * 1.8 + 0.5, p.y - m.y);
+				float infl = (1.0 - smoothstep(r * 0.4, r * 1.6, dl)) * hf;
+				vec2 dir = dl > 0.01 ? d / dl : vec2(1.0, 0.0);
+				p.xz += dir * infl * r * 0.6;
+				v_thin = max(v_thin, infl * (1.0 - smoothstep(0.0, r * 0.9, dl)));
+				float sp = length(mv.xz);
+				if (sp > 0.15) {
+					vec2 vd = mv.xz / sp;
+					vec2 side = vec2(-vd.y, vd.x);
+					float behind = -dot(d, vd);
+					float lat = dot(d, side);
+					float wk = smoothstep(-r * 0.3, r * 0.6, behind) * (1.0 - smoothstep(r * 1.5, r * 5.0, behind))
+						* (1.0 - smoothstep(r * 0.7, r * 1.8, abs(lat))) * hf;
+					float spk = min(sp, 8.0);
+					p.xz += vd * wk * spk * 0.3;
+					p.xz += side * sign(lat + 0.001) * wk * (0.35 + 0.25 * sin(behind * 1.4 - game_time * 2.6 + v_seed * 6.0)) * min(spk, 4.0) * 0.4;
+					p.y += wk * min(spk, 6.0) * 0.08;
+				}
+			}
 		}
 		float sz = mix(s0, s1, 1.0 - (1.0 - a) * (1.0 - a));
 		float rot = (mode >= 5) ? INSTANCE_CUSTOM.y * 0.15 : INSTANCE_CUSTOM.x + INSTANCE_CUSTOM.y * t;
@@ -118,7 +157,7 @@ void fragment() {
 		// başta hızlı belir, yaşlandıkça ince kısımlar önce dağılır (delikler açılır), en son kalın çekirdek
 		float born = smoothstep(0.0, 0.06, a);
 		float erode = smoothstep(a * 0.6 - 0.05, a * 0.6 + 0.3, thick + 0.1);
-		ALPHA = st.a * erode * v_col.a * born * (1.0 - smoothstep(0.72, 1.0, a)) * 0.7 * sf;
+		ALPHA = st.a * erode * v_col.a * born * (1.0 - smoothstep(0.72, 1.0, a)) * 0.7 * sf * (1.0 - 0.45 * v_thin);
 	} else if (mode == 1) {
 		vec4 tx = texture(tex, v_uv);
 		float heat = 1.0 - a;
@@ -175,7 +214,7 @@ void fragment() {
 		}
 		ALBEDO = fc * v_col.rgb;
 		// yoğunluğa göre: ince duman tülü saydam, kalın kısım örter
-		ALPHA = pow(tf.a, 1.35) * v_col.a * (1.0 - smoothstep(0.75, 1.0, a)) * sf;
+		ALPHA = pow(tf.a, 1.35) * v_col.a * (1.0 - smoothstep(0.75, 1.0, a)) * sf * (1.0 - 0.45 * v_thin);
 	} else if (mode == 4) {
 		vec4 tx = texture(tex, v_uv);
 		// toprak/şarapnel çizgisi: opak, sona doğru incelip söner

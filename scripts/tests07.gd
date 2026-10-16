@@ -73,6 +73,20 @@ func run(scene: String) -> void:
 			await water_test()
 		"vehaitest":
 			await veh_ai_test()
+		"cratertest":
+			await crater_test()
+		"decktest":
+			await deck_test()
+		"jamtest":
+			await jam_test()
+		"aimtest":
+			await aim_test()
+		"smokepasstest":
+			await smokepass_test()
+		"dozertest":
+			await dozer_test()
+		"towtest":
+			await tow_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -984,6 +998,7 @@ func stuck_test() -> void:
 	var v1_t := -1.0
 	var t2_fired := false
 	var str_ok := false
+	var hw_t := -1.0
 	while G.time - t0 < 75.0:
 		await m._wait(0.25)
 		var el := G.time - t0
@@ -991,6 +1006,8 @@ func stuck_test() -> void:
 			s1_t = el
 		if v1_t < 0.0 and v1.order == "":
 			v1_t = el
+		if hw_t < 0.0 and hw.order != "attack":
+			hw_t = el
 		if t2.main_cd > 0.5:
 			t2_fired = true
 		if not hosp_killed and hp.job != null and hp.job.stage == "carry":
@@ -1004,7 +1021,7 @@ func stuck_test() -> void:
 			break
 	print("STUCK soldier_resolved_at=%.1f state=%s order=%s" % [s1_t, s1.state, s1.order])
 	print("STUCK vehicle_resolved_at=%.1f order=%s" % [v1_t, v1.order])
-	print("STUCK aagun_refused=%s holdfire_attack_fired=%s howitzer_order=%s forced=%s" % [refused, t2_fired, hw.order, hw.forced_target != null])
+	print("STUCK aagun_refused=%s holdfire_attack_fired=%s howitzer_order=%s forced=%s dropped_at=%.1f tipped=%s imm=%s deployed=%.2f" % [refused, t2_fired, hw.order, hw.forced_target != null, hw_t, hw.tipped, hw.immobile(), hw.deployed])
 	if s1_t < 0.0 or s1_t > 40.0:
 		fails += 1
 	if v1_t < 0.0 or v1_t > 60.0:
@@ -1742,6 +1759,53 @@ func ai_match() -> void:
 
 # taban tip modelleri (roadmap 10) ve rotorlar (39/44): iki ulusun tüm taban araçları yan yana; helikopterler
 # havada pervane dönerken; yakın çekimler
+# 128: araç / hurda araziye oturur; kraterin ortasında çukura iner, kenarında yana devrilir
+func crater_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var t1: Vehicle = m.spawn_vehicle(0, "tank", c, 0.0)
+	var t2: Vehicle = m.spawn_vehicle(0, "tank", G.grid.nearest_free(c + Vector3(16, 0, 0), Grid.M_HEAVY), 0.0)
+	var w: Vehicle = m.spawn_vehicle(1, "ifv", G.grid.nearest_free(c + Vector3(-16, 0, 0), Grid.M_HEAVY), 0.0)
+	for v in [t1, t2, w]:
+		v.cmd_hold()
+		v.fire_mode = 2
+	await m._wait(1.0)
+	w.destroy(null)
+	await m._wait(1.0)
+	G.terrain.carve_crater(t1.position, 3.0, 1.0)                                # ortada sığ krater: çukura iner
+	G.terrain.carve_crater(t2.position + t2.right() * 2.2, 3.4, 2.6)             # sağ kenarda derin krater: devrilir
+	G.terrain.carve_crater(w.position, 3.0, 1.2)
+	# dekor: gerçek top mermisi kraterinin ortasında sandık (oturur), kenarında varil (devrilir)
+	var pc := c + Vector3(0, 0, 24)
+	G.props.crate(pc, 0.3)
+	G.props.barrel(pc + Vector3(2.4, 0, 0))
+	var crate_mi: Node3D = G.props.loose[G.props.loose.size() - 2]["node"]
+	var barrel_mi: Node3D = G.props.loose[G.props.loose.size() - 1]["node"]
+	G.explode(pc, 6.67, 10.0, "shell", 1, null)
+	await m._wait(3.0)
+	var b_up := barrel_mi.transform.basis.y.normalized().dot(Vector3.UP)
+	print("CRATER props crate y=%.2f up=%.2f | barrel y=%.2f up=%.2f moved=%.2f" % [crate_mi.position.y, crate_mi.transform.basis.y.normalized().dot(Vector3.UP), barrel_mi.position.y, b_up, Vector2(barrel_mi.position.x - pc.x - 2.4, barrel_mi.position.z - pc.z).length()])
+	if crate_mi.position.y > -0.5 or barrel_mi.position.y > -0.2 or b_up > 0.4:
+		fails += 1
+	print("CRATER center y=%.2f roll=%.2f tipped=%s | edge roll=%.2f tipped=%s imm=%s | wreck y=%.2f mode=%s" % [t1.hull.position.y, t1.hull.rotation.z, t1.tipped, t2.hull.rotation.z, t2.tipped, t2.immobile(), w.hull.position.y, w.kill_mode])
+	if t1.hull.position.y > -0.2 or t1.tipped:
+		fails += 1
+	if not t2.tipped or absf(t2.hull.rotation.z) < 1.0 or not t2.immobile():
+		fails += 1
+	if w.kill_mode != "flip" and w.hull.position.y > -0.3:
+		fails += 1
+	_cam(c + Vector3(4, 0, 0), 22.0)
+	await m._wait(0.3)
+	await m._shot("crater")
+	print("CRATERTEST RESULT fails=%d" % fails)
+
 # 107: araç zekâsı — vurulduğu yöne cephe, tanksavar isabetinde sis, ağır yarada geri vitesle çekilme
 # (mevzi tut emrinde çekilmez), tanksavar askerini öncelikli hedef
 func veh_ai_test() -> void:
@@ -2191,6 +2255,506 @@ func crew_kill_test() -> void:
 	if surv > 0 and (frozen > 0 or moved * 2 < surv):
 		fails += 1
 	print("CREWKILLTEST RESULT fails=%d" % fails)
+
+# 137: çekili top yer değiştirirken süzülmez — yerdeki cephane toplanır (yığın kalkar), tekerler döner,
+# mürettebat yürür; durup kurulunca cephane yeniden yere konur
+func tow_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 50.0)
+	var types := ["howitzer", "fieldgun", "atgun", "mtngun", "hmortar", "aagun"]
+	for t in 2:
+		for i in types.size():
+			var v: Vehicle = m.spawn_vehicle(t, types[i], c + Vector3(-25 + i * 10.0, 0, -10 + t * 20.0), 0.0)
+			v.fire_mode = 2
+			await m._wait(0.1)
+			# kurulu başla: cephane yığını yerde
+			v.deployed = 1.0
+			v._crew_anim(0.1)
+			var pile_before: bool = v._ammo_pile != null and v._ammo_pile.visible
+			var w0: Array = []
+			for w in v.wheels:
+				w0.append((w[0] as Node3D).rotation.x)
+			v.cmd_move(v.position + Vector3(0, 0, -18))
+			var moving_pile := false
+			var crew_walk := false
+			var spun := 0
+			var pile_glide := 0.0
+			var pp0: Vector3 = v._ammo_pile.global_position if v._ammo_pile else Vector3.ZERO
+			for k in 90:
+				await m._wait(0.25)
+				if k > 20 and v.path_i >= v.path.size() and absf(v.cur_speed) < 0.05:
+					break
+				if absf(v.cur_speed) > 0.3:
+					if v._ammo_pile != null and v._ammo_pile.visible:
+						moving_pile = true
+						pile_glide = maxf(pile_glide, v._ammo_pile.global_position.distance_to(pp0))
+					for cb in v.crew:
+						if (cb as SoldierBody).visible and (cb as SoldierBody).get_meta("walk", false):
+							crew_walk = true
+			for wi in v.wheels.size():
+				if absf((v.wheels[wi][0] as Node3D).rotation.x - float(w0[wi])) > 0.5:
+					spun += 1
+			var tw2 := 0.0
+			while v.deployed < 1.0 and tw2 < 20.0:
+				await m._wait(0.5)
+				tw2 += 0.5
+			await m._wait(0.3)
+			var pile_after: bool = v._ammo_pile != null and v._ammo_pile.visible
+			print("TOW %s t=%d wheels=%d spun=%d pile_before=%s pile_while_moving=%s glide=%.1f pile_after_deploy=%s crew_walk=%s deployed=%.2f" % [types[i], t, v.wheels.size(), spun, pile_before, moving_pile, pile_glide, pile_after, crew_walk, v.deployed])
+			if moving_pile or spun == 0 or v.wheels.size() == 0 or not crew_walk or not pile_after:
+				fails += 1
+	_cam(c, 30.0)
+	await m._wait(0.3)
+	await m._shot("tow_all")
+	print("TOWTEST RESULT fails=%d" % fails)
+
+# 134: yol açma dozeri yoldaki hurdayı kendiliğinden bıçakla iterek, kurtarma aracı emirle halatla çekerek yol dışına
+# kaldırır; hurdanın ızgara izi yeni yerine taşınır
+func dozer_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	# yol üstünde, köprüden uzak, iki hurdalık yer
+	var roads: Array = []
+	var step := 6.0
+	var z := 20.0
+	while z < G.MAP - 20.0 and roads.size() < 2:
+		var x := 20.0
+		while x < G.MAP - 20.0 and roads.size() < 2:
+			var p := Vector3(x, 0, z)
+			if G.terrain.on_road(p) and G.grid.free_at(p, Grid.M_HEAVY) and G.grid.bridge_at(p).is_empty() and Vector2(p.x - G.MAP * 0.5, p.z - G.MAP * 0.5).length() > 40.0:
+				if roads.is_empty() or roads[0].distance_to(p) > 70.0:
+					roads.append(p)
+			x += step
+		z += step
+	if roads.size() < 2:
+		print("DOZER no road spots")
+		print("DOZERTEST RESULT fails=1")
+		return
+	var res: Array = []
+	for ci in 2:
+		var rp: Vector3 = roads[ci]
+		G.props.clear_area(rp, 30.0)
+		var w: Vehicle = m.spawn_vehicle(1, "truck" if ci == 0 else "apc", rp, 0.7)
+		await m._wait(0.3)
+		w.destroy(null)
+		await m._wait(2.0)
+		var p0 := w.position
+		var blocked0 := G.grid.kind_at(p0) == Grid.K_WRECK
+		var dz: Vehicle = m.spawn_vehicle(0, "usa_eng_d7" if ci == 0 else "usa_eng_m88", G.grid.nearest_free(rp + Vector3(14, 0, 10), Grid.M_HEAVY), 0.0)
+		dz.fire_mode = 2
+		if ci == 1:
+			dz.cmd_clear(w)
+		var mode := ""
+		var t := 0.0
+		while t < 70.0:
+			await m._wait(0.5)
+			t += 0.5
+			if dz.clear_mode != "":
+				mode = dz.clear_mode
+			if ci == 0 and t == 12.0:
+				_cam(dz.position, 18.0)
+				await m._wait(0.1)
+				await m._shot("dozer_push")
+			if ci == 1 and dz.clear_stage == "haul" and dz._cable != null and not res.has("shot1"):
+				res.append("shot1")
+				await m._wait(1.5)
+				_cam(dz.position, 16.0)
+				await m._wait(0.1)
+				await m._shot("dozer_tow")
+			if w.get_meta("cleared", false):
+				break
+		var moved := Vector2(w.position.x - p0.x, w.position.z - p0.z).length()
+		var on_road := G.terrain.on_road(w.position)
+		var old_free := G.grid.kind_at(p0) != Grid.K_WRECK
+		var new_mark := G.grid.kind_at(w.position) == Grid.K_WRECK
+		print("DOZER %s %s mode=%s t=%.1f moved=%.1f on_road=%s old_cell_wreck=%s->%s new_marked=%s" % [dz.vid, w.vtype, mode, t, moved, on_road, blocked0, not old_free, new_mark])
+		if not w.get_meta("cleared", false) or moved < 6.0 or on_road or not old_free or not new_mark:
+			fails += 1
+		if mode != ("push" if ci == 0 else "tow"):
+			fails += 1
+		_cam(w.position, 20.0)
+		await m._wait(0.2)
+		await m._shot("dozer_after_%d" % ci)
+	print("DOZERTEST RESULT fails=%d" % fails)
+
+# 131: sis perdesinin içinden geçen tank ve piyade dumanı yarar, arkasında iz bırakır (görsel) — hareketli birlik
+# duman gölgelendiricisine aktarılır
+func smokepass_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	for off in [Vector3(-4, 0, 0), Vector3(4, 0, 0), Vector3(0, 0, 3)]:
+		G.fx.smoke_screen(c + off, 40.0)
+		G.add_smoke(c + off, 5.0, 40.0)
+	var tk: Vehicle = m.spawn_vehicle(0, "tank", c + Vector3(0, 0, 22), 0.0)
+	tk.fire_mode = 2
+	var sq: Array = []
+	for k in 4:
+		var s: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-6 + k * 1.6, 0, -20), Grid.M_INF), null)
+		sq.append(s)
+	_cam(c, 30.0)
+	await m._wait(5.0)
+	await m._shot("smokepass_0_before")
+	tk.cmd_move(c + Vector3(0, 0, -24))
+	for s in sq:
+		s.cmd_move(s.position + Vector3(0, 0, 40))
+	await m._wait(3.2)
+	var n := 0
+	for mat in G.fx._mover_mats:
+		n = maxi(n, int((mat as ShaderMaterial).get_shader_parameter("mover_n")))
+	await m._shot("smokepass_1_entering")
+	await m._wait(1.8)
+	await m._shot("smokepass_2_inside")
+	await m._wait(2.5)
+	await m._shot("smokepass_3_after")
+	print("SMOKEPASS movers=%d tank_speed=%.1f fps=%d" % [n, tk.cur_speed, Engine.get_frames_per_second()])
+	if n < 2:
+		fails += 1
+	print("SMOKEPASSTEST RESULT fails=%d" % fails)
+
+# 132: taret hedefe döndüğünde görünen namlu da hedefe bakmalı (Rus araçlarında mermi namlunun bakmadığı
+# yöne gidiyordu) — katalogdaki taretli her araç, yan tarafa konan hedefe nişan alır; namlu ucu yönü ölçülür
+func aim_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	Catalog.load_all()
+	var ids: Array = []
+	for o in Catalog.order:
+		if Catalog.base(o[2]) in ["tank", "ifv", "apc", "technical", "aa", "arty"]:
+			ids.append(o[2])
+	var bad := 0
+	for i in ids.size():
+		var v: Vehicle = m.spawn_vehicle(0, ids[i], c, 0.0)
+		if v.turret == null or v.barrel == null:
+			G.remove_unit(v)
+			v.queue_free()
+			continue
+		v.cmd_hold()
+		var tgt: Vehicle = m.spawn_vehicle(1, "truck", c + v.right() * 30.0 + v.forward() * 6.0, 0.0)
+		tgt.cmd_hold()
+		tgt.fire_mode = 2
+		tgt.hp = 99999.0
+		v.target = tgt
+		v.fire_mode = 2
+		await m._wait(1.5)
+		v.target = tgt
+		for k in 30:
+			v._aim_fire(0.1)
+		var want: Vector3 = tgt.position - v.position
+		want.y = 0.0
+		var mz: Vector3 = v.muzzle_world() - v.turret_world_pos()
+		mz.y = 0.0
+		var bn: Vector3 = v.barrel.global_transform.basis.z
+		bn.y = 0.0
+		var err := rad_to_deg(want.angle_to(mz)) if mz.length() > 0.2 else -1.0
+		var line := "AIM %s %s err=%.0f° muzzle_len=%.2f turret_yaw=%.2f want_local=%.2f" % [ids[i], v.vtype, err, mz.length(), v.turret_yaw, wrapf(Soldier._yaw_of(want) - v.heading, -PI, PI)]
+		if err > 15.0 or err < 0.0:
+			line += " BAD"
+			bad += 1
+			if ids[i].begins_with("rus") or bad <= 6:
+				_cam(v.position, 10.0)
+				await m._wait(0.2)
+				await m._shot("aim_%s" % ids[i])
+		print(line)
+		for u in [v, tgt]:
+			G.remove_unit(u)
+			u.queue_free()
+		await m._wait(0.2)
+	print("AIM bad=%d of %d" % [bad, ids.size()])
+	# yan / arkadan saldıran düşman fırkası: eş eksenli makineli taretin baktığı yöne ateş eder
+	var coax_bad := 0
+	var coax_shots := 0
+	for vid2 in ["rus_mbt_72b", "rus_mbt_90m", "usa_mbt_a2"]:
+		var tk: Vehicle = m.spawn_vehicle(0, vid2, c, 0.0)
+		tk.cmd_hold()
+		await m._wait(0.5)
+		if tk.cmdr:
+			tk.cmdr.visible = false
+		var en: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(c - tk.forward() * 22.0 + tk.right() * 6.0, Grid.M_INF), null)
+		en.hp = 99999.0
+		var s0 := tk.shots
+		for k in 120:
+			tk.target = null
+			tk.coax_target = en
+			tk.coax_cd -= 0.05
+			var before := tk.shots
+			tk._aim_fire(0.05)
+			if tk.shots > before:
+				coax_shots += 1
+				var bear := Soldier._yaw_of(en.position - tk.position)
+				if absf(angle_difference(tk.heading + tk.turret_yaw, bear)) > 0.15:
+					coax_bad += 1
+		print("AIM coax %s shots=%d turret_err=%.2f" % [vid2, tk.shots - s0, absf(angle_difference(tk.heading + tk.turret_yaw, Soldier._yaw_of(en.position - tk.position)))])
+		for u in [tk, en]:
+			G.remove_unit(u)
+			u.queue_free()
+		await m._wait(0.2)
+	print("AIM coax shots=%d off_turret=%d" % [coax_shots, coax_bad])
+	# yan fırlatıcılı araçların (Tor, Tunguska, ITV, Ontos) namlu ucu taret ekseninin yanında: ölçüm yanılgısı
+	fails = 0 if coax_bad == 0 and coax_shots > 0 else 1
+	print("AIMTEST RESULT fails=%d" % fails)
+
+# köprü üstündeki aracın gövde köşelerinin döşeme kenarından taşma miktarı (köprü dışındaysa 0)
+func _bridge_overhang(v: Vehicle, br: Dictionary) -> float:
+	if v == null or not is_instance_valid(v) or G.grid.bridge_at(v.position).is_empty():
+		return 0.0
+	var d: Vector3 = br["d"]
+	var rel: Vector3 = v.position - br["c"]
+	rel.y = 0.0
+	if absf(rel.dot(d)) > float(br["L"]) * 0.5 - 1.0:
+		return 0.0
+	var worst := 0.0
+	for sf in [-1.0, 1.0]:
+		for sr in [-1.0, 1.0]:
+			var q: Vector3 = rel + v.forward() * v.ext.y * 0.85 * sf + v.right() * v.ext.x * sr
+			if absf(q.dot(d)) > float(br["L"]) * 0.5:
+				continue
+			worst = maxf(worst, absf(q.cross(d).y) - float(br["w"]) * 0.5)
+	return worst
+
+# 130: önü kesilen araç sağa sola yalpalamaz — bir taraf seçip ondan dolaşır (gerekirse geri manevra);
+# köprüde yol kapalıysa suya girmeden durup bekler
+func jam_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	# açık arazi: nehirden uzak, 40 m boyunca kuru bir şerit
+	var land := Vector3.INF
+	for cand in [Vector3(0.72, 0, 0.75), Vector3(0.25, 0, 0.3), Vector3(0.75, 0, 0.3), Vector3(0.3, 0, 0.8)]:
+		var p := G.grid.nearest_free(Vector3(G.MAP * cand.x, 0, G.MAP * cand.z), Grid.M_HEAVY)
+		var dry := true
+		for k in 21:
+			for sx in [-8.0, 0.0, 8.0]:
+				var q: Vector3 = p + Vector3(sx, 0, -20.0 + k * 2.0)
+				if G.grid.is_water(q) or not G.grid.bridge_at(q).is_empty():
+					dry = false
+		if dry:
+			land = p
+			break
+	var br: Dictionary = G.grid.bridges[0] if not G.grid.bridges.is_empty() else {}
+	var cases: Array = []
+	if land != Vector3.INF:
+		G.props.clear_area(land, 30.0)
+		cases.append(["land", "truck", land])
+		cases.append(["land", "technical", land])
+	if not br.is_empty():
+		cases.append(["bridge", "truck", br["c"]])
+		cases.append(["bridge", "tank", br["c"]])
+	var flips_all := 0
+	for cs in cases:
+		var kind: String = cs[0]
+		var vt: String = cs[1]
+		var base: Vector3 = cs[2]
+		var b1: Vehicle
+		var b2: Vehicle
+		var tr: Vehicle
+		var goal: Vector3
+		if kind == "land":
+			# önde iki park etmiş (tut emrinde) tank yan yana, arkalarında hedef
+			b1 = m.spawn_vehicle(0, "tank", base, 0.0)
+			b2 = m.spawn_vehicle(0, "tank", base + Vector3(4.2, 0, 0.5), 0.0)
+			tr = m.spawn_vehicle(0, vt, base + Vector3(0, 0, 16), 0.0)
+			goal = base + Vector3(0, 0, -16)
+		else:
+			# köprüde ard arda iki tank (tut emrinde): yol kapalı
+			var d: Vector3 = br["d"]
+			var yaw := Soldier._yaw_of(d)
+			b1 = m.spawn_vehicle(0, "tank", base, yaw)
+			b2 = m.spawn_vehicle(0, "tank", base + d * 9.0, yaw)
+			if vt == "tank":
+				# 133: köprüye giren tank, karşıdan gelen tankla köprüde burun buruna sıkışır
+				tr = m.spawn_vehicle(0, vt, G.grid.nearest_free(base - d * (float(br["L"]) * 0.5 + 6.0), Grid.M_HEAVY), yaw)
+			else:
+				tr = m.spawn_vehicle(0, vt, G.grid.nearest_free(base - d * (float(br["L"]) * 0.5 + 12.0), Grid.M_LIGHT), yaw)
+			goal = G.grid.nearest_free(base + d * (float(br["L"]) * 0.5 + 14.0), Grid.M_LIGHT)
+		for b in [b1, b2]:
+			b.cmd_hold()
+			b.fire_mode = 2
+		if kind == "bridge" and vt == "tank":
+			# karşıdan gelen tank: köprünün ortasında burun buruna
+			var d2: Vector3 = br["d"]
+			G.remove_unit(b2)
+			b2.queue_free()
+			b2 = m.spawn_vehicle(0, "tank", G.grid.nearest_free(base + d2 * (float(br["L"]) * 0.5 + 10.0), Grid.M_HEAVY), Soldier._yaw_of(-d2))
+			b1.cmd_stop()
+			G.remove_unit(b1)
+			b1.queue_free()
+			b1 = null
+			await m._wait(0.3)
+			b2.cmd_move(G.grid.nearest_free(base - d2 * (float(br["L"]) * 0.5 + 14.0), Grid.M_HEAVY))
+		# ateş kes: köprü yakınındaki düşman karargâhını vurup oyunu bitirmesinler (yeni harita yükleniyordu)
+		for v in [b1, b2, tr]:
+			if v != null:
+				v.fire_mode = 2
+		await m._wait(0.5)
+		tr.cmd_move(goal)
+		var flips := 0
+		var last_sgn := 0.0
+		var h0 := tr.heading
+		var reached := false
+		var wet := false
+		var over := 0.0
+		var inside := -99.0
+		var t := 0.0
+		while t < (60.0 if kind == "bridge" and vt == "tank" else 40.0):
+			await m._wait(0.25)
+			t += 0.25
+			var dh := angle_difference(h0, tr.heading)
+			h0 = tr.heading
+			if absf(dh) > 0.02:
+				var sg := signf(dh)
+				if last_sgn != 0.0 and sg != last_sgn:
+					flips += 1
+				last_sgn = sg
+			if G.grid.is_water(tr.position) and G.grid.bridge_at(tr.position).is_empty():
+				wet = true
+			# 133: köprüdeki araçların gövde köşeleri döşemenin dışına (korkuluğun içinden) taşmamalı
+			if kind == "bridge":
+				for v in [b1, b2, tr]:
+					over = maxf(over, _bridge_overhang(v, br))
+				if vt == "tank" and is_instance_valid(b2):
+					# karşılaşan iki tank birbirinin içinden geçmemeli
+					var q: Vector3 = tr.obb_closest(b2.position)
+					inside = maxf(inside, b2.ext.x - Vector2(q.x - b2.position.x, q.z - b2.position.z).length())
+			if Vector2(tr.position.x - goal.x, tr.position.z - goal.z).length() < 6.0:
+				reached = true
+				if not (kind == "bridge" and vt == "tank"):
+					break
+			if kind == "bridge" and vt == "tank" and is_instance_valid(b2) and reached and (b2.position - br["c"]).dot(br["d"]) < -float(br["L"]) * 0.5 - 2.0:
+				break
+		_cam(tr.position, 22.0)
+		await m._wait(0.2)
+		await m._shot("jam_%s_%s" % [kind, vt])
+		print("JAM %s %s reached=%s t=%.1f heading_flips=%d wet=%s waited=%s overhang=%.2f pos=%s" % [kind, vt, reached, t, flips, wet, tr._jam_said, over, tr.position])
+		if kind == "bridge" and vt == "tank":
+			var d3: Vector3 = br["d"]
+			var tra: float = (tr.position - br["c"]).dot(d3)
+			var b2a: float = (b2.position - br["c"]).dot(d3)
+			var half_l := float(br["L"]) * 0.5
+			print("JAM meet tr_along=%.1f b2_along=%.1f L=%.1f max_interpenetration=%.2f yielded=%s/%s" % [tra, b2a, float(br["L"]), inside, tr._yield_dest != Vector3.INF, b2._yield_dest != Vector3.INF])
+			# ikisi de karşıya geçmeli, gövdeler iç içe girmemeli (temas payı 0,6 m)
+			if tra < half_l or b2a > -half_l or inside > 0.6:
+				fails += 1
+		flips_all += flips
+		if kind == "land" and (not reached or flips > 4):
+			fails += 1
+		# karşılaşmada geri çekilen tankı izleyip köprü sonrası virajlı yola dönerken birkaç gerçek yön değişimi olur
+		if kind == "bridge" and (wet or flips > (8 if vt == "tank" else 4) or over > 0.25):
+			fails += 1
+		for v in [b1, b2, tr]:
+			if v != null and is_instance_valid(v):
+				G.remove_unit(v)
+				v.queue_free()
+		await m._wait(0.5)
+	if cases.is_empty():
+		fails += 1
+	print("JAM cases=%d total_flips=%d" % [cases.size(), flips_all])
+	print("JAMTEST RESULT fails=%d" % fails)
+
+# 129: güvertedeki askerler ve komutan gövde / taret yüzeyine oturur (havada durmaz) — katalogdaki her tank ve pikap
+func deck_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 60.0)
+	Catalog.load_all()
+	var ids: Array = []
+	for o in Catalog.order:
+		if Catalog.base(o[2]) in ["tank", "technical"]:
+			ids.append(o[2])
+	var vs: Array = []
+	for i in ids.size():
+		var p := G.grid.nearest_free(c + Vector3(-40.0 + (i % 8) * 11.0, 0, -30.0 + (i / 8) * 13.0), Grid.M_HEAVY)
+		var v: Vehicle = m.spawn_vehicle(0, ids[i], p, PI * 0.75)
+		v.cmd_hold()
+		v.fire_mode = 2
+		vs.append(v)
+	await m._wait(1.0)
+	for v in vs:
+		if not v.riders_visible():
+			continue
+		for k in 4:
+			var s: Soldier = m.spawn_soldier(0, "rifle", v.position + Vector3(0, 0, 6), null)
+			s.board(v)
+	await m._wait(1.5)
+	for i in vs.size():
+		var v: Vehicle = vs[i]
+		if not v.riders_visible():
+			continue
+		var a := AABB()
+		var first := true
+		for ch in v.hull.get_children():
+			if ch is MeshInstance3D and (ch as MeshInstance3D).mesh != null:
+				var bb: AABB = (ch as MeshInstance3D).transform * (ch as MeshInstance3D).mesh.get_aabb()
+				a = bb if first else a.merge(bb)
+				first = false
+		var ys := []
+		var bad := false
+		for st in v._deck_seats():
+			ys.append(snappedf(st.y, 0.01))
+			if st.y < 0.3 or st.y > a.end.y + 0.02:
+				bad = true
+		var cm := ""
+		if v.cmdr != null:
+			cm = " cmdr_y=%.2f" % v.cmdr.position.y
+		print("DECK %s %s seats_y=%s hull_top=%.2f%s%s" % [ids[i], v.vtype, ys, a.end.y, cm, " BAD" if bad else ""])
+		if bad:
+			fails += 1
+	_cam(c + Vector3(-4, 0, -12), 40.0)
+	await m._wait(0.5)
+	await m._shot("deck_00_all")
+	var shown := 0
+	for i in vs.size():
+		if shown >= 4 or not vs[i].riders_visible():
+			continue
+		if i % 3 != 0:
+			continue
+		_cam(vs[i].position, 8.0)
+		await m._wait(0.4)
+		await m._shot("deck_%02d_%s" % [shown + 1, ids[i]])
+		shown += 1
+	print("DECKTEST RESULT fails=%d" % fails)
 
 # 97: ABD tankları yan yana (I, II, II-D, III) — taret / kubbe karşılaştırması, yakın çekim
 func mbt_gallery() -> void:
