@@ -1,10 +1,42 @@
-# Devir notu — kaldığımız yer (16 Ekim 2026, yerel GPU oturumu, 2. oturum)
+# Devir notu — kaldığımız yer (16 Ekim 2026, 3. oturum)
 
-Bu oturum da Claude Code "auto mode" güvenlik denetimi komut çalıştırmayı engellediği için durdu (komutun
-kendisi değil sohbet içeriği gerekçe gösterildi; ikinci kez oldu). **Yeni oturumu varsayılan izin kipinde başlat.**
-Dal: `claude/fervent-euler-a8emja` (PR #1, push yapılmadı).
+Dal: `claude/fervent-euler-a8emja` (PR #1) — **push edildi**; iş worktree'de (`.claude/worktrees/mevzi-uav-soldier`,
+dal `worktree-mevzi-uav-soldier`, `git push origin HEAD:claude/fervent-euler-a8emja`), her push'tan sonra kullanıcının
+oynadığı `C:\mevzi` ff-only güncellenir (kullanıcı isteği). Ayrıntılar ROADMAP günlüğünde.
 
-## Bu oturumda yapılan (commit'li, testleri geçti)
+## 3. oturumda yapılan (commit'li, push'lu)
+- 93 İHA: 22 model üretildi (gerçek boyut, türe özgü), katalog `v.type` / `v.L/W`, boyut denetimi 190/190 (X kanatta
+  çapraz); görsel ölçek kanat açıklığına yumuşak tavan (MQ-9 6,4 m, RQ-4 9,4 m)
+- 95 inşaat: bitince taşıyıcı bırakır; yol önbelleği (12 m kova) ilk parça denetimi + ızgara değişince silme; iri hücrede
+  taraf yapısının köşesi kapalı; malzeme yığını açık yana · 96 kamyon rotası kapanınca yeniden aranır
+- 98 kapalı hafif araç yolcu yeri (ISV 8 …) · 103/106 vurulan kamyonun hamalları temizlenir, boşaltma sonrası dönüş
+- 104 araç sıkışması: hedef yeri ayırma, itme toplamı ≤2,5 m/sn, dolaşma / ileri çektirme · 105 asker araç gövdesine
+  girmez (izdüşüm + köşelerden dolaşma; kalan: araç–çit dar boşluğu)
+- 97 Abrams: komutan kubbe kapağında (`meta.hatch`), `turret_k` 0,88 · 99 vurulan topun mürettebatı gerçek askere
+  dönüşür · 108 yakına düşüş ≤%40 can · 109 kendiliğinden ateş: kendi optiği + etkili menzil · 114 ağır isabetli
+  araçtan sağ çıkış çok az · 117 fare ağacı saydamlaştırmaz, mat yaprak · 118 evden herkes çıkar · 119/60 asker
+  oyuk arazide zemine basar
+- Yeni test sahneleri: `crewkilltest`, `mbtgallery`; genişleyenler: buildtest (`--map=`), logitest, supplytest
+  (artık geçiyor), septest (artık geçiyor), vehtest, rangetest, crewtest, garrisontest, soldiertest, armeduav
+- Kullanıcının yeni maddeleri ROADMAP 95–121 (tabloda); 120 piyade YZ hedef listesi, 121 CC0 varlıklar
+  (`docs/ASSET_KAYNAKLARI.md`)
+
+## Sıradaki adımlar
+1. Kalan kullanıcı hataları: 110 savaş sisi (yamuk kenar, birim başına görüş), 112 sürücü / açıktaki mürettebat
+   vurulması, 115 sudaki el bombası efekti + duman, 116 keskin nişancı siperde kayma, 107 araç zekâsı, 102 halat +
+   arka rampa (76), 101/111 topçu mermi animasyonları, 113 çit arasında yatma (modellemeden sonra)
+2. Asker işleri (devam): 61/92 araç üstü oturma + güverte yüksekliği, 66 silah tutuşu, 74 çömelince geriye yatma,
+   80 sırtta tanksavar, 83 geri koşarken ateş, 84 kalabalık ayrışma, 85 ördek yürüyüşü, 89 siper derinliği pozu,
+   60'ın kalanı (adım uzunluğu, animasyon seyreltmesi)
+3. Sonra HUD (65/57) + tüm emirlerin HUD ile bütünleşmesi (kullanıcı sordu; öneri: bu hata grubundan hemen sonra)
+4. Bilinen kararsız testler: `stucktest` bazı tohumlarda araç takılması çözülmüyor (eski koddan beri), `vehtest`
+   mayınlı tohumlar, `septest` dar boşluk (toleranslı)
+
+---
+
+# (Tarihsel) Devir notu — 16 Ekim 2026, 2. oturum
+
+## 2. oturumda yapılan (commit'li, testleri geçti)
 - `4455cad` Roadmap 91: havadaki araçlarda irtifa çizgisi + yer halkası (görüntüde doğrulandı), "airgray" boya,
   soldiertest / armeduav sahneleri, ROADMAP 92–94
 - `412b5bd` Roadmap 94 + 87: taret kopması katı cisim (`scripts/debris_body.gd` — `DebrisBody`: yerçekimi, takla,
