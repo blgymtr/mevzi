@@ -48,7 +48,7 @@ func _ready() -> void:
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -1235,6 +1235,15 @@ func _run_garrison_test() -> void:
 		for i in G.blocks.houses.size():
 			var h: Dictionary = G.blocks.houses[i]
 			if h.has("slots") and h["slots"].size() >= need and G.blocks.house_free_slot(i) >= 0:
+				# en az bir penceresinden dışarıya görüş hattı açık olmalı (pencere çatışması denetimi için)
+				var open := false
+				for k in h["slots"].size():
+					var wq: Vector3 = G.grid.nearest_free(h["slots"][k] + h["out"][k] * 16.0, Grid.M_INF)
+					if G.grid.los(h["slots"][k] + Vector3(0, 1.55, 0), wq + Vector3(0, 1.0, 0), 1.6, 0.5):
+						open = true
+						break
+				if not open:
+					continue
 				hid = i
 				break
 		if hid >= 0:
@@ -1271,8 +1280,14 @@ func _run_garrison_test() -> void:
 	G.cam.jump_to(hc, true)
 	G.cam.size = 22.0
 	G.cam.target_size = 22.0
-	var w0: Vector3 = hd["slots"][0] + hd["out"][0] * 16.0
-	var e := spawn_soldier(1, "rifle", G.grid.nearest_free(w0, Grid.M_INF), null)
+	# düşman, görüş hattı açık olan ilk pencerenin önüne (ilk pencerenin önü başka bir engelin arkasına düşebiliyordu)
+	var w0: Vector3 = G.grid.nearest_free(hd["slots"][0] + hd["out"][0] * 16.0, Grid.M_INF)
+	for k in hd["slots"].size():
+		var wk: Vector3 = G.grid.nearest_free(hd["slots"][k] + hd["out"][k] * 16.0, Grid.M_INF)
+		if G.grid.los(hd["slots"][k] + Vector3(0, 1.55, 0), wk + Vector3(0, 1.0, 0), 1.6, 0.5):
+			w0 = wk
+			break
+	var e := spawn_soldier(1, "rifle", w0, null)
 	e.cmd_hold()
 	await _wait(5.0)
 	await _shot("garrison_01")
@@ -1283,8 +1298,8 @@ func _run_garrison_test() -> void:
 	for s in men:
 		var eye: Vector3 = s.position + Vector3(0, 1.55, 0)
 		print("GAR dbg2 tgt=%s seen=%s sees=%s los_plain=%s d=%.1f e_alive=%s ct=%d" % [s.target, G.is_seen(e, 0), s.sees(eye, e.aim_point(), e), G.grid.los(eye, e.aim_point()), s.position.distance_to(e.position), e.alive, s.cover_type])
-	if shots == 0:
-		fails += 1
+	if shots == 0 and e.alive:
+		fails += 1          # pencereden çatışılmadı (düşman el bombasıyla öldürüldüyse atış sayılmaz ama çatışılmıştır)
 	# 118: hızlı hareket emriyle evdeki herkes çıkar (eskiden 6'sı çıkıyor, gerisi içeride kalıyordu)
 	e.die(null)
 	var out_pt: Vector3 = G.grid.nearest_free(hd["door"] + (hd["door"] - hc).normalized() * 45.0, Grid.M_INF)

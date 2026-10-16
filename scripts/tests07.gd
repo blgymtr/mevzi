@@ -63,6 +63,10 @@ func run(scene: String) -> void:
 			await mbt_gallery()
 		"crewkilltest":
 			await crew_kill_test()
+		"snipertest":
+			await sniper_test()
+		"sandboxtest":
+			await sandbox_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -1728,6 +1732,145 @@ func ai_match() -> void:
 
 # taban tip modelleri (roadmap 10) ve rotorlar (39/44): iki ulusun tüm taban araçları yan yana; helikopterler
 # havada pervane dönerken; yakın çekimler
+# 125: sandbox geliştirici araçları — arama, bulanık doğurma, silme, yıkma, ışınlama, ikmal, bilgi, tüm efektler
+func sandbox_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var sb: Sandbox = m.sandbox_ui
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var res: Array = sb.find("abrams")
+	var res2: Array = sb.find("t-90")
+	print("SBX find abrams=%d t-90=%d first=%s" % [res.size(), res2.size(), res[0][0] if res.size() > 0 else "-"])
+	if res.is_empty() or res2.is_empty():
+		fails += 1
+	# bulanık doğurma: imleç ekran ortasında; kamera c'ye
+	_cam(c, 30.0)
+	await m._wait(0.3)
+	m.get_viewport().warp_mouse(Vector2(800, 450))
+	var n0 := G.units.size()
+	sb.run("spawn abrams 2")
+	await m._wait(0.3)
+	var n1 := G.units.size()
+	print("SBX spawn_fuzzy added=%d" % (n1 - n0))
+	if n1 - n0 < 2:
+		fails += 1
+	# süzgeç: "abrams" araması yalnız eşleşen düğmeleri bırakır
+	sb.search.text = "abrams"
+	sb._filter("abrams")
+	var shown := 0
+	for ch in sb.list.get_children():
+		if ch is Button and ch.visible:
+			shown += 1
+	sb._filter("")
+	print("SBX filter shown=%d" % shown)
+	if shown < 2 or shown > 20:
+		fails += 1
+	# sil / yık / ışınla / bilgi / ikmal
+	var v1: Vehicle = m.spawn_vehicle(0, "tank", G.grid.nearest_free(c + Vector3(12, 0, 0), Grid.M_HEAVY), 0.0)
+	var s1: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-12, 0, 0), Grid.M_INF), null)
+	var s2: Soldier = m.spawn_soldier(0, "at", G.grid.nearest_free(c + Vector3(-14, 0, 0), Grid.M_INF), null)
+	await m._wait(0.3)
+	sb.place("t:info", v1.position)
+	G.player.clear_sel()
+	G.player.select(s2)
+	s2.ammo = 0
+	s2.rockets = 0
+	sb.run("ammo")
+	var ammo_ok: bool = s2.ammo > 0 and s2.rockets > 0
+	sb.place("t:tp", c + Vector3(0, 0, 18))
+	await m._wait(0.2)
+	var tp_ok: bool = s2.position.distance_to(c + Vector3(0, 0, 18)) < 4.0
+	sb.place("t:del", s1.position)
+	await m._wait(0.2)
+	var del_ok := not is_instance_valid(s1)
+	sb.place("t:wreck", v1.position)
+	await m._wait(0.3)
+	var wreck_ok := not v1.alive
+	print("SBX ammo=%s tp=%s del=%s wreck=%s" % [ammo_ok, tp_ok, del_ok, wreck_ok])
+	if not (ammo_ok and tp_ok and del_ok and wreck_ok):
+		fails += 1
+	# ev yıkma: en yakın harita evi
+	var hid := -1
+	var hd2 := 1e9
+	for i in G.blocks.houses.size():
+		var h: Dictionary = G.blocks.houses[i]
+		var d: float = (h["center"] as Vector3).distance_to(c)
+		if not h["collapsed"] and d < hd2:
+			hd2 = d
+			hid = i
+	if hid >= 0:
+		var hc: Vector3 = G.blocks.houses[hid]["center"]
+		var b0: int = G.blocks.blocks_near(hc, 6.0).size()
+		for k in 3:
+			sb.place("t:wreck", hc + Vector3(randf_range(-2, 2), 0, randf_range(-2, 2)))
+		await m._wait(1.0)
+		var b1: int = G.blocks.blocks_near(hc, 6.0).size()
+		print("SBX house_wreck blocks %d -> %d" % [b0, b1])
+		if b1 >= b0:
+			fails += 1
+	# tüm efektler hatasız
+	for f in Sandbox.FX:
+		sb.place("fx:" + f, c + Vector3(randf_range(-20, 20), 0, randf_range(-30, -10)))
+		await m._wait(0.15)
+	await m._wait(1.0)
+	_cam(c, 40.0)
+	await m._shot("sbx_fx")
+	sb.run("stats")
+	sb.run("info")
+	print("SBX log=%s" % str(sb._log))
+	print("SANDBOXTEST RESULT fails=%d" % fails)
+
+# 116: keskin nişancı timi siper arkasında sağa sola kaymaz — vardıktan sonra 10 sn'deki toplam yol
+func sniper_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 30.0)
+	var wall := m.place_line(0, "sandbags", c + Vector3(-4, 0, -2), c + Vector3(4, 0, -2))
+	wall.add_work(99999.0)
+	await m._wait(0.5)
+	var sq := Squad.new(0, "Keskin Nişancı")
+	G.squads.append(sq)
+	var sn: Array = []
+	for i in 2:
+		var s: Soldier = m.spawn_soldier(0, "sniper", G.grid.nearest_free(c + Vector3(i * 1.5, 0, 14), Grid.M_INF), sq)
+		sn.append(s)
+	var e: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(0, 0, -55), Grid.M_INF), null)
+	e.cmd_hold()
+	e.hp = 99999.0
+	for s in sn:
+		s.cmd_move(c + Vector3(0, 0, 0.2))
+	await m._wait(12.0)
+	var last: Array = sn.map(func(x): return x.position)
+	var start: Array = sn.map(func(x): return x.position)
+	var walked := [0.0, 0.0]
+	for k in 100:
+		await m._wait(0.1)
+		for i in 2:
+			walked[i] += Vector2(sn[i].position.x - last[i].x, sn[i].position.z - last[i].z).length()
+			last[i] = sn[i].position
+	var gap: float = sn[0].position.distance_to(sn[1].position)
+	# titreme = toplam yol − net yer değiştirme (bilinçli siper değişimi net yer değiştirir, titreme değiştirmez)
+	var jit := [walked[0] - start[0].distance_to(sn[0].position), walked[1] - start[1].distance_to(sn[1].position)]
+	print("SNIPER walked=%.2f/%.2f jitter=%.2f/%.2f gap=%.2f cover=%d/%d states=%s/%s shots=%d" % [walked[0], walked[1], jit[0], jit[1], gap, sn[0].cover_type, sn[1].cover_type, sn[0].state, sn[1].state, sn[0].shots + sn[1].shots])
+	_cam(c, 10.0)
+	await m._wait(0.4)
+	await m._shot("sniper_cover")
+	if jit[0] > 1.0 or jit[1] > 1.0 or gap < 1.5:
+		fails += 1
+	print("SNIPERTEST RESULT fails=%d" % fails)
+
 # 99 / 114: top mermisi yiyen çekili topun mürettebatı ve araçtaki yolcular "hiçbir şey olmamış gibi" kalmaz
 func crew_kill_test() -> void:
 	m.get_window().size = Vector2i(1600, 900)

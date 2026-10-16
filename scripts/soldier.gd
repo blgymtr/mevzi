@@ -1345,6 +1345,10 @@ func _think() -> void:
 		var q := _queued_move
 		_queued_move = Vector3.INF
 		cmd_move(q, _queued_force)
+	if state == "idle" and order == "move" and path_i < path.size() and alive and can_fight():
+		# yere atılma / irkilme / sersemleme gibi kısa tepki hareket emrini yarıda bırakıyordu (roadmap 118):
+		# tepki bitince yürüyüşe devam
+		state = "move"
 	if state == "move" and path_i < path.size() and order != "board":
 		if _prog_p == Vector3.INF or position.distance_to(_prog_p) > 0.4:
 			_prog_p = position
@@ -1616,7 +1620,7 @@ func _think_idle() -> void:
 				return
 		if cover_type == 0 or prot < 0.5:
 			var claimed: Array = squad.claimed(self) if squad else []
-			var c: Dictionary = G.grid.find_cover(dest, threat_pos, 6.5, claimed, position)
+			var c: Dictionary = G.grid.find_cover(dest, threat_pos, 6.5, claimed, position, 2.5 if role == "sniper" else 1.6)
 			if c["type"] > 0:
 				cover_pos = c["pos"]
 				cover_type = c["type"]
@@ -2235,7 +2239,10 @@ func _follow(spd: float) -> Vector3:
 		var d := Vector3(tp.x - position.x, 0, tp.z - position.z)
 		var L := d.length()
 		var near_end := path_i == path.size() - 1
-		if L < (0.25 if near_end else 0.6):
+		# aynı noktaya giden komşu itiyorsa (ayrışma) 1 m'de varmış say — ikisi de 0,25 m'ye giremeyip sonsuza dek
+		# kıpırdanıyordu (roadmap 116: "sıkışmış gibi sağa sola kayma")
+		var crowded := near_end and _sep_c.length() > 0.4
+		if L < (0.25 if not near_end else (1.0 if crowded else 0.25)) or (not near_end and L < 0.6):
 			path_i += 1
 			continue
 		var s := spd

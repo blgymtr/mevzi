@@ -767,7 +767,9 @@ func cover_factor(target: Vector3, target_h: float, shooter: Vector3) -> float:
 
 # siper araması: tehdide karşı korunaklı, ulaşılabilir nokta
 # dönüş: {pos, type(0 yok,1 alçak,2 yüksek/köşe), score}
-func find_cover(around: Vector3, threat: Vector3, radius: float, claimed: Array, me: Vector3) -> Dictionary:
+# spacing: aynı timin talep ettiği siper noktalarıyla en az aralık (m) — 0,9 m'de askerler omuz omuza
+# sıkışıyordu (roadmap 116); keskin nişancı 2,5 m
+func find_cover(around: Vector3, threat: Vector3, radius: float, claimed: Array, me: Vector3, spacing := 1.6) -> Dictionary:
 	var best := {"pos": around, "type": 0, "score": -1e9}
 	var r := int(radius / CS)
 	var cx := ci(around.x)
@@ -824,8 +826,8 @@ func find_cover(around: Vector3, threat: Vector3, radius: float, claimed: Array,
 			sc -= Vector2(p.x - me.x, p.z - me.z).length() * 0.25
 			for c in claimed:
 				var cd := Vector2(c.x - p.x, c.z - p.z).length()
-				if cd < 0.9:
-					sc -= (0.9 - cd) * 30.0
+				if cd < spacing:
+					sc -= (spacing - cd) * 20.0
 			if sc > best["score"]:
 				best = {"pos": p, "type": typ, "score": sc}
 	return best
