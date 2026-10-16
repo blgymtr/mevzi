@@ -479,6 +479,10 @@ func place_building(t: int, bt: String, p: Vector3, rot: float) -> Building:
 	b.setup(t, bt, rot)
 	G.props.clear_area(b.position, b.radius + 0.5)
 	b.occupy_grid()
+	if G.logi and is_instance_valid(G.logi):
+		# yoldaki kamyon yeni yapının içinden geçmesin (roadmap 96)
+		G.grid.flush_nav()
+		G.logi.static_changed()
 	return b
 
 func place_line(t: int, bt: String, a: Vector3, b2: Vector3) -> Building:
@@ -1942,6 +1946,27 @@ func _run_logi_test() -> void:
 	print("LOGI truck unload=%s porters=%s cleaned=%s" % [seen_unload, seen_porters, gone_p])
 	if not seen_unload or not seen_porters or not gone_p:
 		fails += 1
+	# 96: üs rotasının üstüne sonradan yapı dikilirse kamyon içinden geçmez, yanından dolaşır
+	var rt: PackedVector3Array = G.logi._node_of(fob).get("route", PackedVector3Array())
+	if rt.size() >= 3:
+		var bp: Vector3 = rt[rt.size() / 2]
+		var blk := place_building(0, "barracks", bp, 0.3)
+		blk.complete()
+		var inside_t := 0
+		var near_t := 0
+		for k in 90:
+			await _wait(0.5)
+			for tr in G.logi.trucks[0]:
+				if not is_instance_valid(tr) or not tr.alive:
+					continue
+				var lp: Vector3 = (tr.position - blk.position).rotated(Vector3.UP, -blk.rot)
+				if absf(lp.x) < blk.size.x * 0.5 - 0.3 and absf(lp.z) < blk.size.y * 0.5 - 0.3:
+					inside_t += 1
+				elif Vector2(lp.x, lp.z).length() < 16.0:
+					near_t += 1
+		print("LOGI route_blocked inside=%d near=%d route_ok=%s" % [inside_t, near_t, Logistics.route_clear(G.logi._node_of(fob)["route"])])
+		if inside_t > 0:
+			fails += 1
 	print("LOGITEST RESULT fails=%d" % fails)
 	get_tree().quit()
 

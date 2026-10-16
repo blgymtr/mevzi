@@ -102,7 +102,45 @@ func route_to(b: Building) -> PackedVector3Array:
 	var out := PackedVector3Array()
 	for r in chain:
 		out.append_array(r)
+	# rota üs kurulunca bir kez hesaplanır; sonradan üstüne yapı dikildiyse kamyon binanın içinden geçerdi
+	# (roadmap 96) → kapanmış rota yeniden aranır, o sırada çağıran doğrudan yol bulur
+	if not route_clear(out):
+		var n := _node_of(b)
+		while not n.is_empty() and n["parent"] != null:
+			if not route_clear(n["route"]):
+				_reroute(n)
+			n = _node_of(n["parent"])
+		return PackedVector3Array()
 	return out
+
+static func route_clear(r: PackedVector3Array, from := 0) -> bool:
+	for q in range(maxi(from, 1), r.size()):
+		if not G.grid.walkable_line(r[q - 1], r[q], Grid.M_LIGHT):
+			return false
+	return true
+
+func _reroute(n: Dictionary) -> void:
+	if n.get("rerouting", false) or not is_instance_valid(n["parent"]):
+		return
+	n["rerouting"] = true
+	var a := _door(n["parent"])
+	var z := _door(n["b"])
+	_route_async(a, z, func(rt: PackedVector3Array):
+		var r2 := rt.duplicate()
+		r2.insert(0, a)
+		n["route"] = r2
+		n["rerouting"] = false)
+
+# yapı yerleşti (main.place_building): yoldaki kamyonların kalan yolu kapandıysa yeniden aranır
+func static_changed() -> void:
+	for t in trucks.size():
+		for tr in trucks[t]:
+			if is_instance_valid(tr) and tr.alive and tr.order == "route" and tr.path_i < tr.path.size():
+				if not route_clear(tr.path, tr.path_i) or not G.grid.walkable_line(tr.position, tr.path[tr.path_i], Grid.M_LIGHT):
+					var goal: Vector3 = tr.path[tr.path.size() - 1]
+					_route_async(tr.position, goal, func(p: PackedVector3Array):
+						if is_instance_valid(tr) and tr.alive and p.size() > 0:
+							tr.follow_route(p))
 
 func _fobs(t: int) -> Array:
 	var out: Array = []
