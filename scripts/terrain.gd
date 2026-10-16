@@ -341,18 +341,33 @@ func carve_trench(a: Vector3, b: Vector3, w: float, depth: float) -> void:
 	_hmark(int((minf(a.x, b.x) - r) * k), int((minf(a.z, b.z) - r) * k), int((maxf(a.x, b.x) + r) * k), int((maxf(a.z, b.z) + r) * k))
 
 # krater: çanak çukur + kenarda kabarık toprak halkası (içine asker girer)
-func carve_crater(p: Vector3, r: float, depth: float) -> void:
+# (138) mühimmata göre biçim: rim = kenar kabarıklığı (derinliğe oran), stretch = eğik isabette uzama (rot
+# yönünde), jag = kenar pürüzü (açıya bağlı dalgalanma), seed = her kraterin kendi düzensizliği
+func carve_crater(p: Vector3, r: float, depth: float, rim := 0.25, stretch := 1.0, rot := 0.0, jag := 0.0, seed := 0) -> void:
 	var k := float(HRES) / G.MAP
-	var ext := r * 1.5
+	var ext := r * 1.5 * maxf(stretch, 1.0) * (1.0 + jag)
+	var ca := cos(rot)
+	var sa := sin(rot)
+	var s1 := float(seed % 97) * 0.37
+	var s2 := float(seed % 53) * 0.71
+	var s3 := float(seed % 29) * 1.13
 	for z in range(maxi(0, int((p.z - ext) * k)), mini(HRES - 1, int((p.z + ext) * k)) + 1):
 		for x in range(maxi(0, int((p.x - ext) * k)), mini(HRES - 1, int((p.x + ext) * k)) + 1):
-			var q := Vector2((x + 0.5) / k - p.x, (z + 0.5) / k - p.z)
-			var d := q.length() / r
+			var q0 := Vector2((x + 0.5) / k - p.x, (z + 0.5) / k - p.z)
+			# eğik isabet: rot yönünde uzamış elips
+			var q := Vector2((q0.x * ca + q0.y * sa) / maxf(stretch, 0.5), -q0.x * sa + q0.y * ca)
+			var a := atan2(q.y, q.x)
+			var rr := r * (1.0 + jag * (0.5 * sin(3.0 * a + s1) + 0.3 * sin(5.0 * a + s2) + 0.2 * sin(8.0 * a + s3)))
+			var d := q.length() / rr
 			var hh := 0.0
 			if d < 1.0:
-				hh = -depth * (1.0 - d * d)
-			elif d < 1.45:
-				hh = depth * 0.25 * (1.0 - absf((d - 1.2) / 0.25))
+				# içi: ortası düzlükçe (patlama çanağı) — derin kraterde dibi yayvan
+				hh = -depth * (1.0 - pow(d, 2.2))
+			elif d < 1.5:
+				# kenar: atılan toprak sırtı, dışa doğru incelir
+				hh = depth * rim * (1.0 - absf((d - 1.18) / 0.32))
+				if hh <= 0.0:
+					continue
 			else:
 				continue
 			var cur := himg.get_pixel(x, z).r

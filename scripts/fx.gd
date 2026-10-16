@@ -205,14 +205,26 @@ func _make_debris() -> ImageTexture:
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
-func _make_crater() -> ImageTexture:
+# v: 0 genel, 1 havan (küçük çukur + yoğun ışınsal püskürme), 2 mayın / büyük bomba (geniş çukur + kalın
+# koyu toprak halkası), 3 top mermisi (eğik isabet: püskürme tek yana savrulmuş)
+func _make_crater(v := 0) -> ImageTexture:
 	var S := 128
 	var img := Image.create(S, S, true, Image.FORMAT_RGBA8)
 	var fn := FastNoiseLite.new()
 	fn.frequency = 0.08
+	fn.seed = 11 + v * 7
+	var r0: float = [0.42, 0.3, 0.48, 0.4][v]
+	var r1: float = [0.58, 0.42, 0.72, 0.56][v]
+	var nray: int = [22, 44, 10, 26][v]
 	var rays: Array = []
-	for i in 22:
-		rays.append([rng.randf() * TAU, rng.randf_range(0.6, 1.0)])
+	for i in nray:
+		var ra := rng.randf() * TAU
+		var rl := rng.randf_range(0.6, 1.0)
+		if v == 3:
+			# eğik isabet: ışınların çoğu bir yöne, o yönde daha uzun
+			ra = rng.randf_range(-1.1, 1.1) if i % 3 != 0 else ra
+			rl = rng.randf_range(0.75, 1.0) if absf(wrapf(ra, -PI, PI)) < 1.2 else rng.randf_range(0.6, 0.75)
+		rays.append([ra, rl])
 	for y in S:
 		for x in S:
 			var u := (x + 0.5) / S * 2.0 - 1.0
@@ -222,15 +234,18 @@ func _make_crater() -> ImageTexture:
 			var n := fn.get_noise_2d(x, y)
 			var rr := r * (1.0 + n * 0.18)
 			var col := Color(0, 0, 0, 0)
-			if rr < 0.42:
-				var k := rr / 0.42
+			if rr < r0:
+				var k := rr / r0
 				# çukur: koyu merkez, kenara doğru gölgeli iç yamaç (ışık sağ üstten)
 				var shade := 0.5 + 0.5 * (u * 0.6 - w * 0.6) * k
 				var c := lerpf(0.18, 0.42, k) * (0.75 + 0.5 * (1.0 - shade))
 				col = Color(c * 1.05, c * 0.82, c * 0.6, 0.95)
-			elif rr < 0.58:
-				var k2 := (rr - 0.42) / 0.16
+			elif rr < r1:
+				var k2 := (rr - r0) / (r1 - r0)
 				var b := 0.95 - k2 * 0.25
+				if v == 2:
+					# kalın atılmış toprak halkası: koyu, topak topak
+					b = 0.42 + 0.18 * n
 				col = Color(b, b * 0.86, b * 0.68, 0.85 * (1.0 - k2 * 0.6))
 			else:
 				# ışınsal püskürme
@@ -238,8 +253,8 @@ func _make_crater() -> ImageTexture:
 				for ry in rays:
 					var da := absf(wrapf(ang - ry[0], -PI, PI))
 					if da < 0.07 and r < ry[1]:
-						ray = maxf(ray, (1.0 - da / 0.07) * (1.0 - (r - 0.58) / maxf(ry[1] - 0.58, 0.01)))
-				var e := clampf(1.0 - (rr - 0.58) / 0.4, 0.0, 1.0)
+						ray = maxf(ray, (1.0 - da / 0.07) * (1.0 - (r - r1) / maxf(ry[1] - r1, 0.01)))
+				var e := clampf(1.0 - (rr - r1) / 0.4, 0.0, 1.0)
 				col = Color(0.42, 0.3, 0.2, clampf(e * 0.35 + ray * 0.5, 0.0, 1.0))
 			img.set_pixel(x, y, col)
 	img.generate_mipmaps()
@@ -820,13 +835,24 @@ func burn(p: Vector3, dur: float, pw := 1.0) -> void:
 func smoke_screen(p: Vector3, dur := 16.0) -> void:
 	emitters.append([p, G.time + dur, "smoke", 1.0, 0.0])
 
-func crater(p: Vector3, size: float) -> void:
-	_decal(p, size, crater_tex, Color(1, 1, 1, 1))
+# krater izi (138): mühimmata göre doku (havan: geniş ışınsal püskürme, mayın / büyük bomba: kalın koyu toprak
+# halkası, top mermisi: tek yöne savrulmuş), derin kraterde çıkartma çukurun dibine kadar uzanır
+var crater_vars: Array = []
+
+func crater(p: Vector3, size: float, depth := 0.0, kind := "") -> void:
+	if crater_vars.is_empty():
+		for i in 4:
+			crater_vars.append(_make_crater(i))
+	var vi: int = {"mortar": 1, "mine": 2, "big": 2, "shell": 3}.get(kind, 0)
+	var tint := Color(1, 1, 1, 1)
+	if kind in ["grenade", "auto"]:
+		tint = Color(0.85, 0.85, 0.85, 0.75)
+	_decal(p, size, crater_vars[vi], tint, depth)
 
 func scorch(p: Vector3, size: float) -> void:
 	_decal(p, size, scorch_tex, Color(1, 1, 1, 0.85))
 
-func _decal(p: Vector3, size: float, tex: Texture2D, mod: Color) -> void:
+func _decal(p: Vector3, size: float, tex: Texture2D, mod: Color, depth := 0.0) -> void:
 	var d: Decal
 	if decals.size() < DECAL_CAP:
 		d = Decal.new()
@@ -840,6 +866,6 @@ func _decal(p: Vector3, size: float, tex: Texture2D, mod: Color) -> void:
 		_decal_i = (_decal_i + 1) % DECAL_CAP
 	d.texture_albedo = tex
 	d.modulate = mod
-	d.size = Vector3(size, 1.2, size)
-	d.position = Vector3(p.x, 0.0, p.z)
+	d.size = Vector3(size, maxf(1.2, depth * 2.0 + 1.0), size)
+	d.position = Vector3(p.x, -depth * 0.5, p.z)
 	d.rotation.y = rng.randf() * TAU

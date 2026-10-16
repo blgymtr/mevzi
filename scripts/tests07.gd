@@ -87,6 +87,8 @@ func run(scene: String) -> void:
 			await dozer_test()
 		"towtest":
 			await tow_test()
+		"cratertypes":
+			await cratertypes_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -2255,6 +2257,55 @@ func crew_kill_test() -> void:
 	if surv > 0 and (frozen > 0 or moved * 2 < surv):
 		fails += 1
 	print("CREWKILLTEST RESULT fails=%d" % fails)
+
+# 138: krater mühimmata göre değişir — gerçek patlama yarıçaplarıyla sırayla patlatılır, çukurun derinliği ve
+# çapı araziden ölçülür
+func cratertypes_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 60.0)
+	var kinds := [["grenade", 4.2], ["auto", 1.7], ["rpg", 3.0], ["mortar", 4.0], ["shell", 4.5], ["mine", 3.4], ["big", 8.0]]
+	var res := {}
+	for i in kinds.size():
+		var p := c + Vector3(-36.0 + i * 12.0, 0, 0)
+		p.y = 0.0
+		G.explode(p, float(kinds[i][1]), 10.0, kinds[i][0], 1, null)
+		await m._wait(0.2)
+		var dmin := 0.0
+		var rad := 0.0
+		for k in 48:
+			var a := k * TAU / 48.0
+			for s in 40:
+				var q := p + Vector3(cos(a), 0, sin(a)) * (s * 0.2)
+				var h := G.terrain.ground_hs(q)
+				dmin = minf(dmin, h)
+				if h < -0.05:
+					rad = maxf(rad, s * 0.2)
+		res[kinds[i][0]] = [dmin, rad]
+		print("CRATERT %s depth=%.2f radius=%.1f" % [kinds[i][0], -dmin, rad])
+	var d := func(k): return -float(res[k][0])
+	var r := func(k): return float(res[k][1])
+	if d.call("grenade") > 0.05 or d.call("auto") > 0.05:
+		fails += 1
+	if not (d.call("rpg") > 0.1 and d.call("mortar") > d.call("rpg") and d.call("shell") > d.call("mortar")):
+		fails += 1
+	if not (r.call("big") > r.call("shell") and d.call("big") > d.call("shell") and d.call("mine") > d.call("mortar")):
+		fails += 1
+	await m._wait(16.0)
+	_cam(c, 34.0)
+	await m._wait(0.3)
+	await m._shot("cratertypes_all")
+	_cam(c + Vector3(12, 0, 0), 14.0)
+	await m._wait(0.3)
+	await m._shot("cratertypes_close")
+	print("CRATERTYPES RESULT fails=%d" % fails)
 
 # 137: çekili top yer değiştirirken süzülmez — yerdeki cephane toplanır (yığın kalkar), tekerler döner,
 # mürettebat yürür; durup kurulunca cephane yeniden yere konur

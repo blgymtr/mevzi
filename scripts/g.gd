@@ -437,6 +437,17 @@ func on_ground(p: Vector3) -> Vector3:
 # kind: "grenade", "rpg", "shell", "big", "mine", "auto"
 # spare: bu takımın askerleri hasar almaz (yalnız bastırılır) — kendi aracının patlaması/helikopterinin
 # düşüşü kendi askerine zarar vermez (roadmap 27). Bina patlaması ve silah patlamaları herkese işler.
+# krater biçimi (138): [çap / patlama yarıçapı, derinlik / çap, kenar sırtı (derinliğe oran), en çok uzama,
+# kenar pürüzü, iz (çıkartma) boyu katsayısı]. RPG küçük sığ çukur, havan dik inen yuvarlak sığ çanak + geniş
+# püskürme, top mermisi eğik isabetle uzamış derin çukur, mayın geniş derin ve yüksek sırtlı, büyük bomba dev
+const CRATER_K := {
+	"rpg": [0.28, 0.32, 0.25, 1.2, 0.22, 1.0],
+	"mortar": [0.34, 0.36, 0.2, 1.05, 0.3, 1.35],
+	"shell": [0.5, 0.42, 0.3, 1.35, 0.18, 1.2],
+	"mine": [0.62, 0.52, 0.42, 1.0, 0.32, 1.05],
+	"big": [0.6, 0.46, 0.32, 1.12, 0.2, 1.3],
+}
+
 func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src = null, spare := -1) -> void:
 	var size := clampf(radius / 3.0, 0.5, 3.0)
 	if p.y < 1.0 and grid.is_water(p) and not grid.on_bridge(p):
@@ -455,15 +466,25 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 	if p.y < 1.5 and grid.on_bridge(p):
 		fx.scorch(p, radius * 0.9)          # köprü döşemesi: toprak çukuru değil is izi
 	elif p.y < 1.5:
-		fx.crater(p, radius * 1.15)
-		# gerçek çukur: top/havan/büyük patlama araziyi oyar (askerler içine girip siper alır)
-		if kind in ["shell", "big", "mine", "rpg"] and radius >= 3.0 and not grid.is_water(p) and grid.height_at(p) < 0.3:
-			var cr := radius * (0.45 if kind != "big" else 0.6)
-			terrain.carve_crater(p, cr, cr * 0.42)
-			grid.set_crater(p, cr * 0.8)
-			# çevredeki dekor yeni zemine oturur / çukura devrilir (yanan arabanın sıçrama tween'i bittikten sonra)
-			get_tree().create_timer(0.45).timeout.connect(props.settle.bind(p, cr))
-		terrain.paint_circle(p, radius * 0.9, 2, 0.75)
+		# gerçek çukur (138): mühimmata göre çap, derinlik, kenar sırtı, uzama ve pürüz (askerler içine girip
+		# siper alır); el bombası ve otomatik top yalnız iz bırakır
+		var ck: Array = CRATER_K.get(kind, [])
+		var cr := 0.0
+		var cd := 0.0
+		if not ck.is_empty() and not grid.is_water(p) and grid.height_at(p) < 0.3:
+			cr = radius * float(ck[0]) * randf_range(0.85, 1.15)
+			if cr >= 0.6:
+				cd = cr * float(ck[1]) * randf_range(0.85, 1.12)
+				var st: float = 1.0 + (float(ck[3]) - 1.0) * randf()
+				terrain.carve_crater(p, cr, cd, float(ck[2]), st, randf() * TAU, float(ck[4]), randi())
+				grid.set_crater(p, cr * 0.8)
+				# çevredeki dekor yeni zemine oturur / çukura devrilir (yanan arabanın sıçrama tween'i bittikten sonra)
+				get_tree().create_timer(0.45).timeout.connect(props.settle.bind(p, cr))
+			else:
+				cr = 0.0
+		var dsz: float = (cr * 2.0 * float(ck[5]) * 1.25) if cr > 0.0 else radius * {"grenade": 0.42, "auto": 0.35}.get(kind, 1.0)
+		fx.crater(p, dsz, cd, kind)
+		terrain.paint_circle(p, radius * (0.9 if cr > 0.0 or kind not in ["grenade", "auto"] else 0.45), 2, 0.75)
 	blocks.blast(p, radius * (0.55 if kind == "grenade" else 0.75), size)
 	props.blast(p, radius, dmg)
 	cam.shake(size * 0.35, p)
