@@ -1,35 +1,54 @@
-# Devir notu — kaldığımız yer (16 Ekim 2026, yerel GPU oturumu)
+# Devir notu — kaldığımız yer (16 Ekim 2026, yerel GPU oturumu, 2. oturum)
 
-Önceki oturum, Claude Code "auto mode" güvenlik denetimi komut çalıştırmayı engellediği için durdu (komutlar
-değil sohbet içeriği gerekçe gösterildi). **Yeni oturumda varsayılan izin kipinde çalış.**
-Dal: `claude/fervent-euler-a8emja` (PR #1, push yapılmadı). Son commitler: `470c9cf` (camiye benzer yapılar /
-kubbe üreticisi kaldırıldı, sanayi bacası), `5faa96f` (41, 42, 14, 24, 75: köprüler, nehir, duman, alev, roketatar).
+Bu oturum da Claude Code "auto mode" güvenlik denetimi komut çalıştırmayı engellediği için durdu (komutun
+kendisi değil sohbet içeriği gerekçe gösterildi; ikinci kez oldu). **Yeni oturumu varsayılan izin kipinde başlat.**
+Dal: `claude/fervent-euler-a8emja` (PR #1, push yapılmadı).
 
-## Kaydedilmemiş değişiklikler (ilk iş: `git status`, gözden geçir, test et, commit)
-- `scripts/vehicle.gd`: havadaki araçlara irtifa çizgisi + yerde halka (`_alt_line_tick`) — armeduav hatasız geçti, görüntüsüne bakılmadı
-- `scripts/art.gd`: "airgray" malzemesi (İHA boyası) — Godot'ta henüz çalıştırılmadı
-- `scripts/tests07.gd`, `scripts/main.gd`: yeni sahneler `soldiertest` (asker görünümü), `armeduav` (silahlı İHA) — çalıştı
-- `tools/blender/veh/fam_uav.py`: İHA modelleri baştan (loft gövde, türe göre düzen, gri boya) — **hiç çalıştırılmadı**;
-  `vlib.py`'ye "airgray" rengi
-- `ROADMAP.md`: kullanıcının yeni istekleri 60–93 (tabloda)
+## Bu oturumda yapılan (commit'li, testleri geçti)
+- `4455cad` Roadmap 91: havadaki araçlarda irtifa çizgisi + yer halkası (görüntüde doğrulandı), "airgray" boya,
+  soldiertest / armeduav sahneleri, ROADMAP 92–94
+- `412b5bd` Roadmap 94 + 87: taret kopması katı cisim (`scripts/debris_body.gd` — `DebrisBody`: yerçekimi, takla,
+  arazi + enkaz güvertesi teması, sekme, kayma, su; durunca tüter ve ızgarada enkaz engeli). Biçimler (pop, toss,
+  flipback, lift, slide, namlu kopması, M1'de panel atma "vent", yanan tankta gecikmeli infilak "late") vuruş yönü /
+  mühimmat / imha türünden. Kullanıcı "aşırı yükseğe uçuyor" dedi → tepe en çok ~3–5 m. Enkaz parçaları
+  (`Vehicle._debris`) da DebrisBody. Yanmış enkaz: armor gölgelendiricisinde `burnt` (is/pas/kül, ayrıntı korunur,
+  `Art.burn(mi)`). `Terrain.ground_hs` (çift doğrusal yükseklik — askerlerin zemin teması için de kullanılabilir).
+  Tank üstündeki askerler savrulur (`Soldier.throw_off`), yolcuların kaderi imha türüne göre. Test: `turrettest`
+- `1c7cdb0` evadetest'in "engel arkasındaki hedef" aşaması çözümsüz kurulmuştu (hedef tankın yanına düşen ev duvar
+  boşluğunu kapatıyordu) → açık alanda kurulur. Regresyon: killtest, fftest, mounttest, crewvistest, vehtest,
+  stucktest, evadetest, paratest, bridgetest, turrettest geçti
+- DebrisBody ileride: 62 (enkaz itme), 70 (kule devrilmesi), 82 (köprüden düşen cesetler) için kullanılabilir
+
+## Kaydedilmemiş değişiklikler (yarım: 93 İHA modelleri)
+- `tools/blender/veh/fam_uav.py`: İHA aileleri baştan (loft gövde, türe özgü: mq9, mq1c, orion, forpost, rq4 (hale),
+  rq7, orlan10/30, raven, zala, eleron, vbat); dolanan mühimmat birim başına gerçek boy/kanat açıklığından
+  (`v.L`, `v.W`) ve türden: lm_tube `sw` (Switchblade) / `altius`, lm_wing `x` (Lancet, Red Dragon) / `flywing` (KUB) /
+  `plane` (Molniya-2), lm_delta (Geran-2). **Henüz Blender'da hiç çalıştırılmadı.** `vlib.py`'de "airgray" rengi.
+- Katalog düzenlemesi **yapılmadı** (komut bu noktada engellendi). Yapılacak: `data/catalog/usa.json` ve `rus.json`'da
+  (satır başına bir birim) şu birimlerden `"scale"` silinecek ve `"v"`ye eklenecek (`"fam"`dan hemen sonra):
+  usa_uav_mq1c type=mq1c · usa_uav_mq9 type=mq9 (big korunur) · usa_uav_rq7 type=rq7 · usa_uav_rq11 type=raven ·
+  usa_uav_rq4, usa_uav_vbat (yalnız scale silinir) · rus_uav_orlan10 type=orlan10 · rus_uav_orlan30 type=orlan30 ·
+  rus_uav_zala42116e type=zala · rus_uav_eleron3 type=eleron · rus_uav_forpostr type=forpost · rus_uav_orion type=orion ·
+  dolanan mühimmatta tür + `L`/`W` (değerler `data/real_dims.json`'dan): usa_lm_sw300/sw600 type=sw · usa_lm_alt600/
+  alt700 type=altius · usa_lm_red, rus_lm_lancet3, rus_lm_lancet3m type=x · rus_lm_kub type=flywing ·
+  rus_lm_molniya2 type=plane · rus_lm_geran2 (yalnız L/W + scale silinir)
 
 ## Sıradaki adımlar (sırayla)
-1. Testler: `.\tools\run_tests.ps1 -Godot "C:\Godot\Godot_v4.7.2-stable_win64_console.exe" -Scenes armeduav,soldiertest,bridgetest`
-   (yeni sınıf/varlık varsa `-NoImport` olmadan). Son tam regresyonda başarısız: `septest` (araç içinde kalan 4 asker), `supplytest`.
-2. İHA modelleri (91/93): `data/catalog/usa.json` ve `rus.json`'da uav_* birimlerine `v.type` ekle (mq9, mq1c, orion, forpost,
-   rq7, orlan10, orlan30, raven, zala, eleron) ve `scale`'i sil (yeni modeller gerçek boyutlu). Üretim:
+1. Katalog düzenlemesi (yukarıda), sonra üretim (usa ve rus):
    `blender -b --factory-startup -P tools/blender/veh/gen.py -- data/catalog/usa.json assets/models "" uav_male,uav_hale,uav_tac,uav_hand,uav_vtol,lm_tube,lm_wing,lm_delta`
-   (rus için de), sonra `godot --headless --path . -s res://tools/size_audit.gd`. Ortografik kamerada yüksek uçan İHA dev
-   görünmesin: Vehicle.setup'ta görsel irtifa ölçeği (MALE ~×0,5, HALE ~×0,4), yörünge yarıçapı büyüt.
-3. Askerler (kullanıcının en sık şikâyeti — 60/61/66/74/80/83/84/85/87/89/92): soldier.gd'de `position.y = 0.0` → arazi
-   yüksekliği (çift doğrusal örnek; krater/şev/tepede süzülme ve gömülme), mocap adım uzunluğu kalibrasyonu (ayak kayması),
-   ekrandaki askerde animasyon seyreltmesini kapat, araç üstünde oturma pozu + gerçek güverte yüksekliği, patlayan araçtaki
-   askerler savrulur/ölür, siper derinliğine göre poz, geriye koşarken ateş etmeme, çömelince geriye yatma, silah tutuşu,
-   sırtta tanksavarda kollar, kalabalıkta tank çevresinde ayrışma.
-4. Sonra ROADMAP 60–93 ve Faz 7: HUD (65/57), Broken Arrow tipi silah/atış modları (72/88), roket hızları (90), binalar
+   → `godot --headless --path . -s res://tools/size_audit.gd` (hava araçlarında ölçüt kanat açıklığı W) → armeduav,
+   dronetest, uavtest. Ortografik kamerada yüksek uçan İHA dev görünmesin: Vehicle.setup'ta görsel irtifa ölçeği
+   (MALE ~×0,5, HALE ~×0,4), yörünge yarıçapını büyüt. Kullanıcı (93): "maket uçak gibi, çok büyük".
+2. Askerler (kullanıcının en sık şikâyeti — 60/61/66/74/80/83/84/85/89/92): soldier.gd'de `position.y = 0.0` → arazi
+   yüksekliği (`Terrain.ground_hs`; krater/şev/tepede süzülme ve gömülme — soldiertest'te askerler nehir yüzeyinde
+   yürüyordu), mocap adım uzunluğu kalibrasyonu (ayak kayması), ekrandaki askerde animasyon seyreltmesini kapat, araç
+   üstünde oturma pozu + gerçek güverte yüksekliği (seat_pos sabit 1,55 m), siper derinliğine göre poz, geriye koşarken
+   ateş etmeme, çömelince geriye yatma, silah tutuşu, sırtta tanksavarda kollar, kalabalıkta tank çevresinde ayrışma.
+3. Sonra ROADMAP 60–93 ve Faz 7: HUD (65/57), Broken Arrow tipi silah/atış modları (72/88), roket hızları (90), binalar
    (35 farklı evler, 67 malzemeye göre yıkım, 69 girilebilir + üst kat, 70 kule devrilmesi), köprü mühimmata göre (68),
    kum torbası (36), Chinook rampası (76), askı halatı/kanca/yük bırakma (77/78), araç kapıları (79), enkaz itme (62),
    nehir akışı (71), mat harita (63), tüm birlikler görünür (64), kayıt (58), ses (56), performans (55), fragman (59).
+   Bilinen başarısız testler: `septest` (araç içinde kalan 4 asker), `supplytest`.
 
 ## Ortam
 Godot `C:\Godot\Godot_v4.7.2-stable_win64_console.exe` · Blender 5.2 `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`
