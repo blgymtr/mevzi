@@ -67,6 +67,8 @@ func run(scene: String) -> void:
 			await sniper_test()
 		"sandboxtest":
 			await sandbox_test()
+		"drivertest":
+			await driver_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -1732,6 +1734,85 @@ func ai_match() -> void:
 
 # taban tip modelleri (roadmap 10) ve rotorlar (39/44): iki ulusun tüm taban araçları yan yana; helikopterler
 # havada pervane dönerken; yakın çekimler
+# 112: sürücü vurulunca araç son hızıyla gider ve önündeki duvara çarpar; kapaktaki komutanı keskin nişancı vurur
+func driver_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	for u in G.units.duplicate():
+		if is_instance_valid(u) and u.team == 1 and not (u is Building):
+			u.queue_free()
+	# açık şerit: 70 m boyunca araç geçebilir, ucuna beton duvar
+	var a0 := Vector3.INF
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 5
+	for i in 3000:
+		var p := Vector3(rr.randf_range(30, G.MAP - 30), 0, rr.randf_range(30, G.MAP - 30))
+		var q := p + Vector3(0, 0, -60)
+		if G.grid.free_at(p, Grid.M_LIGHT) and G.grid.free_at(q, Grid.M_LIGHT) and G.grid.walkable_line(p, q, Grid.M_LIGHT) and not G.grid.on_bridge(p):
+			a0 = p
+			break
+	print("DRV strip=%s" % (a0 != Vector3.INF))
+	if a0 == Vector3.INF:
+		print("DRIVERTEST RESULT fails=1")
+		return
+	G.props.clear_area(a0 + Vector3(0, 0, -30), 35.0)
+	var wall := m.place_line(1, "concrete", a0 + Vector3(-5, 0, -42), a0 + Vector3(5, 0, -42))
+	wall.add_work(99999.0)
+	await m._wait(0.5)
+	G.grid.flush_nav()
+	var tv: Vehicle = m.spawn_vehicle(0, "technical", a0, 0.0)
+	tv.heading = 0.0      # ileri = -z (duvara doğru)
+	tv.hull.rotation.y = 0.0
+	tv.cmd_move(a0 + Vector3(0, 0, -36), true)
+	var t0 := G.time
+	while G.time - t0 < 8.0 and absf(tv.cur_speed) < 4.0:
+		await m._wait(0.1)
+	var v0 := absf(tv.cur_speed)
+	var p0 := tv.position
+	var hp0 := tv.hp
+	tv._kill_driver(null)
+	await m._wait(1.0)
+	var rolled := tv.position.distance_to(p0)
+	var t1 := G.time
+	var kk := 0
+	while G.time - t1 < 14.0 and absf(tv.cur_speed) > 0.05:
+		await m._wait(0.1)
+		kk += 1
+		if kk % 5 == 0:
+			print("DRV run t=%.1f spd=%.2f runaway=%.1f drv=%s z_to_wall=%.1f order=%s path=%d/%d abandon=%.1f" % [G.time - t1, tv.cur_speed, tv._runaway, tv.driver_ok, tv.position.z - (a0.z - 42.0), tv.order, tv.path_i, tv.path.size(), tv.abandon_t])
+	var stop_z := tv.position.z - (a0.z - 42.0)
+	_cam(tv.position, 18.0)
+	await m._wait(0.3)
+	await m._shot("driver_crash")
+	print("DRV speed_at_hit=%.1f rolled_1s=%.1f stop_dist_to_wall=%.1f hp %d -> %d driver_ok=%s imm=%s crashes=%d runaway=%.1f" % [v0, rolled, stop_z, int(hp0), int(tv.hp), tv.driver_ok, tv.immobile(), tv.crash_n, tv._runaway])
+	# 1 sn'de en az hızın yarısı kadar yol, duvarın önünde (gövde boyu kadar) durur, çarpma hasarı
+	if rolled < v0 * 0.5 or absf(stop_z) > tv.ext.y + 3.0 or tv.hp >= hp0:
+		fails += 1
+	# komutan: kapakta açıkta, keskin nişancı vurur
+	var c := G.grid.nearest_free(a0 + Vector3(40, 0, 0), Grid.M_HEAVY)
+	var tk: Vehicle = m.spawn_vehicle(1, "tank", c, PI)
+	tk.cmd_hold()
+	tk.fire_mode = 2
+	tk.last_hit = -100.0
+	var sn: Soldier = m.spawn_soldier(0, "sniper", G.grid.nearest_free(c + Vector3(0, 0, 42), Grid.M_INF), null)
+	sn.cmd_hold()
+	var t2 := G.time
+	var seen_out := false
+	while G.time - t2 < 25.0 and not tk._cmdr_dead:
+		await m._wait(0.25)
+		if tk.cmdr != null and tk.cmdr.visible:
+			seen_out = true
+		tk.spot_mem[0] = G.time + 2.0
+	print("DRV cmdr_out=%s cmdr_killed=%s t=%.1f crew=%d exposed_after=%s sniper_shots=%d range=%.0f d=%.0f seen=%s tgt=%s" % [seen_out, tk._cmdr_dead, G.time - t2, tk.crew_n, tk.exposed_crew(), sn.shots, float(sn.weapon()["range"]), sn.dist2(tk), G.is_seen(tk, 0), sn.target])
+	if not seen_out or not tk._cmdr_dead:
+		fails += 1
+	print("DRIVERTEST RESULT fails=%d" % fails)
+
 # 125: sandbox geliştirici araçları — arama, bulanık doğurma, silme, yıkma, ışınlama, ikmal, bilgi, tüm efektler
 func sandbox_test() -> void:
 	m.get_window().size = Vector2i(1600, 900)

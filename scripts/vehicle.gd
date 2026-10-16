@@ -1761,15 +1761,104 @@ func _kill_gunner(src) -> void:
 		s.die(src)
 	say("NİŞANCI VURULDU!", 2.5)
 
+# sürücü vurulunca araç durmaz (roadmap 112): ayak gazdan kalkar, son hızıyla dümdüz gider, yavaşça hız
+# kaybeder; önüne engel / araç / su çıkarsa çarpar. Durunca biri sürücü yerine geçene kadar hareketsiz.
+var _runaway := 0.0
+var _runaway_drift := 0.0
+
 func _kill_driver(src) -> void:
 	if not driver_ok:
 		return
 	driver_ok = false
 	crew_n = maxi(0, crew_n - 1)
-	cur_speed = 0.0
 	path = PackedVector3Array()
+	if absf(cur_speed) > 0.8 and not is_air():
+		_runaway = 20.0
+		_runaway_drift = randf_range(-0.015, 0.015)      # direksiyon hafifçe kayar (12 sn'de en çok ~10°)
+	else:
+		cur_speed = 0.0
 	say("SÜRÜCÜ VURULDU!", 2.5)
 	src = src
+
+func exposed_crew() -> bool:
+	# keskin nişancının ayrıca vurabileceği açıktaki mürettebat: kapaktaki komutan; zırhsız araçta nişancı / sürücü
+	if not alive or crew_max <= 0 or crew_n <= 0:
+		return false
+	if cmdr != null and cmdr.visible and not _cmdr_dead:
+		return true
+	return armor == 0 and (gunner_ok or driver_ok)
+
+var _cmdr_dead := false
+
+func _kill_cmdr(src) -> void:
+	if cmdr == null or _cmdr_dead:
+		return
+	_cmdr_dead = true
+	var gp := cmdr.global_position
+	cmdr.visible = false
+	crew_n = maxi(0, crew_n - 1)
+	var s: Soldier = G.main.spawn_soldier(team, "crew", G.on_ground(gp), null)
+	s.position = gp
+	s.die(src)
+	# komutanın gözü gitti: araç daha geç fark eder
+	sight *= 0.8
+	say("KOMUTAN VURULDU!", 2.5)
+
+func _runaway_tick(dt: float) -> void:
+	_runaway -= dt
+	cur_speed = move_toward(cur_speed, 0.0, 0.15 * dt)       # ayak gazdan kalktı: yavaşça hız kaybeder
+	heading += _runaway_drift * dt
+	hull.rotation.y = heading
+	if absf(cur_speed) < 0.3 or _runaway <= 0.0:
+		_runaway = 0.0
+		cur_speed = 0.0
+		return
+	var f := forward()
+	var sg := signf(cur_speed)
+	var np := position + f * cur_speed * dt
+	var front: Vector3 = np + f * sg * (D["len"] * 0.45)
+	var hf := G.grid.height_at(front)
+	var kf := G.grid.kind_at(front)
+	var heavy := nav_mode == Grid.M_HEAVY
+	var hit_wall := (hf >= 0.3 and kf != Grid.K_TREE and not (heavy and kf == Grid.K_WALL)) or kf == Grid.K_TRAP or G.grid.is_water(front)
+	var hit_veh: Vehicle = null
+	for o in G.near(front, radius + 6.0):
+		if o != self and o is Vehicle and not o.is_air() and (o.alive or o.wreck) and o.obb_push(front, 0.3) != Vector3.ZERO:
+			hit_veh = o
+			break
+	if hit_wall or hit_veh != null:
+		_crash(absf(cur_speed), front, hit_veh, G.grid.is_water(front))
+		return
+	if heavy:
+		G.blocks.crush(front, 1.7, f, 0.5)
+		G.props.crush(front, 2.0, f)
+	position = np
+
+# çarpma: hız ölçülü hasar (kendine ve çarptığı araca), yapı / duvar bloğu kırılır, toz ve kıvılcım
+var crash_n := 0
+
+func _crash(spd: float, at: Vector3, other: Vehicle, water: bool) -> void:
+	_runaway = 0.0
+	cur_speed = 0.0
+	crash_n += 1
+	var k := clampf(spd / 12.0, 0.1, 1.0)
+	var light := armor == 0 or nav_mode != Grid.M_HEAVY
+	take_damage(max_hp * k * (0.35 if light else 0.08), null, "blast")
+	if other != null:
+		other.take_damage(other.max_hp * k * (0.3 if other.armor == 0 else 0.06), self, "blast")
+		Sfx.play3d("hit_metal", at, 2.0)
+	elif water:
+		G.fx.water_splash(at, 1.2)
+	else:
+		G.blocks.crush(at, 1.6, forward(), clampf(k + 0.2, 0.3, 1.0))
+		Sfx.play3d("hit_metal", at, 0.0)
+	G.fx.sparks(at + Vector3(0, 0.8, 0), 1.0 + k)
+	G.fx.dust_burst(at, 2.0 + k * 2.0)
+	G.cam.shake(0.25 * k, at)
+	for s in cargo:
+		if is_instance_valid(s) and s.alive:
+			s.add_stress(30.0 * k)
+	say("ÇARPTI!", 2.0)
 
 func _cell_ok(p: Vector3) -> bool:
 	if G.grid.is_water(p):
@@ -1790,6 +1879,9 @@ func _vmax(dt: float) -> float:
 
 func _drive(dt: float) -> void:
 	_repair_tick(dt)
+	if _runaway > 0.0:
+		_runaway_tick(dt)
+		return
 	if immobile():
 		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
 	var target_speed := 0.0
@@ -2939,6 +3031,10 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	if k == "bullet" and src != null and is_instance_valid(src) and src is Soldier and src.role == "sniper":
 		pk = "sniper"
 	shot_pen = po
+	# kapaktaki komutan: zırhı delemeyen keskin nişancı / makineli mermisi onu ayrıca vurabilir (roadmap 112)
+	if k in ["bullet", "hmg"] and cmdr != null and cmdr.visible and not _cmdr_dead:
+		if randf() < (0.7 if pk == "sniper" else (0.06 if k == "hmg" else 0.03)):
+			_kill_cmdr(src)
 	m = pen_mult(pk, from)
 	if m <= 0.0:
 		# delemedi: sekme (mürettebat yine de sarsılır)
@@ -4283,7 +4379,7 @@ func _cmdr_tick(dt: float) -> void:
 	if _cmdr_t > 0.0:
 		return
 	_cmdr_t = 0.5
-	var out := alive and crew_n >= 2 and G.time - last_hit > 12.0 and target == null and vstress < 30.0 and abandon_t < 0.0
+	var out := alive and not _cmdr_dead and crew_n >= 2 and G.time - last_hit > 12.0 and target == null and vstress < 30.0 and abandon_t < 0.0
 	cmdr.visible = out and visible
 	if cmdr.visible:
 		cmdr.animate(0.5, "stand", 0.0)

@@ -1897,6 +1897,9 @@ func _scan() -> void:
 	var eye := position + Vector3(0, 1.55 if cover_type == 1 else eye_h(), 0)
 	if cover_type == 2:
 		eye += lean
+	# keskin nişancı: açıktaki mürettebatı içeri giren araca boşuna ateş etmez (komutan yeniden çıkınca sürer)
+	if role == "sniper" and target != null and is_instance_valid(target) and target is Vehicle and not target.exposed_crew() and target != forced_target:
+		target = null
 	# mevcut hedefi koru
 	if target != null and is_instance_valid(target) and target.hostile() and dist2(target) < rng_w * 1.1 and G.is_seen(target, team):
 		if not (target is Soldier and target.incapacitated()) and sees(eye, target.aim_point(), target):
@@ -1929,7 +1932,8 @@ func _scan() -> void:
 			elif e.vtype == "fpv":
 				sc -= 30.0 if d < 30.0 else 0.0
 			elif role == "sniper":
-				sc += 1000.0
+				# açıkta mürettebat (kapaktaki komutan, açık aracın nişancısı / sürücüsü) keskin nişancının hedefi
+				sc += -15.0 if e.exposed_crew() else 1000.0
 			else:
 				sc += 12.0
 		elif e is Building:
