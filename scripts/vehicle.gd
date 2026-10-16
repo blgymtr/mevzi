@@ -1116,6 +1116,7 @@ func cmd_move(p: Vector3, force := false) -> void:
 	forced_target = null
 	reverse = false
 	retreating = false
+	_face_h = INF
 	amove_dest = Vector3.INF
 	ground_until = 0.0
 	dest = G.on_ground(p)
@@ -1222,6 +1223,68 @@ func cmd_attack_move(p: Vector3) -> void:
 func cmd_reverse(p: Vector3) -> void:
 	cmd_move(p)
 	reverse = not is_air()
+
+# ------------------------------------------------------------ araç zekâsı (roadmap 107)
+# Emirsiz / mevzideki araç kendi kararını verir: vurulduğu yöne kalın ön zırhını döner, tanksavar isabetinde
+# sis atar, ağır yaralıysa geri vitesle temastan çıkar (karargâha kaçmak yerine 18 m), tehlikeli piyadeyi
+# (tanksavar) öncelikli hedefler. Oyuncunun hareket emri her zaman önce gelir.
+var last_kind := ""
+var _last_from := Vector3.INF
+var smoke_n := 2
+var _smoke_cd := 0.0
+var _face_h := INF
+var tac_log: Array = []           # test / hata ayıklama: verilen kararlar
+
+func has_smoke_launchers() -> bool:
+	return vtype in ["tank", "ifv", "apc", "aa"] and not is_air()
+
+func _tactics() -> void:
+	if is_air() or not alive or crew_n <= 0 or abandon_t >= 0.0 or vtype in ["truck"] or vtype in TOWED:
+		return
+	var mobile := not immobile()
+	var idle: bool = mobile and path_i >= path.size() and order in ["", "hold", "attack"]
+	var threat := Vector3.INF
+	if G.time - last_hit < 10.0:
+		if attacker != null and is_instance_valid(attacker) and attacker.alive and not (attacker is Building):
+			threat = attacker.position
+		elif _last_from != Vector3.INF:
+			threat = _last_from
+	if threat == Vector3.INF:
+		_face_h = INF
+		return
+	var to_t := threat - position
+	to_t.y = 0.0
+	# 1) cepheyi tehdide çevir: paletli zırhlı araç yerinde döner (tekerlekli araç yerinde dönemez)
+	if idle and armor > 0 and tracked() and to_t.length() > 2.0:
+		var want := Soldier._yaw_of(to_t)
+		if absf(angle_difference(heading, want)) > 0.6 and _face_h == INF:
+			_face_h = want
+			tac_log.append("face")
+	# 2) tanksavar isabeti: sis perdesi (tehdit yönüne)
+	var heavy_hit: bool = last_kind in ["rpg", "atgm", "ap", "topatk"] and G.time - last_hit < 2.0
+	if heavy_hit and has_smoke_launchers() and smoke_n > 0 and G.time > _smoke_cd:
+		_pop_smoke(to_t)
+	# 3) ağır yaralı: geri vitesle temastan çık (mevzi tut emrinde değilse)
+	if heavy_hit and idle and order != "hold" and hp < max_hp * 0.6 and to_t.length() > 1.0:
+		var back: Vector3 = G.grid.nearest_free(position - to_t.normalized() * 18.0, nav_mode)
+		if back.distance_to(position) > 6.0 and G.grid.walkable_line(position, back, nav_mode):
+			cmd_reverse(back)
+			order = ""
+			tac_log.append("withdraw")
+			say("GERİ ÇEKİLİYORUZ!", 2.0)
+
+func _pop_smoke(to_t: Vector3) -> void:
+	smoke_n -= 1
+	_smoke_cd = G.time + 20.0
+	var f := to_t.normalized() if to_t.length() > 0.1 else forward()
+	var sd := Vector3(-f.z, 0, f.x)
+	for i in 3:
+		var q: Vector3 = position + f * randf_range(8.0, 11.0) + sd * (i - 1) * 4.5
+		G.fx.smoke_screen(q, 22.0)
+		G.add_smoke(q, 5.0, 24.0)
+	Sfx.play3d("smoke_pop", position, 0.0)
+	tac_log.append("smoke")
+	say("SİS!", 2.0)
 
 func cmd_hold() -> void:
 	cmd_stop()
@@ -1447,6 +1510,7 @@ func _process(dt: float) -> void:
 		if prof_on:
 			_pf("scan", tq)
 		_refund_check()
+		_tactics()
 	atgm_cd -= dt
 	sam_cd -= dt
 	if flare_q > 0:
@@ -1937,6 +2001,11 @@ func _drive(dt: float) -> void:
 			if reverse:
 				target_speed = -minf(target_speed, speed_max * 0.45)
 			break
+	# araç zekâsı: boşta, vurulduğu yöne ön zırhını döner (paletli, yerinde)
+	if _face_h != INF and path_i >= path.size() and not immobile():
+		heading = rotate_toward(heading, _face_h, float(D["turn"]) * 0.7 * dt)
+		if absf(angle_difference(heading, _face_h)) < 0.05:
+			_face_h = INF
 	# çekili top / havan / roketatar / obüs: yürümeden önce toplanır, durunca kurulur
 	if needs_setup():
 		if absf(target_speed) > 0.05:
@@ -2206,6 +2275,9 @@ func _scan() -> void:
 				sc += 30.0
 		if e == forced_target:
 			sc -= 200.0
+		# araç zekâsı: menzildeki tanksavar / güdümlü tanksavar askeri en tehlikelisi
+		if e is Soldier and e.role in ["at", "atgm"] and e.rockets > 0 and not (vtype in INDIRECT):
+			sc -= 35.0
 		cands.append([sc, e])
 		if e is Soldier and d < _wr("mg", 1000.0) and d < bsi:
 			bsi = d
@@ -3004,6 +3076,11 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	shot_pen = []
 	if not alive:
 		return
+	last_kind = k
+	if from != Vector3.INF:
+		_last_from = from
+	elif src != null and is_instance_valid(src):
+		_last_from = src.position
 	var m := 1.0
 	if vtype in ["fpv", "loiter"]:
 		hp -= amount

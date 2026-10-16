@@ -71,6 +71,8 @@ func run(scene: String) -> void:
 			await driver_test()
 		"watertest":
 			await water_test()
+		"vehaitest":
+			await veh_ai_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -970,6 +972,10 @@ func stuck_test() -> void:
 	t2.cmd_attack(tk)
 	# (6) asgari menzil içindeki hedefe çekili obüs: emir bırakılır
 	var hw: Vehicle = m.spawn_vehicle(G.player_team, "howitzer", G.grid.nearest_free(tk.position + Vector3(14, 0, -10), Grid.M_HEAVY), 0.0)
+	# doğurma engelden kaçırıp asgari menzilin dışına itebiliyordu (o zaman saldırı emri geçerli olur): yakına al
+	if hw.dist2(tk) >= hw._min_range():
+		hw.position = tk.position + (hw.position - tk.position).normalized() * hw._min_range() * 0.6
+	print("STUCK howitzer d=%.1f min_range=%.1f" % [hw.dist2(tk), hw._min_range()])
 	hw.cmd_attack(tk)
 	m.test_phase("stuck")
 	var t0 := G.time
@@ -1736,6 +1742,94 @@ func ai_match() -> void:
 
 # taban tip modelleri (roadmap 10) ve rotorlar (39/44): iki ulusun tüm taban araçları yan yana; helikopterler
 # havada pervane dönerken; yakın çekimler
+# 107: araç zekâsı — vurulduğu yöne cephe, tanksavar isabetinde sis, ağır yarada geri vitesle çekilme
+# (mevzi tut emrinde çekilmez), tanksavar askerini öncelikli hedef
+func veh_ai_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	for u in G.units.duplicate():
+		if is_instance_valid(u) and u.team == 1 and not (u is Building):
+			u.queue_free()
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 45.0)
+	await m._wait(0.3)
+	# 1) cephe + sis
+	var tk: Vehicle = m.spawn_vehicle(0, "tank", c, 0.0)
+	tk.fire_mode = 2
+	var rpg: Soldier = m.spawn_soldier(1, "at", G.grid.nearest_free(c + Vector3(25, 0, 0), Grid.M_INF), null)
+	rpg.cmd_hold()
+	rpg.fire_mode = 2
+	await m._wait(0.5)
+	Vehicle.shot_from = rpg.position
+	tk.take_damage(60.0, rpg, "rpg")
+	await m._wait(6.0)
+	var want := Soldier._yaw_of(rpg.position - tk.position)
+	var dang := absf(angle_difference(tk.heading, want))
+	print("VAI face_smoke log=%s angle_left=%.2f smoke_left=%d immobile=%s" % [tk.tac_log, dang, tk.smoke_n, tk.immobile()])
+	# RPG paleti koparabilir (rastgele): paleti kopan tank yerinde dönemez
+	if not tk.tac_log.has("smoke") or (not tk.immobile() and dang > 0.45):
+		fails += 1
+	# 2) ağır yaralı İFV geri vitesle çekilir
+	var ifv: Vehicle = m.spawn_vehicle(0, "ifv", G.grid.nearest_free(c + Vector3(-20, 0, 20), Grid.M_HEAVY), 0.0)
+	ifv.fire_mode = 2
+	await m._wait(0.5)
+	ifv.hp = ifv.max_hp * 0.45
+	var thr: Vector3 = ifv.position + Vector3(0, 0, -30)
+	var d0 := Vector2(ifv.position.x - thr.x, ifv.position.z - thr.z).length()
+	Vehicle.shot_from = thr
+	ifv.take_damage(20.0, null, "atgm")
+	await m._wait(8.0)
+	var d1 := Vector2(ifv.position.x - thr.x, ifv.position.z - thr.z).length()
+	print("VAI withdraw log=%s dist %.1f -> %.1f reverse=%s immobile=%s" % [ifv.tac_log, d0, d1, ifv.reverse, ifv.immobile()])
+	# isabet paleti koparabilir (rastgele): hareketsiz araç çekilemez ama sis atar
+	if not ifv.tac_log.has("smoke") or (not ifv.immobile() and (not ifv.tac_log.has("withdraw") or d1 - d0 < 6.0)):
+		fails += 1
+	# 3) mevzi tut: çekilmez
+	var tk2: Vehicle = m.spawn_vehicle(0, "tank", G.grid.nearest_free(c + Vector3(20, 0, 25), Grid.M_HEAVY), 0.0)
+	tk2.fire_mode = 2
+	tk2.cmd_hold()
+	await m._wait(0.5)
+	tk2.hp = tk2.max_hp * 0.4
+	var p2 := tk2.position
+	Vehicle.shot_from = tk2.position + Vector3(0, 0, -30)
+	tk2.take_damage(20.0, null, "atgm")
+	await m._wait(5.0)
+	print("VAI hold log=%s moved=%.1f" % [tk2.tac_log, tk2.position.distance_to(p2)])
+	if tk2.tac_log.has("withdraw") or tk2.position.distance_to(p2) > 2.0:
+		fails += 1
+	# 4) tanksavar askeri öncelikli
+	var tk3: Vehicle = m.spawn_vehicle(0, "tank", G.grid.nearest_free(c + Vector3(-25, 0, -25), Grid.M_HEAVY), 0.0)
+	var rf: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(tk3.position + Vector3(0, 0, -18), Grid.M_INF), null)
+	var at2: Soldier = m.spawn_soldier(1, "at", G.grid.nearest_free(tk3.position + Vector3(8, 0, -30), Grid.M_INF), null)
+	for s in [rf, at2]:
+		s.cmd_hold()
+		s.fire_mode = 2
+	# önce ikisi de görülür olsun (tank ateş kesik), sonra hedef seçimi
+	tk3.fire_mode = 2
+	for k in 8:
+		await m._wait(0.2)
+		for s in [rf, at2]:
+			s.spot_mem[0] = G.time + 3.0
+	tk3.fire_mode = 0
+	tk3._scan_next = 0.0
+	var t4 := G.time
+	while G.time - t4 < 6.0 and tk3.target == null:
+		await m._wait(0.2)
+		for s in [rf, at2]:
+			s.spot_mem[0] = G.time + 3.0
+	print("VAI priority target=%s (at=%s) at_rockets=%d d_rf=%.1f d_at=%.1f los_at=%s seen_at=%s" % [tk3.target, tk3.target == at2, at2.rockets, tk3.dist2(rf), tk3.dist2(at2), G.grid.los(tk3.turret_world_pos() + Vector3(0, 0.4, 0), at2.aim_point(), 3.0, 0.5), G.is_seen(at2, 0)])
+	if tk3.target != at2:
+		fails += 1
+	_cam(c, 40.0)
+	await m._wait(0.3)
+	await m._shot("vehai")
+	print("VEHAITEST RESULT fails=%d" % fails)
+
 # 115: suya düşen el bombası / mermi görünür (su sütunu, köpük, halka), karada duman — görsel kareler
 func water_test() -> void:
 	m.get_window().size = Vector2i(1600, 900)
