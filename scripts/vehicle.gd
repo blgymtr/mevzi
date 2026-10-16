@@ -579,7 +579,9 @@ func _cargo_lost(mode := "") -> void:
 			var pd := 0.85 if mode == "catastrophic" else (0.6 if violent else 0.12)
 			s.throw_off(away * randf_range(2.5, 5.5) * k + Vector3(0, randf_range(2.0, 3.8) * k, 0), pd, 0.7 if mode == "catastrophic" else 0.0)
 			continue
-		s.dismount(position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)))
+		# gövdenin dışına (eskiden merkezin ±3 m'sine, çoğu zaman hurdanın içine düşüp orada takılıyordu)
+		var oa := randf() * TAU
+		s.dismount(position + Vector3(cos(oa), 0, sin(oa)) * (maxf(ext.x, ext.y) + 1.2))
 		s.add_stress(65.0)
 		var pdie := 0.95 if mode == "catastrophic" else (0.75 if mode in ["cookoff", "crash"] else (0.45 if mode in ["brew", "flip"] else (0.15 if mode == "knocked" else 0.5)))
 		# top / havan mermisi, bomba, üstten saldırı ile yok olan araçtan sağ çıkmak çok az (roadmap 114);
@@ -592,7 +594,39 @@ func _cargo_lost(mode := "") -> void:
 			s.die(null)
 		elif mode != "knocked" or randf() < 0.4:
 			s.take_damage(60.0, null, "blast")
+		_flee_wreck(s)
 	cargo.clear()
+
+# vurulan araçtan sağ çıkan yolcu yerinde donup kalmaz (roadmap 103): yanan hurdadan ve tehdit yönünden
+# uzaklaşıp en yakın sipere koşar
+func _flee_wreck(s) -> void:
+	if not is_instance_valid(s) or not s.alive:
+		return
+	var goal := _flee_goal(s)
+	if s.can_fight() and s.state != "fly":
+		s.cmd_move(goal, true)
+	else:
+		# sersemlemiş / savrulmuş: kendine gelince (yere inince) uygulanır
+		s._queued_move = goal
+		s._queued_force = true
+
+func _flee_goal(s) -> Vector3:
+	var away: Vector3 = s.position - position
+	away.y = 0.0
+	if away.length() < 0.3:
+		away = Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
+	away = away.normalized()
+	var thr: Vector3 = attacker.position if attacker != null and is_instance_valid(attacker) else (_last_from if _last_from != Vector3.INF else position)
+	var tdir := thr - position
+	tdir.y = 0.0
+	if tdir.length() > 1.0:
+		away = (away - tdir.normalized() * 0.6).normalized()       # tehdidin tersine doğru
+	var c: Dictionary = G.grid.find_cover(s.position + away * 7.0, thr, 8.0, [], s.position)
+	var goal: Vector3 = s.position + away * 9.0
+	# yanan hurdanın dibi siper değil: hurdadan yeterince uzak siper, yoksa açıkça uzaklaş
+	if c["type"] > 0 and Vector2((c["pos"] as Vector3).x - position.x, (c["pos"] as Vector3).z - position.z).length() > radius + 5.0:
+		goal = c["pos"]
+	return G.grid.nearest_free(goal, Grid.M_INF)
 # çekili top / açık bölmeli obüs mürettebatı (süs gövdeleri) imhada yerinde çömelip kalıyordu (roadmap 99):
 # her biri gerçek askere dönüşür ve patlamadan payını alır — savrulur, çoğu ölür, kalanı yaralı / sersem
 func _crew_lost(mode: String) -> void:
@@ -613,6 +647,7 @@ func _crew_lost(mode: String) -> void:
 		var k := 1.1 if heavy_hit else 0.6
 		var pd := 0.85 if heavy_hit else (0.45 if mode != "knocked" else 0.15)
 		s.throw_off(away * randf_range(2.0, 4.5) * k + Vector3(0, randf_range(1.6, 3.2) * k, 0), pd, 0.5 if heavy_hit else 0.0)
+		_flee_wreck(s)
 	crew.clear()
 	_crew_spots.clear()
 
@@ -4165,7 +4200,12 @@ func destroy(src) -> void:
 	# mürettebat kaçar
 	if vtype in ["tank", "apc", "ifv"] and (mode == "knocked" or (mode == "brew" and randf() < 0.5)):
 		for i in randi_range(1, 3):
-			G.main.spawn_soldier(team, "rifle", position + Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5)), null, 50.0)
+			# kapaklardan gövdenin dışına atlar ve yanan hurdadan uzaklaşır (eskiden hurdanın içinde donuyordu)
+			var ca := randf() * TAU
+			var cs: Soldier = G.main.spawn_soldier(team, "rifle", G.grid.nearest_free(position + Vector3(cos(ca), 0, sin(ca)) * (maxf(ext.x, ext.y) + 1.0), Grid.M_INF), null, 50.0)
+			if cs != null:
+				cs.add_stress(55.0)
+				_flee_wreck(cs)
 
 # cephane infilakı: patlama, ateş topu, alev sütunu, kapaktan cephane jeti, krater, parçalar, ikincil infilaklar
 func _cookoff_boom(cp: Vector3, with_burn := true) -> void:

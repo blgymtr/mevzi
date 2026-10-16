@@ -2144,7 +2144,7 @@ func crew_kill_test() -> void:
 	var pax_alive := 0
 	for u in G.units:
 		if u is Soldier and is_instance_valid(u):
-			if u.team == 1 and u.role == "crew" and u.position.distance_to(c) < 15.0:
+			if u.team == 1 and u.role == "crew" and u.position.distance_to(c) < 30.0:      # sağ kalan hurdadan kaçar
 				if u.alive:
 					crew_alive += 1
 				else:
@@ -2159,9 +2159,36 @@ func crew_kill_test() -> void:
 	await m._wait(0.4)
 	await m._shot("crewkill_gun")
 	print("CREWKILL gun_alive=%s bodies=%d -> left=%d crew dead=%d alive=%d | isv_alive=%s pax dead=%d alive=%d units %d->%d" % [gun.alive, n_bodies, gun.crew.size(), crew_dead, crew_alive, isv.alive, pax_dead, pax_alive, before, G.units.size()])
-	if gun.alive or gun.crew.size() > 0 or crew_dead + crew_alive < n_bodies or crew_dead < crew_alive:
+	# ağır isabette her biri %85 ölür (olasılıklı): tüm gövdeler askere dönüşmeli, en az biri ölmeli
+	if gun.alive or gun.crew.size() > 0 or crew_dead + crew_alive < n_bodies or crew_dead < 1:
 		fails += 1
 	if isv.alive or pax_dead < 6:
+		fails += 1
+	# 103: hafif hasarla yok olan (knocked) araçtan sağ çıkanlar yerinde donmaz — hurdadan uzaklaşır
+	var apc: Vehicle = m.spawn_vehicle(0, "apc", G.grid.nearest_free(c + Vector3(-25, 0, 10), Grid.M_HEAVY), 0.0)
+	apc.cmd_hold()
+	for i in 6:
+		var s: Soldier = m.spawn_soldier(0, "rifle", apc.position + Vector3(0, 0, 4), null)
+		s.board(apc)
+	await m._wait(1.0)
+	apc.force_mode = "knocked"
+	apc.kill_k = "ap"
+	apc.destroy(null)
+	await m._wait(8.0)
+	var surv := 0
+	var moved := 0
+	var frozen := 0
+	for u in G.units:
+		if u is Soldier and is_instance_valid(u) and u.team == 0 and u.alive and u.can_fight() and u.position.distance_to(apc.position) < 25.0 and u.role == "rifle" and not (u.state in ["aboard"]):
+			surv += 1
+			if u.position.distance_to(apc.position) > apc.radius + 4.0:
+				moved += 1
+			else:
+				if u.state == "idle" and u.order == "" and u.path_i >= u.path.size():
+					frozen += 1          # hurdanın dibinde kımıldamadan duran (yaralı tedavisi / panik kaçışı sayılmaz)
+				print("CREWKILL stay state=%s order=%s d=%.1f dest_d=%.1f path=%d/%d stress=%d sup=%d esc=%s obb=%s h=%.2f kind=%d pos=%s apc=%s ext=%s first_wp=%s" % [u.state, u.order, u.position.distance_to(apc.position), u.dest.distance_to(apc.position), u.path_i, u.path.size(), int(u.stress), int(u.suppression), u._escaping, apc.obb_push(u.position, 0.0), G.grid.height_at(u.position), G.grid.kind_at(u.position), u.position, apc.position, apc.ext, u.path[u.path_i] if u.path_i < u.path.size() else Vector3.ZERO])
+	print("CREWKILL knocked_apc survivors=%d fled=%d frozen=%d" % [surv, moved, frozen])
+	if surv > 0 and (frozen > 0 or moved * 2 < surv):
 		fails += 1
 	print("CREWKILLTEST RESULT fails=%d" % fails)
 

@@ -2191,8 +2191,9 @@ func _movement(dt: float) -> void:
 				np += tn * mv.length()
 				if o.obb_push(np, 0.15) != Vector3.ZERO:
 					np = position + tn * mv.length()
-				if G.grid.height_at(np) >= 0.45:
+				if G.grid.height_at(np) >= 0.45 and G.grid.height_at(position) < 0.45:
 					# kayma yönü duvara / eşyaya çıkıyor (araç ile engel arasında sıkıştı): öbür köşeden dolaş
+					# (asker zaten engel hücresindeyse — ör. hurda izinin kenarı — denetlenmez, yoksa hiç kıpırdayamıyordu)
 					_slide_sgn = -_slide_sgn
 					np = position
 		np.x = clampf(np.x, 1.0, G.MAP - 1.0)
