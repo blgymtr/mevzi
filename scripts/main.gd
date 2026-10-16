@@ -43,10 +43,12 @@ func _ready() -> void:
 	apply_video()
 	if shot_dir != "":
 		_start_watchdog()
+		# testte gerçek fare imleci pencere kenarındaysa kenar kaydırma kamerayı kaçırıyordu (kırpılan kareler kayıyordu)
+		cam.edge_scroll = false
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -163,6 +165,9 @@ func _setup_env() -> void:
 	sun.shadow_bias = 0.04
 	sun.shadow_normal_bias = 1.2
 	sun.directional_shadow_max_distance = 200.0
+	# basamaklı gölge mesafesi ekranın üst kenarını zaten kapsıyor: solma bandı olmasın (yakınlaştırırken bant
+	# basamakla birlikte zıplıyor, gölgeler ekranın üstünde kayıyor gibi görünüyordu)
+	sun.directional_shadow_fade_start = 1.0
 	add_child(sun)
 	_apply_theme("desert")
 
@@ -658,6 +663,8 @@ func apply_video() -> void:
 	if sun:
 		sun.shadow_enabled = cfg.get("shadows", true)
 	if G.cam:
+		# kamera her karede gölgeyi yakınlaştırmaya göre açıp kapatıyor: ayar oradan da geçerli olsun (eskiden etkisizdi)
+		G.cam.shadows_on = cfg.get("shadows", true)
 		G.cam.edge_scroll = cfg.get("edge_scroll", true)
 
 func save_cfg() -> void:

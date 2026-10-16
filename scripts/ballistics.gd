@@ -28,6 +28,8 @@ class Proj:
 	var launch := Vector3.ZERO
 	var wire: MeshInstance3D = null
 	var aps_tried := false
+	var boost := 0.0       # roketatar: tüp ekseninde hızlanarak çıkış süresi (sn)
+	var axis := Vector3.ZERO
 
 var projs: Array = []
 var _gmesh: Mesh
@@ -443,13 +445,20 @@ func flare(from: Vector3, vel: Vector3) -> void:
 func mortar(from: Vector3, to: Vector3, team: int, src, aid := "") -> void:
 	_lob(from, to, team, src, "mortar", _flight_t(from.distance_to(to), 0.5, 45.0, 2500.0), aid)
 
-func mlrs_rocket(from: Vector3, to: Vector3, team: int, src) -> void:
+func mlrs_rocket(from: Vector3, to: Vector3, team: int, src, axis := Vector3.ZERO) -> void:
 	_lob(from, to, team, src, "rkt", 3.2 + from.distance_to(to) / 600.0)
 	var p: Proj = projs[projs.size() - 1]
 	p.node.queue_free()
 	p.node = _node(_rmesh)
 	p.node.scale = Vector3.ONE * 1.6
 	p.node.position = from
+	if axis != Vector3.ZERO:
+		# tüpten çıkış: ilk anlarda yavaş süzülür, hızlanarak (≈ t³) tüp ekseninde havalanır, sonra yörüngeye girer
+		p.boost = 0.6
+		p.axis = axis.normalized()
+		p.launch = from
+		p.spd = p.vel.length()
+		p.node.look_at(from + p.axis, Vector3.UP if absf(p.axis.y) < 0.97 else Vector3.FORWARD)
 	# roketatar roketi: uzun motor alevi + ışık (yaylımda ışık sayısı sınırlı)
 	_flame(p, 1.5, 1.2)
 	_glow(p, 2.6, 7.0, Color(1.0, 0.7, 0.35))
@@ -510,17 +519,24 @@ func _cram_try(p: Proj) -> bool:
 
 func _step_lob(p: Proj, dt: float) -> bool:
 	p.t += dt
+	if p.boost > 0.0 and p.t <= p.boost:
+		var k := p.t / p.boost
+		var bp := p.launch + p.axis * (p.spd * p.boost * k * k * k / 3.0)
+		_rkt_trail(p, p.pos, bp)
+		p.pos = bp
+		p.node.position = bp
+		if p.t + dt > p.boost:
+			# serbest uçuş: kalan sürede hedefe inecek yörünge yeniden çözülür
+			var tr := maxf(p.life - 0.5 - p.t, 0.6)
+			p.vel = (p.aim - p.pos - 0.5 * Vector3(0, -9.8, 0) * tr * tr) / tr
+		return false
 	p.vel.y -= 9.8 * dt
 	var np := p.pos + p.vel * dt
 	if not p.aps_tried and p.vel.y < 0.0 and p.pos.y > 12.0 and _cram_try(p):
 		return true
 	p.trail -= dt
 	if p.kind == "rkt":
-		# kavis boyunca boncuk boncuk beyaz iz: saniyelerce asılı kalır, yavaşça genişler
-		if p.trail <= 0.0:
-			p.trail = 0.035
-			G.fx.emit(Fx.P_SMOKE, p.pos, Vector3(randf_range(-0.15, 0.15), randf_range(0.0, 0.2), randf_range(-0.15, 0.15)), randf_range(5.0, 7.5), 0.35, 1.5, -0.02, 0.4, Color(0.95, 0.94, 0.92, 0.6))
-			G.fx.emit(Fx.P_SPARK, p.pos, -p.vel.normalized() * 30.0, 0.05, 0.16, 0.1, 0.0, 6.0, Color(1.0, 0.78, 0.4, 1))
+		_rkt_trail(p, p.pos, np)
 	elif p.trail <= 0.0:
 		p.trail = 0.05
 		G.fx.emit(Fx.P_SMOKE, p.pos, Vector3.ZERO, 0.6, 0.15, 0.4, 0.0, 1.0, Color(0.8, 0.8, 0.78, 0.35))
@@ -546,6 +562,26 @@ func _step_lob(p: Proj, dt: float) -> bool:
 			G.explode(at, float(am.get("blast", 6.0)), float(am.get("bdmg", 180.0)), "big", p.team, p.src)
 		return true
 	return false
+
+# roketatar roketi izi: motor yanarken (~1,9 sn) yol boyunca aralıksız beyaz duman (eşit aralıkla, kare hızından
+# bağımsız) + kuyrukta parlak alev çizgisi; yanma bitince iz kesilir, roket balistik süzülür
+const RKT_BURN := 1.9
+func _rkt_trail(p: Proj, a: Vector3, b: Vector3) -> void:
+	if p.t > RKT_BURN:
+		return
+	var L := a.distance_to(b)
+	var step := clampf(p.vel.length() * 0.008, 0.6, 3.0) if p.t > p.boost else 0.35
+	p.trail -= L
+	var dir := (b - a) / maxf(L, 0.001)
+	var n := 0
+	while p.trail <= 0.0 and n < 24:
+		var q := b + dir * p.trail
+		p.trail += step
+		n += 1
+		var fade := 1.0 - smoothstep(RKT_BURN * 0.7, RKT_BURN, p.t)
+		G.fx.emit(Fx.P_SMOKE, q, Vector3(randf_range(-0.2, 0.2), randf_range(0.0, 0.25), randf_range(-0.2, 0.2)), randf_range(4.0, 6.0), 0.5, randf_range(1.6, 2.4), -0.02, 0.4, Color(0.95, 0.94, 0.92, 0.55 * fade + 0.1))
+	if n > 0:
+		G.fx.emit(Fx.P_SPARK, b, -dir * 30.0, 0.05, 0.16, 0.1, 0.0, 6.0, Color(1.0, 0.78, 0.4, 1))
 
 func grenade(from: Vector3, to: Vector3, team: int, src, smoke := false) -> void:
 	var p := Proj.new()

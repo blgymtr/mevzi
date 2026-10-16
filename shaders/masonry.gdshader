@@ -21,6 +21,7 @@ uniform sampler2D steel_alb : source_color, filter_linear_mipmap_anisotropic, re
 uniform float scale = 0.45;
 uniform vec4 grime_col : source_color = vec4(0.32, 0.27, 0.2, 1.0);
 uniform float grime_h = 1.1;
+uniform float grime_y0 = 0.0;       // kir/nem bandının tabanı (köprüde su çizgisi)
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -99,7 +100,7 @@ void fragment() {
 	// yağmur izi ve dipte kir
 	float sl = lum(texture(streak_tex, uv * vec2(0.7, 0.35)).rgb);
 	col *= mix(1.0, clamp(0.7 + sl * 0.9, 0.7, 1.15), 0.35 * (1.0 - abs(n.y)));
-	float g = clamp(1.0 - wpos.y / grime_h, 0.0, 1.0);
+	float g = clamp(1.0 - (wpos.y - grime_y0) / grime_h, 0.0, 1.0);
 	col *= mix(vec3(1.0), vec3(0.78, 0.72, 0.62), g * g * 0.8);
 	ALBEDO = col;
 	// blok mesh'lerinde teğet yok: normal haritası yerine kabartıyı rengin içine kat

@@ -58,6 +58,7 @@ func _dist() -> float:
 # gölge mesafesi basamakları: yalnız eşik geçilince değişir
 const SHADOW_STEPS := [160.0, 230.0, 330.0, 480.0, 700.0, 1000.0, 1500.0, 2200.0, 3200.0]
 var _shadow_d := -1.0
+var shadows_on := true          # Ayarlar > Gölgeler
 var _zoom_band := -1
 
 func _apply() -> void:
@@ -82,7 +83,9 @@ func _apply() -> void:
 		if sd != _shadow_d:
 			_shadow_d = sd
 			light.directional_shadow_max_distance = sd
-		light.shadow_enabled = size < 1100.0
+		# stratejik görüşe çıkarken gölgeler bir anda kapanıp sahne parlamasın: 700–1100 arası yumuşakça söner
+		light.shadow_enabled = size < 1100.0 and shadows_on
+		light.shadow_opacity = clampf((1100.0 - size) / 400.0, 0.0, 1.0)
 	_zoom_groups()
 
 # yakınlaştırma bandı değişince küçük ayrıntılar: ot 200 m, çakıl/küçük eşya 420 m görüşten sonra gizli

@@ -1661,6 +1661,7 @@ func _drive(dt: float) -> void:
 			deployed = minf(1.0, deployed + dt / deploy_time())
 			if deployed >= 1.0:
 				say("TOP KURULDU, ATEŞE HAZIR")
+		_pod_pose()
 	cur_speed = move_toward(cur_speed, target_speed, D["accel"] * dt * (2.0 if target_speed < cur_speed else 1.0))
 	if absf(cur_speed) < 0.01:
 		return
@@ -1972,6 +1973,8 @@ func _close_on_forced() -> void:
 	_repath(dest)
 
 func _aim_fire(dt: float) -> void:
+	# başlamış salvo hedef / görüş kaybolsa da sürer (eskiden hedef yokken erken dönüş salvoyu donduruyordu)
+	_mlrs_tick(dt)
 	if turret == null or G.deploy_t > 0.0:
 		return
 	if needs_setup() and deployed < 1.0:
@@ -2050,14 +2053,124 @@ func _aim_fire(dt: float) -> void:
 					mlrs_left = salvo_n if salvo_n > 0 else 12
 					mlrs_aim = t.position
 	_coax(dt)
-	_mlrs_tick(dt)
 	_crew_anim(dt)
 
 var mlrs_aim := Vector3.ZERO
 
+# roketatar: fırlatıcı (pod) kurulumla birlikte atış açısına kalkar, toplanırken iner (arka mafsal düğümü)
+const POD_ELEV := 0.52
+func _pod_pose() -> void:
+	if vtype != "mlrs" or barrel == null:
+		return
+	var e := deployed * deployed * (3.0 - 2.0 * deployed) * POD_ELEV
+	barrel.rotation.x = e
+	if tube_caps == null and salvo_n > 0 and salvo_n <= 16:
+		_make_caps()
+
+# tüp kapakları (M270 / HIMARS gibi kapalı podlar): her tüpün ağzında kırılabilir kapak; roket kapağı delip çıkar
+var tube_caps: MultiMeshInstance3D = null
+var caps_left := 0
+func _pod_frame() -> Array:
+	var mz: Vector3 = M["muzzle"]
+	var ax := mz.normalized() if mz.length() > 0.2 else Vector3(0, 0, -1)
+	var rt := ax.cross(Vector3.UP).normalized() if absf(ax.y) < 0.95 else Vector3.RIGHT
+	var up := rt.cross(ax).normalized()
+	return [mz, ax, rt, up]
+
+func _make_caps() -> void:
+	var fr := _pod_frame()
+	var n := salvo_n
+	var pitch := 0.17 if n >= 30 else (0.3 if n >= 16 else 0.36)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var cm := CylinderMesh.new()
+	cm.top_radius = pitch * 0.42
+	cm.bottom_radius = pitch * 0.42
+	cm.height = 0.03
+	cm.radial_segments = 12
+	cm.rings = 1
+	mm.mesh = cm
+	mm.instance_count = n
+	for i in n:
+		mm.set_instance_transform(i, _cap_xf(fr, i, n, 1.0))
+	tube_caps = MultiMeshInstance3D.new()
+	tube_caps.multimesh = mm
+	tube_caps.material_override = Mats.flat(Color(0.27, 0.29, 0.24), 0.8)
+	barrel.add_child(tube_caps)
+	caps_left = n
+
+func _cap_xf(fr: Array, i: int, n: int, s: float) -> Transform3D:
+	var o := _tube_off(i, n)
+	var ax: Vector3 = fr[1]
+	var rt: Vector3 = fr[2]
+	var up: Vector3 = fr[3]
+	var p: Vector3 = (fr[0] as Vector3) + rt * o.x + up * o.y + ax * 0.02
+	return Transform3D(Basis(rt, ax, rt.cross(ax)).scaled(Vector3(s, s, s)), p)
+
+# roket kapağı deler: kapak gizlenir, iki yarım parça öne fırlayıp dönerek yere düşer, bir süre yerde kalır
+func _cap_burst(i: int) -> void:
+	if tube_caps == null:
+		return
+	var mm := tube_caps.multimesh
+	var fr := _pod_frame()
+	var xf := mm.get_instance_transform(i)
+	if xf.basis.get_scale().x < 0.01:
+		return
+	mm.set_instance_transform(i, _cap_xf(fr, i, salvo_n, 0.0))
+	caps_left -= 1
+	var wp := barrel.global_transform * xf.origin
+	var wax := (barrel.global_transform.basis * (fr[1] as Vector3)).normalized()
+	var r: float = (mm.mesh as CylinderMesh).top_radius
+	for k in 2:
+		var pc := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(r * 2.0, 0.025, r)
+		pc.mesh = bm
+		pc.material_override = tube_caps.material_override
+		G.world.add_child(pc)
+		pc.global_position = wp
+		var v := wax * randf_range(5.0, 11.0) + Vector3(randf_range(-2.0, 2.0), randf_range(1.0, 3.0), randf_range(-2.0, 2.0))
+		var gy := G.terrain.ground_h(wp) if G.terrain else 0.0
+		# yere iniş süresi: y(t) = y0 + vy·t − 4,9·t²
+		var y0 := wp.y - gy - 0.02
+		var tt := (v.y + sqrt(v.y * v.y + 19.6 * maxf(y0, 0.0))) / 9.8
+		var land := wp + Vector3(v.x, 0, v.z) * tt * 0.85
+		land.y = gy + 0.02
+		var tw := pc.create_tween()
+		tw.tween_method(func(t: float):
+			if is_instance_valid(pc):
+				pc.global_position = wp + Vector3(v.x * t * 0.85, v.y * t - 4.9 * t * t, v.z * t * 0.85)
+				pc.rotation = Vector3(t * 14.0, t * 9.0, t * 6.0), 0.0, tt, tt)
+		tw.tween_callback(func():
+			if is_instance_valid(pc):
+				pc.global_position = land
+				pc.rotation = Vector3(0, randf() * TAU, 0))
+		tw.tween_interval(25.0)
+		tw.tween_callback(pc.queue_free)
+
+func _caps_reload() -> void:
+	if tube_caps == null:
+		return
+	var fr := _pod_frame()
+	for i in salvo_n:
+		tube_caps.multimesh.set_instance_transform(i, _cap_xf(fr, i, salvo_n, 1.0))
+	caps_left = salvo_n
+
+# roketatar tüp kafesi: satır × sütun, aralık çapa göre (122 mm ~0,17 m, 220 mm ~0,3 m, 227 mm ~0,36 m)
+func _tube_off(i: int, n: int) -> Vector2:
+	var rows := 2 if n <= 6 else (3 if n <= 12 else 4)
+	var cols := int(ceil(float(n) / rows))
+	var pitch := 0.17 if n >= 30 else (0.3 if n >= 16 else 0.36)
+	var c := i % cols
+	var r := i / cols
+	return Vector2((c - (cols - 1) * 0.5) * pitch, (r - (rows - 1) * 0.5) * pitch)
+
 # roketatar: 12 roketlik salvo, sonra uzun dolum
 func _mlrs_tick(dt: float) -> void:
 	if vtype != "mlrs" or mlrs_left <= 0:
+		return
+	# toplanırken / kurulum sürerken salvo bekler
+	if needs_setup() and deployed < 1.0:
 		return
 	mlrs_t -= dt
 	if mlrs_t > 0.0:
@@ -2065,15 +2178,24 @@ func _mlrs_tick(dt: float) -> void:
 	mlrs_t = salvo_ival if salvo_ival > 0.0 else 0.22
 	mlrs_left -= 1
 	fired_t = G.time
-	var mp := muzzle_world() + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.2), 0)
+	# her roket podun kendi tüpünden: tüp dizilimi salvo sayısından (HIMARS 2×3, M270 3×4, BM-21 4×10...),
+	# atış sırası dağınık (gerçek roketatar gibi kafes boyunca sıçrar)
+	var n_tot := salvo_n if salvo_n > 0 else 12
+	var ti := ((n_tot - 1 - mlrs_left) * 7) % n_tot
+	var mw := muzzle_world()
+	var axis := (mw - barrel.global_position).normalized() if barrel != null and mw.distance_to(barrel.global_position) > 0.1 else forward()
+	var rt := axis.cross(Vector3.UP).normalized() if absf(axis.y) < 0.95 else right()
+	var upv := rt.cross(axis).normalized()
+	var to := _tube_off(ti, n_tot)
+	var mp := mw + rt * to.x + upv * to.y
+	if mlrs_left == n_tot - 1 and caps_left <= 0:
+		_caps_reload()          # yeni salvo: dolumda yeni pod takıldı
+	_cap_burst(ti)
 	var d := dist2_p(mlrs_aim)
 	var err := d * 0.07 + 4.0
-	G.bal.mlrs_rocket(mp, mlrs_aim + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self)
+	G.bal.mlrs_rocket(mp, mlrs_aim + Vector3(randf_range(-err, err), 0, randf_range(-err, err)), team, self, axis)
 	Sfx.play3d("rpg", mp, 3.0, 0.15, 0.05)
-	var back := -(mlrs_aim - position).normalized()
-	for i in 3:
-		G.fx.emit(Fx.P_SMOKE, mp, back * randf_range(3, 7) + Vector3(randf_range(-1, 1), randf_range(0.5, 2), randf_range(-1, 1)), randf_range(1.5, 2.8), 0.6, 2.6, -0.1, 1.5, Color(0.82, 0.8, 0.76, 0.55))
-	G.fx.muzzle(mp, -back, true)
+	G.fx.pod_launch(mp, axis, mlrs_left == n_tot - 1)
 	if mlrs_left <= 0:
 		main_cd = rearm_s if rearm_s > 0.0 else 32.0
 
@@ -3572,7 +3694,9 @@ func destroy(src) -> void:
 	kill_mode = mode
 	var cp := position + Vector3(0, 1.0, 0)
 	if G.grid.is_water(position):
-		G.fx.water_splash(position, 1.6)
+		# gövde boyuna göre sıçrama ve dalga halkası (cip ~0.9, tank ~2.4)
+		var wsz := clampf(float(D.get("len", 6.0)) / 3.6, 0.7, 3.0)
+		G.fx.water_splash(position, wsz)
 		for mi in _meshes(self):
 			mi.material_override = Mats.burnt()
 		var tw2 := create_tween()
@@ -3582,7 +3706,7 @@ func destroy(src) -> void:
 		for i in 6:
 			var tw3 := create_tween()
 			tw3.tween_interval(randf_range(0.3, 5.0))
-			tw3.tween_callback(func(): G.fx.water_splash(position + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5)), 0.4))
+			tw3.tween_callback(func(): G.fx.water_splash(position + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5)) * wsz, 0.3 + 0.1 * wsz))
 		return
 	match mode:
 		"catastrophic":

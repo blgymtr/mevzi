@@ -704,8 +704,10 @@ func blast(center: Vector3, radius: float, dmg: float) -> void:
 		var d := Vector2(p.x - center.x, p.z - center.z).length()
 		if d > radius + it["r"]:
 			continue
-		if it["kind"] == "bridge" and dmg < 100.0:
-			continue
+		if it["kind"] == "bridge":
+			if dmg < 100.0:
+				continue
+			_bridge_hit(it, center, radius, dmg)
 		it["hp"] -= dmg * (1.0 - clampf(d / (radius + it["r"]), 0.0, 0.9))
 		if it["hp"] <= 0.0:
 			_destroy(it, center)
@@ -720,6 +722,9 @@ func crush(center: Vector3, r: float, dir: Vector3) -> void:
 
 func _destroy(it: Dictionary, center: Vector3) -> void:
 	it["alive"] = false
+	if it["kind"] == "bridge":
+		_collapse_bridge(it, center)
+		return
 	if it.has("bank") and it["kind"] != "tree":
 		_mm_hide(it)
 		return
@@ -733,71 +738,12 @@ func _destroy(it: Dictionary, center: Vector3) -> void:
 			var tw := create_tween()
 			tw.tween_property(mi, "position:y", 0.6, 0.15).set_ease(Tween.EASE_OUT)
 			tw.tween_property(mi, "position:y", 0.0, 0.25).set_ease(Tween.EASE_IN)
-		"bridge":
-			_collapse_bridge(it)
 		"tree":
 			var away: Vector3 = it["pos"] - center
 			away.y = 0
 			_fell(it, away.normalized() if away.length() > 0.1 else Vector3.RIGHT)
 		_:
 			mi.visible = false
-
-# köprü çöküşü: orta açıklık parçalanıp suya düşer, iki uçta kırık ayaklar kalır
-func _collapse_bridge(it: Dictionary) -> void:
-	var mi: MeshInstance3D = it["node"]
-	var c: Vector3 = it["pos"]
-	var dir: Vector3 = it["dir"]
-	var L: float = it["L"]
-	var W: float = it["W"]
-	var rot: float = it["rot"]
-	mi.visible = false
-	var gap := L * 0.55
-	var stone := Color(0.7, 0.66, 0.6)
-	var bas := Basis(Vector3.UP, rot)
-	# iki uçta kalan kırık köprü parçası (sarkık uç)
-	for sg in [-1.0, 1.0]:
-		var seg := (L - gap) * 0.5
-		var mb := MB.new()
-		mb.box(Vector3(0, 0.15, 0), Vector3(seg, 0.4, W), stone, Basis())
-		mb.box(Vector3(-sg * seg * 0.5 + sg * 0.0, -0.3, 0), Vector3(0.6, 0.9, W * 0.9), stone.darkened(0.2), Basis(Vector3.FORWARD, sg * 0.35))
-		for k in 6:
-			mb.box(Vector3(randf_range(-seg * 0.5, seg * 0.5), 0.4, randf_range(-W * 0.4, W * 0.4)), Vector3(0.4, 0.2, 0.4), stone.darkened(randf_range(0.1, 0.3)), Basis(Vector3.UP, randf() * TAU))
-		var e := MeshInstance3D.new()
-		e.mesh = mb.commit(Mats.vcs())
-		e.position = c + dir * sg * (gap * 0.5 + seg * 0.5)
-		e.rotation.y = rot
-		add_child(e)
-	# düşen parçalar
-	for k in 8:
-		var pc := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(randf_range(1.0, 2.5), 0.4, randf_range(1.2, W))
-		pc.mesh = bm
-		pc.material_override = Mats.vcs()
-		var p0 := c + dir * randf_range(-gap * 0.45, gap * 0.45) + Vector3(0, 0.2, 0)
-		pc.position = p0
-		pc.rotation.y = rot
-		add_child(pc)
-		var tw := pc.create_tween()
-		var dur := randf_range(0.6, 1.1)
-		tw.tween_property(pc, "position:y", -1.6, dur).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-		tw.parallel().tween_property(pc, "rotation", Vector3(randf_range(-0.8, 0.8), rot, randf_range(-0.8, 0.8)), dur)
-		tw.tween_callback(func(): G.fx.water_splash(Vector3(p0.x, 0, p0.z), 0.9))
-	G.fx.explosion(c + Vector3(0, 0.5, 0), 2.0, "big")
-	G.fx.dust_burst(c, gap * 0.5)
-	Sfx.play3d("collapse", c, 6.0)
-	G.grid.clear_bridge(c, Vector2(gap, W + 0.5), rot)
-	# üstündekiler suya düşer
-	for u in G.near(c, gap * 0.6 + W):
-		if not u.alive:
-			continue
-		var rel: Vector3 = u.position - c
-		if absf(rel.dot(dir)) < gap * 0.5 and absf(rel.cross(dir).y) < W * 0.5 + 0.5:
-			if u is Vehicle and not u.is_air():
-				u.destroy(null)
-			elif u is Soldier:
-				u.die(null)
-	G.say(I18n.s("KÖPRÜ YIKILDI!"), c, G.player_team)
 
 func _fell(it: Dictionary, dir: Vector3) -> void:
 	it["alive"] = false
@@ -817,7 +763,7 @@ func clear_area(c: Vector3, r: float) -> void:
 		if not it["alive"]:
 			continue
 		var p: Vector3 = it["pos"]
-		if Vector2(p.x - c.x, p.z - c.z).length() < r:
+		if Vector2(p.x - c.x, p.z - c.z).length() < r and it["kind"] != "bridge":
 			it["alive"] = false
 			if it.has("bank") and it["node"] == null:
 				_mm_hide(it)
@@ -1123,7 +1069,8 @@ func _grass_field_v(n: int, col: Color, region: Rect2, size: float, avoid_fn: Ca
 	while xs.size() < n and tries < n * 3:
 		tries += 1
 		var p := Vector3(rng.randf_range(region.position.x, region.end.x), 0, rng.randf_range(region.position.y, region.end.y))
-		if G.grid.height_at(p) > 0.05 or G.terrain.ground_h(p) < -0.45:
+		# köprü döşemesinin altındaki kıyıdan çıkan ot döşemeyi deliyordu
+		if G.grid.height_at(p) > 0.05 or G.terrain.ground_h(p) < -0.45 or G.grid.on_bridge(p):
 			continue
 		if avoid_fn.is_valid() and avoid_fn.call(p):
 			continue
@@ -1154,57 +1101,380 @@ func reeds_along(pts: PackedVector3Array, half_w: float) -> void:
 			var p := a.lerp(b, rng.randf())
 			for sg in [-1.0, 1.0]:
 				var q: Vector3 = p + side * sg * (half_w + rng.randf_range(0.5, 2.6))
-				if rng.randf() < 0.35 and G.grid.height_at(q) < 0.05:
+				if rng.randf() < 0.35 and G.grid.height_at(q) < 0.05 and not G.grid.on_bridge(q):
 					bush(q + Vector3(0, G.terrain.ground_h(q), 0))
 
 func bridge(center: Vector3, dir: Vector3, length: float, width := 6.5) -> void:
+	dir = Vector3(dir.x, 0, dir.z).normalized()
 	var rot := atan2(-dir.z, dir.x)
-	var mesh := _cached("bridge_%d_%d" % [int(length), int(width)], func(): return _bridge_mesh(length, width))
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.position = Vector3(center.x, 0, center.z)
-	mi.rotation.y = rot
-	add_child(mi)
+	var stone := length <= 20.0 or (length <= BridgeMesh.STONE_MAX and int(absf(center.x * 7.3 + center.z * 3.1)) % 2 == 0)
+	var Ld := length + 2.0
+	var n := BridgeMesh.span_count(stone, Ld)
+	var s := Ld / n
+	var W := width
+	var root := Node3D.new()
+	root.position = Vector3(center.x, 0, center.z)
+	root.rotation.y = rot
+	add_child(root)
+	var tk := "%s_%d_%d" % ["s" if stone else "c", int(round(s * 20.0)), int(round(W * 20.0))]
+	var stat := MeshInstance3D.new()
+	stat.mesh = _cached("brs_%s_%d" % [tk, n], func(): return BridgeMesh.static_mesh(stone, Ld, n, W))
+	root.add_child(stat)
+	var halves: Array = []
+	var hl: Array = []
+	for k in n:
+		var xc := -Ld * 0.5 + (k + 0.5) * s
+		for hs in [-1, 1]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = _cached("brh_%s_%d" % [tk, hs], func(): return BridgeMesh.half(stone, s, W, hs, []))
+			mi.position = Vector3(xc, 0, 0)
+			root.add_child(mi)
+			halves.append(mi)
+			hl.append([])
+		if not stone:
+			# aydınlatma direği: açıklık ucunda kenar kirişinde, yanlar sırayla
+			var sg := 1.0 if k % 2 == 0 else -1.0
+			var pm := MeshInstance3D.new()
+			pm.mesh = _cached("br_pole", func(): return BridgeMesh.pole())
+			pm.position = Vector3(s * 0.5 - 1.2, 0.2, sg * (W * 0.5 - 0.11))
+			pm.rotation.y = 0.0 if sg > 0.0 else PI
+			(halves[halves.size() - 1] as Node3D).add_child(pm)
+	# korkuluk / taş korkuluk parçaları (~4 m): vuruşta tek tek kopar
+	var nseg := maxi(2, int(round(Ld / 4.0)))
+	var seg := Ld / nseg
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _cached("brr_%s" % ("s" if stone else "c"), func(): return BridgeMesh.rail_seg(stone))
+	mm.instance_count = nseg * 2
+	var ok: Array = []
+	for i in nseg * 2:
+		mm.set_instance_transform(i, _rail_xf(stone, W, Ld, seg, i, nseg))
+		ok.append(1)
+	var rmi := MultiMeshInstance3D.new()
+	rmi.multimesh = mm
+	root.add_child(rmi)
+	_riprap(center, dir, Ld, W)
+	# suda kalan ara ayaklar: su gölgelendiricisinde köpük ve girdap izi
+	if G.terrain:
+		for k in range(1, n):
+			var pw := center + dir * (-Ld * 0.5 + k * s)
+			if G.terrain.ground_h(pw) < -0.35:
+				G.terrain.add_pier(pw, W * 0.5 + (1.3 if stone else 0.6), 0.8 if stone else 0.45)
 	G.grid.set_bridge(center, Vector2(length + 2.0, width - 0.8), rot)
 	G.grid.add_bridge(center, dir, length + 2.0, width - 0.8)
 	var side := Vector3(-dir.z, 0, dir.x)
 	for sg in [-1.0, 1.0]:
 		G.grid.set_static_rect(center + side * sg * (width * 0.5 - 0.15), Vector2(length, 0.3), rot, 0.75, Grid.K_HOUSE)
 	# yıkılabilir: yalnız ağır patlamalar (topçu, tank mermisi, büyük) hasar verir
-	items.append({"node": mi, "pos": Vector3(center.x, 0, center.z), "kind": "bridge", "hp": 1600.0, "alive": true, "r": length * 0.4, "dir": dir, "L": length, "W": width, "rot": rot})
+	items.append({"node": root, "pos": Vector3(center.x, 0, center.z), "kind": "bridge", "hp": 1600.0, "alive": true, "r": length * 0.4,
+		"dir": dir, "L": length, "W": width, "rot": rot, "stone": stone, "Ld": Ld, "n": n, "s": s, "halves": halves, "hl": hl,
+		"holes": 0, "rails": mm, "nseg": nseg, "seg": seg, "rail_ok": ok, "rail_lost": 0})
 
-func _bridge_mesh(L: float, W: float) -> ArrayMesh:
-	var mb := MB.new()
-	var st := Color(0.66, 0.63, 0.58)
-	mb.box(Vector3(0, -0.25, 0), Vector3(L + 2.0, 0.54, W), st)
-	mb.box(Vector3(0, 0.0, 0), Vector3(L + 2.0, 0.04, W - 0.9), Color(0.48, 0.45, 0.42))
-	for sg in [-1.0, 1.0]:
-		mb.box(Vector3(0, 0.38, sg * (W * 0.5 - 0.15)), Vector3(L + 2.0, 0.7, 0.3), st.lightened(0.05))
-		var n := int((L + 2.0) / 2.2)
-		for k in n + 1:
-			var x := -(L + 2.0) * 0.5 + k * (L + 2.0) / n
-			mb.box(Vector3(x, 0.5, sg * (W * 0.5 - 0.15)), Vector3(0.45, 1.0, 0.45), st.lightened(0.1))
-	var np := maxi(1, int(L / 5.0))
-	for k in np + 1:
-		var x := -L * 0.5 + k * L / np
-		mb.box(Vector3(x, -1.2, 0), Vector3(0.9, 1.9, W * 0.92), st.darkened(0.1))
-	for k in np:
-		var x0 := -L * 0.5 + k * L / np + 0.45
-		var x1 := -L * 0.5 + (k + 1) * L / np - 0.45
-		var cx := (x0 + x1) * 0.5
-		var rr := (x1 - x0) * 0.5
-		var seg := 8
-		for s in seg:
-			var a0 := PI * s / seg
-			var a1 := PI * (s + 1) / seg
-			for sg in [-1.0, 1.0]:
-				var z: float = sg * W * 0.46
-				var p0 := Vector3(cx + cos(a0) * rr, -0.52, z)
-				var q0 := Vector3(cx + cos(a0) * rr, -1.9 + sin(a0) * 1.2, z)
-				var q1 := Vector3(cx + cos(a1) * rr, -1.9 + sin(a1) * 1.2, z)
-				var p1 := Vector3(cx + cos(a1) * rr, -0.52, z)
-				mb.quad(p0, p1, q1, q0, st.darkened(0.15), Vector3(0, 0, sg))
-	return mb.commit(Mats.masonry())
+func _rail_xf(stone: bool, W: float, Ld: float, seg: float, i: int, nseg: int) -> Transform3D:
+	var sg := -1.0 if i < nseg else 1.0
+	var x := -Ld * 0.5 + (i % nseg + 0.5) * seg
+	var z := sg * (W * 0.5 - (BridgeMesh.PAR * 0.5 if stone else 0.11))
+	return Transform3D(Basis(Vector3.UP, 0.0 if sg > 0.0 else PI) * Basis.from_scale(Vector3(seg / 4.0, 1, 1)), Vector3(x, 0.0 if stone else 0.2, z))
+
+# kıyı tahkimatı: köprü uçlarında şevde iri taşlar
+func _riprap(c: Vector3, dir: Vector3, Ld: float, W: float) -> void:
+	if G.terrain == null:
+		return
+	var side := Vector3(-dir.z, 0, dir.x)
+	var xs: Array = []
+	for e in [-1.0, 1.0]:
+		var got := 0
+		for k in 60:
+			if got >= 14:
+				break
+			var lx: float = e * (Ld * 0.5 - rng.randf_range(0.0, 5.5))
+			var lz := rng.randf_range(-W * 0.5 - 3.5, W * 0.5 + 3.5)
+			var p := c + dir * lx + side * lz
+			var gh := G.terrain.ground_h(p)
+			if gh > -0.06 or gh < -1.4:
+				continue
+			var sc := rng.randf_range(0.3, 0.62)
+			xs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc * 0.8, sc)), Vector3(p.x, gh - 0.1, p.z)))
+			got += 1
+	if xs.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _cached("riprap", func(): return rock_mesh(13, winter, false, 2))
+	mm.instance_count = xs.size()
+	for i in xs.size():
+		mm.set_instance_transform(i, xs[i])
+	var m := MultiMeshInstance3D.new()
+	m.multimesh = mm
+	add_child(m)
+
+# ağır vuruş: yakın korkuluk parçaları kopar, döşemede delik açılır
+func _bridge_hit(it: Dictionary, center: Vector3, radius: float, dmg: float) -> void:
+	var dir: Vector3 = it["dir"]
+	var side := Vector3(-dir.z, 0, dir.x)
+	var rel: Vector3 = center - (it["pos"] as Vector3)
+	var lx := rel.dot(dir)
+	var lz := rel.dot(side)
+	var W: float = it["W"]
+	var Ld: float = it["Ld"]
+	if absf(lx) > Ld * 0.5 + radius or absf(lz) > W * 0.5 + radius:
+		return
+	var nseg: int = it["nseg"]
+	var seg: float = it["seg"]
+	var ok: Array = it["rail_ok"]
+	var reach := radius * clampf(dmg / 180.0, 0.6, 1.3)
+	for i in nseg * 2:
+		if int(ok[i]) == 0:
+			continue
+		var sg := -1.0 if i < nseg else 1.0
+		var xc := -Ld * 0.5 + (i % nseg + 0.5) * seg
+		var dx := maxf(absf(lx - xc) - seg * 0.5, 0.0)
+		if Vector2(dx, lz - sg * W * 0.5).length() < reach:
+			_rail_break(it, i)
+	if dmg >= 140.0 and center.y < 2.5 and absf(lx) < Ld * 0.5 - 0.3 and absf(lz) < W * 0.5 - 0.25 and int(it["holes"]) < 12:
+		_bridge_hole(it, lx, lz, clampf(dmg / 300.0, 0.4, 1.15))
+
+func _rail_break(it: Dictionary, i: int) -> void:
+	(it["rail_ok"] as Array)[i] = 0
+	it["rail_lost"] = int(it["rail_lost"]) + 1
+	var mm: MultiMesh = it["rails"]
+	var xf := mm.get_instance_transform(i)
+	mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), xf.origin))
+	var root: Node3D = it["node"]
+	var stone: bool = it["stone"]
+	var W: float = it["W"]
+	var seg: float = it["seg"]
+	var nseg: int = it["nseg"]
+	var sg := -1.0 if i < nseg else 1.0
+	var outp := root.to_global(Vector3(xf.origin.x, 0, sg * (W * 0.5 + 1.2)))
+	var wet := G.grid.is_water(outp)
+	var gy := Terrain.WATER_Y - 0.5 if wet else (G.terrain.ground_h(outp) if G.terrain else 0.0)
+	var wp := root.to_global(xf.origin + Vector3(0, 0.5, 0))
+	if stone:
+		# taş korkuluk yıkılır: taşların çoğu dışa (suya), birkaçı yola düşer
+		G.fx.dust_burst(wp, 1.2)
+		Sfx.play3d("crumble", wp, -2.0)
+		for k in 8:
+			var pc := MeshInstance3D.new()
+			var v := k % 3
+			pc.mesh = _cached("br_stone_%d" % v, func(): return BridgeMesh.stone_chunk(v))
+			var lp := xf.origin + Vector3(randf_range(-0.42, 0.42) * seg, randf_range(0.2, 0.85), randf_range(-0.15, 0.15))
+			pc.position = lp
+			pc.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+			var sc := randf_range(0.55, 1.05)
+			pc.scale = Vector3(sc, sc, sc)
+			root.add_child(pc)
+			var out := k < 6
+			var tgt := lp + Vector3(randf_range(-0.5, 0.5), 0, sg * (randf_range(0.7, 2.4) if out else -randf_range(0.5, 1.6)))
+			# suya düşen taş dibe iner (yüzeye yakın kalırsa kıyı köpüğüyle buz gibi parlıyordu)
+			var ty := 0.1
+			if out:
+				ty = (G.terrain.ground_h(root.to_global(Vector3(tgt.x, 0, tgt.z))) + 0.12 * sc) if (wet and G.terrain) else gy
+			var dur := randf_range(0.45, 0.8)
+			var tw := pc.create_tween()
+			tw.tween_property(pc, "position", Vector3(tgt.x, ty, tgt.z), dur).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			tw.parallel().tween_property(pc, "rotation", pc.rotation + Vector3(randf_range(-3, 3), randf_range(-3, 3), randf_range(-3, 3)), dur)
+			if out and wet and k < 3:
+				var sp := root.to_global(Vector3(tgt.x, 0, tgt.z))
+				tw.tween_callback(func(): G.fx.water_splash(sp, 0.35))
+		return
+	# çelik korkuluk: ya dış kenarda menteşelenip ön yüzden sarkar ya da kopup düşer
+	G.fx.sparks(wp, 2.5)
+	Sfx.play3d("hit_metal", wp, -2.0)
+	var pv := Node3D.new()
+	pv.position = xf.origin + Vector3(0, 0, sg * 0.11)
+	pv.rotation.y = 0.0 if sg > 0.0 else PI
+	root.add_child(pv)
+	var sm := MeshInstance3D.new()
+	sm.mesh = mm.mesh
+	sm.position = Vector3(0, 0, -0.11)
+	sm.scale = Vector3(seg / 4.0, 1, 1)
+	pv.add_child(sm)
+	var tw := pv.create_tween()
+	if randf() < 0.55:
+		tw.tween_property(pv, "rotation:x", randf_range(1.75, 2.25), 0.45).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(pv, "rotation:z", randf_range(-0.25, 0.25), 0.45)
+		tw.tween_property(pv, "rotation:x", randf_range(1.55, 1.75), 0.25).set_ease(Tween.EASE_OUT)
+	else:
+		var dur := 0.7
+		var tgt := Vector3(xf.origin.x + randf_range(-1.0, 1.0), gy - root.position.y, sg * (W * 0.5 + randf_range(1.0, 2.2)))
+		tw.tween_property(pv, "position", tgt, dur).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(pv, "rotation:x", randf_range(1.3, 2.6), dur)
+		tw.parallel().tween_property(pv, "rotation:z", randf_range(-0.6, 0.6), dur)
+		if wet:
+			tw.tween_callback(func(): G.fx.water_splash(outp, 0.6))
+
+# döşemede delik: etkilenen açıklık yarıları deliğiyle yeniden örülür
+func _bridge_hole(it: Dictionary, lx: float, lz: float, r: float) -> void:
+	var Ld: float = it["Ld"]
+	var s: float = it["s"]
+	var n: int = it["n"]
+	var stone: bool = it["stone"]
+	var W: float = it["W"]
+	var halves: Array = it["halves"]
+	var hl: Array = it["hl"]
+	var sd := randf() * 100.0
+	it["holes"] = int(it["holes"]) + 1
+	for k in n:
+		var sx := lx - (-Ld * 0.5 + (k + 0.5) * s)
+		if absf(sx) > s * 0.5 + r * 1.2:
+			continue
+		for h in 2:
+			var x0 := -s * 0.5 if h == 0 else 0.0
+			var x1 := 0.0 if h == 0 else s * 0.5
+			if sx + r * 1.2 < x0 or sx - r * 1.2 > x1:
+				continue
+			var idx := k * 2 + h
+			(hl[idx] as Array).append([Vector2(sx, lz), r, sd])
+			var mi: MeshInstance3D = halves[idx]
+			if is_instance_valid(mi):
+				mi.mesh = BridgeMesh.half(stone, s, W, -1 if h == 0 else 1, hl[idx])
+	var root: Node3D = it["node"]
+	var wp := root.to_global(Vector3(lx, 0, lz))
+	G.fx.scorch(wp, r * 3.4)
+	# delikten düşen parçalar suya
+	if G.terrain and G.terrain.ground_h(wp) < -0.3 and not stone:
+		get_tree().create_timer(0.35).timeout.connect(func(): G.fx.water_splash(wp, 0.45))
+
+# çöküş: vurulan açıklık (bazen komşusu da) ortadan kırılır; betonda iki yarı mesnetleri etrafında dönüp suya
+# V biçiminde düşer, taşta kemer yıkılır (yarılar dibe iner, iri taşlar sudan çıkar). Ayaklar ve öteki açıklıklar kalır.
+func _collapse_bridge(it: Dictionary, center: Vector3) -> void:
+	var c: Vector3 = it["pos"]
+	var dir: Vector3 = it["dir"]
+	var Ld: float = it["Ld"]
+	var s: float = it["s"]
+	var n: int = it["n"]
+	var W: float = it["W"]
+	var lx := (center - c).dot(dir)
+	var k0 := clampi(int(floor((lx + Ld * 0.5) / s)), 0, n - 1)
+	var drop := [k0]
+	if n >= 3:
+		var f := (lx + Ld * 0.5) / s - k0
+		if f < 0.25 and k0 > 0 and randf() < 0.5:
+			drop.append(k0 - 1)
+		elif f > 0.75 and k0 < n - 1 and randf() < 0.5:
+			drop.append(k0 + 1)
+	var x_lo := 1e9
+	var x_hi := -1e9
+	for k in drop:
+		_drop_span(it, k)
+		x_lo = minf(x_lo, -Ld * 0.5 + k * s)
+		x_hi = maxf(x_hi, -Ld * 0.5 + (k + 1) * s)
+	var gap := x_hi - x_lo
+	var gc := c + dir * ((x_lo + x_hi) * 0.5)
+	G.fx.dust_burst(gc, gap * 0.5)
+	Sfx.play3d("collapse", gc, 6.0)
+	G.grid.clear_bridge(gc, Vector2(gap, W + 0.5), it["rot"])
+	for b in G.grid.bridges.duplicate():
+		if (b["c"] as Vector3).distance_to(c) < 1.0:
+			G.grid.bridges.erase(b)
+	# üstündekiler suya düşer
+	for u in G.near(gc, gap * 0.6 + W):
+		if not u.alive:
+			continue
+		var rel: Vector3 = u.position - gc
+		if absf(rel.dot(dir)) < gap * 0.5 and absf(rel.cross(dir).y) < W * 0.5 + 0.5:
+			if u is Vehicle and not u.is_air():
+				u.destroy(null)
+			elif u is Soldier:
+				u.die(null)
+	G.say(I18n.s("KÖPRÜ YIKILDI!"), c, G.player_team)
+
+func _drop_span(it: Dictionary, k: int) -> void:
+	var root: Node3D = it["node"]
+	var s: float = it["s"]
+	var Ld: float = it["Ld"]
+	var W: float = it["W"]
+	var stone: bool = it["stone"]
+	var halves: Array = it["halves"]
+	var xc := -Ld * 0.5 + (k + 0.5) * s
+	# bu açıklıktaki korkuluklar yarılarıyla birlikte düşer
+	var mm: MultiMesh = it["rails"]
+	var nseg: int = it["nseg"]
+	var ok: Array = it["rail_ok"]
+	for i in nseg * 2:
+		if int(ok[i]) == 0:
+			continue
+		var xf := mm.get_instance_transform(i)
+		var rx := xf.origin.x - xc
+		if absf(rx) > s * 0.5:
+			continue
+		ok[i] = 0
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), xf.origin))
+		var rm := MeshInstance3D.new()
+		rm.mesh = mm.mesh
+		rm.transform = Transform3D(xf.basis, xf.origin - Vector3(xc, 0, 0))
+		(halves[k * 2 + (0 if rx < 0.0 else 1)] as Node3D).add_child(rm)
+	var mid := root.to_global(Vector3(xc, 0, 0))
+	var bed := G.terrain.ground_h(mid) if G.terrain else -1.8
+	var depth := clampf(-(bed + 0.42) + 0.3, 1.1, 2.3)
+	for hh in 2:
+		var h: MeshInstance3D = halves[k * 2 + hh]
+		var sgn := -1.0 if hh == 0 else 1.0      # sol yarı -x ucundaki mesnette döner
+		var pv := Node3D.new()
+		pv.position = Vector3(xc + sgn * s * 0.5, -0.42, 0)
+		root.add_child(pv)
+		h.reparent(pv)
+		var be := MeshInstance3D.new()
+		be.mesh = _cached("br_edge_%s_%d" % ["s" if stone else "c", int(W * 10.0)], func(): return BridgeMesh.broken_edge(stone, W, 7))
+		be.rotation.y = 0.0 if hh == 0 else PI
+		h.add_child(be)
+		var ang := asin(clampf(depth / (s * 0.5), 0.05, 0.9))
+		var tw := pv.create_tween()
+		if stone:
+			tw.tween_interval(randf_range(0.0, 0.12))
+			tw.tween_property(pv, "position:y", -0.42 - depth - 0.5, 0.8).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			tw.parallel().tween_property(pv, "rotation:z", sgn * ang * randf_range(0.5, 1.1), 0.8)
+			tw.parallel().tween_property(pv, "rotation:x", randf_range(-0.12, 0.12), 0.8)
+		else:
+			tw.tween_property(pv, "rotation:z", sgn * ang * 0.06, 0.18)
+			tw.tween_property(pv, "rotation:z", sgn * ang, 0.75).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			tw.tween_property(pv, "rotation:z", sgn * ang * 0.93, 0.12).set_ease(Tween.EASE_OUT)
+			tw.tween_property(pv, "rotation:z", sgn * ang, 0.2).set_ease(Tween.EASE_IN)
+	var tm := get_tree().create_timer(0.9)
+	tm.timeout.connect(func():
+		G.fx.water_splash(mid, 1.8)
+		G.fx.dust_burst(mid, 3.0))
+	if not stone:
+		# kırılma yerinde iri beton kırıkları (bir kısmı sudan çıkar)
+		for j in 8:
+			var pc := MeshInstance3D.new()
+			var v := j % 3
+			pc.mesh = _cached("br_cchunk_%d" % v, func(): return BridgeMesh.conc_chunk(v))
+			var lp := Vector3(xc + randf_range(-0.2, 0.2) * s, randf_range(-0.3, 0.1), randf_range(-W * 0.5, W * 0.5))
+			pc.position = lp
+			pc.rotation = Vector3(randf_range(-0.8, 0.8), randf() * TAU, randf_range(-0.8, 0.8))
+			var sc := randf_range(0.9, 1.7)
+			pc.scale = Vector3(sc, sc, sc)
+			root.add_child(pc)
+			var gp := root.to_global(Vector3(lp.x, 0, lp.z))
+			var gy := G.terrain.ground_h(gp) if G.terrain else -1.8
+			var tw3 := pc.create_tween()
+			tw3.tween_interval(randf_range(0.3, 0.7))
+			tw3.tween_property(pc, "position:y", gy + (0.55 if j < 4 else 0.2) * sc, randf_range(0.4, 0.6)).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	if stone:
+		# kemer taşları: iri bloklar dibe yığılır, bir kısmı sudan çıkar; açıklık uçlarında kırık kemer
+		for j in 16:
+			var pc := MeshInstance3D.new()
+			var v := j % 3
+			pc.mesh = _cached("br_stone_%d" % v, func(): return BridgeMesh.stone_chunk(v))
+			var lp := Vector3(xc + randf_range(-0.42, 0.42) * s, randf_range(-0.3, 0.2), randf_range(-W * 0.55, W * 0.55))
+			pc.position = lp
+			pc.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+			var sc := randf_range(1.6, 2.6) if j < 6 else randf_range(0.9, 1.6)
+			pc.scale = Vector3(sc, sc * 0.8, sc)
+			root.add_child(pc)
+			var gp := root.to_global(Vector3(lp.x, 0, lp.z))
+			var gy := G.terrain.ground_h(gp) if G.terrain else -1.8
+			var tw2 := pc.create_tween()
+			tw2.tween_interval(randf_range(0.05, 0.4))
+			tw2.tween_property(pc, "position:y", gy + (0.5 if j < 6 else 0.15) * sc, randf_range(0.5, 0.8)).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		for e in [-1.0, 1.0]:
+			var be2 := MeshInstance3D.new()
+			be2.mesh = _cached("br_edge_s_%d" % int(W * 10.0), func(): return BridgeMesh.broken_edge(true, W, 7))
+			be2.position = Vector3(xc + e * s * 0.5, 0, 0)
+			be2.rotation.y = 0.0 if e < 0.0 else PI
+			root.add_child(be2)
 
 # ------------------------------------------------------------ akışlı ot (büyük harita)
 # 8 km'de haritanın tamamına ot dökmek ~2 M örnek ve ~10 sn üretim demekti: ot yalnız yakın görüşte,

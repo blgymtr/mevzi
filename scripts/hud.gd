@@ -306,6 +306,8 @@ func _build_mini() -> void:
 	radar = Radar.new()
 	radar.hud = self
 	radar.mouse_filter = Control.MOUSE_FILTER_STOP
+	# görüş çerçevesi harita küçükken / uzak yakınlaştırmada mini haritanın dışına taşıp ekranda beyaz çizgi bırakıyordu
+	radar.clip_contents = true
 	mini.add_child(radar)
 	mini_scale = float(G.main.cfg.get("minimap", 1.25)) if G.main and "cfg" in G.main else 1.25
 	apply_mini_size()

@@ -382,6 +382,30 @@ func ground_h(p: Vector3) -> float:
 	var z := clampi(int(p.z * k), 0, HRES - 1)
 	return himg.get_pixel(x, z).r
 
+# köprü ayakları (su gölgelendiricisinde burun köpüğü, mansap izi ve girdaplar için; en çok 32)
+var piers := PackedVector4Array()
+
+# suya düşüş dalgası (en çok 16 eşzamanlı, halka tampon); s: büyüklük (el bombası ~0.5, tank ~2.5)
+var ripples := PackedVector4Array()
+var _rip_i := 0
+
+func add_ripple(p: Vector3, s: float) -> void:
+	if water_mat == null:
+		return
+	if ripples.size() < 16:
+		ripples.resize(16)
+	ripples[_rip_i] = Vector4(p.x, p.z, G.time, s)
+	_rip_i = (_rip_i + 1) % 16
+	water_mat.set_shader_parameter("ripples", ripples)
+
+func add_pier(p: Vector3, half_len: float, half_th: float) -> void:
+	if piers.size() >= 32:
+		return
+	piers.append(Vector4(p.x, p.z, half_len, half_th))
+	if water_mat != null:
+		water_mat.set_shader_parameter("piers", piers)
+		water_mat.set_shader_parameter("pier_n", piers.size())
+
 func make_water() -> void:
 	if not has_water:
 		return
@@ -406,6 +430,8 @@ func make_water() -> void:
 					mi.set_pixel(x, z, Color(1, 1, 1))
 	water_mat.set_shader_parameter("river_mask", ImageTexture.create_from_image(mi))
 	water_mat.set_shader_parameter("map_size", G.MAP)
+	water_mat.set_shader_parameter("piers", piers)
+	water_mat.set_shader_parameter("pier_n", piers.size())
 	# su yüzeyi yalnız nehir boyunca şerit örgüler (eskiden harita boyu tek düzlem; 8 km'de tüm ekranda
 	# kırılma gölgelendiricisi çalışırdı). Köşe rengi: akış yönü (rg) ve şerit kesiti (b) — akıntı nehri izler
 	for rv in _rivers:
@@ -608,7 +634,7 @@ func _mm(mesh: Mesh, n: int, rng: RandomNumberGenerator, s0: float, s1: float) -
 	while xs.size() < n and tries < n * 4:
 		tries += 1
 		var p := Vector3(rng.randf_range(2, G.MAP - 2), 0, rng.randf_range(2, G.MAP - 2))
-		if G.grid.height_at(p) > 0.05 or ground_h(p) < -0.1:
+		if G.grid.height_at(p) > 0.05 or ground_h(p) < -0.1 or G.grid.on_bridge(p):
 			continue
 		var c := img.get_pixel(_px(p.x), _px(p.z))
 		if c.r > 0.3:

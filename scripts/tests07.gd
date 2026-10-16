@@ -79,6 +79,14 @@ func run(scene: String) -> void:
 			await mortar_test()
 		"ruintest":
 			await ruin_test()
+		"bridgetest":
+			await bridge_test()
+		"shadowtest":
+			await shadow_test()
+		"smoketest":
+			await smoke_test()
+		"firetest":
+			await fire_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -2271,3 +2279,304 @@ func yield_test() -> void:
 	if not passed or yielded == 0 or min_d < 0.5:
 		fails += 1
 	print("YIELDTEST RESULT fails=%d" % fails)
+
+# 41: köprü — iki tip (taş kemer / betonarme); yakınlaştırma basamaklarında gölge (iki karede küçük kaydırma:
+# titreme/kayma), kısmi hasar (delik, kopan korkuluk), çöküş (açıklık suya düşer, köprü geçilmez olur)
+func bridge_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 43)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var mid := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	var picks := {}
+	for it in G.props.items:
+		if it.get("kind", "") != "bridge" or not it["alive"]:
+			continue
+		var tk := "stone" if it["stone"] else "conc"
+		var d: float = (it["pos"] as Vector3).distance_to(mid)
+		if not picks.has(tk) or d < picks[tk][0]:
+			picks[tk] = [d, it]
+	for want in ["stone", "conc"]:
+		if picks.has(want) or G.terrain._rivers.is_empty():
+			continue
+		# bu haritada o tip yoksa: nehrin ortasına, öteki köprülerden uzak (yolsuz) bir tane kur
+		var rv: Array = G.terrain._rivers[0]
+		var pts: PackedVector3Array = rv[0]
+		for i in range(pts.size() / 3, pts.size() - 2):
+			var p := pts[i]
+			var far := true
+			for it in G.props.items:
+				if it.get("kind", "") == "bridge" and (it["pos"] as Vector3).distance_to(p) < 70.0:
+					far = false
+			if not far or p.x < 30.0 or p.z < 30.0 or p.x > G.MAP - 30.0 or p.z > G.MAP - 30.0:
+				continue
+			var t := (pts[i + 1] - pts[i - 1]).normalized()
+			G.props.bridge(Vector3(p.x, 0, p.z), Vector3(-t.z, 0, t.x), minf(float(rv[1]) + 5.0, 20.0) if want == "stone" else 34.0)
+			var nb: Dictionary = G.props.items[G.props.items.size() - 1]
+			if nb.get("stone", false) == (want == "stone"):
+				picks[want] = [0.0, nb]
+			break
+	print("BRIDGE kinds=%s" % [picks.keys()])
+	for tk in ["conc", "stone"]:
+		if not picks.has(tk):
+			print("BRIDGE %s none" % tk)
+			continue
+		var br: Dictionary = picks[tk][1]
+		var c: Vector3 = br["pos"]
+		var zs := [22.0, 60.0, 160.0, 420.0, 900.0] if tk == "conc" else [22.0]
+		for sz in zs:
+			for k in 2:
+				G.cam.size = sz
+				G.cam.target_size = sz
+				G.cam.jump_to(c + G.cam.right_vec() * (sz * 0.004 * k), true)
+				await m._wait(0.35)
+				await m._shot("%s_z%d_%d" % [tk, int(sz), k])
+		# uç ayak / kanat duvarı / yaklaşım bariyeri yakın çekim
+		G.cam.size = 12.0
+		G.cam.target_size = 12.0
+		G.cam.jump_to(c + (br["dir"] as Vector3) * (float(br["Ld"]) * 0.5), true)
+		await m._wait(0.35)
+		await m._shot("%s_end" % tk)
+		# kısmi hasar: iki top mermisi (döşemede delik); kenara düşen mermi korkuluğu koparır
+		G.cam.size = 20.0
+		G.cam.target_size = 20.0
+		G.cam.jump_to(c, true)
+		var hp0: float = br["hp"]
+		var dir: Vector3 = br["dir"]
+		var side := Vector3(-dir.z, 0, dir.x)
+		for k in 2:
+			G.explode(c + dir * (k * 4.0 - 2.0) + Vector3(0, 0.5, 0), 3.5, 160.0, "shell", 1)
+			await m._wait(0.4)
+		G.explode(c + dir * 5.0 + side * (float(br["W"]) * 0.5 - 0.6) + Vector3(0, 0.5, 0), 3.5, 160.0, "shell", 1)
+		await m._wait(5.0)
+		await m._shot("%s_damaged" % tk)
+		var rl: int = br.get("rail_lost", 0)
+		var ho: int = br.get("holes", 0)
+		print("BRIDGE %s hp=%.0f->%.0f alive=%s rail_lost=%d holes=%d" % [tk, hp0, br["hp"], br["alive"], rl, ho])
+		if not br["alive"] or ho == 0 or rl == 0:
+			fails += 1
+		# çöküş
+		for k in 8:
+			G.explode(c + dir * randf_range(-3, 3) + Vector3(0, 0.5, 0), 4.0, 260.0, "big", 1)
+			await m._wait(0.15)
+		await m._wait(1.0)
+		await m._shot("%s_collapsing" % tk)
+		await m._wait(7.0)
+		G.cam.size = 34.0
+		G.cam.target_size = 34.0
+		await m._wait(0.3)
+		await m._shot("%s_collapsed" % tk)
+		var passable := not G.grid.bridge_at(c).is_empty()
+		print("BRIDGE %s collapsed=%s passable=%s" % [tk, not br["alive"], passable])
+		if br["alive"] or passable:
+			fails += 1
+	# 14: suya düşüş dalgası araç boyuna göre — nehirde cip ve tank batırılır, yanında top mermisi suya düşer
+	var wb: Dictionary = picks["conc"][1] if picks.has("conc") else {}
+	if not wb.is_empty():
+		var wd: Vector3 = wb["dir"]
+		var ws := Vector3(-wd.z, 0, wd.x)
+		var wc: Vector3 = (wb["pos"] as Vector3) + ws * 26.0
+		var spots := [wc - wd * 3.0, wc + wd * 3.0 + ws * 10.0]
+		var ids := ["usa_lv_m1151", "rus_mbt_90m"]
+		var sunk := 0
+		for i in 2:
+			var q: Vector3 = spots[i]
+			if not G.grid.is_water(q):
+				continue
+			var v = m.spawn_vehicle(1, ids[i], q, 0.3)
+			v.position = q
+			v.destroy(null)
+			sunk += 1
+		G.explode(wc + ws * 5.0 + Vector3(0, 0.3, 0), 4.0, 130.0, "shell", 1)
+		G.cam.size = 40.0
+		G.cam.target_size = 40.0
+		G.cam.jump_to(wc + ws * 4.0, true)
+		for k in 3:
+			await m._wait([0.6, 1.2, 2.0][k])
+			await m._shot("ripple_%d" % k)
+		print("RIPPLE sunk=%d" % sunk)
+	print("BRIDGETEST RESULT fails=%d" % fails)
+
+# 41: uzaklaşınca gölge kayması / parlaması — bir binanın çevresi (40 m) her yakınlaştırmada aynı boya kırpılıp
+# yan yana dizilir: gölge binadan kopuyor mu, kenarlar titriyor mu. Ayrıca yavaş yakınlaştırmada ardışık kareler.
+func shadow_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("front_2k", {}, true, 7)
+	G.fog_off = true
+	G.reveal = [9999.0, 9999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var mid := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	var hc := mid
+	var bd := 1e9
+	for hs in G.blocks.houses:
+		var c: Vector3 = hs["center"]
+		var d := c.distance_to(mid)
+		if d < bd and (hs["size"] as Vector2).x > 6.0:
+			bd = d
+			hc = c
+	var sizes := [40.0, 80.0, 160.0, 300.0, 450.0, 614.0]
+	var T := 220
+	var sheet := Image.create(T * sizes.size(), T * 2, false, Image.FORMAT_RGBA8)
+	for i in sizes.size():
+		var sz: float = sizes[i]
+		G.cam.size = sz
+		G.cam.target_size = sz
+		G.cam.jump_to(hc, true)
+		await m._wait(0.5)
+		await m._shot("shadow_z%d" % int(sz))
+		await RenderingServer.frame_post_draw
+		var img := m.get_viewport().get_texture().get_image()
+		var sp := G.cam.cam.unproject_position(hc) * Vector2(img.get_size()) / m.get_viewport().get_visible_rect().size
+		var half := int(20.0 * 900.0 / sz)
+		var r := Rect2i(int(sp.x) - half, int(sp.y) - half, half * 2, half * 2).intersection(Rect2i(Vector2i.ZERO, img.get_size()))
+		var cr := img.get_region(r)
+		cr.convert(Image.FORMAT_RGBA8)
+		cr.resize(T, T, Image.INTERPOLATE_BILINEAR)
+		sheet.blit_rect(cr, Rect2i(0, 0, T, T), Vector2i(i * T, 0))
+		# aynı yakınlaştırmada yarım piksel kaydırılmış ikinci kare (titreme)
+		G.cam.jump_to(hc + G.cam.right_vec() * (sz / 900.0) * 0.5, true)
+		await m._wait(0.2)
+		await RenderingServer.frame_post_draw
+		var img2 := m.get_viewport().get_texture().get_image()
+		var sp2 := G.cam.cam.unproject_position(hc) * Vector2(img2.get_size()) / m.get_viewport().get_visible_rect().size
+		var r2 := Rect2i(int(sp2.x) - half, int(sp2.y) - half, half * 2, half * 2).intersection(Rect2i(Vector2i.ZERO, img2.get_size()))
+		var cr2 := img2.get_region(r2)
+		cr2.convert(Image.FORMAT_RGBA8)
+		cr2.resize(T, T, Image.INTERPOLATE_BILINEAR)
+		sheet.blit_rect(cr2, Rect2i(0, 0, T, T), Vector2i(i * T, T))
+	sheet.save_png(m.shot_dir.path_join("shadow_sheet.png"))
+	# yavaş yakınlaştırma: 150 → 170 arası 8 kare (gölge sürünmesi)
+	var sheet2 := Image.create(T * 8, T, false, Image.FORMAT_RGBA8)
+	for k in 8:
+		var sz2 := 150.0 + k * 2.5
+		G.cam.size = sz2
+		G.cam.target_size = sz2
+		G.cam.jump_to(hc, true)
+		await m._wait(0.1)
+		await RenderingServer.frame_post_draw
+		var img3 := m.get_viewport().get_texture().get_image()
+		var sp3 := G.cam.cam.unproject_position(hc) * Vector2(img3.get_size()) / m.get_viewport().get_visible_rect().size
+		var half3 := int(12.0 * 900.0 / sz2)
+		var r3 := Rect2i(int(sp3.x) - half3, int(sp3.y) - half3, half3 * 2, half3 * 2).intersection(Rect2i(Vector2i.ZERO, img3.get_size()))
+		var cr3 := img3.get_region(r3)
+		cr3.convert(Image.FORMAT_RGBA8)
+		cr3.resize(T, T, Image.INTERPOLATE_NEAREST)
+		sheet2.blit_rect(cr3, Rect2i(0, 0, T, T), Vector2i(k * T, 0))
+	sheet2.save_png(m.shot_dir.path_join("shadow_zoomseq.png"))
+	print("SHADOW house=%s" % [hc])
+	print("SHADOWTEST RESULT fails=0")
+
+# 14: duman / patlama bulutu — her tür için zaman dizisi (0.1 → 6 sn); arkadaki bina dumanın içinden seçilmeli
+func smoke_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 43)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var mid := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	var hc := mid
+	var bd := 1e9
+	for hs in G.blocks.houses:
+		var c: Vector3 = hs["center"]
+		if c.distance_to(mid) < bd:
+			bd = c.distance_to(mid)
+			hc = c
+	await m._wait(2.5)          # açılış kamera hareketi bitsin
+	var cases := [["shell", 4.5, 130.0], ["big", 6.0, 300.0], ["grenade", 2.5, 60.0], ["mortar", 4.0, 110.0], ["burn", 0.0, 0.0], ["screen", 0.0, 0.0]]
+	var times := [0.12, 0.4, 0.9, 1.8, 3.5, 6.0]
+	var T := 260
+	var sheet := Image.create(T * times.size(), T * cases.size(), false, Image.FORMAT_RGBA8)
+	for ci in cases.size():
+		var cs: Array = cases[ci]
+		# patlama binanın kameraya bakan yanında: bina dumanın arkasında kalır
+		var p := hc + Vector3(7.0, 0, 7.0) + Vector3(ci * 0.0, 0, 0)
+		G.cam.size = 34.0
+		G.cam.target_size = 34.0
+		G.cam.jump_to(p + Vector3(-3.0, 0, -3.0), true)
+		await m._wait(0.6)
+		var t0 := G.time
+		match cs[0]:
+			"burn":
+				G.fx.burn(p, 30.0, 1.2)
+				G.fx.fire_column(p, 30.0, 1.0)
+			"screen":
+				G.fx.smoke_screen(p, 20.0)
+			_:
+				G.explode(p + Vector3(0, 0.3, 0), cs[1], cs[2], cs[0], 1)
+		for ti in times.size():
+			while G.time - t0 < float(times[ti]):
+				G.cam._shake = 0.0
+				await m.get_tree().process_frame
+			await RenderingServer.frame_post_draw
+			var img := m.get_viewport().get_texture().get_image()
+			var sp := G.cam.cam.unproject_position(p + Vector3(0, 3.0, 0)) * Vector2(img.get_size()) / m.get_viewport().get_visible_rect().size
+			var half := int(15.0 * 900.0 / 34.0)
+			var r := Rect2i(int(sp.x) - half, int(sp.y) - half, half * 2, half * 2).intersection(Rect2i(Vector2i.ZERO, img.get_size()))
+			var cr := img.get_region(r)
+			cr.convert(Image.FORMAT_RGBA8)
+			cr.resize(T, T, Image.INTERPOLATE_BILINEAR)
+			sheet.blit_rect(cr, Rect2i(0, 0, T, T), Vector2i(ti * T, ci * T))
+		if cs[0] == "big":
+			await m._shot("smoke_big_full")
+		# bir sonraki tür için ortalığı temizle (dumanlar sönsün)
+		G.fx.emitters.clear()
+		await m._wait(7.0)
+	sheet.save_png(m.shot_dir.path_join("smoke_sheet.png"))
+	print("SMOKETEST RESULT fails=0")
+
+# 24: hacimli alev (yanan araç yakın çekim, zaman dizisi) ve roketatar tüp çıkışı (M270, BM-21)
+func fire_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 43)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	await m._wait(2.0)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5 + 30.0, 0, G.MAP * 0.5 - 20.0), Grid.M_HEAVY)
+	var tk := m.spawn_vehicle(1, "rus_mbt_72b3", c, 0.6)
+	tk.cmd_hold()
+	await m._wait(0.3)
+	tk.destroy(null)
+	G.fx.burn(tk.position + Vector3(0, 1.0, 0), 60.0, 1.4)
+	G.cam.size = 16.0
+	G.cam.target_size = 16.0
+	G.cam.jump_to(c, true)
+	for k in 4:
+		await m._wait([1.5, 2.0, 3.0, 6.0][k])
+		await m._shot("burn_%d" % k)
+	# roketatar salvoları
+	var ids := ["usa_mlrs_m270", "rus_mlrs_grad"]
+	for i in 2:
+		var p := G.grid.nearest_free(c + Vector3(-40.0 + i * 30.0, 0, 40.0), Grid.M_HEAVY)
+		var ml := m.spawn_vehicle(0, ids[i], p, 0.8)
+		ml.cmd_hold()
+		ml.deployed = 0.0
+		G.cam.size = 14.0
+		G.cam.target_size = 14.0
+		G.cam.jump_to(p, true)
+		await m._wait(1.5)
+		await m._shot("pod_%s_rise" % ids[i])
+		await m._wait(ml.deploy_time())
+		ml.mlrs_aim = p + Vector3(600.0, 0, -500.0)
+		ml.mlrs_left = ml.salvo_n if ml.salvo_n > 0 else 12
+		ml.mlrs_t = 0.0
+		var n0: int = ml.mlrs_left
+		for k in 4:
+			await m._wait([0.12, 0.25, 0.5, 1.2][k])
+			await m._shot("pod_%s_%d" % [ids[i], k])
+		print("POD %s salvo=%d left=%d vtype=%s alive=%s dep=%.2f proc=%s mt=%.2f" % [ids[i], n0, ml.mlrs_left, ml.vtype, ml.alive, ml.deployed, ml.is_processing(), ml.mlrs_t])
+	print("FIRETEST RESULT fails=0")

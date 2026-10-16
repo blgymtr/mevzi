@@ -3,13 +3,40 @@
 #   python3 tools/fx_sim.py expl     -> assets/fx/expl_flip.png  (patlama ateş topu, 8x6 kare)
 #   python3 tools/fx_sim.py smoke    -> assets/fx/smoke_flip.png (yükselen yoğun duman)
 #   python3 tools/fx_sim.py dust     -> assets/fx/dust_flip.png  (top/havan isabetinde toprak-toz patlaması)
+# PIL yoksa (ör. Blender'ın Python'u) numpy ile küçültüp kendi PNG yazıcısıyla kaydeder.
 # Yöntem: yarı-Lagrange adveksiyon (üç doğrusal örnekleme), sıcaklık/yoğunluk kaldırma kuvveti,
 # girdap koruması (vorticity confinement), Jacobi basınç projeksiyonu, yakıt yanması (ısı+is).
 # İşleme: yandan ortografik bakış, ön→arka birleştirme, üstten ışığa gölge geçirgenliği,
 # sıcaklıktan kara cisim ışıması. Çıktı önceden çarpılmamış RGBA.
 import sys, os
+import struct, zlib
 import numpy as np
-from PIL import Image
+try:
+	from PIL import Image
+except ImportError:
+	Image = None
+
+
+def _resize(a, n):
+	# (h, w, 4) → (n, n, 4) çift doğrusal
+	h, w = a.shape[:2]
+	ys = (np.arange(n) + 0.5) * h / n - 0.5
+	xs = (np.arange(n) + 0.5) * w / n - 0.5
+	y0 = np.clip(np.floor(ys).astype(int), 0, h - 1); y1 = np.clip(y0 + 1, 0, h - 1); fy = np.clip(ys - y0, 0, 1)[:, None, None]
+	x0 = np.clip(np.floor(xs).astype(int), 0, w - 1); x1 = np.clip(x0 + 1, 0, w - 1); fx = np.clip(xs - x0, 0, 1)[None, :, None]
+	a0 = a[y0][:, x0] * (1 - fx) + a[y0][:, x1] * fx
+	a1 = a[y1][:, x0] * (1 - fx) + a[y1][:, x1] * fx
+	return a0 * (1 - fy) + a1 * fy
+
+
+def _save_png(path, rgba):
+	h, w, _ = rgba.shape
+	raw = b"".join(b"\x00" + rgba[y].tobytes() for y in range(h))
+	def chunk(t, data):
+		c = struct.pack(">I", len(data)) + t + data
+		return c + struct.pack(">I", zlib.crc32(t + data) & 0xFFFFFFFF)
+	with open(path, "wb") as fh:
+		fh.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
 
 KIND = sys.argv[1] if len(sys.argv) > 1 else "expl"
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -167,13 +194,22 @@ for fr in range(NFR):
 	e = np.minimum(np.minimum(xx, NY - 1 - xx), np.minimum(yy, NY - 1 - yy))
 	edge = np.clip((e - 2.0) / (NY * 0.14), 0, 1)
 	canvas[..., 3] *= edge * edge * (3 - 2 * edge)
-	frames.append(Image.fromarray((canvas * 255).astype(np.uint8), "RGBA").resize((CELL, CELL), Image.BICUBIC))
+	if Image is not None:
+		frames.append(Image.fromarray((canvas * 255).astype(np.uint8), "RGBA").resize((CELL, CELL), Image.BICUBIC))
+	else:
+		frames.append((np.clip(_resize(canvas, CELL), 0, 1) * 255).astype(np.uint8))
 	print("FRAME", fr, "max_t=%.2f max_d=%.2f" % (float(temp.max()), float(dens.max())), flush=True)
 
-atlas = Image.new("RGBA", (COLS * CELL, ROWS * CELL))
-for i, f in enumerate(frames):
-	atlas.paste(f, ((i % COLS) * CELL, (i // COLS) * CELL))
 out = os.path.join(ROOT, "assets", "fx", "%s_flip.png" % KIND)
 os.makedirs(os.path.dirname(out), exist_ok=True)
-atlas.save(out, optimize=True)
+if Image is not None:
+	atlas = Image.new("RGBA", (COLS * CELL, ROWS * CELL))
+	for i, f in enumerate(frames):
+		atlas.paste(f, ((i % COLS) * CELL, (i // COLS) * CELL))
+	atlas.save(out, optimize=True)
+else:
+	atlas = np.zeros((ROWS * CELL, COLS * CELL, 4), np.uint8)
+	for i, f in enumerate(frames):
+		atlas[(i // COLS) * CELL:(i // COLS + 1) * CELL, (i % COLS) * CELL:(i % COLS + 1) * CELL] = f
+	_save_png(out, atlas)
 print("ATLAS", out)

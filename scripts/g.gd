@@ -450,7 +450,9 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 	if kind in ["grenade", "mortar", "rpg"]:
 		fx.surface_burst(Vector3(p.x, 0.1, p.z), size)
 	Sfx.play3d("expl_big" if size >= 1.6 else ("expl_med" if size >= 1.0 else "expl_small"), p, 4.0 if size >= 1.6 else 1.0)
-	if p.y < 1.5:
+	if p.y < 1.5 and grid.on_bridge(p):
+		fx.scorch(p, radius * 0.9)          # köprü döşemesi: toprak çukuru değil is izi
+	elif p.y < 1.5:
 		fx.crater(p, radius * 1.15)
 		# gerçek çukur: top/havan/büyük patlama araziyi oyar (askerler içine girip siper alır)
 		if kind in ["shell", "big", "mine", "rpg"] and radius >= 3.0 and not grid.is_water(p) and grid.height_at(p) < 0.3:

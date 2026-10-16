@@ -881,6 +881,9 @@ func nearest_dry(p: Vector3, maxr_m := 8.0) -> Vector3:
 			return Vector3((best.x + 0.5) * CS, p.y, (best.y + 0.5) * CS)
 	return p
 
+func on_bridge(p: Vector3) -> bool:
+	return bridge[idx(p)] == 1
+
 func is_water(p: Vector3) -> bool:
 	var i := idx(p)
 	return water[i] >= 1 and bridge[i] == 0

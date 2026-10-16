@@ -92,6 +92,16 @@ static func masonry() -> Material:
 		_c["masonry"] = m
 	return _c["masonry"]
 
+# köprü: aynı dokular, biraz daha sık; kir/nem izi su çizgisinde (yol yüzünde değil)
+static func bridge() -> Material:
+	if not _c.has("bridge"):
+		var m: ShaderMaterial = (masonry() as ShaderMaterial).duplicate()
+		m.set_shader_parameter("grime_y0", -0.8)
+		m.set_shader_parameter("grime_h", 0.6)
+		m.set_shader_parameter("scale", 0.7)
+		_c["bridge"] = m
+	return _c["bridge"]
+
 # çatı: kiremit dokusu eğime hizalı, kışta yumuşak kar
 static func roof(snow: bool) -> Material:
 	var key := "roof_%s" % snow
