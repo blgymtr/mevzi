@@ -186,6 +186,11 @@ var repair_body: SoldierBody = null
 const TOWED := ["fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun"]
 const INDIRECT := ["arty", "howitzer", "hmortar", "mtngun", "mlrs"]
 var crew: Array = []
+# roadmap 18: görünür mürettebat — kulede açık kapaktan bakan komutan (ateş altında içeri girer) ve açık
+# bölmeli kundağı motorlu topçuda güvertede çalışan mürettebat
+var cmdr: SoldierBody = null
+var _cmdr_t := 0.0
+var crew_deck := 0.0
 var mlrs_left := 0
 var mlrs_t := 0.0
 const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2}
@@ -680,6 +685,27 @@ func setup(t: int, vt: String) -> void:
 		turret.add_child(gunner)
 		gunner.build(t, "rifle", G.map_kind == "winter")
 		gunner.weapon.visible = false
+	# açık kapakta komutan (tank, PSA, ZPT, uçaksavar, kapalı kundağı motorlu)
+	if turret != null and M["turret"] != null and vt in ["tank", "ifv", "apc", "aa", "arty"] and cat.get("fam", "") != "spg_open":
+		var ta: AABB = (M["turret"] as Mesh).get_aabb()
+		if ta.size.y > 0.3:
+			cmdr = SoldierBody.new()
+			cmdr.position = Vector3(ta.position.x + ta.size.x * 0.68, ta.end.y - 1.08, ta.position.z + ta.size.z * 0.62)
+			turret.add_child(cmdr)
+			cmdr.build(t, "crew", G.map_kind == "winter")
+			cmdr.weapon.visible = false
+			cmdr.visible = false
+	if cat.get("fam", "") == "spg_open":
+		# açık bölmeli obüs (M110, M107, 2S7 Malka): güvertede nişancı ve doldurucu, yerde cephaneci
+		crew_deck = 1.4 * hull.scale.y
+		var dspots := [Vector3(-1.0, crew_deck, 1.7), Vector3(1.0, crew_deck, 1.5), Vector3(0.5, 0, ext.y + 1.4)]
+		for i in 3:
+			var cb2 := SoldierBody.new()
+			cb2.position = dspots[i]
+			hull.add_child(cb2)
+			cb2.build(t, "crew", G.map_kind == "winter")
+			cb2.weapon.visible = false
+			crew.append(cb2)
 	if vt in TOWED:
 		# çekili top: yanında çömelmiş mürettebat
 		var spots := [Vector3(-0.9, 0, 1.3), Vector3(0.9, 0, 1.1), Vector3(0.3, 0, 2.2)]
@@ -1260,6 +1286,7 @@ func _process(dt: float) -> void:
 	_visuals(dt)
 	if prof_on:
 		_pf("visuals", t0)
+	_cmdr_tick(dt)
 
 # çalışma zamanı ölçümü (perf8k): bölüm başına toplam mikro saniye
 static var prof := {}
@@ -2000,6 +2027,8 @@ func _aim_fire(dt: float) -> void:
 					_fire_flak(t)
 			"arty":
 				_fire_arty(t)
+				if not crew.is_empty():
+					on_crew_fire()
 			"fieldgun":
 				_fire_cannon(t)
 				main_cd = _rl(5.0)
@@ -3662,6 +3691,19 @@ func _debris(n: int, force: float) -> void:
 			G.fx.emit(Fx.P_SMOKE, land, Vector3(0, 0.6, 0), 1.5, 0.4, 1.2, -0.1, 1.0, Color(0.2, 0.2, 0.2, 0.5)))
 		if i == 0 and src_meshes.size() > 0:
 			G.fx.burn(land + Vector3(0, 0.2, 0), randf_range(8.0, 16.0), 0.35)
+
+# komutan kapakta: ateş altında / hedefe ateş ederken içeri girer, sakinken dışarı çıkıp bakar
+func _cmdr_tick(dt: float) -> void:
+	if cmdr == null:
+		return
+	_cmdr_t -= dt
+	if _cmdr_t > 0.0:
+		return
+	_cmdr_t = 0.5
+	var out := alive and crew_n >= 2 and G.time - last_hit > 12.0 and target == null and vstress < 30.0 and abandon_t < 0.0
+	cmdr.visible = out and visible
+	if cmdr.visible:
+		cmdr.animate(0.5, "stand", 0.0)
 
 func _meshes(n: Node) -> Array:
 	var out: Array = []

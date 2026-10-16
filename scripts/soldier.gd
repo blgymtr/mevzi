@@ -51,6 +51,10 @@ var bandages := 2          # her askerde: ana silah, tabanca, bıçak, sargı
 var bandage_t := 0.0
 var blood_t := 0.0
 var mortar_setup := 0.0     # havancı: durunca kurar (sn birikir), yürüyünce söker
+# roadmap 7: kurulan havan görünür — taban plakası, iki ayak, namlu kademeyle belirir; atışta namlu geri teper
+var mortar_prop: Node3D = null
+var _mortar_fired := -9.0
+static var _mortar_parts: Array = []
 var cold := 0.0           # kar fırtınasında üşüme (0-100)
 var cost_share := 0.0      # üretim maliyetinden payı (iade/imha puanı)
 var stress_lv := 0
@@ -1214,6 +1218,8 @@ func _timers(dt: float) -> void:
 		say("SARGI YAPIYORUM", 2.5)
 	if role == "mortar" and state == "move" and vel.length() > 0.5:
 		mortar_setup = 0.0
+	if role == "mortar":
+		_mortar_visual()
 	# sürüklenen / yerde kanayan yaralı arkasında kan izi bırakır
 	if state in ["dragged", "wounded", "stretchered"]:
 		blood_t -= dt
@@ -2226,6 +2232,55 @@ func _blind_fire(t: Unit, side: bool) -> void:
 	if randf() < 0.03:
 		say(["KÖR ATEŞ!", "KAFANI KALDIRMA!", "ÖRTÜ ATEŞİ!"][randi() % 3])
 
+func _mortar_meshes() -> void:
+	if not _mortar_parts.is_empty():
+		return
+	var od := Color(0.28, 0.31, 0.22)
+	var dk := Color(0.12, 0.12, 0.12)
+	var b := MB.new()
+	b.cyl(Vector3(0, 0.02, 0), 0.28, 0.24, 0.05, 14, dk)                       # taban plakası
+	b.box(Vector3(0, 0.05, 0), Vector3(0.06, 0.05, 0.5), dk)
+	b.box(Vector3(0, 0.05, 0), Vector3(0.5, 0.05, 0.06), dk)
+	var bp := MB.new()
+	for sx in [-1.0, 1.0]:
+		bp.cyl_between(Vector3(sx * 0.32, 0.0, -0.55), Vector3(sx * 0.05, 0.62, -0.32), 0.016, 0.016, 6, dk, false)
+	bp.box(Vector3(0, 0.62, -0.32), Vector3(0.16, 0.05, 0.05), dk)
+	bp.box(Vector3(-0.1, 0.72, -0.3), Vector3(0.06, 0.08, 0.1), Color(0.2, 0.22, 0.2))        # nişangâh
+	var tb := MB.new()
+	tb.cyl_between(Vector3(0, 0.05, 0), Vector3(0, 0.05, 0) + Vector3(0, sin(1.15), -cos(1.15)) * 1.25, 0.045, 0.042, 10, od, true)
+	_mortar_parts = [b.commit(Mats.vc()), bp.commit(Mats.vc()), tb.commit(Mats.vc())]
+
+func _mortar_visual() -> void:
+	var k := clampf(mortar_setup / 4.0, 0.0, 1.0)
+	if k <= 0.0 or not alive:
+		if mortar_prop != null:
+			mortar_prop.queue_free()
+			mortar_prop = null
+		return
+	if mortar_prop == null:
+		_mortar_meshes()
+		mortar_prop = Node3D.new()
+		G.main.world.add_child(mortar_prop)
+		var fw := Vector3(-sin(rotation.y), 0, -cos(rotation.y))
+		mortar_prop.position = G.on_ground(position + fw * 0.85)
+		mortar_prop.rotation.y = rotation.y
+		for i in 3:
+			var mi := MeshInstance3D.new()
+			mi.mesh = _mortar_parts[i]
+			mortar_prop.add_child(mi)
+	var parts := mortar_prop.get_children()
+	(parts[0] as Node3D).visible = k > 0.05
+	(parts[1] as Node3D).visible = k > 0.4
+	(parts[2] as Node3D).visible = k > 0.75
+	# atış: namlu kısa süre geri teper, taban plakası toz kaldırır
+	var rk := clampf(1.0 - (G.time - _mortar_fired) / 0.35, 0.0, 1.0)
+	(parts[2] as Node3D).position = Vector3(0, -0.05 * rk, 0.06 * rk)
+
+func _mortar_muzzle() -> Vector3:
+	if mortar_prop != null:
+		return mortar_prop.global_transform * (Vector3(0, 0.05, 0) + Vector3(0, sin(1.15), -cos(1.15)) * 1.25)
+	return position + Vector3(0, 1.0, 0)
+
 func _mortar_fire() -> void:
 	if mortar_setup < 4.0:
 		if mortar_setup == 0.0:
@@ -2259,7 +2314,11 @@ func _mortar_fire() -> void:
 	var d2 := dist2(best)
 	var err := d2 * 0.06 + 1.5
 	var tp := best.position + Vector3(randf_range(-err, err), 0, randf_range(-err, err))
-	G.bal.mortar(position + Vector3(0, 1.0, 0), tp, team, self)
+	_mortar_fired = G.time
+	var mz := _mortar_muzzle()
+	G.bal.mortar(mz, tp, team, self)
+	if mortar_prop != null:
+		G.fx.vehicle_dust(mortar_prop.global_position + Vector3(0, 0.1, 0))
 	_face_to(best.position)
 	Sfx.play3d("mortar", position, 0.0)
 	G.fx.muzzle(position + Vector3(0, 1.2, 0), Vector3.UP, true)
@@ -2891,8 +2950,15 @@ func on_grenade(g_pos: Vector3, fuse_left: float, thrower: Unit) -> bool:
 	return false
 
 func _pose() -> String:
-	if role == "mortar" and state == "idle" and mortar_cd > 2.5:
-		return "crouch_aim"
+	if role == "mortar" and state == "idle":
+		if mortar_setup > 0.0 and mortar_setup < 4.0:
+			return "build"                            # havanı kuruyor
+		if G.time - _mortar_fired < 0.8:
+			return "cover"                            # atış: kulak kapatır, eğilir
+		if mortar_prop != null and mortar_cd > 0.0 and mortar_cd < 1.4:
+			return "drop"                             # sıradaki mermiyi namluya bırakır
+		if mortar_cd > 2.5:
+			return "crouch_aim"
 	if flinch_t > 0.0 and state in ["idle", "move", "escort"]:
 		return "flinch"
 	if body_lift > 0.2 and state in ["move", "rescue", "escort", "prisoner", "stretcher"]:

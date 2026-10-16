@@ -130,6 +130,9 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Düzeltildi (55, kısmen): Kalabalık savaşta performans** — 8 km'de 600 birimlik çatışma 4 → 18 FPS: tespit taraması gözcü verisini paketli dizilerle ve uzamsal kovalarla yapar, gizli hedefte yalnız en yakın 6 gözcü görüş hattı sınar; hedefi olan / boştaki birim tüm görünür düşmanları her yarım saniyede taramaz; sis içindeki / ekran dışındaki askerin animasyonu seyrek güncellenir; duran askerin komşu ve araç itme sorguları seyrek (perf8k, 30 tim)
 - **Eklendi (8/29):** İHA ve FPV pervaneleri döner (ayrı düğüm); drone ekibi 2 kişi — istasyoncu ekran başında, ikinci asker kumandayla İHA'yı uçurur; istasyoncu düşerse pilot devralır, ikisi de düşerse bağ kopar; FPV operatörü uçuşta kumanda tutar (dronetest)
 - **Test altyapısı:** tactest saldıran tim saldırı hareketiyle gelir (gerçek menzilde 44 m tüfek menzilinin dışıydı)
+- **Eklendi (18):** Görünür mürettebat — tank, PSA, ZPT, uçaksavar ve kapalı kundağı motorluda komutan açık kapaktan bakar, ateş altında / çatışmada içeri girer; açık bölmeli obüste (M110, M107, 2S7 Malka) nişancı ve doldurucu güvertede, cephaneci yerde: atışta dolum döngüsü (crewvistest)
+- **Eklendi (7):** Havan timi havanını görünür kurar (taban plakası → iki ayak → namlu), mermiyi namluya bırakır, atışta kulak kapatır, namlu geri teper ve taban toz kaldırır; yürüyünce söker (mortartest)
+- **Değişti (21):** YZ boşta bekleyen birlikleri saldırı grubuna takviye olarak katar (her dört boştakinden biri üs savunmasında kalır)
 
 ---
 
@@ -144,7 +147,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 3 | Palet/teker/motor arızası + istihkâm tamir animasyonu; daha önce hasar alan daha kolay hasar alır (dengeli) | ✅ | Motor arızası (duman, yangın, söndürme), birikimli yıpranma, çekiç/kıvılcımlı onarım (enginetest) |
 | 5 | Seçim göstergesi: daha küçük, estetik, kendi tarzımız | 🟡 | Kompakt halka var. → Özgün tasarım (köşeli parantez + rol işareti, takım rengi), RA/SS/CoH analiziyle |
 | 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | ✅ | `data/ammo.json`: kalibre başına namlu çıkış hızı, kütle, delme, hasar, patlama yarıçapı; ulusa göre iz rengi; araç → mühimmat eşlemesi (ammotest) |
-| 7 | Havan, top, obüs ve kurmalı ekip animasyonları | 🟡 | Çekili top dolum döngüsü var (doğrulama sürüyor). → Havan timi, obüs, ağır silah kurma/sökme/dolum animasyonları |
+| 7 | Havan, top, obüs ve kurmalı ekip animasyonları | ✅ | Çekili top dolum döngüsü; havan kurma/dolum/atış/sökme; açık bölmeli obüste güverte mürettebatı (mortartest, crewvistest) |
 | 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Dönen pervaneler, 2 kişilik ekip (pilot devralır), türe göre optik/tespit ✅. → Drone sesleri (Faz 7) |
 | 9 | Vurulma yerine göre kan, patlamada uzuv kopması, sağlık çadırı/hastane/paramedikte ilk yardım, timleri isteğe göre birleştirme (tim+tim=manga) | 🟡 | Kan, bölgesel yara, hastane var. → İsabet bölgesine göre kan, uzuv kopması, ilk yardım animasyonu, oyuncu kontrollü tim birleştirme |
 | 10 | Araç modelleri çok detaylı (teker, kapak, yakıt deposu, namlu, zırh, renk) — EN KRİTİK KURAL | 🟡 | Katalog (191 araç) detay çekirdeğiyle yeniden üretildi ✅. → Taban tip modelleri (tank_blue vb.), gerçek boyut (38) |
@@ -155,7 +158,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 15 | Hava araçları füzeden kaçınsın; gerçek füze türleri ve atış mekanizmaları | ✅ | Güdüm türleri (IR / tel / lazer hüzme / lazer işaretleme / radar), kilit süreleri, nişancı izleme prosedürü (bastırılınca sapma), görünür tel, füzeye göre fişeğe kanma; helikopter fişek + kaçış (missiletest, evadetest) |
 | 16 | 100+ farklı bina, yıkılabilir köprüler, ağaç/çiçek/kaldırım/kapı/pencere/sokak/başıboş araç/direk — tam detay | 🟡 | 143 bina arketipi ✅, köprüler var. → 34 (dini yapı yok, duvarlar), 35 (özgünlük), sokak eşyaları |
 | 17 | Asker modeli fotoğraftaki gibi + her eylem için animasyon (düşme, eğilme, zıplama, koşma...) | ⏳ | → 1 ve 25 ile birlikte: iskeletli animasyon kütüphanesi |
-| 18 | Araçlar 3. fotoğraftaki gibi gerçekçi (mürettebat görünür, açık bölme) | ⏳ | → Kundağı motorlu topçuda açık bölme + içeride çalışan mürettebat |
+| 18 | Araçlar 3. fotoğraftaki gibi gerçekçi (mürettebat görünür, açık bölme) | ✅ | Kapakta komutan (çatışmada içeri), açık bölmeli obüste çalışan mürettebat (crewvistest) |
 | 19 | Animasyon için kendi sistemimiz (Unreal ile) | ⏳ | → Bkz. teknik not: Blender + mocap tabanlı kendi animasyon hattımız |
 | 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🟡 | Çatı eşyaları var; girilebilirlik düzeltildi (kapı yol hücreleri: erişilemeyen pencere yuvası 1006 → 65). → Kalan 10 tür (istasyon, kültür merkezi, karakol kulesi...), fotoğraftan farklılaştırma (35) |
 | 21 | Harita boyutları büyütülecek — **öne alındı:** gerçek muharebeye yetecek büyüklükte, büyük savaş mekanizmasına uygun harita; bundan sonra her şey bu haritada test edilecek, ardından özel haritalar (48) | 🔄 | **Büyük Muharebe 8×8 km** ✅ (motor, stratejik görüş, simgeler, tarla/orman, yükleme ekranı). → Kalan: YZ'nin büyük haritada ilerleyişi, mini harita, yol bulma ızgarası belleği (2,5 GB), 49/50 ile gerçek menzil ve görüş |

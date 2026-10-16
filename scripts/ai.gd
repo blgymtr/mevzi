@@ -252,6 +252,20 @@ func _attack() -> void:
 				attackers.append(u)
 		_pick_target()
 		reissue = 0.0
+	if attackers.size() >= 3 and think_n % 10 == 0:
+		# takviye: üste boşta bekleyen birlikler (yeni üretilenler) saldırı grubuna katılır; her dört boştakinden
+		# biri üs savunmasında kalır (büyük haritada üretilen 150 asker üste bekliyordu)
+		var idle_n := 0
+		for u in units:
+			if attackers.has(u) or _guarding(u) or _is_gun(u):
+				continue
+			if u is Soldier and (u.state != "idle" or u.order != "" or u.build_site != null):
+				continue
+			if u is Vehicle and u.order != "":
+				continue
+			idle_n += 1
+			if idle_n % 4 != 0:
+				attackers.append(u)
 	if attackers.size() >= 3:
 		if target_zone != null:
 			if target_zone["owner"] == team:

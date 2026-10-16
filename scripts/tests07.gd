@@ -71,6 +71,10 @@ func run(scene: String) -> void:
 			await kill_test()
 		"tracktest":
 			await track_test()
+		"crewvistest":
+			await crewvis_test()
+		"mortartest":
+			await mortar_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -1956,6 +1960,96 @@ func track_test() -> void:
 		if mp == "winter_village" and g1 < g0:
 			fails += 1
 	print("TRACKTEST RESULT fails=%d" % fails)
+
+# roadmap 18: kapakta komutan (ateş altında içeri girer), açık bölmeli obüste güvertede çalışan mürettebat
+func crewvis_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 41)
+	G.fog_off = true
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var tk: Vehicle = m.spawn_vehicle(0, "usa_mbt_s3", c, PI * 0.25)
+	var ifv: Vehicle = m.spawn_vehicle(0, "rus_ifv_bmp2m", G.grid.nearest_open(c + Vector3(12, 0, 0), Grid.M_HEAVY), PI * 0.25)
+	var spg: Vehicle = m.spawn_vehicle(0, "usa_spg_m110", G.grid.nearest_open(c + Vector3(-14, 0, 6), Grid.M_HEAVY), PI * 0.25)
+	for v in [tk, ifv, spg]:
+		v.cmd_hold()
+		v.fire_mode = 2
+	await m._wait(1.5)
+	var out0: bool = tk.cmdr != null and tk.cmdr.visible
+	_cam(c + Vector3(-2, 0, 2), 20.0)
+	await m._wait(0.4)
+	await m._shot("crew_01_hatch")
+	# ateş altında içeri girer
+	Vehicle.shot_from = tk.position + tk.forward() * 50.0
+	tk.take_damage(5.0, null, "bullet")
+	await m._wait(1.0)
+	var in1: bool = tk.cmdr != null and not tk.cmdr.visible
+	# açık bölmeli obüs: atıştan sonra güverte mürettebatı dolum döngüsünde
+	var deck := spg.crew.size()
+	var e: Vehicle = m.spawn_vehicle(1, "tank", G.grid.nearest_open(spg.position + spg.forward() * 120.0, Grid.M_HEAVY), 0.0)
+	e.fire_mode = 2
+	spg.fire_mode = 0
+	spg.cmd_attack(e)
+	var cycled := false
+	for k in 40:
+		await m._wait(0.25)
+		if spg.crew_cycle > 0.0 and spg.main_cd > 0.0:
+			cycled = true
+			break
+	_cam(spg.position, 16.0)
+	await m._wait(1.2)
+	await m._shot("crew_02_spg_deck")
+	print("CREWVIS cmdr_out=%s ducked_under_fire=%s spg_deck_crew=%d spg_cycle=%s" % [out0, in1, deck, cycled])
+	if not out0 or not in1 or deck < 3:
+		fails += 1
+	print("CREWVISTEST RESULT fails=%d" % fails)
+
+# roadmap 7: havan timi — havanı kurar (taban, ayak, namlu kademeli), namluya mermi bırakır, atışta kulak kapatır
+func mortar_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 43)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
+	var sq := Squad.new(0, "Havan")
+	G.squads.append(sq)
+	var mo: Soldier = m.spawn_soldier(0, "mortar", c, sq)
+	mo.cmd_hold()
+	mo.mortar_rounds = 20
+	var en: Array = []
+	for i in 4:
+		var e: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(55 + i * 2.0, 0, 8), Grid.M_INF), null)
+		e.cmd_hold()
+		e.fire_mode = 2
+		e.hp = 4000.0
+		en.append(e)
+	var built_at := -1.0
+	var shot_at := -1.0
+	for k in 160:
+		await m._wait(0.1)
+		if built_at < 0.0 and mo.mortar_prop != null and mo.mortar_setup >= 4.0:
+			built_at = G.time
+			_cam(mo.position, 8.0)
+			await m._shot("mortar_01_setup")
+		if mo._mortar_fired > 0.0 and shot_at < 0.0:
+			shot_at = G.time
+			_cam(mo.position, 8.0)
+			await m._wait(0.15)
+			await m._shot("mortar_02_fire")
+			break
+	print("MORTAR prop=%s built=%s fired=%s rounds=%d" % [mo.mortar_prop != null, built_at > 0.0, shot_at > 0.0, mo.mortar_rounds])
+	if mo.mortar_prop == null or shot_at < 0.0:
+		fails += 1
+	# yürüyünce söker
+	mo.cmd_move(G.grid.nearest_free(c + Vector3(-10, 0, 0), Grid.M_INF))
+	await m._wait(2.0)
+	print("MORTAR packed=%s" % (mo.mortar_prop == null))
+	if mo.mortar_prop != null:
+		fails += 1
+	print("MORTARTEST RESULT fails=%d" % fails)
 
 func _prof_toggle(part: String, on: bool) -> void:
 	match part:
