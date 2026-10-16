@@ -658,7 +658,8 @@ func _rope_process(dt: float) -> void:
 				rope_fall()
 				return
 			if ok:
-				var a := v.rope_anchor(rope_i % v.ropes.size())
+				# eller halatın üstünde: halat gerili ve eğikse asker de halat boyunca iner (102)
+				var a := v.rope_point(rope_i, position.y + 1.6)
 				position.x = a.x
 				position.z = a.z
 			if rope_phase == 0:
@@ -693,7 +694,7 @@ func _rope_process(dt: float) -> void:
 					# halattan uzaklaş: iniş noktası çevresinde çember emniyet
 					state = "idle"
 					stance = CROUCH
-					position.y = 0.0
+					position.y = _ground_y(position)
 					var out := Vector3(cos(randf() * TAU), 0, sin(randf() * TAU)) * randf_range(5.0, 9.0)
 					cmd_move(G.grid.nearest_free(position + out, Grid.M_INF))
 		"rope_wait":
@@ -702,15 +703,17 @@ func _rope_process(dt: float) -> void:
 				state = "idle"
 				return
 			body.animate(dt, "rope", 0.0, 0.0)
-			position.x = lerpf(position.x, v.rope_anchor(0).x, dt * 4.0)
-			position.z = lerpf(position.z, v.rope_anchor(0).z, dt * 4.0)
+			var aw := v.rope_point(0, position.y + 1.6)
+			position.x = lerpf(position.x, aw.x, dt * 4.0)
+			position.z = lerpf(position.z, aw.z, dt * 4.0)
 		"rope_up":
 			if not ok:
 				rope_fall()
 				return
 			var a2 := v.rope_anchor(0)
-			position.x = lerpf(position.x, a2.x, dt * 3.0)
-			position.z = lerpf(position.z, a2.z, dt * 3.0)
+			var ap := v.rope_point(0, position.y + 1.6)
+			position.x = lerpf(position.x, ap.x, dt * 3.0)
+			position.z = lerpf(position.z, ap.z, dt * 3.0)
 			position.y = move_toward(position.y, a2.y - 1.3, dt * 2.2)
 			body.animate(dt, "rope", 0.0, 0.0)
 			if position.y >= a2.y - 1.35:
@@ -953,10 +956,12 @@ func _door_process(dt: float) -> void:
 		state = "idle"
 		visible = true
 		return
-	var k2 := clampf(state_t / 0.6, 0.0, 1.0)
+	var k2 := clampf(state_t / (0.9 if v.is_air() else 0.6), 0.0, 1.0)
 	var a := v.entry_point(0)
 	var np2 := a.lerp(v.inside_point(), k2)
-	position = Vector3(np2.x, 0.0, np2.z)
+	# helikopter rampası: yerden kabin tabanına tırmanır
+	var ry := (k2 * clampf(v.hull.position.y + 0.55, 0.3, 1.2)) if v.is_air() else 0.0
+	position = Vector3(np2.x, _ground_y(np2) + ry, np2.z)
 	_face_to(v.inside_point() + (v.inside_point() - a))
 	rotation.y = face_yaw
 	body.animate(dt, "crouch", 2.0)
@@ -1449,6 +1454,36 @@ func _think() -> void:
 				elif not board_target.is_air() and not board_target.riders_visible() and dist2(board_target) < board_target.radius + 4.0:
 					if path_i >= path.size() or randf() < 0.3:
 						_set_path(board_target.entry_point(0))
+					return
+				elif board_target.is_air() and dist2(board_target) < board_target.radius + 14.0:
+					# (76 / 102) helikoptere arka rampadan (küçükte yan kapıdan) sıra hâlinde, tek tek binilir
+					var hv := board_target
+					if hv.cargo.size() >= hv.capacity():
+						say("ARAÇ DOLU!")
+						board_target = null
+						order = ""
+						return
+					var qi := hv.ramp_slot(self)
+					var ent := hv.entry_point(0)
+					var back := ent - hv.position
+					back.y = 0.0
+					back = back.normalized() if back.length() > 0.1 else -hv.forward()
+					var slot := ent + back * (0.6 + qi * 1.1)
+					if qi == 0 and hv.can_load() and dist2_p(ent) < 1.4 and G.time >= hv._ramp_free_t:
+						hv._ramp_free_t = G.time + 0.95
+						hv._ramp_q.erase(self)
+						door_veh = hv
+						board_target = null
+						order = ""
+						state = "entering"
+						state_t = 0.0
+						path = PackedVector3Array()
+						return
+					if not hv.can_load() and not hv.landing:
+						hv.request_land()
+					var goal := ent if (qi == 0 and hv.can_load()) else slot
+					if dist2_p(goal) > 0.5 and (path_i >= path.size() or path[path.size() - 1].distance_to(goal) > 0.8):
+						_set_path(G.grid.nearest_free(goal, Grid.M_INF))
 					return
 				elif dist2(board_target) < board_target.radius + 2.0:
 					if board_target.needs_crew():

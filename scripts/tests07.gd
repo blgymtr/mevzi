@@ -95,6 +95,8 @@ func run(scene: String) -> void:
 			await crowd_test()
 		"trenchpose":
 			await trenchpose_test()
+		"ramptest":
+			await ramp_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -497,6 +499,67 @@ func wound_test() -> void:
 	await m._shot("wound_09_sever")
 	print("WOUNDTEST RESULT fails=%d" % fails)
 
+# 76 / 102: inmiş nakliye helikopterine (CH-47 arka rampa, UH-60 yan kapı) askerler sıra hâlinde, tek tek biner
+func ramp_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	for hid in ["usa_heli_ch47", "usa_heli_uh60"]:
+		var h: Vehicle = m.spawn_vehicle(0, hid, c, 0.0)
+		h.fire_mode = 2
+		h.request_land()
+		await m._wait(6.0)
+		var ss: Array = []
+		var n := mini(7, h.capacity())
+		for i in n:
+			var s: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-10 + i * 1.4, 0, 16), Grid.M_INF), null)
+			ss.append(s)
+		await m._wait(0.3)
+		for s in ss:
+			s.cmd_board(h)
+		var max_enter := 0
+		var enter_t: Array = []
+		var was := {}
+		var t := 0.0
+		var shot := false
+		while t < 45.0 and h.cargo.size() < n:
+			await m._wait(0.1)
+			t += 0.1
+			var ent := 0
+			for s in ss:
+				if s.state == "entering":
+					ent += 1
+					if not was.has(s):
+						was[s] = true
+						enter_t.append(t)
+			max_enter = maxi(max_enter, ent)
+			if not shot and h._ramp_q.size() >= 3:
+				shot = true
+				_cam(h.position - h.forward() * 6.0, 14.0)
+				await m._wait(0.1)
+				await m._shot("ramp_queue_%s" % hid)
+		var min_gap := 99.0
+		for i in range(1, enter_t.size()):
+			min_gap = minf(min_gap, enter_t[i] - enter_t[i - 1])
+		print("RAMP %s boarded=%d/%d t=%.1f max_on_ramp=%d min_gap=%.2f" % [hid, h.cargo.size(), n, t, max_enter, min_gap])
+		if h.cargo.size() < n or max_enter > 1 or min_gap < 0.5:
+			fails += 1
+		for s in ss:
+			if is_instance_valid(s):
+				G.remove_unit(s)
+				s.queue_free()
+		G.remove_unit(h)
+		h.queue_free()
+		await m._wait(0.5)
+	print("RAMPTEST RESULT fails=%d" % fails)
+
 # halatla iniş: kargo helikopteri 8 askeri iki halattan indirir, halatlar bırakılır; sonra SPIES ile geri alır
 func rope_test() -> void:
 	m.get_window().size = Vector2i(1280, 720)
@@ -515,9 +578,16 @@ func rope_test() -> void:
 	h.cmd_fastrope(c)
 	var shots := 0
 	var landed := 0
+	var rope_gap := 0.0          # (102) halatın dibi yerden, tepesi koldan en çok ne kadar ayrık
 	m.test_phase("rope_down")
 	for i in 600:
 		await m._wait(0.05)
+		for r in h.ropes:
+			var rm: MeshInstance3D = r[0]
+			if is_instance_valid(rm) and float(rm.get_meta("ext", 0.0)) >= 0.999:
+				var bot: Vector3 = rm.global_transform * Vector3(0, -1, 0)
+				var top: Vector3 = rm.global_transform.origin
+				rope_gap = maxf(rope_gap, maxf(absf(bot.y - G.terrain.ground_hs(bot)), top.distance_to(h.rope_anchor(r[1]))))
 		var on_rope := sq.members.filter(func(x): return x.state == "rope")
 		if not on_rope.is_empty() and shots < 4 and i % 14 == 0:
 			_cam(on_rope[0].position, 10.0 if shots % 2 == 0 else 16.0)
@@ -536,7 +606,15 @@ func rope_test() -> void:
 	print("ROPE landed=%d ropes_left=%d" % [landed, h.ropes.size()])
 	if landed < 8 or not h.ropes.is_empty():
 		fails += 1
-	await m._wait(2.0)
+	await m._wait(3.0)
+	# halatlar yere bırakılmaz, vinçle helikoptere çekilir: dünyada halat kalmamalı
+	var left_ropes := 0
+	for ch in G.main.world.get_children():
+		if ch is MeshInstance3D and (ch as MeshInstance3D).mesh == Vehicle._rope_unit and Vehicle._rope_unit != null:
+			left_ropes += 1
+	print("ROPE gap_max=%.2f ropes_in_world_after=%d" % [rope_gap, left_ropes])
+	if rope_gap > 0.2 or left_ropes > 0:
+		fails += 1
 	_cam(c, 22.0)
 	await m._shot("rope_10_after")
 	# SPIES

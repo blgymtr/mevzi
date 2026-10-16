@@ -390,6 +390,18 @@ func inside_point() -> Vector3:
 		return position
 	return position - forward() * maxf(ext.y - 1.0, 0.3)
 
+# rampa sırası (76 / 102): binmek için gelen askerler geliş sırasıyla dizilir, öndeki rampadan girince sıradaki
+var _ramp_q: Array = []
+var _ramp_free_t := 0.0
+
+func ramp_slot(s) -> int:
+	_ramp_q = _ramp_q.filter(func(x): return is_instance_valid(x) and x.alive and x.board_target == self and x.vehicle_in == null)
+	var i := _ramp_q.find(s)
+	if i < 0:
+		_ramp_q.append(s)
+		i = _ramp_q.size() - 1
+	return i
+
 func can_load() -> bool:
 	return alive and cargo.size() < capacity() and (not is_air() or hull.position.y < 2.5)
 
@@ -3945,6 +3957,10 @@ func _subsystem_hit(dmg: float, src, k: String) -> void:
 			_kill_driver(src)
 
 func _heli(dt: float) -> void:
+	if not _ropes_up.is_empty():
+		# vinçle çekilen halatlar helikopteri izler
+		for r in _ropes_up:
+			_rope_place(r)
 	if G.weather != null and G.weather.no_air():
 		# kum fırtınası: yere in, bekle
 		hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt)
@@ -4184,61 +4200,117 @@ func rope_anchor(i: int) -> Vector3:
 		lp = Vector3((ext.x + 0.35) * (1.0 if i % 2 == 0 else -1.0), 2.0, -ext.y * 0.1)
 	return hull.global_transform * lp
 
-func _rope_mesh(len_m: float) -> MeshInstance3D:
+# (102) halat: birim boylu örgülü halat örgüsü her karede kapıdaki koldan yerdeki sabit dip noktasına gerilir
+# (helikopter sürüklense de halat kolda ve yerde kalır, eğilir); dipte yere değen fazlalık kangal; iniş bitince
+# vinçle yukarı çekilir (eskiden halat sabit boyda, koldan ayrık sarkıyor, sonra bırakılıp yere düşüyordu)
+static var _rope_unit: Mesh = null
+static var _coil_mesh: Mesh = null
+
+func _rope_meshes() -> void:
+	if _rope_unit != null:
+		return
 	var mb := MB.new()
-	var segs := int(len_m / 0.5) + 1
-	var col := Color(0.12, 0.11, 0.1)
+	var col := Color(0.16, 0.14, 0.11)
+	var segs := 28
 	for k in segs:
-		var y0 := -float(k) * len_m / segs
-		var y1 := -float(k + 1) * len_m / segs
-		mb.cyl_between(Vector3(sin(k * 0.7) * 0.02, y0, 0), Vector3(sin((k + 1) * 0.7) * 0.02, y1, 0), 0.03, 0.03, 5, col, false)
-	var mi := MeshInstance3D.new()
-	mi.mesh = mb.commit(Mats.vcs())
-	return mi
+		var y0 := -float(k) / segs
+		var y1 := -float(k + 1) / segs
+		# örgü izlenimi: hafif burgu, açık / koyu şerit
+		var c2 := col.lightened(0.12) if k % 2 == 0 else col
+		mb.cyl_between(Vector3(sin(k * 1.3) * 0.006, y0, cos(k * 1.3) * 0.006), Vector3(sin((k + 1) * 1.3) * 0.006, y1, cos((k + 1) * 1.3) * 0.006), 0.032, 0.032, 6, c2, false)
+	_rope_unit = mb.commit(Mats.vcs())
+	var cb := MB.new()
+	for k in 3:
+		cb.cyl(Vector3(0.05 * k, 0.035 + k * 0.06, 0.03 * k), 0.32 - k * 0.06, 0.26 - k * 0.06, 0.06, 12, col.lightened(0.06 * k))
+	_coil_mesh = cb.commit(Mats.vcs())
 
 func _rope_deploy(n: int) -> void:
 	_free_ropes()
+	_rope_meshes()
 	for i in n:
 		var a := rope_anchor(i)
-		var L := maxf(a.y + 0.3, 1.0)
-		var mi := _rope_mesh(L)
+		var mi := MeshInstance3D.new()
+		mi.mesh = _rope_unit
 		G.main.world.add_child(mi)
-		mi.global_position = a
-		mi.scale = Vector3(1, 0.05, 1)
+		var base := Vector3(a.x + randf_range(-0.15, 0.15), 0.0, a.z + randf_range(-0.15, 0.15))
+		base.y = G.terrain.ground_hs(base) if G.terrain else 0.0
+		var coil := MeshInstance3D.new()
+		coil.mesh = _coil_mesh
+		G.main.world.add_child(coil)
+		coil.global_position = base
+		coil.visible = false
+		mi.set_meta("ext", 0.0)
+		# halat koldan aşağı salınır (açılarak düşer)
 		var tw := mi.create_tween()
-		tw.tween_property(mi, "scale:y", 1.0, 0.7).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-		ropes.append([mi, i, L])
+		tw.tween_method(func(e: float): mi.set_meta("ext", e), 0.0, 1.0, 0.7).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		ropes.append([mi, i, 0.0, base, coil])
+		_rope_place(ropes[ropes.size() - 1])
 	Sfx.play3d("crumble", position, -12.0)
+
+# halat dip noktası (çekilirken / salınırken kola doğru), kol ve aradaki herhangi bir yükseklikteki nokta
+func _rope_place(r: Array) -> void:
+	var mi: MeshInstance3D = r[0]
+	if not is_instance_valid(mi):
+		return
+	var top := rope_anchor(r[1])
+	var base: Vector3 = r[3]
+	var e: float = mi.get_meta("ext", 1.0)
+	var bot := top.lerp(base, e)
+	var d := top - bot
+	var L := maxf(d.length(), 0.02)
+	var up := d / L
+	var side := up.cross(Vector3.FORWARD)
+	if side.length() < 0.01:
+		side = Vector3.RIGHT
+	side = side.normalized()
+	var fwd := side.cross(up).normalized()
+	# örgü yerel -y boyunca 1 m: y ekseni kola doğru, boyu L
+	mi.global_transform = Transform3D(Basis(side, up * L, fwd), top)
+	var coil: MeshInstance3D = r[4]
+	if is_instance_valid(coil):
+		coil.visible = e >= 0.999
+
+func rope_point(i: int, y: float) -> Vector3:
+	for r in ropes:
+		if int(r[1]) == i % maxi(ropes.size(), 1):
+			var top := rope_anchor(r[1])
+			var base: Vector3 = r[3]
+			var k := clampf((top.y - y) / maxf(top.y - base.y, 0.1), 0.0, 1.0)
+			return top.lerp(base, k)
+	return rope_anchor(i)
 
 func _ropes_follow() -> void:
 	for r in ropes:
-		var mi: MeshInstance3D = r[0]
-		if is_instance_valid(mi) and mi.get_meta("cut", false) == false:
-			mi.global_position = rope_anchor(r[1])
+		_rope_place(r)
+	for r in _ropes_up:
+		_rope_place(r)
 
-# iniş bitti: halatlar koldan bırakılır, yere düşüp yığılır
+# iniş bitti: halatlar vinçle yukarı, helikopterin içine çekilir
+var _ropes_up: Array = []
+
 func _rope_cut() -> void:
 	for r in ropes:
 		var mi: MeshInstance3D = r[0]
 		if not is_instance_valid(mi):
 			continue
-		mi.set_meta("cut", true)
-		var g := mi.global_position
+		_ropes_up.append(r)
+		var coil: MeshInstance3D = r[4]
 		var tw := mi.create_tween()
-		tw.tween_property(mi, "global_position:y", r[2] * 0.15, 0.6).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-		tw.parallel().tween_property(mi, "scale:y", 0.15, 0.6)
-		tw.parallel().tween_property(mi, "rotation:z", 1.4, 0.6)
-		tw.tween_property(mi, "global_position:y", 0.05, 0.25)
-		tw.tween_interval(25.0)
-		tw.tween_callback(mi.queue_free)
-		mi.global_position = g
+		tw.tween_method(func(e: float): mi.set_meta("ext", e), float(mi.get_meta("ext", 1.0)), 0.0, 1.8).set_ease(Tween.EASE_IN_OUT).set_trans(Tween.TRANS_SINE)
+		tw.tween_callback(func():
+			_ropes_up.erase(r)
+			mi.queue_free()
+			if is_instance_valid(coil):
+				coil.queue_free())
 	ropes.clear()
-	say("HALATLAR BIRAKILDI")
+	say("HALATLAR ÇEKİLİYOR")
 
 func _free_ropes() -> void:
 	for r in ropes:
 		if is_instance_valid(r[0]):
 			(r[0] as Node).queue_free()
+		if r.size() > 4 and is_instance_valid(r[4]):
+			(r[4] as Node).queue_free()
 	ropes.clear()
 
 func _rope_reset() -> void:
