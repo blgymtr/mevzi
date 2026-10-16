@@ -604,6 +604,28 @@ func rope_fall() -> void:
 	if hp <= 0.0:
 		die(null, true)
 
+# patlayan aracın üstünden savrulma (87): bulunduğu yerden (güverte) havaya fırlar; ölür (ceset savrulur)
+# ya da yere çakılıp sersemler / yaralanır
+func throw_off(v: Vector3, p_die: float, sever_k := 0.0) -> void:
+	vehicle_in = null
+	_release_patient()
+	path = PackedVector3Array()
+	target = null
+	state = "fly"
+	state_t = 0.0
+	fly_vel = v
+	fly_spin = randf_range(6.0, 12.0) * (1.0 if randf() < 0.5 else -1.0)
+	fly_ang = 0.0
+	visible = true
+	blast_k = sever_k
+	blast_t = G.time
+	blast_p = position - Vector3(v.x, 0.0, v.z).normalized() * 1.5
+	if randf() < p_die:
+		die(null, true)
+	else:
+		hp -= randf_range(35.0, 75.0)
+		add_stress(75.0)
+
 func _rope_process(dt: float) -> void:
 	var v := rope_heli
 	var ok := v != null and is_instance_valid(v) and v.alive and not v.ropes.is_empty()

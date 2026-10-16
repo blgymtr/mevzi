@@ -382,6 +382,22 @@ func ground_h(p: Vector3) -> float:
 	var z := clampi(int(p.z * k), 0, HRES - 1)
 	return himg.get_pixel(x, z).r
 
+# çift doğrusal yükseklik: çizilen arazi yüzeyiyle aynı (gölgelendirici doğrusal süzgeçle örnekler, piksel
+# merkezleri (i + 0,5) · piksel boyu) — basamaksız; düşen parça, ceset, ayak teması için
+func ground_hs(p: Vector3) -> float:
+	var k := float(HRES) / G.MAP
+	var fx := p.x * k - 0.5
+	var fz := p.z * k - 0.5
+	var x0 := clampi(floori(fx), 0, HRES - 1)
+	var z0 := clampi(floori(fz), 0, HRES - 1)
+	var x1 := mini(x0 + 1, HRES - 1)
+	var z1 := mini(z0 + 1, HRES - 1)
+	var tx := clampf(fx - floorf(fx), 0.0, 1.0)
+	var tz := clampf(fz - floorf(fz), 0.0, 1.0)
+	var a := lerpf(himg.get_pixel(x0, z0).r, himg.get_pixel(x1, z0).r, tx)
+	var b := lerpf(himg.get_pixel(x0, z1).r, himg.get_pixel(x1, z1).r, tx)
+	return lerpf(a, b, tz)
+
 # köprü ayakları (su gölgelendiricisinde burun köpüğü, mansap izi ve girdaplar için; en çok 32)
 var piers := PackedVector4Array()
 

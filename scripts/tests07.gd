@@ -91,6 +91,8 @@ func run(scene: String) -> void:
 			await soldier_test()
 		"armeduav":
 			await armed_uav_test()
+		"turrettest":
+			await turret_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -2705,3 +2707,147 @@ func armed_uav_test() -> void:
 		else:
 			fails += 1
 	print("ARMEDUAV RESULT fails=%d" % fails)
+
+# 94: taret kopması katı cisim — biçimler: dimdik takla (pop), yana savrulma (toss), arkaya devrilme (flipback),
+# kalkıp gövdeye oturma (lift), güverteden kayma (slide), namlu kopması, M1 panel atma (vent), yanan tankta
+# gecikmeli infilak (late). Uçuş kareleri; yerleşince yüzme / gömülme denetimi. 87: tank üstündekiler savrulur.
+func turret_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 31)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 45.0)
+	# [araç, imha, biçim, vuruş yönü (0 ön, 1 sağ, 2 arka, 3 üst), mühimmat, namlu kopması]
+	var cases := [
+		["rus_mbt_72b3", "catastrophic", "pop", 3, "topatk", 0],
+		["rus_mbt_90m", "cookoff", "toss", 1, "atgm", 0],
+		["rus_mbt_80", "cookoff", "flipback", 0, "ap", 0],
+		["rus_mbt_72b", "cookoff", "lift", 0, "ap", 0],
+		["rus_ifv_bmp2m", "cookoff", "slide", 2, "rpg", 0],
+		["rus_mbt_72b3", "catastrophic", "pop", 3, "big", 1],
+		["usa_mbt_s3", "cookoff", "vent", 2, "atgm", 0],
+		["rus_mbt_90a", "late", "", 1, "rpg", 0]]
+	var vs: Array = []
+	for i in cases.size():
+		var p := G.grid.nearest_open(c + Vector3(-27.0 + (i % 4) * 18.0, 0, -11.0 + (i / 4) * 22.0), Grid.M_HEAVY)
+		var v: Vehicle = m.spawn_vehicle(1 if String(cases[i][0]).begins_with("rus") else 0, cases[i][0], p, randf_range(-0.6, 0.6))
+		v.cmd_hold()
+		v.fire_mode = 2
+		v.force_mode = cases[i][1]
+		v.force_style = cases[i][2]
+		v.force_gun_off = cases[i][5]
+		vs.append(v)
+	# 87: ilk tankın üstünde 4 asker
+	var riders: Array = []
+	for i in 4:
+		var s := m.spawn_soldier(1, "rifle", vs[0].position + Vector3(0, 0, 4.0), null)
+		s.board(vs[0])
+		riders.append(s)
+	await m._wait(1.0)
+	_cam(vs[0].position, 26.0)
+	await m._wait(0.3)
+	await m._shot("pop_00")
+	# önce yalnız ilk tank: yakın uçuş dizisi
+	_tt_kill(vs[0], cases[0][3], cases[0][4])
+	for k in range(1, 11):
+		await m._wait(0.2)
+		await m._shot("pop_%02d" % k)
+	for i in range(1, vs.size()):
+		_tt_kill(vs[i], cases[i][3], cases[i][4])
+	_cam(c + Vector3(0, 0, 0.0), 50.0)
+	for k in 7:
+		await m._wait(0.4)
+		await m._shot("all_%02d" % k)
+	# yerleşme (oyun süresiyle sınırlı)
+	var t0 := G.time
+	while G.time - t0 < 28.0:
+		var moving := 0
+		for v in vs:
+			var b: DebrisBody = v.turret_body
+			if b != null and is_instance_valid(b) and not b.asleep:
+				moving += 1
+		if moving == 0 and G.time - t0 > 6.0:
+			break
+		await m._wait(0.5)
+	_cam(c, 50.0)
+	await m._wait(0.3)
+	await m._shot("all_rest")
+	var styles := {}
+	for i in vs.size():
+		var v: Vehicle = vs[i]
+		var b: DebrisBody = v.turret_body
+		if cases[i][2] == "vent":
+			var stays: bool = v.turret != null and v.turret.get_parent() == v.hull
+			print("TURRET %d %s style=%s stays=%s" % [i, cases[i][0], v.turret_style, stays])
+			if not stays or v.turret_style != "vent":
+				fails += 1
+			continue
+		if b == null or not is_instance_valid(b):
+			print("TURRET FAIL %d %s: taret kopmadı (style=%s mode=%s)" % [i, cases[i][0], v.turret_style, v.kill_mode])
+			fails += 1
+			continue
+		styles[v.turret_style] = true
+		var gap := _tt_gap(b)
+		var gh: float = G.terrain.ground_hs(b.global_position)
+		var upd := b.global_transform.basis.y.dot(Vector3.UP)
+		var dist := Vector2(b.global_position.x - v.position.x, b.global_position.z - v.position.z).length()
+		print("TURRET %d %s style=%s asleep=%s age=%.1f hits=%d gap=%.2f up=%.2f dist=%.1f com_h=%.2f peak=%.1f pts=%d" % [i, cases[i][0], v.turret_style, b.asleep, b.age, b.hits, gap, upd, dist, b.global_position.y - gh, b.peak, b.pts.size()])
+		if not b.asleep or gap < -0.3 or gap > 0.3 or b.global_position.y < gh - 0.25:
+			print("TURRET FAIL %d: yüzüyor / gömülü / durmadı" % i)
+			fails += 1
+		# ölçülü yükseklik (kullanıcı: "aşırı yükseğe uçuyor"): en şiddetli fırlamada bile tepe ≤ 6 m
+		if b.peak > 6.0:
+			print("TURRET FAIL %d: çok yüksek (%.1f m)" % [i, b.peak])
+			fails += 1
+		if cases[i][5] == 1:
+			var gp = v.barrel.get_parent()
+			var sep: bool = gp is DebrisBody and gp != b
+			print("TURRET %d namlu ayrı=%s" % [i, sep])
+			if not sep:
+				fails += 1
+		_cam(Vector3(b.global_position.x, 0.0, b.global_position.z).lerp(v.position, 0.35), 15.0)
+		await m._wait(0.25)
+		await m._shot("rest_%d_%s" % [i, v.turret_style])
+	if styles.size() < 4:
+		fails += 1
+	for s in riders:
+		if is_instance_valid(s):
+			print("RIDER alive=%s state=%s y=%.2f aboard=%s" % [s.alive, s.state, s.position.y, s.vehicle_in != null])
+			if s.alive and (s.state == "aboard" or s.vehicle_in != null or s.position.y > 0.6):
+				fails += 1
+	print("TURRETTEST RESULT fails=%d" % fails)
+
+# testte imha: isabet yönü / mühimmat doğrudan (zırh delme şansına bırakmadan)
+func _tt_kill(v: Vehicle, side: int, k: String) -> void:
+	v.kill_k = k
+	v.last_side = side
+	var d: Vector3 = [-v.forward(), -v.right(), v.forward(), Vector3.ZERO][side]
+	v.kill_dir = d if d != Vector3.ZERO else -v.forward()
+	v.kill_over = 0.8
+	v.hp = 0.0
+	v.destroy(null)
+
+# kopan parçanın en alttaki temas noktasının zemine / engel kutusunun üstüne uzaklığı (yüzme > 0, gömülme < 0)
+func _tt_gap(b: DebrisBody) -> float:
+	var best := INF
+	var t := b.global_transform
+	for lp in b.pts:
+		var wp: Vector3 = t * lp
+		var sup: float = b._ground(wp)
+		for o in b.obbs:
+			var d: Vector3 = wp - o[0]
+			var bs: Basis = o[1]
+			var he: Vector3 = o[2]
+			if absf(d.dot(bs.x)) < he.x and absf(d.dot(bs.z)) < he.z:
+				var dt := d.dot(bs.y) - he.y
+				if dt > -0.45:
+					sup = maxf(sup, wp.y - dt)
+		best = minf(best, wp.y - sup)
+	return best

@@ -415,6 +415,34 @@ static func _civil_mat(nm: String, col: Color) -> Material:
 static func clear_cache() -> void:
 	_mat.clear()
 	_skin.clear()
+	_burnt.clear()
+
+# yanmış enkaz (94): örgünün her yüzeyine aynı malzemenin yanmış çeşidi (armor gölgelendiricisinde burnt = 1:
+# is / pas / kül, doku + AO ayrıntısı korunur); başka malzemeler (cam, işaret, ışık) düz yanık
+static var _burnt := {}
+static func burnt_of(m: Material) -> Material:
+	if m == null:
+		return Mats.burnt()
+	var k := m.get_instance_id()
+	if _burnt.has(k):
+		return _burnt[k]
+	var out: Material = Mats.burnt()
+	if m is ShaderMaterial and _armor_shader != null and (m as ShaderMaterial).shader == _armor_shader:
+		var d := (m as ShaderMaterial).duplicate() as ShaderMaterial
+		d.set_shader_parameter("burnt", 1.0)
+		out = d
+	_burnt[k] = out
+	return out
+
+static func burn(mi: MeshInstance3D) -> void:
+	if mi.mesh == null:
+		return
+	mi.material_override = null
+	for s in mi.mesh.get_surface_count():
+		var src: Material = mi.get_surface_override_material(s)
+		if src == null:
+			src = mi.mesh.surface_get_material(s)
+		mi.set_surface_override_material(s, burnt_of(src))
 
 # ------------------------------------------------------------ araç
 static func vehicle(vtype: String, team: int) -> Dictionary:

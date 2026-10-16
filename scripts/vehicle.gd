@@ -116,6 +116,14 @@ var kill_k := ""
 var kill_dir := Vector3.ZERO
 var kill_over := 0.0          # öldüren isabetin fazlası (can 0'ın altına ne kadar indi) / azami can
 var kill_mode := ""
+# 94: taret kopması katı cisim olarak (DebrisBody); biçim vuruş yönü / mühimmat / imha türünden
+var turret_mi: MeshInstance3D = null
+var barrel_mi: MeshInstance3D = null
+var turret_body: DebrisBody = null   # kopan taret (enkazla birlikte kalır)
+var turret_style := ""               # pop, toss, flipback, lift, slide, vent (test ve günlük için)
+var force_style := ""                # testler: biçimi zorla
+var force_mode := ""                 # testler: imha türünü zorla
+var force_gun_off := -1              # testler: namlu kopması (1 evet, 0 hayır)
 var speed_max := 6.0
 var cur_speed := 0.0
 var heading := 0.0
@@ -537,15 +545,31 @@ func _slung_tick(dt: float) -> void:
 	hull.rotation.z = clampf(sling_vel.dot(right()) * 0.04, -0.25, 0.25)
 	cur_speed = 0.0
 
-func _cargo_lost() -> void:
+# yolcular ve üstte taşınanlar (87): imha türüne göre — güvertedeki askerler patlamayla savrulur (infilakta
+# çoğu ölür, yanan araçtan atlayanlar yaralı/sersem), içerideki yolcular infilaktan kurtulamaz, yanan araçtan
+# yaralı çıkar, yalnız hareketsiz kalan (knocked) araçtan çoğunlukla sağ iner
+func _cargo_lost(mode := "") -> void:
+	var violent := mode in ["catastrophic", "cookoff", "flip", "crash"]
 	for s in cargo.duplicate():
-		if is_instance_valid(s) and s.alive:
-			s.dismount(position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)))
-			s.add_stress(65.0)
-			if randf() < 0.5:
-				s.die(null)
-			else:
-				s.take_damage(60.0, null, "blast")
+		if not is_instance_valid(s) or not s.alive:
+			continue
+		if riders_visible() and mode != "crash" and s.has_method("throw_off"):
+			var seat: Vector3 = seat_pos(s)
+			cargo.erase(s)
+			var away := Vector3(seat.x - position.x, 0.0, seat.z - position.z)
+			away = away.normalized() if away.length() > 0.05 else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+			s.position = seat
+			var k := 1.15 if violent else 0.55
+			var pd := 0.85 if mode == "catastrophic" else (0.6 if violent else 0.12)
+			s.throw_off(away * randf_range(2.5, 5.5) * k + Vector3(0, randf_range(2.0, 3.8) * k, 0), pd, 0.7 if mode == "catastrophic" else 0.0)
+			continue
+		s.dismount(position + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)))
+		s.add_stress(65.0)
+		var pdie := 0.95 if mode == "catastrophic" else (0.75 if mode in ["cookoff", "crash"] else (0.45 if mode in ["brew", "flip"] else (0.15 if mode == "knocked" else 0.5)))
+		if randf() < pdie:
+			s.die(null)
+		elif mode != "knocked" or randf() < 0.4:
+			s.take_damage(60.0, null, "blast")
 	cargo.clear()
 var rotor_blades: MeshInstance3D
 var rotor_disc: MeshInstance3D
@@ -710,12 +734,14 @@ func setup(t: int, vt: String) -> void:
 		var tmi := MeshInstance3D.new()
 		tmi.mesh = M["turret"]
 		turret.add_child(tmi)
+		turret_mi = tmi
 		barrel = Node3D.new()
 		barrel.position = M["barrel_pos"]
 		turret.add_child(barrel)
 		var bmi := MeshInstance3D.new()
 		bmi.mesh = M["barrel"]
 		barrel.add_child(bmi)
+		barrel_mi = bmi
 	for w in M["wheels"]:
 		var wn := MeshInstance3D.new()
 		wn.mesh = w[3] if w.size() > 3 else VehicleModels.wheel(w[1], w[2])
@@ -3675,7 +3701,6 @@ func destroy(src) -> void:
 			G.explode(position + Vector3(0, 0.3, 0), 2.5, 40.0, "grenade", -1, null, team)
 			queue_free())
 		return
-	_cargo_lost()
 	if vtype in ["heli", "transport"]:
 		for r in rope_riders:
 			if is_instance_valid(r) and r.alive and r.state in ["rope", "rope_up"]:
@@ -3684,6 +3709,7 @@ func destroy(src) -> void:
 		_free_ropes()
 		alive = false
 		wreck = true
+		_cargo_lost("crash")
 		G.credit_kill(src, self)
 		if selected and G.player:
 			G.player.deselect(self)
@@ -3693,7 +3719,7 @@ func destroy(src) -> void:
 		Sfx.play3d("expl_med", aim_point(), 4.0)
 		for mi in _meshes(self):
 			if mi != rotor_disc and mi != rotor_blades:
-				mi.material_override = Mats.burnt()
+				Art.burn(mi)
 		_heli_crash()
 		return
 	alive = false
@@ -3734,14 +3760,21 @@ func destroy(src) -> void:
 				mode = "catastrophic" if r < 0.25 else ("brew" if r < 0.75 else "knocked")
 	if kill_over > 1.2 and heavy and mode in ["brew", "knocked"]:
 		mode = "catastrophic"
+	var late := false
+	if force_mode == "late":
+		mode = "brew"
+		late = true
+	elif force_mode != "":
+		mode = force_mode
 	kill_mode = mode
+	_cargo_lost(mode)
 	var cp := position + Vector3(0, 1.0, 0)
 	if G.grid.is_water(position):
 		# gövde boyuna göre sıçrama ve dalga halkası (cip ~0.9, tank ~2.4)
 		var wsz := clampf(float(D.get("len", 6.0)) / 3.6, 0.7, 3.0)
 		G.fx.water_splash(position, wsz)
 		for mi in _meshes(self):
-			mi.material_override = Mats.burnt()
+			Art.burn(mi)
 		var tw2 := create_tween()
 		tw2.tween_property(hull, "position:y", -2.6, 6.0).set_ease(Tween.EASE_IN)
 		tw2.parallel().tween_property(hull, "rotation:z", randf_range(-0.5, 0.5), 6.0)
@@ -3751,6 +3784,9 @@ func destroy(src) -> void:
 			tw3.tween_interval(randf_range(0.3, 5.0))
 			tw3.tween_callback(func(): G.fx.water_splash(position + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5)) * wsz, 0.3 + 0.1 * wsz))
 		return
+	# 94: taretli ağır araçta cephane infilakı taret kopmasıyla birlikte (katı cisim, _turret_event)
+	var has_t := turret != null and turret_mi != null and turret_mi.mesh != null
+	var blow := has_t and heavy and mode in ["cookoff", "catastrophic"]
 	match mode:
 		"catastrophic":
 			G.explode(cp, 6.5, 90.0, "big", team, self, team)
@@ -3763,25 +3799,15 @@ func destroy(src) -> void:
 			hull.rotation.z += randf_range(-0.25, 0.25)
 			hull.position.y -= 0.15
 		"cookoff":
-			G.explode(cp, 4.5, 70.0, "big", team, self, team)
-			G.fx.fireball(cp + Vector3(0, 0.8, 0), 1.5)
-			G.fx.fire_column(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.2)
-			# taret ambarından yükselen cephane alevi jeti (birkaç saniye, aralıklı)
-			G.fx.cookoff(position + Vector3(0, 2.0, 0), randf_range(6.0, 11.0), 1.0)
-			G.fx.crater(position, D["len"] * 0.55)
-			_debris(4, 6.0)
-			G.fx.burn(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.6)
-			# ikincil infilaklar + kapaktan alev püskürmesi
-			for i in randi_range(3, 6):
-				var tw0 := create_tween()
-				tw0.tween_interval(randf_range(0.8, 6.0))
-				tw0.tween_callback(func():
-					var q := position + Vector3(randf_range(-1.0, 1.0), 1.8, randf_range(-1.0, 1.0))
-					G.fx.explosion(q, 0.7, "rpg")
-					G.fx.flash(q, 6.0, 8.0, 0.08)
-					Sfx.play3d("expl_small", q, 0.0)
-					for k in 6:
-						G.fx.emit(Fx.P_FIRE, q, Vector3(randf_range(-1, 1), randf_range(6, 11), randf_range(-1, 1)), randf_range(0.4, 0.8), 0.6, 1.6, -2.0, 0.6, Color(1.8, 0.9, 0.3, 1)))
+			if blow:
+				# delme anı: içeride yangın, kapak ağızlarından alev dili ve duman; asıl cephane infilakı taret
+				# kopmasıyla birlikte (0,5–2,2 sn sonra, _turret_blow)
+				G.fx.explosion(cp + Vector3(0, 0.5, 0), 0.7, "rpg")
+				Sfx.play3d("expl_med", cp, 0.0)
+				G.fx.cookoff(turret_world_pos() + Vector3(0, 0.7, 0), randf_range(2.0, 3.0), 0.45)
+				G.fx.burn(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.6)
+			else:
+				_cookoff_boom(cp)
 		"brew":
 			G.explode(cp, 3.0, 40.0, "big", team, self, team)
 			G.fx.fireball(cp, 0.9)
@@ -3808,23 +3834,19 @@ func destroy(src) -> void:
 			G.fx.burn(position + Vector3(0, 1.5, 0), randf_range(15.0, 25.0), 0.5)
 	G.fx.scorch(position, D["len"] * 1.2)
 	for mi in _meshes(self):
-		mi.material_override = Mats.burnt()
+		Art.burn(mi)
 	if gunner:
 		gunner.visible = false
+	if cmdr:
+		cmdr.visible = false
 	if engine:
 		engine.stop()
-	if turret and ((mode == "cookoff" and vtype in ["tank", "ifv", "arty", "aa"]) or mode == "catastrophic"):
-		# taret fırlar: üstten saldırıda dimdik yukarı, yan/arka vuruşta vuruş yönünde savrulur
-		var tw := create_tween()
-		var start := turret.position
-		var top := kill_k in ["topatk", "fpv", "big", "shell", "mortar"]
-		var push := hull.global_transform.basis.inverse() * kill_dir
-		push.y = 0.0
-		var side := (push * randf_range(1.5, 3.5) if not top else Vector3.ZERO) + Vector3(randf_range(-1.2, 1.2), 0, randf_range(-1.2, 1.2))
-		var hgt := (11.0 if top else 8.0) if mode == "cookoff" else 5.0
-		tw.tween_property(turret, "position", start + Vector3(side.x * 0.5, hgt, side.z * 0.5), 0.5 if mode == "cookoff" else 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-		tw.parallel().tween_property(turret, "rotation", Vector3(randf_range(-1, 1), randf_range(-3, 3), randf_range(-1, 1)), 0.9)
-		tw.tween_property(turret, "position", start + Vector3(side.x, -0.6, side.z), 0.45).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	if blow:
+		# öldüren isabet cephaneyi hemen patlattıysa (infilak) taret anında, cephane yangınında birkaç saniye sonra
+		_turret_event(mode, 0.0 if mode == "catastrophic" else randf_range(0.5, 2.2))
+	elif has_t and heavy and mode == "brew" and (late or randf() < (0.42 if _carousel() else 0.25)):
+		# yanan araçta gecikmeli cephane infilakı: alev cephaneye ulaşınca (6–24 sn)
+		_turret_event("late", 3.0 if late else randf_range(6.0, 24.0))
 	G.grid.set_static_rect(position, Vector2(D["len"] * 0.45, D["len"] * 0.85), heading, 1.3, Grid.K_WRECK)
 	if vtype == "truck" and G.logi:
 		G.logi.truck_lost(self)
@@ -3833,31 +3855,286 @@ func destroy(src) -> void:
 		for i in randi_range(1, 3):
 			G.main.spawn_soldier(team, "rifle", position + Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5)), null, 50.0)
 
-# parçalar etrafa saçılır ve sahnede kalır (çevrenin parçası)
+# cephane infilakı: patlama, ateş topu, alev sütunu, kapaktan cephane jeti, krater, parçalar, ikincil infilaklar
+func _cookoff_boom(cp: Vector3, with_burn := true) -> void:
+	G.explode(cp, 4.5, 70.0, "big", team, self, team)
+	G.fx.fireball(cp + Vector3(0, 0.8, 0), 1.5)
+	G.fx.fire_column(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.2)
+	G.fx.cookoff(position + Vector3(0, 2.0, 0), randf_range(6.0, 11.0), 1.0)
+	G.fx.crater(position, D["len"] * 0.55)
+	_debris(4, 6.0)
+	if with_burn:
+		G.fx.burn(position + Vector3(0, 1.6, 0), randf_range(45.0, 80.0), 1.6)
+	for i in randi_range(3, 6):
+		var tw0 := create_tween()
+		tw0.tween_interval(randf_range(0.8, 6.0))
+		tw0.tween_callback(func():
+			var q := position + Vector3(randf_range(-1.0, 1.0), 1.8, randf_range(-1.0, 1.0))
+			G.fx.explosion(q, 0.7, "rpg")
+			G.fx.flash(q, 6.0, 8.0, 0.08)
+			Sfx.play3d("expl_small", q, 0.0)
+			for k in 6:
+				G.fx.emit(Fx.P_FIRE, q, Vector3(randf_range(-1, 1), randf_range(6, 11), randf_range(-1, 1)), randf_range(0.4, 0.8), 0.6, 1.6, -2.0, 0.6, Color(1.8, 0.9, 0.3, 1)))
+
+func _nat() -> String:
+	return G.nation[team] if team >= 0 and team < G.nation.size() else ""
+
+# taret altında karusel otomatik doldurucu (T-72 / T-80 / T-90, T-14; BMP/BMD'de taret çevresinde cephane):
+# cephane infilakında taret çok daha sık ve yükseğe fırlar
+func _carousel() -> bool:
+	var fam := String(cat.get("fam", ""))
+	if fam != "":
+		return fam in ["mbt_ru", "mbt_t14", "ifv_bmp", "ifv_bmd"]
+	return vtype == "tank" and _nat() == "rus"
+
+# arka taret cephane bölmesi atılır panelli (M1 ailesi): infilak paneli dışarı atar, taret yerinde kalır
+func _blowout() -> bool:
+	var fam := String(cat.get("fam", ""))
+	if fam != "":
+		return fam == "mbt"
+	return vtype == "tank" and _nat() == "usa"
+
+# 94: cephane infilakı ve taret kopması; delay > 0: önce içeride yangın (kapaklardan alev), sonra infilak.
+# "late": yanan araçta alev cephaneye ulaşınca — önce tek tek patlayan mermiler
+func _turret_event(mode: String, delay: float) -> void:
+	if delay <= 0.01:
+		_turret_blow(mode)
+		return
+	var tw := create_tween()
+	tw.tween_interval(delay)
+	tw.tween_callback(_turret_blow.bind(mode))
+	if mode == "late":
+		for i in randi_range(2, 4):
+			var tw2 := create_tween()
+			tw2.tween_interval(maxf(delay - randf_range(0.3, 2.8), 0.1))
+			tw2.tween_callback(func():
+				var q := turret_world_pos() + Vector3(randf_range(-0.6, 0.6), 0.9, randf_range(-0.6, 0.6))
+				G.fx.explosion(q, 0.45, "rpg")
+				Sfx.play3d("expl_small", q, -4.0))
+
+func _turret_blow(mode: String) -> void:
+	if turret == null or not is_instance_valid(turret) or turret.get_parent() != hull or turret_mi == null or turret_mi.mesh == null:
+		return
+	var cp := position + Vector3(0, 1.0, 0)
+	if _blowout() and mode != "catastrophic" and (force_style == "vent" or (force_style == "" and randf() < 0.85)):
+		_bustle_vent()
+		return
+	if mode != "catastrophic":
+		_cookoff_boom(cp, false)
+	turret_style = force_style if force_style != "" else _turret_style(mode)
+	var ta: AABB = turret_mi.mesh.get_aabb()
+	print("TURRET %s mode=%s style=%s side=%d k=%s seat=%.2f t_aabb=%s hull_aabb=%s" % [vid if vid != "" else vtype, mode, turret_style, last_side, kill_k, turret.position.y + ta.position.y, ta, _hull_aabb()])
+	_turret_launch(turret_style)
+
+# kopma biçimi: üstten saldırı / topçu → çoğunlukla dimdik yükselip takla; yandan-arkadan delme → vuruş
+# yönünde yana savrulur ya da güverteden kayar; önden → arkaya (motor güvertesine) devrilir ya da kalkıp
+# gövdeye eğik oturur; yanan araçta gecikmeli infilak çoğunlukla kaldırıp düşürür
+func _turret_style(mode: String) -> String:
+	var top := kill_k in ["topatk", "fpv", "big", "shell", "mortar"] or last_side == 3
+	var r := randf()
+	if _carousel():
+		r *= 0.85      # karusel: dimdik fırlama daha olası
+	if mode == "catastrophic":
+		if top:
+			return "pop" if r < 0.6 else ("toss" if r < 0.85 else "flipback")
+		return "pop" if r < 0.35 else ("toss" if r < 0.72 else "flipback")
+	if mode == "late":
+		return "pop" if r < 0.35 else ("lift" if r < 0.7 else ("toss" if r < 0.9 else "slide"))
+	if top:
+		return "pop" if r < 0.5 else ("lift" if r < 0.8 else "toss")
+	if last_side in [1, 2]:
+		return "toss" if r < 0.4 else ("slide" if r < 0.6 else ("pop" if r < 0.8 else "lift"))
+	return "flipback" if r < 0.35 else ("lift" if r < 0.7 else "pop")
+
+func _rand_unit() -> Vector3:
+	var v := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1))
+	return v.normalized() if v.length() > 0.01 else Vector3.UP
+
+func _rand_h(a: float, b: float) -> Vector3:
+	var ang := randf() * TAU
+	return Vector3(cos(ang), 0.0, sin(ang)) * randf_range(a, b)
+
+# gövde örgülerinin (taret hariç) gövde uzayındaki kapsamı
+func _hull_aabb() -> AABB:
+	var a := AABB()
+	var first := true
+	for c in hull.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh != null and c != rotor_disc:
+			var bb: AABB = (c as MeshInstance3D).transform * (c as MeshInstance3D).mesh.get_aabb()
+			a = bb if first else a.merge(bb)
+			first = false
+	if first:
+		a = AABB(Vector3(-ext.x, 0.0, -ext.y), Vector3(ext.x * 2.0, 1.6, ext.y * 2.0))
+	return a
+
+# taret katı cisim olarak fırlar: ilk hız + takla biçime göre; gövde güvertesine / araziye çarpar, seker,
+# yuvarlanır, yatar. Ara sıra namlu beşikten kopup ayrı uçar. Boşalan taret yuvası kararır, içi kor.
+func _turret_launch(style: String) -> void:
+	var tpos := turret.position
+	var ta: AABB = turret_mi.mesh.get_aabb()
+	var seat_y := tpos.y + ta.position.y
+	var hab := _hull_aabb()
+	var tp := turret_world_pos()
+	var up := Vector3.UP
+	var fw := forward()
+	var rt := right()
+	var dd := Vector3(kill_dir.x, 0.0, kill_dir.z)
+	dd = dd.normalized() if dd.length() > 0.1 else _rand_h(1.0, 1.0)
+	# yükseklik ölçülü (kullanıcı: "çok yükseğe uçuyor"): en şiddetli dimdik fırlamada tepe ~2–5 m, yana
+	# savrulmada ~1–1,5 m, devrilmede ~1 m, kalkıp oturmada ~0,5 m — takla açısal hızla, yükseklikle değil
+	var pw := clampf((1.0 if vtype == "tank" else (0.85 if vtype == "ifv" else 0.75)) * (0.92 + 0.12 * kill_over) * (1.06 if _carousel() else 1.0), 0.7, 1.12)
+	var v0 := Vector3.ZERO
+	var w0 := Vector3.ZERO
+	match style:
+		"pop":
+			v0 = up * randf_range(6.5, 9.5) * pw + _rand_h(0.3, 1.4) + dd * randf_range(0.0, 1.0)
+			w0 = _rand_unit() * randf_range(2.0, 4.5) + up * randf_range(-2.0, 2.0)
+		"toss":
+			v0 = up * randf_range(4.0, 5.5) * pw + dd * randf_range(2.5, 4.5) * pw
+			w0 = up.cross(dd).normalized() * randf_range(2.2, 4.2) + _rand_unit() * 0.5
+		"flipback":
+			v0 = up * randf_range(3.6, 5.0) * pw - fw * randf_range(1.2, 2.4) * pw
+			w0 = rt * randf_range(2.8, 4.2) + _rand_unit() * 0.4
+		"lift":
+			# cephane yanması (infilak değil): taret halkadan kalkar, eğik düşüp gövdeye çarpık oturur
+			v0 = up * randf_range(2.8, 3.8) + _rand_h(0.9, 1.6)
+			w0 = _rand_h(0.6, 1.2) + up * randf_range(-0.7, 0.7)
+		_:
+			# slide: vuruşun ters yanına, güverteden kayarak düşer
+			var sd := rt * (signf(dd.dot(rt)) if absf(dd.dot(rt)) > 0.15 else (1.0 if randf() < 0.5 else -1.0))
+			v0 = up * randf_range(2.0, 3.0) * pw + sd * randf_range(1.6, 2.8) * pw
+			w0 = up.cross(sd) * randf_range(1.0, 2.0)
+	var has_gun := barrel_mi != null and barrel_mi.mesh != null
+	if has_gun and barrel != null:
+		# yükseliş düzeneği kopar: namlu beşikte serbest kalır (aşağı sarkar ya da kalkık kalır)
+		barrel.rotation.x = randf_range(-0.22, 0.28)
+	var gun_off := has_gun and (force_gun_off == 1 or (force_gun_off < 0 and style in ["pop", "toss"] and randf() < 0.18))
+	var parts: Array = [[turret_mi, 0.82, 0.985]]
+	var gb: DebrisBody = null
+	if gun_off:
+		gb = DebrisBody.make(barrel, [[barrel_mi, 1.0, 1.0]], G.world)
+	elif has_gun:
+		parts.append([barrel_mi, 0.18, 1.0])
+	var ring_r := clampf(minf(ta.size.x, ta.size.z) * 0.36, 0.35, 1.3)
+	var db := DebrisBody.make(turret, parts, G.world)
+	db.add_obstacle(hull, hab, seat_y, Vector4(tpos.x, tpos.z, ring_r, 0.22))
+	db.fx_size = clampf(ta.size.x * 0.45, 0.5, 2.0)
+	db.smolder = randf_range(25.0, 50.0)
+	db.block = Vector2(ta.size.x, ta.size.z) * absf(hull.scale.x)
+	db.launch(v0, w0)
+	turret_body = db
+	if gb != null:
+		gb.add_obstacle(hull, hab, seat_y)
+		gb.fx_size = 0.5
+		gb.rest = 0.3
+		gb.launch(v0 * randf_range(0.8, 1.05) + _rand_h(1.0, 2.5), w0 * 0.5 + _rand_unit() * randf_range(2.0, 4.0))
+	# halka ağzından alev jeti ve parlama; boşalan yuva
+	G.fx.cookoff(tp + Vector3(0, 0.2, 0), randf_range(2.0, 4.0), 1.5)
+	G.fx.flash(tp, 8.0, 14.0, 0.25)
+	Sfx.play3d("expl_big", tp, 3.0)
+	_turret_hole(Vector3(tpos.x, seat_y, tpos.z), ring_r)
+
+# boşalan taret yuvası: kararmış halka ağzı + içte kor (yangın sürdükçe)
+func _turret_hole(p: Vector3, rr: float) -> void:
+	var cm := CylinderMesh.new()
+	cm.top_radius = rr
+	cm.bottom_radius = rr
+	cm.height = 0.05
+	cm.radial_segments = 20
+	cm.rings = 1
+	var hole := MeshInstance3D.new()
+	hole.mesh = cm
+	hole.material_override = Mats.flat(Color(0.03, 0.025, 0.02), 1.0)
+	hole.position = p + Vector3(0, 0.025, 0)
+	hull.add_child(hole)
+	var cm2 := CylinderMesh.new()
+	cm2.top_radius = rr * 0.7
+	cm2.bottom_radius = rr * 0.7
+	cm2.height = 0.02
+	cm2.radial_segments = 16
+	cm2.rings = 1
+	var em := MeshInstance3D.new()
+	em.mesh = cm2
+	em.material_override = Mats.flat(Color(1.0, 0.32, 0.06), 1.0, 2.2)
+	em.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	em.position = p + Vector3(0, 0.055, 0)
+	hull.add_child(em)
+	var tw := em.create_tween()
+	tw.tween_interval(randf_range(40.0, 70.0))
+	tw.tween_callback(em.queue_free)
+
+# M1 ailesi: arka taret cephane bölmesinin atılır panelleri — infilakta iki panel havaya uçar, bölmeden
+# yukarı iki alev jeti fışkırır, taret yerinde kalır (mürettebat bölmesi korunur); araç yine de yanar
+func _bustle_vent() -> void:
+	turret_style = "vent"
+	var ta: AABB = turret_mi.mesh.get_aabb()
+	var tt := turret.global_transform
+	var zb := ta.end.z - ta.size.z * 0.18          # model: -Z ileri → +Z taret arkası
+	for sd in [-1.0, 1.0]:
+		var lp := Vector3(ta.get_center().x + sd * ta.size.x * 0.22, ta.end.y, zb)
+		var wp := tt * lp
+		G.fx.cookoff(wp, randf_range(4.0, 8.0), 1.1)
+		G.fx.flash(wp, 6.0, 12.0, 0.3)
+		var pm := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(ta.size.x * 0.36, 0.05, ta.size.z * 0.2)
+		pm.mesh = bm
+		pm.material_override = Mats.burnt()
+		G.world.add_child(pm)
+		pm.global_transform = Transform3D(tt.basis.orthonormalized(), wp)
+		var db := DebrisBody.make(pm, [[pm, 1.0, 1.0]], G.world)
+		db.rest = 0.35
+		db.fx_size = 0.4
+		db.max_age = 15.0
+		db.launch(Vector3(randf_range(-1.2, 1.2), randf_range(5.0, 7.5), randf_range(-1.2, 1.2)), _rand_unit() * randf_range(4.0, 8.0))
+	Sfx.play3d("expl_big", tt.origin, 2.0)
+	G.explode(tt.origin + Vector3(0, 1.0, 0), 3.0, 30.0, "big", team, self, team)
+	G.fx.fire_column(position + Vector3(0, 1.6, 0), randf_range(40.0, 70.0), 1.0)
+	for i in randi_range(3, 6):
+		var tw0 := create_tween()
+		tw0.tween_interval(randf_range(0.5, 6.0))
+		tw0.tween_callback(func():
+			var q := turret.global_transform * Vector3(randf_range(-0.6, 0.6), ta.end.y, zb)
+			G.fx.explosion(q, 0.5, "rpg")
+			Sfx.play3d("expl_small", q, -2.0))
+	print("TURRET %s vent side=%d k=%s" % [vid if vid != "" else vtype, last_side, kill_k])
+
+# parçalar (zırh plakası / yan etek / kapak, saklama kutusu, yürüyen aksam tekeri) katı cisim olarak
+# saçılır: takla atar, seker, yuvarlanır ve sahnede kalır (çevrenin parçası). Yükseklik ölçülü (~1–2 m).
 func _debris(n: int, force: float) -> void:
-	var src_meshes := _meshes(self)
+	var tracked := vtype in ["tank", "ifv", "apc", "aa", "arty"] and wheels.size() > 4
+	var fk := clampf(force / 9.0 + 0.35, 0.5, 1.2)
 	for i in n:
 		var mi := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(randf_range(0.3, 1.1), randf_range(0.08, 0.3), randf_range(0.3, 1.2))
-		mi.mesh = bm
-		mi.material_override = Mats.burnt()
-		G.main.world.add_child(mi)
-		var p0 := position + Vector3(randf_range(-1, 1), 1.4, randf_range(-1, 1))
-		mi.position = p0
-		var dir := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
-		var land := G.on_ground(p0 + dir * randf_range(force * 0.4, force))
-		land.y = G.terrain.ground_h(land) + bm.size.y * 0.5 if G.terrain else 0.1
-		var top := p0.lerp(land, 0.5) + Vector3(0, randf_range(2.0, force * 0.6), 0)
-		var tw := mi.create_tween()
-		var dur := randf_range(0.7, 1.2)
-		tw.tween_method(func(k: float):
-			mi.position = p0.lerp(top, k).lerp(top.lerp(land, k), k)
-			mi.rotation += Vector3(0.2, 0.15, 0.1), 0.0, 1.0, dur)
-		tw.tween_callback(func():
-			G.fx.emit(Fx.P_SMOKE, land, Vector3(0, 0.6, 0), 1.5, 0.4, 1.2, -0.1, 1.0, Color(0.2, 0.2, 0.2, 0.5)))
-		if i == 0 and src_meshes.size() > 0:
-			G.fx.burn(land + Vector3(0, 0.2, 0), randf_range(8.0, 16.0), 0.35)
+		var r := randf()
+		if r < 0.15:
+			var cm := CylinderMesh.new()
+			var wr := randf_range(0.28, 0.4) if tracked else randf_range(0.4, 0.55)
+			cm.top_radius = wr
+			cm.bottom_radius = wr
+			cm.height = randf_range(0.14, 0.24) if tracked else randf_range(0.25, 0.35)
+			cm.radial_segments = 14
+			cm.rings = 1
+			mi.mesh = cm
+		elif r < 0.45:
+			var bm := BoxMesh.new()
+			bm.size = Vector3(randf_range(0.3, 0.7), randf_range(0.2, 0.45), randf_range(0.3, 0.8))
+			mi.mesh = bm
+		else:
+			var bm2 := BoxMesh.new()
+			bm2.size = Vector3(randf_range(0.4, 1.2), randf_range(0.03, 0.08), randf_range(0.3, 0.9))
+			mi.mesh = bm2
+		Art.burn(mi)
+		G.world.add_child(mi)
+		mi.global_transform = Transform3D(Basis.from_euler(Vector3(randf() * TAU, randf() * TAU, randf() * TAU)), position + Vector3(randf_range(-1.0, 1.0), 1.3, randf_range(-1.0, 1.0)))
+		var db := DebrisBody.make(mi, [[mi, 1.0, 1.0]], G.world)
+		db.rest = 0.3
+		db.mu = 0.6
+		db.fx_size = 0.25
+		db.max_age = 12.0
+		if i == 0:
+			db.smolder = randf_range(8.0, 16.0)
+		db.launch(_rand_h(1.0, 1.0) * randf_range(0.25, 0.5) * force + Vector3(0, randf_range(2.5, 5.0) * fk, 0), _rand_unit() * randf_range(3.0, 9.0))
 
 # komutan kapakta: ateş altında / hedefe ateş ederken içeri girer, sakinken dışarı çıkıp bakar
 func _cmdr_tick(dt: float) -> void:

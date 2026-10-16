@@ -28,6 +28,9 @@ uniform float dirt_height = 0.9;
 uniform float dirt_amount = 0.6;
 uniform vec4 dust_col : source_color = vec4(0.6, 0.55, 0.45, 1.0);
 uniform float dust_amount = 0.0;
+// yanmış enkaz (0..1): boya yanar — is (siyah), pas (kahve-turuncu), kül (açık gri) lekeleri; köşe rengindeki
+// pişmiş AO ve normal ayrıntısı korunur (düz siyah siluet değil)
+uniform float burnt = 0.0;
 
 varying vec3 mpos;
 varying vec3 mnrm;
@@ -71,11 +74,24 @@ void fragment() {
 	base = mix(base, dirt_col.rgb, dirt);
 	float dust = clamp(smoothstep(0.55, 0.95, n.y) * dust_amount * (0.5 + g), 0.0, 1.0);
 	base = mix(base, dust_col.rgb, dust);
+	if (burnt > 0.0) {
+		float ao = clamp(lum(vc) * 1.8, 0.3, 1.0);
+		float gn = lum(tri(grime_tex, p * 0.8 + vec3(5.3, 2.1, 7.7), n).rgb);
+		float gn2 = lum(tri(streak_tex, p * 1.3 + vec3(1.7, 4.2, 0.3), n).rgb);
+		vec3 soot = vec3(0.04, 0.037, 0.034);
+		vec3 rustc = vec3(0.34, 0.155, 0.065) * (0.7 + gn2 * 0.6);
+		vec3 ash = vec3(0.4, 0.39, 0.37) * (0.85 + gn * 0.3);
+		float rm = smoothstep(0.22, 0.48, gn + side * 0.14 - n.y * 0.06);
+		float am = smoothstep(0.5, 0.78, gn2 + n.y * 0.2) * 0.8;
+		vec3 bc = mix(soot, rustc, rm * 0.85);
+		bc = mix(bc, ash, am * (1.0 - rm * 0.5));
+		base = mix(base, bc * ao, burnt);
+	}
 	ALBEDO = base;
 	// yüzey ayrıntısı
 	float mr = tri(micro_rough, p * 2.0, n).r;
-	ROUGHNESS = clamp(roughness * mix(1.0, 0.75 + mr * 0.5, micro) + dirt * 0.25, 0.05, 1.0);
-	METALLIC = metallic * (1.0 - dirt);
+	ROUGHNESS = mix(clamp(roughness * mix(1.0, 0.75 + mr * 0.5, micro) + dirt * 0.25, 0.05, 1.0), 0.93, burnt);
+	METALLIC = mix(metallic * (1.0 - dirt), 0.1, burnt);
 	vec3 nm = vec3(0.5, 0.5, 1.0);
 	if (has_normal) {
 		nm = texture(normal_tex, UV * uv_scale).rgb;
