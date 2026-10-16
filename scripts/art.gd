@@ -250,6 +250,12 @@ static func material(name: String, team: int) -> Material:
 		"wood":
 			tint = Color(0.42, 0.26, 0.14)
 			lay = [0.2, 0.0, 0.3, 0.3]
+		"airgray":
+			# hava aracı boyası (İHA): kamuflajsız açık gri (FS 36375 benzeri), hafif yağ akıntısı, çamur yok
+			tint = Color(0.6, 0.62, 0.63) if team != 1 else Color(0.66, 0.67, 0.66)
+			rough = 0.5
+			metal = 0.08
+			lay = [0.3, 0.0, 0.55, 0.0]
 		_:
 			shaded = false
 	if shaded:

@@ -1,4 +1,45 @@
-# Devir notu — bulut oturumundan yerel (GPU) oturuma (15 Ekim 2026)
+# Devir notu — kaldığımız yer (16 Ekim 2026, yerel GPU oturumu)
+
+Önceki oturum, Claude Code "auto mode" güvenlik denetimi komut çalıştırmayı engellediği için durdu (komutlar
+değil sohbet içeriği gerekçe gösterildi). **Yeni oturumda varsayılan izin kipinde çalış.**
+Dal: `claude/fervent-euler-a8emja` (PR #1, push yapılmadı). Son commitler: `470c9cf` (camiye benzer yapılar /
+kubbe üreticisi kaldırıldı, sanayi bacası), `5faa96f` (41, 42, 14, 24, 75: köprüler, nehir, duman, alev, roketatar).
+
+## Kaydedilmemiş değişiklikler (ilk iş: `git status`, gözden geçir, test et, commit)
+- `scripts/vehicle.gd`: havadaki araçlara irtifa çizgisi + yerde halka (`_alt_line_tick`) — armeduav hatasız geçti, görüntüsüne bakılmadı
+- `scripts/art.gd`: "airgray" malzemesi (İHA boyası) — Godot'ta henüz çalıştırılmadı
+- `scripts/tests07.gd`, `scripts/main.gd`: yeni sahneler `soldiertest` (asker görünümü), `armeduav` (silahlı İHA) — çalıştı
+- `tools/blender/veh/fam_uav.py`: İHA modelleri baştan (loft gövde, türe göre düzen, gri boya) — **hiç çalıştırılmadı**;
+  `vlib.py`'ye "airgray" rengi
+- `ROADMAP.md`: kullanıcının yeni istekleri 60–93 (tabloda)
+
+## Sıradaki adımlar (sırayla)
+1. Testler: `.\tools\run_tests.ps1 -Godot "C:\Godot\Godot_v4.7.2-stable_win64_console.exe" -Scenes armeduav,soldiertest,bridgetest`
+   (yeni sınıf/varlık varsa `-NoImport` olmadan). Son tam regresyonda başarısız: `septest` (araç içinde kalan 4 asker), `supplytest`.
+2. İHA modelleri (91/93): `data/catalog/usa.json` ve `rus.json`'da uav_* birimlerine `v.type` ekle (mq9, mq1c, orion, forpost,
+   rq7, orlan10, orlan30, raven, zala, eleron) ve `scale`'i sil (yeni modeller gerçek boyutlu). Üretim:
+   `blender -b --factory-startup -P tools/blender/veh/gen.py -- data/catalog/usa.json assets/models "" uav_male,uav_hale,uav_tac,uav_hand,uav_vtol,lm_tube,lm_wing,lm_delta`
+   (rus için de), sonra `godot --headless --path . -s res://tools/size_audit.gd`. Ortografik kamerada yüksek uçan İHA dev
+   görünmesin: Vehicle.setup'ta görsel irtifa ölçeği (MALE ~×0,5, HALE ~×0,4), yörünge yarıçapı büyüt.
+3. Askerler (kullanıcının en sık şikâyeti — 60/61/66/74/80/83/84/85/87/89/92): soldier.gd'de `position.y = 0.0` → arazi
+   yüksekliği (çift doğrusal örnek; krater/şev/tepede süzülme ve gömülme), mocap adım uzunluğu kalibrasyonu (ayak kayması),
+   ekrandaki askerde animasyon seyreltmesini kapat, araç üstünde oturma pozu + gerçek güverte yüksekliği, patlayan araçtaki
+   askerler savrulur/ölür, siper derinliğine göre poz, geriye koşarken ateş etmeme, çömelince geriye yatma, silah tutuşu,
+   sırtta tanksavarda kollar, kalabalıkta tank çevresinde ayrışma.
+4. Sonra ROADMAP 60–93 ve Faz 7: HUD (65/57), Broken Arrow tipi silah/atış modları (72/88), roket hızları (90), binalar
+   (35 farklı evler, 67 malzemeye göre yıkım, 69 girilebilir + üst kat, 70 kule devrilmesi), köprü mühimmata göre (68),
+   kum torbası (36), Chinook rampası (76), askı halatı/kanca/yük bırakma (77/78), araç kapıları (79), enkaz itme (62),
+   nehir akışı (71), mat harita (63), tüm birlikler görünür (64), kayıt (58), ses (56), performans (55), fragman (59).
+
+## Ortam
+Godot `C:\Godot\Godot_v4.7.2-stable_win64_console.exe` · Blender 5.2 `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`
+(Python'u: `...\5.2\python\bin\python.exe`, numpy var, PIL yok) · Node `C:\Program Files\nodejs\node.exe` · test kopyası
+`C:\mevzi_test` (git worktree; `robocopy C:\mevzi C:\mevzi_test /MIR /XD C:\mevzi\.git C:\mevzi\.godot C:\mevzi\shots ...`).
+Kural: oyunda cami/mescit/kilise/minare ve **benzeri (kubbe, ince halkalı kule)** asla yok.
+
+---
+
+# (Tarihsel) Devir notu — bulut oturumundan yerel (GPU) oturuma (15 Ekim 2026)
 
 Bu dosya, bulut oturumunda yarım kalan her şeyi ve yerel oturumun ilk adımlarını listeler.
 Plan ve yapılanların tamamı: **ROADMAP.md** (en üstte değişiklik günlüğü, ardından 0.0.8 — 32 madde).

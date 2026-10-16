@@ -199,6 +199,48 @@ const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2
 var _shadow: Decal = null
 static var _shadow_tex: Texture2D = null
 
+# irtifa çizgisi (Broken Arrow gibi): havadaki aracın altındaki yer noktasından gövdeye ince, takım renkli dikey
+# çizgi + yerde halka — eğik kamerada uçak yer konumundan uzakta çizildiği için nerede olduğu kaybolmasın.
+# Birimin çocuğu: görünürlüğü (sis, tespit) birimle aynı.
+var _alt_line: MeshInstance3D = null
+var _alt_ring: MeshInstance3D = null
+
+func _alt_line_tick(gp: Vector3, gh: float, alt: float) -> void:
+	if _alt_line == null:
+		var col: Color = G.TEAM_COL[team] if team >= 0 and team < G.TEAM_COL.size() else Color(0.9, 0.9, 0.85)
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.045
+		cm.bottom_radius = 0.045
+		cm.height = 1.0
+		cm.radial_segments = 6
+		cm.rings = 1
+		_alt_line = MeshInstance3D.new()
+		_alt_line.mesh = cm
+		_alt_line.material_override = Mats.unshaded(Color(col.r, col.g, col.b, 0.42))
+		_alt_line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_alt_line)
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.86
+		tm.outer_radius = 1.0
+		tm.rings = 24
+		tm.ring_segments = 4
+		_alt_ring = MeshInstance3D.new()
+		_alt_ring.mesh = tm
+		_alt_ring.material_override = Mats.unshaded(Color(col.r, col.g, col.b, 0.5))
+		_alt_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_alt_ring)
+	var on := alive and alt > 2.0
+	_alt_line.visible = on
+	_alt_ring.visible = on
+	if not on:
+		return
+	var base := to_local(Vector3(gp.x, gh, gp.z))
+	_alt_line.position = base + Vector3(0, alt * 0.5, 0)
+	_alt_line.scale = Vector3(1, maxf(alt - 0.6, 0.1), 1)
+	var rr := clampf(ext.x * 0.5, 0.9, 3.0)
+	_alt_ring.position = base + Vector3(0, 0.08, 0)
+	_alt_ring.scale = Vector3(rr, 0.15, rr)
+
 func _air_shadow_tick() -> void:
 	if _shadow == null:
 		if _shadow_tex == null:
@@ -224,6 +266,7 @@ func _air_shadow_tick() -> void:
 	var gp := hull.global_position
 	var gh := G.terrain.ground_h(gp)
 	var alt := maxf(gp.y - gh, 0.0)
+	_alt_line_tick(gp, gh, alt)
 	var sd := Vector3(0.35, 0, 0.2) * alt      # güneş eğimi: yükseldikçe gölge kayar
 	_shadow.global_position = Vector3(gp.x + sd.x, gh + 1.0, gp.z + sd.z)
 	_shadow.rotation.y = hull.global_rotation.y

@@ -87,6 +87,10 @@ func run(scene: String) -> void:
 			await smoke_test()
 		"firetest":
 			await fire_test()
+		"soldiertest":
+			await soldier_test()
+		"armeduav":
+			await armed_uav_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -2580,3 +2584,124 @@ func fire_test() -> void:
 			await m._shot("pod_%s_%d" % [ids[i], k])
 		print("POD %s salvo=%d left=%d vtype=%s alive=%s dep=%.2f proc=%s mt=%.2f" % [ids[i], n0, ml.mlrs_left, ml.vtype, ml.alive, ml.deployed, ml.is_processing(), ml.mlrs_t])
 	print("FIRETEST RESULT fails=0")
+
+# asker görünümü (60/61/66/74/80/85/89): oyun açısından yakın çekim — yürüyen tim (ardışık kareler, ayak teması
+# ve gölge), duruşlar (bekleme, nişan, çömelme, yüzüstü), tank üstündekiler, siperdekiler, sırtında tanksavar taşıyan
+func soldier_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 43)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	await m._wait(2.0)
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5 - 40.0, 0, G.MAP * 0.5 + 30.0), Grid.M_HEAVY)
+	G.props.clear_area(c, 30.0)
+	# 1) yürüyen ve koşan tim
+	var walkers: Array = []
+	for i in 4:
+		var s := m.spawn_soldier(0, ["rifle", "mg", "at", "rifle"][i], c + Vector3(-14.0, 0, -8.0 + i * 1.8), null)
+		walkers.append(s)
+	for i in walkers.size():
+		walkers[i].cmd_move(walkers[i].position + Vector3(30.0, 0, 0), i % 2 == 1)
+	G.cam.size = 8.0
+	G.cam.target_size = 8.0
+	await m._wait(1.6)
+	G.cam.jump_to(walkers[1].position + Vector3(2.0, 0, 0), true)
+	for k in 6:
+		await m._wait(0.07)
+		await m._shot("walk_%d" % k)
+	# 2) duruşlar: düşman uzakta (nişan alsınlar)
+	var foe := m.spawn_soldier(1, "rifle", c + Vector3(70.0, 0, 0), null)
+	foe.cmd_hold()
+	foe.hp = 1e9
+	var kinds := [["rifle", Soldier.STAND], ["rifle", Soldier.CROUCH], ["rifle", Soldier.PRONE], ["mg", Soldier.STAND], ["at", Soldier.STAND], ["sniper", Soldier.CROUCH]]
+	var posed: Array = []
+	for i in kinds.size():
+		var s := m.spawn_soldier(0, kinds[i][0], c + Vector3(-4.0 + i * 1.7, 0, 6.0), null)
+		s.stance_lock = kinds[i][1]
+		s.stance = kinds[i][1]
+		s.cmd_hold()
+		posed.append(s)
+	# 3) tank üstündekiler
+	var tk := m.spawn_vehicle(0, "rus_mbt_72b3", c + Vector3(-6.0, 0, 14.0), 0.4)
+	tk.cmd_hold()
+	for i in 4:
+		var s := m.spawn_soldier(0, "rifle", c + Vector3(-6.0, 0, 18.0), null)
+		s.board(tk)
+	# 4) siper
+	var tr := m.place_line(0, "trench", c + Vector3(6.0, 0, 13.0), c + Vector3(16.0, 0, 15.0))
+	tr.add_work(99999.0)
+	await m._wait(1.0)
+	for i in 3:
+		var s := m.spawn_soldier(0, ["rifle", "mg", "rifle"][i], c + Vector3(8.0 + i * 3.0, 0, 13.6 + i * 0.6), null)
+		s.cmd_hold()
+	await m._wait(4.0)
+	G.cam.size = 10.0
+	G.cam.target_size = 10.0
+	G.cam.jump_to(c + Vector3(0.0, 0, 6.0), true)
+	await m._wait(0.6)
+	await m._shot("poses")
+	G.cam.size = 9.0
+	G.cam.target_size = 9.0
+	G.cam.jump_to(tk.position, true)
+	await m._wait(0.5)
+	await m._shot("riders")
+	G.cam.jump_to(c + Vector3(11.0, 0, 14.0), true)
+	await m._wait(0.5)
+	await m._shot("trench")
+	print("SOLDIERTEST RESULT fails=0")
+
+# 91: silahlı İHA (MQ-9 / Orion) — havada kalır, görünür, yörüngede döner, hedefe füze atar
+func armed_uav_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 43)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	await m._wait(1.5)
+	var fails := 0
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var ids := ["usa_uav_mq9", "rus_uav_orion", "uav_armed", "uav_armed"]
+	var uavs: Array = []
+	for i in 4:
+		var u = m.spawn_vehicle(i % 2, ids[i], c + Vector3(-30.0 + (i % 2) * 60.0, 0, 20.0 + (i / 2) * 30.0), 0.0)
+		u.cmd_move(c + Vector3(-20.0 + (i % 2) * 40.0, 0, -10.0 + (i / 2) * 50.0))
+		uavs.append(u)
+	var tk := m.spawn_vehicle(1, "rus_mbt_72b3", c + Vector3(-20.0, 0, -12.0), 0.0)
+	tk.cmd_hold()
+	# oyuncu yolu: helikopter pistinde üretim (sandbox para), toplanma noktasına uçuş
+	var hp := m.place_building(0, "helipad", G.grid.nearest_free(c + Vector3(0, 0, 45.0), Grid.M_HEAVY), 0.0)
+	hp.add_work(99999.0)
+	await m._wait(0.5)
+	G.supply[0] = 99999
+	var ok_q: bool = hp.enqueue("usa_uav_mq9")
+	print("UAV helipad queue=%s done=%s" % [ok_q, hp.done])
+	for k in 15:
+		await m._wait(2.0)
+		for u2 in G.units:
+			if is_instance_valid(u2) and u2 is Vehicle and u2.vtype == "uav_armed" and not uavs.has(u2):
+				uavs.append(u2)
+		for u in uavs:
+			if is_instance_valid(u):
+				print("UAV %s t=%d alive=%s alt=%.1f vis=%s hull_vis=%s pos=%s seen0=%s missiles=%d vt=%s" % [u.vid, k, u.alive, u.hull.position.y, u.visible, u.hull.visible, u.position, u.seen[0] if u.seen.size() > 0 else -1, u.missiles, u.vtype])
+	G.cam.size = 70.0
+	G.cam.target_size = 70.0
+	G.cam.jump_to(c, true)
+	await m._wait(0.5)
+	await m._shot("armeduav_wide")
+	for u in uavs:
+		if is_instance_valid(u) and u.alive:
+			G.cam.size = 24.0
+			G.cam.target_size = 24.0
+			G.cam.jump_to(u.position, true)
+			await m._wait(0.3)
+			await m._shot("armeduav_%s" % u.vid)
+			if u.hull.position.y < 5.0 or not u.visible:
+				fails += 1
+		else:
+			fails += 1
+	print("ARMEDUAV RESULT fails=%d" % fails)
