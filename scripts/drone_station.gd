@@ -8,7 +8,8 @@ const SETUP_TIME := 16.0
 const RELAUNCH := 40.0
 
 var team := 0
-var operator = null          # Soldier
+var operator = null          # Soldier — istasyoncu (ekran başında)
+var pilot = null             # Soldier — kumandalı pilot (2 kişilik ekip; biri düşerse diğeri devralır)
 var progress := 0.0          # 0..1 kurulum
 var done := false
 var hp := 90.0
@@ -206,9 +207,27 @@ func _process(dt: float) -> void:
 	if _screen:
 		_screen.visible = done
 	var op_ok: bool = operator != null and is_instance_valid(operator) and operator.alive and operator.can_fight()
+	var pi_ok: bool = pilot != null and is_instance_valid(pilot) and pilot.alive and pilot.can_fight()
+	if done and not op_ok and pi_ok:
+		# istasyoncu düştü: pilot istasyonu devralır
+		operator = pilot
+		pilot = null
+		operator.station = self
+		operator.drone_job = ""
+		operator.pilot_of = null
+		op_ok = true
+		pi_ok = false
 	if done and not op_ok:
 		_lose_link()
 		return
+	# İHA havadayken timin ikinci drone askeri pilot olur
+	if done and not pi_ok and uav != null and is_instance_valid(uav) and uav.alive and operator.squad != null:
+		for s in operator.squad.members:
+			if is_instance_valid(s) and s != operator and s.alive and s.can_fight() and s.role == "drone" and s.drone_job == "" and s.position.distance_to(position) < 60.0:
+				pilot = s
+				s.drone_job = "pilot"
+				s.pilot_of = self
+				break
 	if not done:
 		return
 	if launch_t >= 0.0:

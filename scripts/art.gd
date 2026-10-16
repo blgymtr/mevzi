@@ -378,6 +378,11 @@ static func vehicle_model(model: String, team: int) -> Dictionary:
 			var wm := skinned(model, key, team)
 			var r := wm.get_aabb().size.y * 0.5
 			out["wheels"].append([nd[key]["pos"], r, 0.4, wm])
+		elif key.begins_with("prop"):
+			# İHA pervanesi: [örgü, konum, eksen ('y' ileri → Godot Z, 'z' dikey → Godot Y)]
+			if not out.has("props"):
+				out["props"] = []
+			out["props"].append([skinned(model, key, team), nd[key]["pos"], key.substr(4, 1)])
 		elif key == "rotor" or key == "trotor" or key == "ramp":
 			out[key] = skinned(model, key, team)
 			out[key + "_pos"] = nd[key]["pos"]

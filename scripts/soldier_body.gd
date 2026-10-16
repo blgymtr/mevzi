@@ -201,6 +201,13 @@ func set_tool(kind: String) -> void:
 			# top mermisi: kovanlı, sarı tapalı (göğüs önünde iki elle)
 			mb.cyl(Vector3(0, 0, 0), 0.07, 0.07, 0.5, 10, Color(0.75, 0.58, 0.24), Basis(Vector3.FORWARD, PI * 0.5))
 			mb.cyl(Vector3(-0.35, 0, 0), 0.07, 0.0, 0.22, 10, Color(0.32, 0.35, 0.26), Basis(Vector3.FORWARD, PI * 0.5))
+		elif kind == "rc":
+			# drone kumandası: iki çubuklu verici + iki anten (iki elle göğüs önünde)
+			mb.box(Vector3(0, 0, 0), Vector3(0.2, 0.035, 0.12), Color(0.16, 0.17, 0.16))
+			mb.box(Vector3(0, 0.03, 0.02), Vector3(0.1, 0.012, 0.06), Color(0.2, 0.35, 0.45))
+			for sx in [-1.0, 1.0]:
+				mb.cyl(Vector3(sx * 0.06, 0.03, -0.02), 0.008, 0.008, 0.03, 6, Color(0.1, 0.1, 0.1))
+				mb.cyl_between(Vector3(sx * 0.085, 0.01, 0.05), Vector3(sx * 0.11, 0.17, 0.08), 0.004, 0.003, 5, Color(0.08, 0.08, 0.08), false)
 		elif kind == "drone":
 			# FPV quad: X gövde, 4 motor + pervane, kamera, sırtında patlayıcı
 			var dk := Color(0.12, 0.12, 0.13)
@@ -227,6 +234,11 @@ func set_tool(kind: String) -> void:
 	elif kind == "shell":
 		spine.add_child(_tool_mi)
 		_tool_mi.position = Vector3(0, 0.3, -0.3)
+		weapon.visible = false
+	elif kind == "rc":
+		spine.add_child(_tool_mi)
+		_tool_mi.position = Vector3(0, 0.22, -0.3)
+		_tool_mi.rotation.x = 0.5
 		weapon.visible = false
 	elif kind == "drone":
 		# iki elle göğüs önünde tutulur; tüfek askıda

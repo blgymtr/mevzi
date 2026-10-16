@@ -46,6 +46,7 @@ if argv[0] == "--base":
             vlib.reset(nat)
             try:
                 pivots, meta = FAMS[u["fam"]](v)
+                pivots = {**vlib.EXTRA_PIVOTS, **pivots}
                 pivots, meta = vlib.apply_fit(v, pivots, meta)
             except Exception as ex:
                 import traceback; traceback.print_exc()
@@ -72,6 +73,7 @@ for u in cat["units"]:
     vlib.reset(cat["nation"])
     try:
         pivots, meta = FAMS[u["fam"]](u.get("v", {}))
+        pivots = {**vlib.EXTRA_PIVOTS, **pivots}
         pivots, meta = vlib.apply_fit(u.get("v", {}), pivots, meta)
     except Exception as ex:
         import traceback; traceback.print_exc()

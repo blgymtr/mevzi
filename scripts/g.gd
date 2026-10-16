@@ -241,6 +241,8 @@ func _update_visibility() -> void:
 		obs[u.team].append(u)
 	var wm: float = weather.sight_mult() if weather != null and is_instance_valid(weather) else 1.0
 	var night: bool = weather != null and is_instance_valid(weather) and weather.night
+	for t in 2:
+		_build_obs(t, obs[t], wm, night)
 	_spot_slice = (_spot_slice + 1) % 4
 	var i := 0
 	for u in units:
@@ -257,7 +259,7 @@ func _update_visibility() -> void:
 				continue
 			var s: bool = u is Building and time < reveal[t]
 			if not s and u.alive:
-				s = _spotted(u, obs[t], t, wm, night)
+				s = _spotted(u, t)
 			if s:
 				u.spot_mem[t] = time + 2.0
 			u.seen[t] = s or u.spot_mem[t] > time
@@ -269,39 +271,132 @@ func _update_visibility() -> void:
 			if u.seen[e]:
 				_vis_list[e].append(u)
 
-func _spotted(u, observers: Array, t: int, wm: float, night: bool) -> bool:
+# gözcü verisi (tespit taraması başına bir kez): konum, iz=1 için tespit menzili (optik × hava/gece, termal
+# az etkilenir), radar, havada mı + uzamsal kovalar. Her hedef yalnız erişebilecek kovalardaki gözcülerle
+# sınanır (600 birimde tespit kare süresinin en büyük payıydı: her hedef × her gözcü yöntem çağrısı)
+var _ob: Array = [{}, {}]
+
+func _build_obs(t: int, list: Array, wm: float, night: bool) -> void:
+	var n := list.size()
+	var ox := PackedFloat32Array()
+	var oz := PackedFloat32Array()
+	var r1 := PackedFloat32Array()
+	var rad := PackedFloat32Array()
+	var oair := PackedByteArray()
+	ox.resize(n)
+	oz.resize(n)
+	r1.resize(n)
+	rad.resize(n)
+	oair.resize(n)
+	var cs := clampf(MAP / 32.0, 32.0, 256.0)
+	var cells := {}
+	var idx := {}
+	var maxr := 0.0
+	var maxrad := 0.0
+	for j in n:
+		var o = list[j]
+		var th: bool = o.thermal()
+		var w := wm if not th else lerpf(wm, 1.0, 0.7)
+		if night and not th:
+			w *= 0.45
+		r1[j] = Combat.detect_range(o.opt_k, 1.0) * w
+		maxr = maxf(maxr, r1[j])
+		var isv: bool = o is Vehicle
+		rad[j] = o.radar if isv else 0.0
+		maxrad = maxf(maxrad, rad[j])
+		oair[j] = 1 if (isv and o.is_air()) else 0
+		ox[j] = o.position.x
+		oz[j] = o.position.z
+		idx[o.get_instance_id()] = j
+		var k := Vector2i(int(ox[j] / cs), int(oz[j] / cs))
+		if cells.has(k):
+			cells[k].append(j)
+		else:
+			cells[k] = [j]
+	_ob[t] = {"list": list, "ox": ox, "oz": oz, "r1": r1, "rad": rad, "air": oair, "cells": cells, "cs": cs, "maxr": maxr, "maxrad": maxrad, "idx": idx}
+
+func _spotted(u, t: int) -> bool:
 	var sig: float = u.spot_sig()
 	if sig <= 0.0:
 		return false
+	var ob: Dictionary = _ob[t]
+	if ob.is_empty():
+		return false
 	var tp: Vector3 = u.aim_point()
 	var air: bool = u is Vehicle and u.is_air()
+	var house: bool = u is Soldier and u.house_id >= 0
+	var list: Array = ob["list"]
+	var ox: PackedFloat32Array = ob["ox"]
+	var oz: PackedFloat32Array = ob["oz"]
+	var r1: PackedFloat32Array = ob["r1"]
+	var rad: PackedFloat32Array = ob["rad"]
+	var oair: PackedByteArray = ob["air"]
+	# son gözcü önce (çoğunlukla hâlâ görür)
 	var last = u.spot_by[t]
-	if last != null and is_instance_valid(last) and last.alive and _obs_sees(last, u, tp, sig, air, wm, night):
-		return true
-	for o in observers:
-		if o == last:
-			continue
-		if _obs_sees(o, u, tp, sig, air, wm, night):
+	var jl := -1
+	if last != null and is_instance_valid(last) and last.alive:
+		jl = int(ob["idx"].get(last.get_instance_id(), -1))
+		if jl >= 0 and _ob_sees(list[jl], ox[jl], oz[jl], r1[jl], rad[jl], oair[jl], tp, sig, air, house):
+			return true
+	var R: float = float(ob["maxr"]) * sig
+	if air:
+		R = maxf(R, float(ob["maxrad"]))
+	var cs: float = ob["cs"]
+	var cells: Dictionary = ob["cells"]
+	# menzildeki gözcüler (ucuz uzaklık sınaması); görüş hattı yalnız en yakın 6'sı için — gizli hedefte
+	# menzildeki yüzlerce gözcünün hepsi görüş hattı taraması yapıyordu
+	var near_d := PackedFloat32Array()
+	var near_j := PackedInt32Array()
+	for cz in range(int((tp.z - R) / cs), int((tp.z + R) / cs) + 1):
+		for cx in range(int((tp.x - R) / cs), int((tp.x + R) / cs) + 1):
+			var arr = cells.get(Vector2i(cx, cz))
+			if arr == null:
+				continue
+			for j in arr:
+				if j == jl:
+					continue
+				var Rj: float = r1[j] * sig
+				if air:
+					Rj = maxf(Rj, rad[j])
+				var dx: float = tp.x - ox[j]
+				var dz: float = tp.z - oz[j]
+				var d2 := dx * dx + dz * dz
+				if d2 > Rj * Rj:
+					continue
+				if air or oair[j] == 1:
+					u.spot_by[t] = list[j]
+					return true
+				near_d.append(d2)
+				near_j.append(j)
+	var tries := mini(6, near_j.size())
+	for k in tries:
+		var bi := -1
+		var bd := INF
+		for q in near_j.size():
+			if near_d[q] < bd:
+				bd = near_d[q]
+				bi = q
+		if bi < 0:
+			break
+		near_d[bi] = INF
+		var o = list[near_j[bi]]
+		if grid.los(o.eye_point(), tp, o.los_skip(), 1.6 if house else 0.4):
 			u.spot_by[t] = o
 			return true
 	return false
 
-func _obs_sees(o, u, tp: Vector3, sig: float, air: bool, wm: float, night: bool) -> bool:
-	var th: bool = o.thermal()
-	var w := wm if not th else lerpf(wm, 1.0, 0.7)
-	if night and not th:
-		w *= 0.45
-	var R: float = Combat.detect_range(o.opt_k, sig) * w
-	if air and o is Vehicle and o.radar > 0.0:
-		R = maxf(R, o.radar)
-	var dx: float = tp.x - o.position.x
-	var dz: float = tp.z - o.position.z
+func _ob_sees(o, x: float, z: float, r1: float, rad: float, oair: int, tp: Vector3, sig: float, air: bool, house: bool) -> bool:
+	var R := r1 * sig
+	if air:
+		R = maxf(R, rad)
+	var dx := tp.x - x
+	var dz := tp.z - z
 	if dx * dx + dz * dz > R * R:
 		return false
 	# hava hedefi ya da havadaki gözcü: görüş hattı yukarıdan açık say (orman örtüsü izde)
-	if air or (o is Vehicle and o.is_air()):
+	if air or oair == 1:
 		return true
-	return grid.los(o.eye_point(), tp, o.los_skip(), 1.6 if (u is Soldier and u.house_id >= 0) else 0.4)
+	return grid.los(o.eye_point(), tp, o.los_skip(), 1.6 if house else 0.4)
 
 func is_seen(u, by_team: int) -> bool:
 	if by_team < 0:

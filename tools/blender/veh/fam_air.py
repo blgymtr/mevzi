@@ -219,10 +219,18 @@ def tiltrotor(v):
 def fpv(v):
     box((0, 0, 0.1), (0.18, 0.26, 0.08), "dark", bev=0.01)
     box((0, 0.05, 0.02), (0.08, 0.14, 0.08), "paint", bev=0.01)                                    # harp başlığı
+    import vlib
     for k in range(4):
         a = math.pi / 4 + k * math.pi / 2
         box((math.cos(a) * 0.17, math.sin(a) * 0.17, 0.12), (0.34, 0.03, 0.02), "dark", rot=(0, 0, a), bev=0.0)
-        cyl((math.cos(a) * 0.3, math.sin(a) * 0.3, 0.15), 0.12, 0.01, "metal", seg=12)
+        px, py = math.cos(a) * 0.3, math.sin(a) * 0.3
+        cyl((px, py, 0.135), 0.022, 0.03, "dark", seg=8)                                           # motor
+        # pervane ayrı düğümde (oyunda döner): iki kanatlı
+        node("propz_%d" % k)
+        vlib.EXTRA_PIVOTS["propz_%d" % k] = (px, py, 0.155)
+        for s in (0, 1):
+            box((px, py, 0.155), (0.24, 0.025, 0.006), "metal", rot=(0, 0.12 * (1 if s == 0 else -1), a + s * math.pi), bev=0.0)
+        node("body")
     return {"body": (0, 0, 0)}, {"muzzle": (0, 0.2, 0.0), "radius": 0.6}
 
 # ------------------------------------------------------------ çekili topçu

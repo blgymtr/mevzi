@@ -24,6 +24,12 @@ def _fuselage(L, r, y0=0.0, z=0.0, nose=0.3, tail=0.25, mname="paint", seg=10):
     return hull_pts(pts, mname, bev=0.0)
 
 def prop(x, y, z, r, n=3, axis="Y"):
+    # pervane ayrı düğümde (oyunda döner — roadmap 8): propy_N (ileri eksen, itici) / propz_N (dikey)
+    import vlib
+    prev = vlib.CUR
+    name = "prop%s_%d" % (axis.lower(), len([k for k in vlib.EXTRA_PIVOTS if k.startswith("prop")]))
+    vlib.node(name)
+    vlib.EXTRA_PIVOTS[name] = (x, y, z)
     cyl((x, y, z), 0.06 * K * 3, 0.15, "dark", axis, seg=8)
     for k in range(n):
         a = k * math.tau / n
@@ -31,6 +37,7 @@ def prop(x, y, z, r, n=3, axis="Y"):
             box((x + math.cos(a) * r * 0.5, y, z + math.sin(a) * r * 0.5), (r, 0.02, 0.08), "dark", rot=(0, -a, 0), bev=0.0)
         else:
             box((x + math.cos(a) * r * 0.5, y + math.sin(a) * r * 0.5, z), (r, 0.08, 0.02), "dark", rot=(0, 0, a), bev=0.0)
+    vlib.node(prev)
 
 def uav_male(v):
     s = K * (1.15 if v.get("big") else 1.0)

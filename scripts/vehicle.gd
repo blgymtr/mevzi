@@ -143,6 +143,7 @@ var _track_acc := 0.0
 var _dust_t := 0.0
 var _stuck_t := 0.0
 var _repath_ok := 0.0
+var _scan_next := 0.0         # tam hedef taraması zamanı (hedef sürerken / boştayken seyrek)
 var _last_pos := Vector3.ZERO
 var shots := 0
 var job: Dictionary = {}      # kamyon görevi (Logistics)
@@ -500,6 +501,7 @@ func _cargo_lost() -> void:
 	cargo.clear()
 var rotor_blades: MeshInstance3D
 var rotor_disc: MeshInstance3D
+var props_n: Array = []        # İHA pervaneleri: [düğüm, yerel dönüş ekseni] (roadmap 8)
 # rotor devri (0 durgun … 1 uçuş): kalkışta açılır, inişte rölantiye düşer, düşüşte söner. Ses perdesi ve
 # pal görüntüsü bundan (roadmap 39/44, 22). Görüntü: paller hep görünür; kare başına dönüş, pal aralığının
 # ~%38'iyle sınırlanır (yoksa düşük FPS'te paller geriye dönüyor ya da duruyor gibi görünür), üstte hafif bulanık disk.
@@ -702,6 +704,15 @@ func setup(t: int, vt: String) -> void:
 		hull.position.y = 18.0
 		Sfx.loop3d("drone", self, -8.0)
 	_setup_air_defense(vt)
+	if M.has("props"):
+		for pr in M["props"]:
+			var pn := Node3D.new()
+			pn.position = pr[1]
+			hull.add_child(pn)
+			var pmi := MeshInstance3D.new()
+			pmi.mesh = pr[0]
+			pn.add_child(pmi)
+			props_n.append([pn, Vector3.BACK if pr[2] == "y" else Vector3.UP])
 	if vt in ["heli", "transport"]:
 		hull.position.y = ALT
 		rotor = Node3D.new()
@@ -1804,6 +1815,13 @@ func _scan() -> void:
 		forced_target = null
 		if order == "attack":
 			order = ""
+	# seyrek tam tarama: hedef hâlâ geçerliyse (görülüyor, menzilde) ya da son taramada aday yoksa tüm görünür
+	# düşmanlar her 0,5 sn'de taranmaz (yüzlerce birimde kare süresinin büyük payıydı); vurulunca hemen taranır
+	if G.time < _scan_next and forced_target == null and G.time - last_hit > 1.0:
+		if target == null:
+			return
+		if is_instance_valid(target) and target.alive and G.is_seen(target, team) and dist2(target) <= rng_w + 4.0:
+			return
 	var best: Unit = null
 	var bs := 1e9
 	var best_inf: Unit = null
@@ -1877,6 +1895,7 @@ func _scan() -> void:
 			best = e
 			break
 	target = best
+	_scan_next = G.time + (randf_range(1.6, 2.2) if best != null else (randf_range(0.9, 1.3) if cands.is_empty() else 0.0))
 	coax_target = null
 	if vtype == "tank" and best_inf != null and G.grid.los(eye, best_inf.aim_point(), 3.0, 1.6 if best_inf.house_id >= 0 else 0.5):
 		coax_target = best_inf
@@ -3178,7 +3197,16 @@ func lose_link() -> void:
 	say("BAĞLANTI KOPTU", 3.0)
 	forced_target = null
 
+# pervaneler: havadayken hızlı (stroboskop olmasın diye kare başına adım sınırlı), yerdeyken durgun
+func _spin_props(dt: float) -> void:
+	if props_n.is_empty():
+		return
+	var up := hull.position.y > 0.5 and alive
+	for pr in props_n:
+		(pr[0] as Node3D).rotate_object_local(pr[1], minf(dt * (70.0 if up else 0.0), 1.1))
+
 func _uav(dt: float) -> void:
+	_spin_props(dt)
 	if link_lost:
 		# bağ koptu: düz uçar, alçalır ve düşer
 		link_t += dt
@@ -3246,6 +3274,7 @@ func _uav(dt: float) -> void:
 		say("MÜHİMMAT BİTTİ — ÜSSE DÖN", 3.0)
 
 func _fpv(dt: float) -> void:
+	_spin_props(dt)
 	if G.weather != null and G.weather.no_air():
 		hull.position.y = move_toward(hull.position.y, 0.2, dt * 3.0)
 		return

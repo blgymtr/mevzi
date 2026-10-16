@@ -135,6 +135,27 @@ func _unhandled_input(e: InputEvent) -> void:
 		target_focus = _clamp(_drag_focus - right_vec() * d.x * wpp + up_vec() * d.y * wpp / sin(deg_to_rad(PITCH)))
 		focus = target_focus
 
+# kameranın gördüğü zemin dikdörtgeni (kare başına bir kez; birimlerin animasyon ayrıntı düzeyi için)
+var view_rect := Rect2()
+var _vr_frame := -1
+
+func view_ground_rect() -> Rect2:
+	var f := Engine.get_process_frames()
+	if f != _vr_frame:
+		_vr_frame = f
+		var vp := get_viewport().get_visible_rect().size
+		var r := Rect2()
+		var first := true
+		for s in [Vector2.ZERO, Vector2(vp.x, 0), vp, Vector2(0, vp.y)]:
+			var g := mouse_ground(s)
+			if first:
+				r = Rect2(Vector2(g.x, g.z), Vector2.ZERO)
+				first = false
+			else:
+				r = r.expand(Vector2(g.x, g.z))
+		view_rect = r.grow(12.0)
+	return view_rect
+
 func _process(dt: float) -> void:
 	var rdt := dt / maxf(Engine.time_scale, 0.01)
 	if input_enabled and not auto_pan:

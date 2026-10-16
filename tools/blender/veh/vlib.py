@@ -18,6 +18,7 @@ NODES = {"body": {}, "turret": {}, "barrel": {}}
 CUR = "body"
 WHEELS = []
 ROT_NB = []                    # rotor pal sayıları (meta 'nb': oyunda dönüş görüntüsü bundan ayarlanır)
+EXTRA_PIVOTS = {}              # ayrı dönen parçaların pivotları (İHA pervaneleri: propy_N / propz_N)
 _TMP = None
 SHARP = math.radians(14)       # düz parçalarda keskin kenar eşiği
 SMOOTH = math.radians(33)      # silindir / loft gövdelerde (12+ dilim yumuşak görünür)
@@ -34,6 +35,7 @@ def reset(nat):
     _M.clear()
     WHEELS.clear()
     ROT_NB.clear()
+    EXTRA_PIVOTS.clear()
     bpy.ops.wm.read_factory_settings(use_empty=True)
     _TMP = bpy.data.meshes.new("_tmp")
 
@@ -987,6 +989,10 @@ def apply_fit(v, pivots, meta):
 
 def export(path_glb, pivots, meta, ao=True):
     import json
+    if EXTRA_PIVOTS:
+        pivots = dict(pivots)
+        for k, v in EXTRA_PIVOTS.items():
+            pivots.setdefault(k, v)
     objs = []
     for name, mats in NODES.items():
         mats = [(k, b) for k, b in mats.items() if len(b.faces)]

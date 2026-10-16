@@ -127,6 +127,9 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Eklendi (23):** Palet izi iklime göre silinir (çölde ~2,5 dk, ılımanda ~8 dk, karda kalıcı, kar fırtınası örter), yağmurda daha derin; oyuncunun görmediği düşman aracı iz bırakmaz (tracktest)
 - **Düzeltildi:** Helikopter tanka Hydra roketi harcıyordu (füze kilidi dolmadan tankı öldürüyordu) → güdümlü füze varken ağır zırha roket atmaz
 - **Test altyapısı:** aimatch (YZ–YZ maçı, dakika dakika durum), perf8k, basegallery, enginetest, mounttest, rotortest, killtest, tracktest; mode/logi testleri başlangıç birliksiz
+- **Düzeltildi (55, kısmen): Kalabalık savaşta performans** — 8 km'de 600 birimlik çatışma 4 → 18 FPS: tespit taraması gözcü verisini paketli dizilerle ve uzamsal kovalarla yapar, gizli hedefte yalnız en yakın 6 gözcü görüş hattı sınar; hedefi olan / boştaki birim tüm görünür düşmanları her yarım saniyede taramaz; sis içindeki / ekran dışındaki askerin animasyonu seyrek güncellenir; duran askerin komşu ve araç itme sorguları seyrek (perf8k, 30 tim)
+- **Eklendi (8/29):** İHA ve FPV pervaneleri döner (ayrı düğüm); drone ekibi 2 kişi — istasyoncu ekran başında, ikinci asker kumandayla İHA'yı uçurur; istasyoncu düşerse pilot devralır, ikisi de düşerse bağ kopar; FPV operatörü uçuşta kumanda tutar (dronetest)
+- **Test altyapısı:** tactest saldıran tim saldırı hareketiyle gelir (gerçek menzilde 44 m tüfek menzilinin dışıydı)
 
 ---
 
@@ -142,7 +145,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 5 | Seçim göstergesi: daha küçük, estetik, kendi tarzımız | 🟡 | Kompakt halka var. → Özgün tasarım (köşeli parantez + rol işareti, takım rengi), RA/SS/CoH analiziyle |
 | 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | ✅ | `data/ammo.json`: kalibre başına namlu çıkış hızı, kütle, delme, hasar, patlama yarıçapı; ulusa göre iz rengi; araç → mühimmat eşlemesi (ammotest) |
 | 7 | Havan, top, obüs ve kurmalı ekip animasyonları | 🟡 | Çekili top dolum döngüsü var (doğrulama sürüyor). → Havan timi, obüs, ağır silah kurma/sökme/dolum animasyonları |
-| 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Mini drone + istasyon var; istasyon artık gerçek ölçekte küçük taktik İHA kaldırıyor ✅. → Ses, pervane, 2 kişilik ekip, türe göre görüş/tespit |
+| 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Dönen pervaneler, 2 kişilik ekip (pilot devralır), türe göre optik/tespit ✅. → Drone sesleri (Faz 7) |
 | 9 | Vurulma yerine göre kan, patlamada uzuv kopması, sağlık çadırı/hastane/paramedikte ilk yardım, timleri isteğe göre birleştirme (tim+tim=manga) | 🟡 | Kan, bölgesel yara, hastane var. → İsabet bölgesine göre kan, uzuv kopması, ilk yardım animasyonu, oyuncu kontrollü tim birleştirme |
 | 10 | Araç modelleri çok detaylı (teker, kapak, yakıt deposu, namlu, zırh, renk) — EN KRİTİK KURAL | 🟡 | Katalog (191 araç) detay çekirdeğiyle yeniden üretildi ✅. → Taban tip modelleri (tank_blue vb.), gerçek boyut (38) |
 | 11 | Tank mürettebatı inip binebilsin (dismount/mount) | ✅ | Mürettebat İn / Bin emirleri; araç mürettebatsız yürümez/ateş etmez (mounttest) |

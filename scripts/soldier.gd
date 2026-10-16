@@ -147,8 +147,16 @@ var drone_job := ""          # "launch": mini drone kaldırıyor, "station": ist
 var job_pt := Vector3.INF
 var job_tgt: Unit = null
 var station: DroneStation = null
+var pilot_of: DroneStation = null    # 2 kişilik drone ekibi: istasyon İHA'sını kumandayla uçuran (roadmap 8)
 var repair_target: Unit = null
 var repair_vis_t := -1.0      # onarım görüntüsü (çekiç, eğilme, kıvılcım) bu zamana dek
+var _anim_acc := 0.0
+var _scan_next := 0.0         # boştaki askerin bir sonraki tam taraması (menzilde düşman yoksa seyrek)
+var _sep_t := 0.0             # komşu ayrışması / araç izi denetimi aralığı (duran askerde seyrek)
+var _sep_c := Vector3.ZERO
+var _veh_c := Vector3.ZERO
+var _vp_t := 0.0              # araç izi itmesi denetimi (10 kez/sn; araçlar yavaş yaklaşır)
+var _vp_c := Vector3.ZERO
 var vehicle_in: Vehicle = null
 var home_vehicle: Vehicle = null     # inmiş tank mürettebatının aracı (roadmap 11)
 var board_target: Vehicle = null
@@ -994,13 +1002,22 @@ func _process(dt: float) -> void:
 		bleed = maxf(bleed, 20.0)
 		body.animate(dt, "healing", 0.0)
 		return
+	var t0 := Time.get_ticks_usec() if Vehicle.prof_on else 0
 	_timers(dt)
+	if Vehicle.prof_on:
+		t0 = Vehicle._pf("s_timers", t0)
 	think_t -= dt
 	if think_t <= 0.0:
 		think_t = 0.28 + randf() * 0.12
 		_think()
+		if Vehicle.prof_on:
+			t0 = Vehicle._pf("s_think", t0)
 	_movement(dt)
+	if Vehicle.prof_on:
+		t0 = Vehicle._pf("s_move", t0)
 	_combat(dt)
+	if Vehicle.prof_on:
+		t0 = Vehicle._pf("s_combat", t0)
 	if state == "dragged" or (state == "wounded" and downs <= 1):
 		_pistol()
 	elif state in ["idle", "move"] and can_fight() and G.time - threat_time < 4.0 and threat_pos.distance_to(position) < 14.0 and ((ammo <= 0 and mag <= 0) or reload_t > 0.8):
@@ -1010,8 +1027,20 @@ func _process(dt: float) -> void:
 	body.move_yaw = angle_difference(rotation.y, _yaw_of(vel)) if sp > 0.3 else 0.0
 	body.pistol = G.time - pistol_t < 2.5 or (one_armed() and G.time - threat_time < 10.0)
 	body.limp = injury == "leg"
-	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if (state == "build" or (G.time < repair_vis_t and state == "idle")) else ("drone" if state == "launch" and state_t < 1.4 else "")))
-	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
+	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if (state == "build" or (G.time < repair_vis_t and state == "idle")) else ("drone" if state == "launch" and state_t < 1.4 else ("rc" if _piloting() else ""))))
+	# animasyon ayrıntı düzeyi: sisin içindeki ya da ekran dışındaki asker ~3 kez/sn, stratejik yakınlaştırmada
+	# (simgeler) ~10 kez/sn güncellenir — yüzlerce askerde iskelet animasyonu kare süresinin büyük payıydı
+	_anim_acc += dt
+	var alim := 0.0
+	if not visible or G.cam == null or not G.cam.view_ground_rect().has_point(Vector2(position.x, position.z)):
+		alim = 0.33
+	elif G.cam.size > 220.0:
+		alim = 0.1
+	if _anim_acc >= alim:
+		body.animate(_anim_acc, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
+		_anim_acc = 0.0
+	if Vehicle.prof_on:
+		Vehicle._pf("s_anim", t0)
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
 	body.position = Vector3(lean_cur.x, body_lift, lean_cur.z).rotated(Vector3.UP, -rotation.y)
 
@@ -1270,7 +1299,10 @@ func _think() -> void:
 	if stress_lv == 2 and not panic_fled and can_fight() and order != "retreat" and state in ["idle", "move"]:
 		_panic_flee()
 		return
+	var tsc := Time.get_ticks_usec() if Vehicle.prof_on else 0
 	_scan()
+	if Vehicle.prof_on:
+		Vehicle._pf("s_scan", tsc)
 	if can_fight() and _think_melee():
 		return
 	if can_fight() and _think_surrender():
@@ -1622,6 +1654,19 @@ func cmd_station(p: Vector3) -> void:
 func _think_drone() -> void:
 	if station != null and (not is_instance_valid(station) or not station.alive):
 		station = null
+	if drone_job == "pilot":
+		# istasyonun yanında kumandayla İHA'yı uçurur; İHA düşer / istasyon giderse görev biter
+		if pilot_of == null or not is_instance_valid(pilot_of) or not pilot_of.alive or pilot_of.uav == null or not is_instance_valid(pilot_of.uav) or not pilot_of.uav.alive:
+			drone_job = ""
+			pilot_of = null
+		else:
+			var spot: Vector3 = pilot_of.position + Vector3(-2.6, 0, 2.2).rotated(Vector3.UP, pilot_of.rotation.y)
+			if dist2_p(spot) > 2.0 and state == "idle":
+				_set_path(G.grid.nearest_free(spot, Grid.M_INF, 4))
+				state = "move"
+			elif state == "idle":
+				face_yaw = _yaw_of(pilot_of.uav.position - position)
+			return
 	if drone_job == "station" and station != null:
 		if dist2_p(station.position) > 3.2:
 			if state == "idle":
@@ -1660,6 +1705,14 @@ func _think_drone() -> void:
 			best = e
 	if best != null:
 		cmd_minidrone(best.position, best)
+
+# kumandayla drone uçuruyor mu (FPV mini drone ya da istasyon İHA'sının pilotu)
+func _piloting() -> bool:
+	if role != "drone" or state != "idle":
+		return false
+	if my_drone != null and is_instance_valid(my_drone) and my_drone.alive:
+		return true
+	return drone_job == "pilot" and pilot_of != null and is_instance_valid(pilot_of)
 
 func dist2_p(p: Vector3) -> float:
 	return Vector2(p.x - position.x, p.z - position.z).length()
@@ -1737,6 +1790,10 @@ func _scan() -> void:
 			threat_time = G.time
 			return
 	target = null
+	# boştaki asker (son taramada menzilde kimse yoktu, ateş altında değil): tam tarama ~1 sn'de bir
+	# (yüzlerce askerde her 0,3 sn'lik tarama kare süresinin en büyük payıydı)
+	if G.time < _scan_next and G.time - last_hit > 1.0 and G.time - sup_t > 1.0 and forced_target == null:
+		return
 	var cands: Array = []
 	for e in G.visible_enemies(team):
 		if not is_instance_valid(e) or not e.hostile():
@@ -1775,6 +1832,9 @@ func _scan() -> void:
 		elif e == attacker:
 			sc -= 6.0
 		cands.append([sc, e])
+	if cands.is_empty():
+		_scan_next = G.time + randf_range(0.8, 1.3)
+		return
 	cands.sort_custom(func(a, b): return a[0] < b[0])
 	var n := 0
 	for c in cands:
@@ -1899,7 +1959,16 @@ func _movement(dt: float) -> void:
 	# ayrışma
 	var sep := Vector3.ZERO
 	var veh_step := Vector3.ZERO
-	if state != "dragged" and state != "drag":
+	# yürürken her kare; dururken ~5 kez/sn (yüzlerce askerde komşu sorguları kare süresinin payıydı)
+	_sep_t -= dt
+	var do_sep := _sep_t <= 0.0 or want.length_squared() > 0.01
+	if not do_sep:
+		sep = _sep_c
+		veh_step = _veh_c
+		if veh_step != Vector3.ZERO:
+			want = (want + veh_step).limit_length(RUN_SPEED)
+	elif state != "dragged" and state != "drag":
+		_sep_t = 0.2
 		for o in G.near(position, 1.6):
 			if o == self or o == patient:
 				continue
@@ -1915,16 +1984,23 @@ func _movement(dt: float) -> void:
 					sep += Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
 			elif o is Vehicle and o.alive:
 				pass
-		# araç izi içindeysek araç itmez: asker kendi adımlarıyla izin dışına yürür
-		for o in G.near(position, 8.0):
-			if o is Vehicle and (o.alive or o.wreck) and not o.is_air() and state != "aboard":
-				var pv: Vector3 = o.obb_push(position, 0.35)
-				if pv != Vector3.ZERO:
-					veh_step += pv.normalized() * clampf(pv.length() * 6.0, 1.2, 2.6)
+		# araç izi içindeysek araç itmez: asker kendi adımlarıyla izin dışına yürür (10 kez/sn denetim)
+		_vp_t -= dt
+		if _vp_t <= 0.0:
+			_vp_t = 0.1
+			_vp_c = Vector3.ZERO
+			for o in G.near(position, 8.0):
+				if o is Vehicle and (o.alive or o.wreck) and not o.is_air() and state != "aboard":
+					var pv: Vector3 = o.obb_push(position, 0.35)
+					if pv != Vector3.ZERO:
+						_vp_c += pv.normalized() * clampf(pv.length() * 6.0, 1.2, 2.6)
+		veh_step += _vp_c
 		if G.time < yield_until and yield_veh != null and is_instance_valid(yield_veh) and state in ["idle", "move", "escort", "build"]:
 			veh_step += _yield_step()
 		if veh_step != Vector3.ZERO:
 			want = (want + veh_step).limit_length(RUN_SPEED)
+		_sep_c = sep
+		_veh_c = veh_step
 	vel = want
 	var mv := (want + sep) * dt
 	if mv.length_squared() > 0.0:

@@ -192,6 +192,31 @@ func drone_test() -> void:
 	if uav != null and is_instance_valid(uav) and not uav.link_lost:
 		print("DRONE fail: link not lost")
 		fails += 1
+	# 2 kişilik ekip (roadmap 8): istasyoncu + kumandalı pilot; istasyoncu düşerse pilot devralır
+	var sq := Squad.new(G.player_team, "Drone Ekibi")
+	G.squads.append(sq)
+	var c2 := G.grid.nearest_free(c + Vector3(-20, 0, -14), Grid.M_INF)
+	var op2: Soldier = m.spawn_soldier(G.player_team, "drone", c2, sq)
+	var pl2: Soldier = m.spawn_soldier(G.player_team, "drone", G.grid.nearest_free(c2 + Vector3(2, 0, 0), Grid.M_INF), sq)
+	op2.cmd_station(c2 + Vector3(-4, 0, 3))
+	await m._wait(26.0)
+	var st2: DroneStation = op2.station
+	var u2 = st2.uav if st2 != null else null
+	var spun := false
+	if u2 != null and is_instance_valid(u2) and not u2.props_n.is_empty():
+		var b0: Basis = u2.props_n[0][0].transform.basis
+		await m._wait(0.3)
+		spun = not u2.props_n[0][0].transform.basis.is_equal_approx(b0)
+	var piloting: bool = pl2.drone_job == "pilot" and pl2._piloting()
+	_cam(st2.position if st2 != null else c2, 14.0)
+	await m._wait(0.4)
+	await m._shot("drone_05_crew")
+	op2.die(null)
+	await m._wait(1.5)
+	var took_over: bool = st2 != null and st2.operator == pl2 and u2 != null and is_instance_valid(u2) and not u2.link_lost
+	print("DRONE crew uav=%s props_spin=%s pilot=%s takeover=%s" % [u2 != null, spun, piloting, took_over])
+	if u2 == null or not spun or not piloting or not took_over:
+		fails += 1
 	print("DRONETEST RESULT fails=%d" % fails)
 
 # karadan havaya füze: helikopter fişek atar + kırar; İHA manevra; Hellfire/Vikhr görünümü
@@ -979,6 +1004,8 @@ func tac_test() -> void:
 	for i in 6:
 		var a: Soldier = m.spawn_soldier(1 - G.player_team, ["leader", "rifle", "rifle", "mg", "rifle", "at"][i], G.grid.nearest_free(c + Vector3(i * 1.5, 0, 22), Grid.M_INF), att)
 		a.hp = 4000.0
+		# saldıran tim savunmaya doğru saldırı hareketiyle gelir (gerçek menzilde 44 m tüfek menzilinin dışı)
+		a.cmd_attack_move(G.grid.nearest_free(c + Vector3(i * 1.5, 0, -6), Grid.M_INF))
 	var flanked := false
 	var shot := false
 	for i in 500:
