@@ -69,6 +69,8 @@ func run(scene: String) -> void:
 			await sandbox_test()
 		"drivertest":
 			await driver_test()
+		"watertest":
+			await water_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -1734,6 +1736,68 @@ func ai_match() -> void:
 
 # taban tip modelleri (roadmap 10) ve rotorlar (39/44): iki ulusun tüm taban araçları yan yana; helikopterler
 # havada pervane dönerken; yakın çekimler
+# 115: suya düşen el bombası / mermi görünür (su sütunu, köpük, halka), karada duman — görsel kareler
+func water_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	var wpt := Vector3.INF
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 7
+	for i in 6000:
+		var p := Vector3(rr.randf_range(20, G.MAP - 20), 0, rr.randf_range(20, G.MAP - 20))
+		if G.grid.is_water(p) and G.grid.is_water(p + Vector3(4, 0, 0)) and G.grid.is_water(p - Vector3(4, 0, 0)) and not G.grid.on_bridge(p):
+			wpt = p
+			break
+	print("WATER point=%s" % wpt)
+	if wpt == Vector3.INF:
+		print("WATERTEST RESULT fails=1")
+		return
+	_cam(wpt, 16.0)
+	await m._wait(1.0)
+	G.explode(wpt + Vector3(-3, 0, 0), 4.2, 120.0, "grenade", 1, null)
+	G.explode(wpt + Vector3(3, 0, 0), 4.5, 130.0, "shell", 1, null)
+	for k in [0.08, 0.25, 0.6, 1.4, 3.0]:
+		await m._wait(k if k == 0.08 else 0.0)
+		await m._shot("water_%04d" % int(k * 1000))
+		await m._wait(k)
+	# kıyıdan nehre atılan el bombası batar (yüzeyde sekip yuvarlanmaz), fitil bitince su altında patlar
+	var bank: Vector3 = G.grid.nearest_free(wpt, Grid.M_INF, 30)
+	var fails := 0
+	G.bal.grenade(bank + Vector3(0, 1.4, 0), wpt, 1, null)
+	var sunk_seen := false
+	var gone := false
+	for k in 50:
+		await m._wait(0.1)
+		var live := G.bal.projs.filter(func(x): return x.kind == "grenade")
+		if live.any(func(x): return x.sunk):
+			sunk_seen = true
+		if sunk_seen and live.is_empty():
+			gone = true
+			break
+		if k == 34:
+			_cam(wpt, 16.0)
+			await m._shot("water_uw")
+	print("WATER grenade_sunk=%s exploded=%s" % [sunk_seen, gone])
+	if not sunk_seen or not gone:
+		fails += 1
+	# karada: patlama dumanı ve sis perdesi
+	var land := G.grid.nearest_free(wpt + Vector3(0, 0, 30), Grid.M_INF)
+	G.props.clear_area(land, 12.0)
+	_cam(land, 22.0)
+	await m._wait(0.5)
+	G.explode(land + Vector3(-6, 0, 0), 4.5, 130.0, "shell", 1, null)
+	for i in 3:
+		G.fx.smoke_screen(land + Vector3(4 + i * 3.0, 0, 0), 25.0)
+	await m._wait(2.5)
+	await m._shot("smoke_2s")
+	await m._wait(6.0)
+	await m._shot("smoke_8s")
+	print("WATERTEST RESULT fails=%d" % fails)
+
 # 112: sürücü vurulunca araç son hızıyla gider ve önündeki duvara çarpar; kapaktaki komutanı keskin nişancı vurur
 func driver_test() -> void:
 	m.get_window().size = Vector2i(1600, 900)

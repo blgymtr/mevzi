@@ -14,6 +14,7 @@ class Proj:
 	var node: Node3D = null
 	var smoke := false
 	var landed := false
+	var sunk := false      # suya düşen el bombası battı
 	var trail := 0.0
 	var aim := Vector3.ZERO
 	var decoy := Vector3.INF      # füze fişeğe kandı: bu noktaya gider
@@ -884,8 +885,27 @@ func _step_flare(p: Proj, dt: float) -> bool:
 func _step_grenade(p: Proj, dt: float) -> bool:
 	p.t += dt
 	p.fuse -= dt
+	if p.sunk:
+		# suda batmış: fitil bitince su altında boğuk patlama (yüzey kabarır, sütun); sis bombası yalnız buhar
+		if p.fuse <= 0.0:
+			if p.smoke:
+				for k in 6:
+					G.fx.emit(Fx.P_SMOKE, p.pos + Vector3(randf_range(-0.4, 0.4), 0.1, randf_range(-0.4, 0.4)), Vector3(randf_range(-0.3, 0.3), randf_range(0.6, 1.2), randf_range(-0.3, 0.3)), randf_range(1.5, 2.5), 0.3, 1.2, -0.1, 0.5, Color(0.9, 0.93, 0.95, 0.35))
+			else:
+				G.explode(p.pos, 3.0, 60.0, "uw", p.team, p.src)
+			return true
+		return false
 	p.vel.y -= 9.8 * dt
 	var np := p.pos + p.vel * dt
+	if np.y <= 0.05 and G.grid.is_water(np) and not G.grid.on_bridge(np):
+		# suya düştü (roadmap 115): sekmez, yüzeyde yuvarlanmaz — küçük sıçrama ve batar
+		p.sunk = true
+		p.pos = Vector3(np.x, 0.0, np.z)
+		G.fx.water_splash(p.pos, 0.22)
+		Sfx.play3d("throw", p.pos, -16.0)
+		if p.node:
+			p.node.visible = false
+		return false
 	# duvara çarpma
 	if G.grid.height_at(np) > np.y and np.y > 0.05:
 		p.vel.x *= -0.3

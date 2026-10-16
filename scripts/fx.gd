@@ -399,11 +399,23 @@ func _run_emitter(e: Array, dt: float) -> void:
 				var g := rng.randf_range(0.08, 0.16)
 				emit(P_SMOKE, p + _rv(0.4 * pw, 0.3) + Vector3(0, 0.6, 0), Vector3(rng.randf_range(0.3, 0.9), rng.randf_range(1.8, 3.0), rng.randf_range(-0.4, 0.2)), rng.randf_range(4.0, 6.5), 1.0 * pw, 4.5 * pw, -0.25, 0.35, Color(g, g, g, 0.55))
 		"smoke":
-			# sis bombası: yoğun beyaz-gri
-			while e[4] > 0.12:
-				e[4] -= 0.12
-				var c := rng.randf_range(0.72, 0.86)
-				emit(P_SMOKE, p + _rv(1.2, 0.2), Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(0.2, 0.9), rng.randf_range(-1.2, 1.2)), rng.randf_range(4.0, 7.0), 1.5, 5.5 * pw, -0.05, 0.6, Color(c, c, c * 0.98, 0.75))
+			# sis bombası (roadmap 115): tek katman opak "pamuk" topak yerine katmanlı, yarı saydam perde —
+			# yere yapışık yayvan alt katman, seyrek yükselen üst katman, kıvrılan flipbook kütleler; rüzgârla sürüklenir
+			var drift := Vector3(0.35, 0.0, 0.12)
+			while e[4] > 0.09:
+				e[4] -= 0.09
+				var c := rng.randf_range(0.68, 0.86)
+				emit(P_SMOKE, p + _rv(2.4, 0.12), drift + Vector3(rng.randf_range(-2.0, 2.0), rng.randf_range(0.05, 0.4), rng.randf_range(-2.0, 2.0)), rng.randf_range(6.0, 10.0), rng.randf_range(0.9, 1.6), rng.randf_range(6.0, 9.0) * pw, -0.02, 0.5, Color(c, c, c * 0.97, 0.36))
+				if rng.randf() < 0.35:
+					var c2 := rng.randf_range(0.74, 0.9)
+					emit(P_SMOKE, p + _rv(1.2, 0.3) + Vector3(0, 1.2, 0), drift + Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(0.5, 1.2), rng.randf_range(-0.6, 0.6)), rng.randf_range(5.0, 8.0), 1.6, rng.randf_range(6.0, 9.0) * pw, -0.06, 0.4, Color(c2, c2, c2, 0.24))
+			if e.size() < 6:
+				e.append(0.0)
+			e[5] += dt
+			if has_flip_smoke and e[5] > 0.55:
+				e[5] = 0.0
+				var cf := rng.randf_range(0.7, 0.85)
+				emit(P_FLIPS, p + _rv(1.4, 0.0) + Vector3(0, 0.8, 0), drift + Vector3(rng.randf_range(-0.5, 0.5), 0.35, rng.randf_range(-0.5, 0.5)), rng.randf_range(6.0, 8.5), 4.0 * pw, 8.0 * pw, -0.02, 0.3, Color(cf, cf, cf, 0.3), 0.0, rng.randf_range(-0.15, 0.15))
 		"mist":
 			while e[4] > 1.6:
 				e[4] -= 1.6
@@ -562,17 +574,35 @@ func fire_column(p: Vector3, dur: float, pw := 1.0) -> void:
 	emitters.append([p, G.time + dur, "column", pw, 0.0])
 
 # suya düşen mermi/patlama: beyaz su sütunu + halka + serpinti
-func water_splash(p: Vector3, s: float) -> void:
+# suya düşüş (roadmap 115): büyüklük mühimmata göre (el bombası ~0,5 … büyük patlama ~2,6). Dar ve yüksek su
+# sütunu, açılı taç sıçraması, geri düşen damlalar, yarı saydam yayılan çisinti, silik köpük halkası — eski opak
+# "pamuk" topaklar yerine. deep: su altında patlama (batan el bombası) — önce yüzey kabarır, sütun gecikir
+func water_splash(p: Vector3, s: float, deep := false) -> void:
 	if G.terrain != null:
 		G.terrain.add_ripple(p, s)
-	for i in int(14 * s) + 4:
-		var d := Vector3(rng.randf_range(-0.25, 0.25), 1.0, rng.randf_range(-0.25, 0.25)).normalized()
-		emit(P_STREAK, Vector3(p.x, 0.0, p.z), d * rng.randf_range(6.0, 13.0) * sqrt(s), rng.randf_range(0.7, 1.2), 0.12 * s, 0.08, 9.8, 0.8, Color(0.85, 0.92, 0.95, 0.9))
-	for i in int(10 * s) + 3:
-		emit(P_SMOKE, Vector3(p.x, 0.2, p.z) + _rv(0.4 * s, 0.1), Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(2.0, 5.0) * s, rng.randf_range(-0.6, 0.6)), rng.randf_range(1.2, 2.2), 0.6 * s, rng.randf_range(2.0, 3.2) * s, 3.0, 1.6, Color(0.88, 0.93, 0.96, 0.75), rng.randf_range(0.0, 0.1))
-	for i in 16:
-		var a := TAU * i / 16.0
-		emit(P_SMOKE, Vector3(p.x, 0.1, p.z), Vector3(cos(a), 0.05, sin(a)) * rng.randf_range(2.0, 4.0) * s, rng.randf_range(0.8, 1.4), 0.5 * s, 1.6 * s, 0.0, 2.5, Color(0.92, 0.96, 0.98, 0.6))
+	var base := Vector3(p.x, 0.02, p.z)
+	var dl := 0.12 if deep else 0.0
+	var h := sqrt(s)
+	# kabarma (su altı patlaması): beyaz kubbe
+	if deep:
+		for i in int(8 * s) + 4:
+			emit(P_SMOKE, base + _rv(0.5 * s, 0.05), Vector3(rng.randf_range(-0.8, 0.8), rng.randf_range(1.0, 2.0) * h, rng.randf_range(-0.8, 0.8)), rng.randf_range(0.5, 0.8), 0.6 * s, 1.4 * s, 6.0, 2.0, Color(0.9, 0.95, 0.97, 0.55))
+	# sütun: dar, yüksek, çok sayıda ince iz
+	for i in int(26 * s) + 6:
+		var d := Vector3(rng.randf_range(-0.1, 0.1), 1.0, rng.randf_range(-0.1, 0.1)).normalized()
+		emit(P_STREAK, base + _rv(0.25 * s, 0.0), d * rng.randf_range(8.0, 16.0) * h, rng.randf_range(0.9, 1.5), 0.09 * s + 0.04, 0.05, 9.8, 0.6, Color(0.9, 0.95, 0.98, 0.85), dl + rng.randf_range(0.0, 0.06))
+	# taç: dışa açılan sıçrama
+	for i in int(18 * s) + 6:
+		var a := rng.randf() * TAU
+		var d2 := Vector3(cos(a) * 0.7, 1.0, sin(a) * 0.7).normalized()
+		emit(P_STREAK, base, d2 * rng.randf_range(4.0, 8.0) * h, rng.randf_range(0.7, 1.1), 0.06 * s + 0.03, 0.04, 9.8, 0.5, Color(0.85, 0.92, 0.95, 0.8), dl)
+	# çisinti: sütunun tepesinden yayılıp düşen, yarı saydam
+	for i in int(7 * s) + 2:
+		emit(P_SMOKE, base + Vector3(0, rng.randf_range(1.5, 4.0) * h, 0) + _rv(0.5 * s, 0.4), Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-0.3, 0.6), rng.randf_range(-1.0, 1.0)), rng.randf_range(1.6, 2.8), 0.5 * s, 2.6 * s, 1.2, 1.4, Color(0.9, 0.94, 0.97, 0.32), dl + rng.randf_range(0.15, 0.4))
+	# köpük halkası: suyun üstünde yayılan, silik
+	for i in 18:
+		var a2 := TAU * i / 18.0
+		emit(P_SMOKE, base + Vector3(0, 0.05, 0), Vector3(cos(a2), 0.02, sin(a2)) * rng.randf_range(1.5, 3.0) * h, rng.randf_range(1.0, 1.8), 0.4 * s, 1.4 * s, 0.0, 2.2, Color(0.94, 0.97, 0.99, 0.32), dl)
 
 # zırhı delen isabet: içe doğru metal parçacık + kıvılcım duşu + kapaklardan sızan duman
 func penetration(p: Vector3, dir: Vector3, heat: bool) -> void:

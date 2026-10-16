@@ -439,9 +439,11 @@ func on_ground(p: Vector3) -> Vector3:
 # düşüşü kendi askerine zarar vermez (roadmap 27). Bina patlaması ve silah patlamaları herkese işler.
 func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src = null, spare := -1) -> void:
 	var size := clampf(radius / 3.0, 0.5, 3.0)
-	if p.y < 1.0 and grid.is_water(p):
-		fx.water_splash(p, size)
-		Sfx.play3d("expl_small", p, -2.0)
+	if p.y < 1.0 and grid.is_water(p) and not grid.on_bridge(p):
+		# suya düşüş büyüklüğü mühimmattan (el bombası ile top mermisi aynı görünüyordu)
+		var ws: float = {"grenade": 0.55, "uw": 0.9, "auto": 0.35, "rpg": 0.8, "mortar": 1.2, "shell": 1.6, "mine": 1.4, "big": 2.6}.get(kind, size)
+		fx.water_splash(p, ws, kind == "uw")
+		Sfx.play3d("expl_small" if ws < 1.5 else "expl_med", p, -2.0)
 		for u in near(p, radius * 1.5):
 			if u is Soldier and u.alive:
 				u.add_suppression(20.0, p)
