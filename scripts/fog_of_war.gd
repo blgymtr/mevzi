@@ -2,8 +2,10 @@ class_name FogOfWar extends Node3D
 # Görsel savaş sisi (roadmap 43): izlenen tarafın birlik/yapılarının GÖRÜŞ ÇOKGENLERİ iki SubViewport'a
 # çizilir — "vis" her kare temizlenir (şu an görülen), "exp" hiç temizlenmez (keşfedilmiş birikimi).
 # Çokgen: gözcünün göz noktasından ışınlar; orman, bina, yüksek duvar görüşü keser (orman kenarının ardı
-# karanlık kalır). Yarıçap = birimin optiğiyle açıktaki ayakta piyadeyi seçebildiği mesafe. Kenarlar
-# yumuşak geçişli (dış halka saydamlaşır); piyade timi tek çokgen (ağırlık merkezi), araç ve yapı ayrı.
+# karanlık kalır). Yarıçap = birimin optiğiyle açıktaki ayakta piyadeyi seçebildiği mesafe. Her birim kendi
+# çokgeni (roadmap 110: tim tek lider çokgeniydi). Işın mesafeleri medyan + bulanıklaştırmayla yumuşatılıp
+# açısal olarak 4 kat sıklaştırılır (köşeli "geometrik açı" kenarlar yerine yuvarlak); tek ağaç görüşü kesmez,
+# ancak sık orman (ışın boyunca ~4 m yaprak) keser. Kenarda gözcüden ölçülen sabit genişlikli yumuşak halka.
 # Önbellek: birim yerinden oynamadıkça çokgen yeniden hesaplanmaz (kare başına sınırlı hesap).
 # Tam ekran sis katmanı (fow.gdshader) iki dokuyu dünya konumuna göre okur.
 
@@ -12,8 +14,11 @@ var exp_vp: SubViewport
 var quad: MeshInstance3D
 var mat: ShaderMaterial
 var N := 256
-var _cache := {}          # sahip kimliği -> {"p": Vector3, "r": float, "t": float, "pts": PackedVector2Array}
+var _cache := {}          # sahip kimliği -> {"p": Vector3, "r": float, "t": float, "pts": PackedVector2Array, "c": Vector2}
 var _budget := 0
+const PER_UNIT_MAX := 120        # takımda bundan çok asker varsa tim tek çokgene döner (başarım)
+const FOLIAGE_BLOCK := 4.0       # ışın boyunca bu kadar metre yaprak görüşü keser
+const UPSAMPLE := 4
 
 class Painter extends Node2D:
 	var fow: FogOfWar
@@ -26,7 +31,7 @@ class Painter extends Node2D:
 			var pts: PackedVector2Array = fow.poly_of(o)
 			if pts.size() < 3:
 				continue
-			fow.draw_poly(self, pts, k)
+			fow.draw_poly(self, pts, k, fow.center_of(o), fow.feather_of(o))
 
 func _ready() -> void:
 	# 8 km'de 2048 piksel (4 m/piksel), küçük haritada 1 m/piksel; doğrusal süzme + yumuşak kenar
@@ -68,8 +73,26 @@ func _make_vp(clear: int) -> SubViewport:
 	vp.add_child(p)
 	return vp
 
-# görüş sahipleri: piyade timi tek gözcü (lider / ilk canlı üye), timsiz asker, araç, yapı
+# görüş sahipleri: her birim kendi gözcüsü; takımda çok asker varsa (büyük muharebe) tim tek gözcü
+# (lider / ilk canlı üye) — başarım
 func owners(vt: int) -> Array:
+	var out: Array = []
+	var done := {}
+	var n_sol := 0
+	for u in G.units:
+		if is_instance_valid(u) and u is Soldier and u.team == vt and u.alive:
+			n_sol += 1
+	if n_sol > PER_UNIT_MAX:
+		return _owners_merged(vt)
+	for u in G.units:
+		if not is_instance_valid(u) or u.team != vt or not u.alive:
+			continue
+		if u is Soldier and (u.state in ["aboard", "hospital", "prisoner", "surrender"]):
+			continue
+		out.append(u)
+	return out
+
+func _owners_merged(vt: int) -> Array:
 	var out: Array = []
 	var done := {}
 	for sq in G.squads:
@@ -103,26 +126,68 @@ func poly_of(o) -> PackedVector2Array:
 		if fresh or _budget <= 0:
 			return c["pts"]
 	_budget -= 1
+	var eye: Vector3 = o.eye_point()
 	var pts := _compute(o, r)
-	_cache[id] = {"p": p, "r": r, "t": G.time, "pts": pts}
+	_cache[id] = {"p": p, "r": r, "t": G.time, "pts": pts, "c": Vector2(eye.x, eye.z)}
 	return pts
 
-# ışın sayısı yarıçapla artar; havadaki gözcü (İHA, helikopter) engel görmez
+func center_of(o) -> Vector2:
+	var c = _cache.get(o.get_instance_id())
+	return c["c"] if c != null else Vector2(o.position.x, o.position.z)
+
+# kenar yumuşaklığı: yarıçapın ~%12'si, 4–20 m (gözcüden ölçülür)
+func feather_of(o) -> float:
+	var c = _cache.get(o.get_instance_id())
+	var r: float = float(c["r"]) if c != null else 30.0
+	return clampf(r * 0.12, 4.0, 20.0)
+
+# ışın sayısı yarıçapla artar; havadaki gözcü (İHA, helikopter) engel görmez. Mesafeler yumuşatılır ve açısal
+# olarak sıklaştırılır (köşesiz kenar)
 func _compute(o, r: float) -> PackedVector2Array:
 	var eye: Vector3 = o.eye_point()
 	var air: bool = o is Vehicle and o.is_air()
-	var n := clampi(40 + int(r / 15.0), 40, 96)
-	var pts := PackedVector2Array()
+	var n := clampi(48 + int(r / 6.0), 48, 120)
 	var block_h := maxf(1.7, minf(eye.y, 2.4))
+	var raw := PackedFloat32Array()
+	raw.resize(n)
 	for i in n:
 		var a := float(i) / n * TAU
-		var d := r if air else _ray(eye, Vector2(cos(a), sin(a)), r, block_h, float(o.los_skip()) + 0.5)
+		raw[i] = r if air else _ray(eye, Vector2(cos(a), sin(a)), r, block_h, float(o.los_skip()) + 0.5)
+	# 3'lü medyan: tek ışınlık sivri çıkıntı / çentik (ağaç arası boşluk, direk) silinir
+	var med := PackedFloat32Array()
+	med.resize(n)
+	for i in n:
+		var a0 := raw[(i - 1 + n) % n]
+		var a1 := raw[i]
+		var a2 := raw[(i + 1) % n]
+		med[i] = maxf(minf(a0, a1), minf(maxf(a0, a1), a2))
+	# hafif bulanıklaştırma (0,25 · 0,5 · 0,25); gözcüye en az ham mesafenin yarısı kadar görüş kalır
+	var sm := PackedFloat32Array()
+	sm.resize(n)
+	for i in n:
+		sm[i] = med[(i - 1 + n) % n] * 0.25 + med[i] * 0.5 + med[(i + 1) % n] * 0.25
+	# açısal sıklaştırma: kübik (Catmull-Rom) ara değerleme
+	var pts := PackedVector2Array()
+	var m := n * UPSAMPLE
+	for j in m:
+		var t := float(j) / UPSAMPLE
+		var i1 := int(t)
+		var f := t - i1
+		var p0 := sm[(i1 - 1 + n) % n]
+		var p1 := sm[i1 % n]
+		var p2 := sm[(i1 + 1) % n]
+		var p3 := sm[(i1 + 2) % n]
+		var d := 0.5 * ((2.0 * p1) + (-p0 + p2) * f + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * f * f + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * f * f * f)
+		d = clampf(d, 0.5, r)
+		var a := float(j) / m * TAU
 		pts.append(Vector2(eye.x + cos(a) * d, eye.z + sin(a) * d))
 	return pts
 
-# ışında ilk görüş kesen engele kadar mesafe: büyük haritada iri ızgara (8 m), küçükte ince ızgara
+# ışında ilk görüş kesen engele kadar mesafe: büyük haritada iri ızgara (8 m), küçükte ince ızgara.
+# Ağaç hücresi tek başına kesmez: ışın boyunca toplanan yaprak FOLIAGE_BLOCK'u aşınca keser (sık orman)
 func _ray(eye: Vector3, dir: Vector2, r: float, block_h: float, skip: float) -> float:
 	var gr: Grid = G.grid
+	var leaf := 0.0
 	if G.MAP >= 1024.0:
 		var step := Grid.CC * 0.75
 		var d := skip
@@ -133,13 +198,21 @@ func _ray(eye: Vector3, dir: Vector2, r: float, block_h: float, skip: float) -> 
 				return d
 			if gr.hm[z * Grid.NCC + x] > block_h:
 				# iri hücrede engel: ince ızgarada kesin noktayı bul
-				var d2 := d - step
-				while d2 < d + step:
+				var d2 := maxf(d - step, skip)
+				while d2 < d + step and d2 < r:
 					var fx := int((eye.x + dir.x * d2) / Grid.CS)
 					var fz := int((eye.z + dir.y * d2) / Grid.CS)
-					if fx >= 0 and fz >= 0 and fx < Grid.N and fz < Grid.N and gr.h[fz * Grid.N + fx] > block_h:
-						return maxf(d2, skip)
+					if fx >= 0 and fz >= 0 and fx < Grid.N and fz < Grid.N:
+						var fi := fz * Grid.N + fx
+						if gr.h[fi] > block_h:
+							if gr.kind[fi] != Grid.K_TREE:
+								return maxf(d2, skip)
+							leaf += Grid.CS
+							if leaf >= FOLIAGE_BLOCK:
+								return maxf(d2, skip)
 					d2 += Grid.CS
+				d = d2
+				continue
 			d += step
 		return r
 	var st := maxf(Grid.CS, 0.5)
@@ -149,18 +222,19 @@ func _ray(eye: Vector3, dir: Vector2, r: float, block_h: float, skip: float) -> 
 		var fz2 := int((eye.z + dir.y * dd) / Grid.CS)
 		if fx2 < 0 or fz2 < 0 or fx2 >= Grid.N or fz2 >= Grid.N:
 			return dd
-		if gr.h[fz2 * Grid.N + fx2] > block_h:
-			return dd
+		var fi2 := fz2 * Grid.N + fx2
+		if gr.h[fi2] > block_h:
+			if gr.kind[fi2] != Grid.K_TREE:
+				return dd
+			leaf += st
+			if leaf >= FOLIAGE_BLOCK:
+				return dd
 		dd += st
 	return r
 
-# çokgen + yumuşak dış halka (çokgenin ağırlık merkezinden dışa %8 genişler, saydamlaşır)
-func draw_poly(ci: CanvasItem, pts: PackedVector2Array, k: float) -> void:
+# çokgen + yumuşak dış halka: gözcüden dışa sabit genişlikte (feather m) saydamlaşır
+func draw_poly(ci: CanvasItem, pts: PackedVector2Array, k: float, c: Vector2, feather: float) -> void:
 	var n := pts.size()
-	var c := Vector2.ZERO
-	for q in pts:
-		c += q
-	c /= n
 	var inner := PackedVector2Array()
 	inner.resize(n)
 	for i in n:
@@ -169,7 +243,9 @@ func draw_poly(ci: CanvasItem, pts: PackedVector2Array, k: float) -> void:
 	var outer := PackedVector2Array()
 	outer.resize(n)
 	for i in n:
-		outer[i] = (c + (pts[i] - c) * 1.08) * k
+		var dv := pts[i] - c
+		var L := dv.length()
+		outer[i] = (pts[i] + (dv / maxf(L, 0.01)) * minf(feather, L * 0.5 + 1.0)) * k
 	for i in n:
 		var j := (i + 1) % n
 		ci.draw_polygon(PackedVector2Array([inner[i], outer[i], outer[j], inner[j]]),

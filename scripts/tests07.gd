@@ -656,6 +656,26 @@ func fow_test() -> void:
 	_cam(hq.lerp(mid, 0.6), 80.0)
 	await m._wait(0.5)
 	await m._shot("fow_01_advance")
+	# 110: her asker kendi görüşüyle (tim tek lider çokgeni değil) — timin dağılmış hâli
+	for i in ss.size():
+		var s: Soldier = ss[i]
+		s.cmd_move(G.grid.nearest_free(mid + Vector3(-18.0 + i * 12.0, 0, 6.0), Grid.M_INF), true)
+	await m._wait(8.0)
+	var fow: FogOfWar = null
+	for ch in G.main.world.get_children():
+		if ch is FogOfWar:
+			fow = ch
+	if fow == null:
+		for ch in G.main.get_children():
+			if ch is FogOfWar:
+				fow = ch
+	var own := fow.owners(G.player_team).filter(func(x): return x is Soldier and ss.has(x)).size() if fow else -1
+	print("FOW per_unit_owners=%d/%d" % [own, ss.size()])
+	if fow != null and own < ss.size():
+		fails += 1
+	_cam(mid, 45.0)
+	await m._wait(0.6)
+	await m._shot("fow_02_squad")
 	print("FOWTEST RESULT fails=%d" % fails)
 
 # hava indirme: uçak geçer, 8 paraşütçü atlar, kubbeler açılır, iner ve toplanır
