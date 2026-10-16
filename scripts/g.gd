@@ -475,9 +475,15 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 			var r_eff: float = radius + u.radius
 			if d < r_eff:
 				var f := 1.0 - clampf((d - u.radius) / radius, 0.0, 1.0) * 0.7
+				var hit := dmg * f
 				if u is Vehicle:
 					Vehicle.shot_from = p
-				u.take_damage(dmg * f, src, kind)
+					if d > u.radius * 0.6:
+						# yakına düşüş (roadmap 108): parça / basınç hasarı mesafeyle hızla düşer ve tek patlamada
+						# aracın canının %40'ını geçmez — aracı yok etmek doğrudan isabet ya da çok sayıda isabet ister
+						var x := clampf((d - u.radius * 0.6) / radius, 0.0, 1.0)
+						hit = minf(dmg * (1.0 - x) * (1.0 - x) * 0.85, u.max_hp * 0.4)
+				u.take_damage(hit, src, kind)
 	for st in DroneStation.all:
 		if is_instance_valid(st) and st.alive and st.position.distance_to(p) < radius * 1.3:
 			st.take_blast(dmg * (1.0 - clampf(st.position.distance_to(p) / (radius * 1.3), 0.0, 0.8)))

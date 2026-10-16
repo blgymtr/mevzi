@@ -861,8 +861,9 @@ func ff_test() -> void:
 		fails += 1
 	var b: Building = m.place_building(0, "barracks", G.grid.nearest_free(c + Vector3(0, 0, 40), Grid.M_HEAVY), 0.0)
 	b.add_work(99999.0)
-	var f2: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(b.position + Vector3(b.radius * 0.6, 0, 0), Grid.M_INF), null)
-	var e2: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(b.position - Vector3(b.radius * 0.6, 0, 0), Grid.M_INF), null)
+	# binanın dar yanında, duvarın hemen dışında (iri yol hücresinde yapının köşesi kapalı: nearest_free dışarı iter)
+	var f2: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(b.position + Vector3(0, 0, b.size.y * 0.5 + 0.8), Grid.M_INF), null)
+	var e2: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(b.position - Vector3(0, 0, b.size.y * 0.5 + 0.8), Grid.M_INF), null)
 	await m._wait(0.3)
 	b.destroy(null)
 	await m._wait(1.0)
@@ -1466,6 +1467,22 @@ func range_test() -> void:
 	var exp := 3500.0 * K
 	print("RANGE M1A1 game_main=%.1f expected=%.1f armor=%s" % [tk._wr("main"), exp, tk.armor_text()])
 	if absf(tk._wr("main") - exp) > 0.5:
+		fails += 1
+	# 109: kendiliğinden ateş etkili menzil + kendi optiğiyle sınırlı; saldırı emri tam menzil
+	var rw: float = tk._range()
+	var far: Vehicle = m.spawn_vehicle(1, "rus_mbt_72b", tk.position + Vector3(rw * 0.8, 0, 0), 0.0)
+	var near: Vehicle = m.spawn_vehicle(1, "rus_mbt_72b", tk.position + Vector3(0, 0, rw * 0.45), 0.0)
+	# doğurma engelden kaçırıp yerini değiştirebilir: ölçüm için tam uzaklığa konur
+	far.position = tk.position + Vector3(rw * 0.8, 0, 0)
+	near.position = tk.position + Vector3(0, 0, rw * 0.45)
+	var own := Combat.detect_range(tk.opt_k, far.spot_sig())
+	var far_auto: bool = tk._auto_engage_ok(far, tk.dist2(far), rw)
+	var near_auto: bool = tk._auto_engage_ok(near, tk.dist2(near), rw)
+	tk.forced_target = far
+	var far_forced: bool = tk._auto_engage_ok(far, tk.dist2(far), rw)
+	tk.forced_target = null
+	print("RANGE auto_engage range=%.0f own_detect=%.0f far(%.0f) auto=%s forced=%s near(%.0f) auto=%s" % [rw, own, tk.dist2(far), far_auto, far_forced, tk.dist2(near), near_auto])
+	if far_auto or not far_forced or not near_auto:
 		fails += 1
 	print("RANGETEST RESULT fails=%d" % fails)
 

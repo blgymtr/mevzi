@@ -1910,6 +1910,16 @@ func _arrive() -> void:
 	if vtype == "truck" and G.logi:
 		G.logi.truck_arrived(self)
 
+# kendiliğinden (emirsiz) ateş (roadmap 109): doğrudan atışlı araç yalnız kendi optiğiyle seçebildiği hedefe ve
+# silahın etkili menziline (azami menzilin ~%65'i) kadar ateş açar — takımın uzaktan gördüğü her hedefe azami
+# menzilden sıkmaz. Oyuncunun saldırı emri tam menzili ve takım görüşünü kullanır; dolaylı atış gözcüyle çalışır.
+const AUTO_RNG_K := 0.65
+
+func _auto_engage_ok(e: Unit, d: float, rng_w: float) -> bool:
+	if e == forced_target or vtype in INDIRECT or (e is Vehicle and e.is_air()):
+		return true
+	return d <= rng_w * AUTO_RNG_K + 4.0 and d <= Combat.detect_range(opt_k, e.spot_sig())
+
 func _scan() -> void:
 	if vtype == "truck":
 		return
@@ -1930,7 +1940,7 @@ func _scan() -> void:
 	if G.time < _scan_next and forced_target == null and G.time - last_hit > 1.0:
 		if target == null:
 			return
-		if is_instance_valid(target) and target.alive and G.is_seen(target, team) and dist2(target) <= rng_w + 4.0:
+		if is_instance_valid(target) and target.alive and G.is_seen(target, team) and dist2(target) <= rng_w + 4.0 and _auto_engage_ok(target, dist2(target), rng_w):
 			return
 	var best: Unit = null
 	var bs := 1e9
@@ -1943,7 +1953,7 @@ func _scan() -> void:
 		if e is Soldier and e.incapacitated():
 			continue
 		var d := dist2(e)
-		if d > rng_w + 4.0:
+		if d > rng_w + 4.0 or not _auto_engage_ok(e, d, rng_w):
 			continue
 		var sc := d
 		var air: bool = e is Vehicle and e.is_air()

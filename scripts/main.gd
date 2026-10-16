@@ -2206,6 +2206,13 @@ func _run_veh_test() -> void:
 	var fails := 0
 	start_game("green_valley", {}, true, 345221)
 	sandbox_ui.run("fog")
+	# önceden yerleşik düşmanlar konvoyu vurup sonucu kararsız yapıyordu (palet / teker / mürettebat aşamaları)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	for u in G.units.duplicate():
+		if is_instance_valid(u) and u.team == 1 and not (u is Building):
+			u.queue_free()
 	if G.grid.bridges.is_empty():
 		print("VEH no bridge")
 		get_tree().quit()
@@ -2291,6 +2298,21 @@ func _run_veh_test() -> void:
 	await _wait(6.5)
 	print("VEH abandon crew=%d destroyed=%s" % [n1 - n0, not ifv.alive])
 	if n1 - n0 < 3 or ifv.alive:
+		fails += 1
+	# 108: araç yakına düşen mermiyle yok olmaz (hasar alır), doğrudan isabetle yok olur
+	var trk := spawn_vehicle(0, "truck", G.grid.nearest_free(bc - ax * 70.0, Grid.M_LIGHT), 0.0)
+	await _wait(0.3)
+	G.explode(trk.position + Vector3(4.0, 0.0, 0.0), 4.5, 130.0, "shell", 1, null)
+	await _wait(0.3)
+	var hp1 := trk.hp
+	G.explode(trk.position + Vector3(0.0, 0.0, 5.0), 8.0, 400.0, "big", 1, null)
+	await _wait(0.3)
+	var near_alive := trk.alive
+	var hp2 := trk.hp
+	G.explode(trk.position, 4.5, 130.0, "shell", 1, null)
+	await _wait(0.3)
+	print("VEH near_miss hp=%d -> %d -> %d/%d alive=%s direct_destroyed=%s" % [int(trk.max_hp), int(hp1), int(hp2), int(trk.max_hp), near_alive, not trk.alive])
+	if not near_alive or hp2 >= trk.max_hp or trk.alive:
 		fails += 1
 	print("VEHTEST RESULT fails=%d" % fails)
 	get_tree().quit()
