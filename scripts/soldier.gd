@@ -323,13 +323,20 @@ func aim_point() -> Vector3:
 
 # ------------------------------------------------------------ emirler
 func cmd_move(p: Vector3, force := false) -> void:
-	if not alive or incapacitated() or state == "fly":
+	if alive and state == "fly":
+		# patlamayla savrulurken verilen emir kaybolmasın (roadmap 118): yere inince uygulanır
+		_queued_move = p
+		_queued_force = force
 		return
+	if not alive or incapacitated():
+		return
+	_queued_move = Vector3.INF
 	if state == "para":
 		# paraşütle inerken: emir toplanma noktasını değiştirir (yere değince oraya yürür);
 		# durumu burada "move" yapmak askeri havadan yere ışınlardı
 		para_goal = _free_ground(p, para_goal)
 		return
+	var in_house := G.blocks.house_at(position) if G.blocks else -1
 	_leave_house()
 	_release_patient()
 	build_site = null
@@ -343,7 +350,15 @@ func cmd_move(p: Vector3, force := false) -> void:
 	cover_type = 0
 	to_cover = false
 	popped = false
-	_set_path(dest)
+	_exit_goal = Vector3.INF
+	if in_house >= 0 and G.blocks.house_at(dest) != in_house and G.blocks.houses[in_house].get("door", Vector3.INF) != Vector3.INF:
+		# evden çıkış (roadmap 118): önce girişte kullanılan yoldan kapıya, sonra hedefe — düz parça iç duvara
+		# dayanıp askerler içeride kalıyordu (9 askerden 2'si)
+		_exit_goal = dest
+		path = G.grid.find_path(position, G.blocks.houses[in_house]["door"], Grid.M_INF)
+		path_i = 0
+	else:
+		_set_path(dest)
 	state = "move"
 
 func cmd_attack(u: Unit) -> void:
@@ -1318,9 +1333,37 @@ func _resupply() -> void:
 			return
 
 # ------------------------------------------------------------ karar
+var _queued_move := Vector3.INF   # savrulurken gelen hareket emri
+var _queued_force := false
+var _prog_p := Vector3.INF          # yürüyüş ilerleme denetimi (duvara dayanıp kalma)
+var _prog_t := 0.0
+
 func _think() -> void:
 	if order == "follow_veh" and alive and can_fight():
 		_follow_veh_tick()
+	if _queued_move != Vector3.INF and alive and state != "fly" and not incapacitated():
+		var q := _queued_move
+		_queued_move = Vector3.INF
+		cmd_move(q, _queued_force)
+	if state == "move" and path_i < path.size() and order != "board":
+		if _prog_p == Vector3.INF or position.distance_to(_prog_p) > 0.4:
+			_prog_p = position
+			_prog_t = G.time
+		elif G.time - _prog_t > 2.0:
+			# 2 sn'dir ilerlemiyor (iç duvara / köşeye dayandı): evdeyse evin ortası → kapı, değilse yeniden yol
+			_prog_t = G.time
+			var hid := G.blocks.house_at(position) if G.blocks else -1
+			var goal: Vector3 = path[path.size() - 1] if _exit_goal == Vector3.INF else _exit_goal
+			if hid >= 0 and G.blocks.house_at(goal) != hid and G.blocks.houses[hid].get("door", Vector3.INF) != Vector3.INF:
+				var h: Dictionary = G.blocks.houses[hid]
+				_exit_goal = goal
+				path = G.grid.find_path(position, h["center"], Grid.M_INF)
+				path.append_array(G.grid.find_path(h["center"], h["door"], Grid.M_INF))
+				path_i = 0
+			else:
+				_set_path(goal)
+	else:
+		_prog_p = Vector3.INF
 	match state:
 		"fly", "dive", "dragged", "healing", "aboard", "slide", "stretcher", "stretchered", "hospital", "melee":
 			return
@@ -1446,7 +1489,17 @@ func _think() -> void:
 			_think_role()
 	_stance()
 
+var _exit_goal := Vector3.INF     # evden çıkarken kapıdan sonra gidilecek asıl hedef
+
 func _arrive() -> void:
+	if _exit_goal != Vector3.INF and order == "move":
+		# kapıya vardı: asıl hedefe yol
+		var g := _exit_goal
+		_exit_goal = Vector3.INF
+		_set_path(g)
+		state = "move"
+		return
+	_exit_goal = Vector3.INF
 	state = "idle"
 	path = PackedVector3Array()
 	if to_cover:
@@ -2053,7 +2106,9 @@ func _movement(dt: float) -> void:
 			for o in G.near(position, 8.0):
 				if o is Vehicle and (o.alive or o.wreck) and not o.is_air() and state != "aboard":
 					_near_veh.append(o)
-					var pv: Vector3 = o.obb_push(position, 0.35)
+					# yürürken yalnız gerçekten izin içindeyse dışarı it (adım izdüşümü zaten girmeyi önler; geniş bölgede
+					# itme köşede kaymayla çatışıyordu); dururken 0,35 m — üstüne gelen / yanında doğan araçtan açılır
+					var pv: Vector3 = o.obb_push(position, 0.05 if want.length() > 0.5 else 0.35)
 					if pv != Vector3.ZERO:
 						n_in += 1
 						_vp_c += pv.normalized() * clampf(pv.length() * 6.0, 1.2, 2.6)
@@ -2101,8 +2156,8 @@ func _movement(dt: float) -> void:
 			for o in _near_veh:
 				if not is_instance_valid(o):
 					continue
-				if o == board_target and dist2_p(o.entry_point(0)) < 3.0:
-					continue          # binmeye gittiği aracın kapısında: kapıya yanaşabilsin
+				if o == board_target and dist2(o) < o.radius + 4.0:
+					continue          # binmeye gittiği araç: kapıya yanaşabilsin (kendi biniş yaklaşması var)
 				var pv: Vector3 = o.obb_push(np, 0.15)
 				if pv == Vector3.ZERO:
 					continue
@@ -2111,6 +2166,9 @@ func _movement(dt: float) -> void:
 				# UP × dış normal: her yüzde aracın çevresinde aynı dönüş yönü — köşelerde de aynı yöne dolaşılır
 				var tn := Vector3.UP.cross(pv.normalized())
 				var md := mv.normalized()
+				if (_slide_veh != o or G.time - _slide_t > 3.0) and state == "move" and path_i < path.size():
+					# ilk temas: aracın bir yanından köşe noktalarıyla dolaşan rota (araçlar gibi, ışınlanmadan)
+					_detour_vehicle(o)
 				if _slide_veh != o or G.time - _slide_t > 3.0:
 					# yön ilk temasta bir kez seçilir (tam karşıdan gelende sağ/sol arasında titremesin)
 					var td := tn.dot(md)
@@ -2125,6 +2183,10 @@ func _movement(dt: float) -> void:
 				np += tn * mv.length()
 				if o.obb_push(np, 0.15) != Vector3.ZERO:
 					np = position + tn * mv.length()
+				if G.grid.height_at(np) >= 0.45:
+					# kayma yönü duvara / eşyaya çıkıyor (araç ile engel arasında sıkıştı): öbür köşeden dolaş
+					_slide_sgn = -_slide_sgn
+					np = position
 		np.x = clampf(np.x, 1.0, G.MAP - 1.0)
 		np.z = clampf(np.z, 1.0, G.MAP - 1.0)
 		var hn := G.grid.height_at(np)
@@ -2138,9 +2200,7 @@ func _movement(dt: float) -> void:
 				position = nx
 			elif G.grid.height_at(nz) < 0.45:
 				position = nz
-	position.y = 0.0
-	if G.grid.in_trench(position):
-		position.y = G.terrain.ground_h(position)
+	position.y = _ground_y(position)
 	# alçak duvar / engelin üstünden atlama
 	var hh := G.grid.height_at(position)
 	body_lift = lerpf(body_lift, hh + 0.02 if (hh >= 0.3 and hh < 1.15) else 0.0, clampf(dt * 14.0, 0, 1))
@@ -2192,12 +2252,66 @@ func _face_to(p: Vector3, instant := false) -> void:
 	if instant:
 		rotation.y = face_yaw
 
+# yolu araç gövdesinden geçen asker için aracın sağından ya da solundan köşe noktaları (0,8 m pay): ızgarada
+# yürünebilir olan ve kısa olan taraf yola eklenir (roadmap 105 — araç ile çit arasına sıkışıp kalıyordu)
+func _detour_vehicle(o) -> void:
+	var goal: Vector3 = path[path.size() - 1]
+	var f: Vector3 = o.forward()
+	var r: Vector3 = o.right()
+	var ex: float = o.ext.x + 0.8
+	var ez: float = o.ext.y + 0.8
+	var best: Array = []
+	var bl := INF
+	for sx in [1.0, -1.0]:
+		var c1: Vector3 = o.position + r * sx * ex + f * ez
+		var c2: Vector3 = o.position + r * sx * ex - f * ez
+		var wp: Array = [c1, c2] if position.distance_to(c1) < position.distance_to(c2) else [c2, c1]
+		var pts: Array = [position] + wp + [goal]
+		var ok := true
+		var L := 0.0
+		for k in range(1, pts.size()):
+			var a: Vector3 = pts[k - 1]
+			var b: Vector3 = pts[k]
+			L += b.distance_to(a)
+			if not G.grid.walkable_line(a, b, Grid.M_INF) or not G.grid.free_at(b, Grid.M_INF):
+				ok = false
+				break
+			# ince ızgarada da açık mı (çit / eşya ile araç arasındaki dar boşluk iri ızgarada açık görünür)
+			var n := int(a.distance_to(b) / 0.25) + 1
+			for s in range(1, n + 1):
+				var q := a.lerp(b, float(s) / n)
+				if G.grid.height_at(q) >= 0.45 or G.grid.is_water(q):
+					ok = false
+					break
+			if not ok:
+				break
+		if ok and L < bl:
+			bl = L
+			best = wp
+	if not best.is_empty():
+		var np := PackedVector3Array()
+		for p in best:
+			np.append(Vector3(p.x, 0.0, p.z))
+		for k in range(path_i, path.size()):
+			np.append(path[k])
+		path = np
+		path_i = 0
+
+# askerin bastığı zemin (roadmap 60 / 119): arazi yalnız oyuklarda (nehir yatağı ve şevi, krater, siper)
+# sıfırın altına iner — eskiden y = 0 tutuluyordu, nehir kıyısında / kraterde asker havada duruyordu.
+# Köprü güvertesi 0'da.
+func _ground_y(p: Vector3) -> float:
+	if G.terrain == null or G.grid.on_bridge(p):
+		return 0.0
+	return minf(0.0, G.terrain.ground_hs(p))
+
 func _fly(dt: float) -> void:
 	position += fly_vel * dt
 	fly_vel.y -= 15.0 * dt
 	fly_ang += fly_spin * dt
-	if position.y <= 0.0 and fly_vel.y < 0.0:
-		position.y = 0.0
+	var gy := _ground_y(position)
+	if position.y <= gy and fly_vel.y < 0.0:
+		position.y = gy
 		fly_ang = 0.0
 		fly_end = G.time
 		G.fx.impact(position, "dirt")

@@ -1600,11 +1600,10 @@ func _process(dt: float) -> void:
 		return
 	_fade_t = 0.2
 	var pts: Array = []
+	# yalnız seçili birlikleri örten ağaçlar (roadmap 117: fare imlecinin altındaki ağaç da saydamlaşıyordu)
 	for u in G.player.selected:
 		if is_instance_valid(u) and not (u is Building):
 			pts.append(u.position)
-	if G.cam and G.cam.cam:
-		pts.append(G.cam.mouse_ground(get_viewport().get_mouse_position()))
 	var now: Array = []
 	for q in pts:
 		for it in _trees_near(q + Vector3(2.2, 0, 2.2), 6.0):

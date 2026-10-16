@@ -104,11 +104,14 @@ void fragment() {
 	if (leaf) {
 		ALPHA = c.a;
 		ALPHA_SCISSOR_THRESHOLD = 0.45;
-		// taç içi gölgesi: alçak ve içteki kartlar koyu
-		col *= mix(0.55, 1.08, smoothstep(0.15, 0.95, v_h));
-		BACKLIGHT = col * 0.35;
-		ROUGHNESS = 0.78;
-		SPECULAR = 0.25;
+		// taç içi gölgesi: alçak ve içteki kartlar koyu. Mat yaprak (roadmap 117 / 63: tepe ×1,08, arkadan
+		// aydınlatma 0,35 ve parlaklık yaprakları "HDR'lı gibi" parlatıyordu)
+		col *= mix(0.55, 0.88, smoothstep(0.15, 0.95, v_h));
+		// doygunluk kısılır: canlı limon yeşili yerine doğal, toz almış yaprak
+		col = mix(vec3(dot(col, vec3(0.299, 0.587, 0.114))), col, 0.82);
+		BACKLIGHT = col * 0.14;
+		ROUGHNESS = 0.9;
+		SPECULAR = 0.1;
 	} else {
 		ROUGHNESS = 0.92;
 		SPECULAR = 0.2;

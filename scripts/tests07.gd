@@ -2786,7 +2786,35 @@ func soldier_test() -> void:
 	G.cam.jump_to(c + Vector3(11.0, 0, 14.0), true)
 	await m._wait(0.5)
 	await m._shot("trench")
-	print("SOLDIERTEST RESULT fails=0")
+	# 119 / 60: oyuk arazide (nehir şevi, krater) asker havada durmaz — ayağı zemine basar
+	var fails := 0
+	var bank := Vector3.INF
+	var rr := RandomNumberGenerator.new()
+	rr.seed = 3
+	for i in 4000:
+		var p := Vector3(rr.randf_range(20, G.MAP - 20), 0, rr.randf_range(20, G.MAP - 20))
+		if G.terrain.ground_hs(p) < -0.4 and G.grid.free_at(p, Grid.M_INF) and not G.grid.is_water(p) and not G.grid.on_bridge(p):
+			bank = p
+			break
+	if bank != Vector3.INF:
+		var bs: Array = []
+		for i in 3:
+			var s := m.spawn_soldier(0, "rifle", G.grid.nearest_free(bank + Vector3(i * 0.9, 0, 0), Grid.M_INF), null)
+			s.cmd_hold()
+			bs.append(s)
+		await m._wait(1.5)
+		var worst := 0.0
+		for s in bs:
+			worst = maxf(worst, absf(s.position.y - minf(0.0, G.terrain.ground_hs(s.position))))
+		print("SOLDIER bank=%s ground=%.2f worst_gap=%.2f ys=%s" % [bank, G.terrain.ground_hs(bank), worst, bs.map(func(x): return snappedf(x.position.y, 0.01))])
+		_cam(bank, 9.0)
+		await m._wait(0.4)
+		await m._shot("bank")
+		if worst > 0.12:
+			fails += 1
+	else:
+		print("SOLDIER bank=none")
+	print("SOLDIERTEST RESULT fails=%d" % fails)
 
 # 91: silahlı İHA (MQ-9 / Orion) — havada kalır, görünür, yörüngede döner, hedefe füze atar
 func armed_uav_test() -> void:
