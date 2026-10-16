@@ -1651,10 +1651,16 @@ func _run_build_test() -> void:
 	while t0 < 90 and not b.done:
 		await _wait(1.0)
 		t0 += 1
-	await _wait(1.0)
+	# 95: bitince taşıyıcılar kaldırılan malzeme yığınına kutu götürmeye devam etmemeli
+	await _wait(0.5)
+	var still := 0
+	for s in ws:
+		if is_instance_valid(s) and (s.haul or s.order == "build" or s.build_site == b):
+			still += 1
+	await _wait(0.5)
 	await _shot("build_03_done")
-	print("BUILD done=%s scaffold=%s rot=%.2f" % [b.done, b.scaffold != null, b.rot])
-	if not b.done or b.scaffold != null:
+	print("BUILD done=%s scaffold=%s rot=%.2f still_working=%d" % [b.done, b.scaffold != null, b.rot, still])
+	if not b.done or b.scaffold != null or still > 0:
 		fails += 1
 	print("BUILDTEST RESULT fails=%d" % fails)
 	get_tree().quit()

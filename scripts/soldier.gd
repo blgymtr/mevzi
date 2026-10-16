@@ -946,6 +946,17 @@ func _door_process(dt: float) -> void:
 			state = "idle"
 			say("ARAÇ DOLU!")
 
+func _build_over() -> bool:
+	return build_site == null or not is_instance_valid(build_site) or build_site.done or not build_site.alive
+
+func _end_build() -> void:
+	build_site = null
+	haul = false
+	lift_t = 0.0
+	build_goal = Vector3.INF
+	state = "idle"
+	order = ""
+
 func cmd_build(site: Node3D) -> void:
 	if not alive or incapacitated() or state == "para":
 		return
@@ -1349,13 +1360,15 @@ func _think() -> void:
 		"drag", "heal":
 			pass
 		"build":
-			if build_site == null or not is_instance_valid(build_site) or build_site.done or not build_site.alive:
-				build_site = null
-				haul = false
-				build_goal = Vector3.INF
-				state = "idle"
-				order = ""
+			if _build_over():
+				_end_build()
 		"move":
+			if order == "build" and _build_over():
+				# inşaat yürürken bitti / yıkıldı: kutu taşıyan ya da yerine yürüyen işçi yarıda bırakır
+				# (yoksa yolunu tamamlayıp kaldırılmış malzeme yığınına kutu götürüyordu)
+				_end_build()
+				path = PackedVector3Array()
+				return
 			if order == "rope_up" and rope_heli != null and is_instance_valid(rope_heli) and rope_heli.rope_pt != Vector3.INF and dist2_p(rope_heli.rope_pt) < 2.5:
 				# halatın dibine vardı: tam yol sonunu bekleme — kalabalıkta ayrışma itişi askerleri
 				# 0.25 m varış eşiğinin dışında dengede tutar, "move"da sonsuza dek kalırlardı

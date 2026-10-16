@@ -2681,6 +2681,11 @@ func armed_uav_test() -> void:
 		var u = m.spawn_vehicle(i % 2, ids[i], c + Vector3(-30.0 + (i % 2) * 60.0, 0, 20.0 + (i / 2) * 30.0), 0.0)
 		u.cmd_move(c + Vector3(-20.0 + (i % 2) * 40.0, 0, -10.0 + (i / 2) * 50.0))
 		uavs.append(u)
+	# 93: ABD'nin büyük İHA'ları da (MQ-1C, RQ-4) — çizilen kanat açıklığı denetimi için
+	for xid in ["usa_uav_mq1c", "usa_uav_rq4"]:
+		var ux = m.spawn_vehicle(0, xid, c + Vector3(-10.0 + uavs.size() * 6.0, 0, 30.0), 0.0)
+		ux.cmd_move(c + Vector3(10.0, 0, 30.0))
+		uavs.append(ux)
 	var tk := m.spawn_vehicle(1, "rus_mbt_72b3", c + Vector3(-20.0, 0, -12.0), 0.0)
 	tk.cmd_hold()
 	# oyuncu yolu: helikopter pistinde üretim (sandbox para), toplanma noktasına uçuş
@@ -2711,6 +2716,14 @@ func armed_uav_test() -> void:
 			await m._wait(0.3)
 			await m._shot("armeduav_%s" % u.vid)
 			if u.hull.position.y < 5.0 or not u.visible:
+				fails += 1
+			# görsel irtifa ölçeği: çizilen kanat açıklığı (tank ~7 m) en çok ~10 m
+			var span := 0.0
+			for mi in u.hull.get_children():
+				if mi is MeshInstance3D and mi.mesh != null:
+					span = maxf(span, mi.mesh.get_aabb().size.x * u.hull.scale.x)
+			print("UAVSPAN %s vis=%.2f span=%.1f" % [u.vid, u.uav_vis, span])
+			if span > 10.0:
 				fails += 1
 		else:
 			fails += 1

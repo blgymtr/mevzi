@@ -161,8 +161,10 @@ var burn_t := 0.0
 const ALT := 9.0
 const UAV_ALT := 13.0
 # görsel irtifa ölçeği (roadmap 93): gerçek İHA kilometrelerce yukarıda uçar; oyunda 13–24 m'de gerçek boyutuyla
-# "maket uçak" gibi dev görünür → aileye göre küçültülerek çizilir (model ve boyut denetimi gerçek boyutta kalır)
-const UAV_VIS := {"uav_hale": 0.4, "uav_male": 0.5, "uav_tac": 0.8}
+# "maket uçak" gibi dev görünür → kanat açıklığı yumuşak tavanla sıkıştırılarak çizilir (model ve boyut denetimi
+# gerçek boyutta kalır): 4 m'ye kadar gerçek, üstü ×0,15 — MQ-9 20 m → ~6,4 m, RQ-4 40 m → ~9,4 m, Orlan 3 m aynı
+const UAV_VIS_KNEE := 4.0
+const UAV_VIS_SLOPE := 0.15
 var uav_vis := 1.0
 var uav_ang := 0.0
 var missiles := 0
@@ -706,14 +708,12 @@ func setup(t: int, vt: String) -> void:
 	ammo_he = String(am.get("he", ""))
 	ammo_auto = String(am.get("auto", ""))
 	M = Art.vehicle_model(vid, t) if vid != "" and Art.has(vid) else Art.vehicle(vt, t)
-	var mfam := String(cat.get("fam", ""))       # modelin katalog ailesi (İHA görsel ölçeği)
 	if M.is_empty() and vid == "":
 		# taban tipin kendi modeli yoksa katalogdan aynı tabandaki bir birimin modeli
 		# (keşif İHA'sı: katalogdaki ilk — en büyük, RQ-4 sınıfı — değil, küçük taktik sınıf)
 		var alt := DroneStation.uav_id(t) if vt == "uav" else Catalog.first_of_base(vt, G.nation[t] if t >= 0 and t < G.nation.size() else "")
 		if alt != "" and Art.has(alt):
 			M = Art.vehicle_model(alt, t)
-			mfam = String(Catalog.get_unit(alt).get("fam", ""))
 	if M.is_empty():
 		M = VehicleModels.get_model(vt, t, G.map_kind == "winter")
 	hull = Node3D.new()
@@ -798,7 +798,12 @@ func setup(t: int, vt: String) -> void:
 	if vt in ["uav", "uav_armed"]:
 		# gerçek ölçek (eskiden görünürlük için 1,6 kat büyütülüyordu); görünürlüğü irtifa gölgesi sağlar
 		hull.position.y = UAV_ALT
-		uav_vis = float(UAV_VIS.get(mfam, 1.0))
+		var span := 0.0
+		for mi in hull.get_children():
+			if mi is MeshInstance3D and (mi as MeshInstance3D).mesh != null:
+				span = maxf(span, (mi as MeshInstance3D).mesh.get_aabb().size.x * hull.scale.x)
+		if span > UAV_VIS_KNEE:
+			uav_vis = (UAV_VIS_KNEE + (span - UAV_VIS_KNEE) * UAV_VIS_SLOPE) / span
 		hull.scale *= uav_vis
 		uav_ang = randf() * TAU
 		missiles = 4 if vt == "uav_armed" else 0
@@ -3449,8 +3454,8 @@ func _uav(dt: float) -> void:
 		hull.position.y = move_toward(hull.position.y, 6.0, dt * 3.0)
 	else:
 		hull.position.y = move_toward(hull.position.y, alt, dt * (2.2 if high_alt else 4.0))
-	# büyük (görsel olarak küçültülmüş) İHA geniş yörüngede döner: MALE ~36 m, HALE ~50 m
-	var R := (34.0 if high_alt else 26.0) * (1.0 + (1.0 - uav_vis) * 0.8)
+	# büyük (görsel olarak küçültülmüş) İHA geniş yörüngede döner: MALE ~35 m, HALE ~47 m
+	var R := (34.0 if high_alt else 26.0) * (1.0 + (1.0 - uav_vis) * 0.5)
 	var c := dest
 	var to_c := c - position
 	to_c.y = 0.0
