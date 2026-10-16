@@ -36,14 +36,16 @@ func _init() -> void:
 		var tol := float(r.get("tol", 0.15))
 		var air := AIR_PREFIX.any(func(p): return fam.begins_with(p))
 		var dl := m.z / float(r["L"]) - 1.0
-		var dw := m.x / float(r["W"]) - 1.0
+		# X kanat (Lancet, Red Dragon): kanatlar 45° çapraz — açıklık uçtan uca çapraz ölçülür (kutu eni × √2)
+		var mw := m.x * sqrt(2.0) if u.get("v", {}).get("type", "") == "x" else m.x
+		var dw := mw / float(r["W"]) - 1.0
 		var ok := absf(dw) <= tol if air else (absf(dl) <= tol and absf(dw) <= tol + 0.05)
 		checked += 1
 		var line := "SIZE %s %s model=%.2f/%.2f/%.2f real=%.2f/%.2f/%.2f scale=%.2f dL=%+.0f%% dW=%+.0f%% %s" % [id, fam, m.z, m.x, m.y, float(r["L"]), float(r["W"]), float(r["H"]), sc, dl * 100.0, dw * 100.0, "OK" if ok else "BAD"]
 		if not ok:
 			bad += 1
 			if air:
-				line += " suggest=%.3f" % (sc * float(r["W"]) / m.x)
+				line += " suggest=%.3f" % (sc * float(r["W"]) / mw)
 		print(line)
 	print("SIZEAUDIT checked=%d bad=%d" % [checked, bad])
 	quit()
