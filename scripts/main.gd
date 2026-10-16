@@ -1822,6 +1822,10 @@ func _run_supply_test() -> void:
 		a.queue_free()
 	G.ais.clear()
 	var hq: Vector3 = G.hq_pos[0]
+	# düşman birlikleri (önceden yerleşik) kamyonu vurup testi bozmasın
+	for u in G.units.duplicate():
+		if is_instance_valid(u) and u.team == 1 and not (u is Building):
+			u.queue_free()
 	var fob := place_building(0, "fob", G.grid.nearest_free(hq.lerp(G.hq_pos[1], 0.3), Grid.M_HEAVY), 0.0)
 	fob.complete()
 	var tr := spawn_vehicle(0, "truck", G.logi._door(fob) + Vector3(0, 0, 3.0), 0.0)
@@ -1835,15 +1839,52 @@ func _run_supply_test() -> void:
 		await _wait(1.4)
 		await _shot("supply_%02d" % i)
 	var n: int = tr.get_meta("porters", []).size()
-	print("SUPPLY porters=%d" % n)
+	print("SUPPLY porters=%d alive=%s hp=%.0f kill=%s pos=%s water=%s" % [n, tr.alive, tr.hp, tr.kill_k, tr.position, G.grid.is_water(tr.position)])
 	tr.job["t"] = 0.1
 	# kamyon yola çıkınca hamallar gider (kare süresine bağlı kalmamak için koşul beklenir)
 	for k in 16:
 		await _wait(0.25)
 		if tr.job.get("state", "") != "unload" and tr.get_meta("porters", []).is_empty():
 			break
-	print("SUPPLY after=%d state=%s" % [tr.get_meta("porters", []).size(), tr.job.get("state", "")])
-	print("SUPPLYTEST RESULT fails=%d" % (0 if n == 2 and tr.get_meta("porters", []).is_empty() else 1))
+	print("SUPPLY after=%d state=%s t=%.2f in_list=%s alive=%s spd=%.2f path=%d/%d order=%s" % [tr.get_meta("porters", []).size(), tr.job.get("state", ""), float(tr.job.get("t", -1.0)), G.logi.trucks[0].has(tr), tr.alive, tr.cur_speed, tr.path_i, tr.path.size(), tr.order])
+	var fails := 0 if n == 2 and tr.get_meta("porters", []).is_empty() else 1
+	# 106: boşalttıktan sonra takılmadan karargâha döner (yükleme durumuna geçer)
+	var back_t := -1.0
+	var t0 := G.time
+	var last := tr.position
+	var still := 0.0
+	while G.time - t0 < 90.0:
+		await _wait(1.0)
+		if not is_instance_valid(tr) or not tr.alive:
+			break
+		if tr.job.get("state", "") in ["load", "out"]:
+			back_t = G.time - t0
+			break
+		still = still + 1.0 if tr.position.distance_to(last) < 0.5 else 0.0
+		last = tr.position
+		if int(G.time - t0) % 10 == 0:
+			print("SUPPLY back dbg t=%.0f st=%s pos=%s path=%d/%d spd=%.1f order=%s still=%.0f" % [G.time - t0, tr.job.get("state", ""), tr.position, tr.path_i, tr.path.size(), tr.cur_speed, tr.order, still])
+	print("SUPPLY returned_at=%.1f still=%.0f" % [back_t, still])
+	if back_t < 0.0:
+		fails += 1
+	# 103: boşaltırken vurulan kamyonun hamalları elde kutuyla donup kalmaz
+	var tr2 := spawn_vehicle(0, "truck", G.logi._door(fob) + Vector3(0, 0, 3.0), 0.0)
+	G.logi.trucks[0].append(tr2)
+	tr2.job = {"state": "unload", "t": 60.0, "to": fob}
+	await _wait(1.5)
+	var pn: Array = []
+	for p in tr2.get_meta("porters", []):
+		pn.append(p[0])
+	tr2.take_damage(99999.0, null, "he")
+	await _wait(0.5)
+	var left := 0
+	for p in pn:
+		if is_instance_valid(p) and not p.is_queued_for_deletion():
+			left += 1
+	print("SUPPLY killed_truck porters_before=%d left=%d" % [pn.size(), left])
+	if pn.size() != 2 or left > 0:
+		fails += 1
+	print("SUPPLYTEST RESULT fails=%d" % fails)
 	get_tree().quit()
 
 func _run_logi_test() -> void:

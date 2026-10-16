@@ -174,6 +174,7 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Düzeltildi (95):** İnşaat bitince malzeme taşıyan işçiler kaldırılmış malzeme yığınına kutu götürmeye devam ediyordu (bitiş yalnız çalışırken denetleniyordu, yürürken değil) → yürüyen / taşıyan işçi de bitişte ya da yapı yıkılınca işi bırakır (buildtest: bitişten 0,5 sn sonra çalışan işçi kalmaz; düzeltmesiz sürümde 2 işçi kalıyordu)
 - **Düzeltildi (95):** Malzeme taşıyıcılar binanın içinden geçiyor / yığında takılıyordu. Üç neden: (1) büyük haritada yol önbelleği 12 m'lik bölge anahtarlıydı — binanın öbür yanındaki askere başka yandan hesaplanmış yol veriliyor, ilk noktaya düz yürürken binayı içinden kesiyordu; ızgara değişince (yapı yerleşince) önbellek de silinmiyordu → önbellekli yolun ilk parçası yürünemiyorsa kullanılmaz, değişen bölgeden geçen kayıtlar silinir; (2) 2 km+ haritada iri yol hücresi ancak yarıdan çoğu doluysa kapalıydı — 45° dönük yapının köşe hücreleri açık kalıyordu → taraf yapılarında değen hücre kapalı; (3) yığın ağaç / kayaya denk gelince taşıyıcı ulaşamıyor, yığınla arasında sonsuza dek gidip geliyordu → yığın yapının açık bir yanına konur, taşıyıcı yığının yürünebilir noktasına gider. buildtest: yürürken iz içine giriş denetimi + `--map=` (green_valley 5, battle_8k 4 tohumda geçti; düzeltmeden önce battle_8k'da 24 örnek binanın içindeydi)
 - **Düzeltildi (96):** Kamyonlar binaların içinden geçiyordu — üsler arası ikmal rotası üs kurulunca bir kez hesaplanıp saklanıyordu; üstüne sonradan yapı dikilince kamyon eski rotayla yapının içinden sürüyordu → rota her seferde denetlenir, kapanan parça yeniden aranır (o sırada doğrudan yol bulunur); yapı yerleşince yoldaki kamyonun kalan yolu kapandıysa yeniden yol bulur (logitest: rotanın ortasına kışla dikilir, 45 sn'de kamyonlar 54 kez yanından geçti, hiç içine girmedi)
+- **Düzeltildi (106 / 103):** Boşaltma sırasında vurulan kamyonun iki hamalı elde ikmal kutusuyla yerinde donup kalıyordu (kamyon listeden çıkınca hamallar temizlenmiyordu) → kamyon kaybında hamallar da kalkar. supplytest artık geçiyor: kamyonu vuran önceden yerleşik düşmanlar test başında kaldırılır, boşaltma sonrası karargâha dönüş (~18 sn) ve vurulan kamyonda hamal temizliği denetlenir
 
 ---
 
@@ -287,7 +288,9 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 103 | Kamyon gibi araçlar vurulunca içindeki askerler olduğu yerde kalıp hareket etmiyor | ⏳ | |
 | 104 | Araçlar sıkışınca etrafa saçılır gibi sağa sola kayıyor — araç sıkıştırma yok, her araç ayrı ayrı hareket etmeli | ⏳ | |
 | 105 | Askerler kamyonun (aracın) içinden geçemez | ⏳ | |
-| 106 | Kamyon malzeme bıraktıktan sonra takılı kalıyor | ⏳ | → supplytest'teki "state=unload" takılması |
+| 106 | Kamyon malzeme bıraktıktan sonra takılı kalıyor; hasar alınca asker elinde ikmal kutusuyla takılı kalıyor | ✅ | Boşaltırken vurulan kamyonun hamalları temizlenir; boşaltma sonrası dönüş denetlendi (supplytest: ~18 sn'de karargâhta) |
+| 107 | Araçların piyade gibi kendine has zekâsı olmalı | ⏳ | → Hasarda geri çekilme, siper / gövde gizleme, tanksavar tehdidinden kaçınma, dost araçla aralık |
+| 108 | Araçlar ancak büyük hasar alınca yok olmalı / işlevsiz kalmalı | ⏳ | → Kamyon tek HE isabetiyle ölüyor (160 can) |
 
 ### Uygulama sırası (fazlar)
 - **Faz 0 — Stabilite ✅:** yamalar + test bekçisi, crewtest/paratest/SPIES/evade; takılma bekçisi (asker/araç/sedye, stucktest); yapılamayan emirde sesli uyarı; ekransız test (-Headless, run_tests.sh)

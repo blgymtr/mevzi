@@ -283,6 +283,9 @@ func _porters(tr: Vehicle, dt: float, j: Dictionary) -> void:
 		sb.animate(dt, "carry" if carrying else "walk", 1.3 if carrying else 1.8, 1.0)
 
 func truck_lost(tr: Vehicle) -> void:
+	# boşaltırken vurulan kamyonun hamalları (süs gövdesi) yerinde donup kalıyordu: listeden çıkan kamyon
+	# _process'te bir daha görülmediği için temizlenmiyorlardı (roadmap 103)
+	_porters(tr, 0.0, {})
 	trucks[tr.team].erase(tr)
 	respawn[tr.team].append(G.time + 30.0)
 	if tr.team == G.player_team and not G.spectate:
