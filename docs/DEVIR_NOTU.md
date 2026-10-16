@@ -1,4 +1,34 @@
-# Devir notu — kaldığımız yer (16 Ekim 2026, 3. oturum)
+# Devir notu — kaldığımız yer (17 Ekim 2026, 3. oturumun devamı)
+
+## Bu bölümde yapılan (commit'li, push'lu; son commit `eee8bbb`)
+- 103, 107 (araç zekâsı: cephe, sis, geri çekilme, tanksavarcı önceliği, **gövde gizleme**), 110 savaş sisi, 112 sürücü /
+  komutan vurulması, 114, 115 suda bomba + duman, 116 keskin nişancı aralığı, 118, 119, 125 sandbox araçları
+- 128 kratere oturma / devrilme (araç, hurda, sandık, varil, ağaç) · 129 / 61 / 92 güverte ve komutan yüksekliği modelden,
+  kapalı kabin yolcusu içeride · 130 sıkışan araç: sabit taraf, tek dolaşma, geri manevra, köprüde bekleme · 131 dumanın
+  içinden geçen birlik dumanı yarar · 132 eş eksenli makineli yalnız taret yönüne · 133 köprüde gövde döşemede, karşılaşmada
+  yol verme · 134 dozer / M88 hurdayı iter / halatla çeker · 137 çekili top toplanırken cephane kalkar, tekerler döner ·
+  138 mühimmata göre krater
+- 83 geri çekilirken arkaya ateş yok · 84 tank dibinde kalabalık (varış yarıçapı, 0,42 m katı aralık; ev içinde değil) ·
+  89 siper derinliğine göre duruş · 102 halat (kola ve yere sabit, vinçle çekilir) + rampadan sıra hâlinde biniş
+- 120: canlı bombayı kapıp geri atma, ikmal hattı kesilen ileri üs kararır, girilemeyen bina garnizona kapalı
+- Yeni test sahneleri: cratertest, decktest, jamtest, aimtest, smokepasstest, dozertest, towtest, cratertypes,
+  backfiretest, crowdtest, trenchpose, ramptest, hulldowntest, nadetest, fobdark (+ drivertest, watertest, vehaitest,
+  snipertest, sandboxtest)
+- Kullanıcının yeni maddeleri ROADMAP 122–138
+
+## Sıradaki adımlar
+1. HUD (65/57) + tüm emirlerin HUD ile bütünleşmesi; 136 kamera (360° döndürme, birime kilitlenme, serbest bakış)
+2. Modelleme / animasyon aşaması (CC0: Poly Haven, ambientCG): 60 / 66 / 74 / 80 / 85 asker pozları, 100 araç–asker
+   uyumu (rampa, kapak düğümleri), 101 / 111 topçu mermi animasyonları, 113, 122–124, 126, 127, 135 köprü kurma, 76 rampa +
+   ZPT yükleme, uçak modelleri (hava indirme)
+3. 120 kalanı: CPR (animasyon), engel yüksekliğine göre duruşun tüm siper türlerinde tutarlılığı; 107 kalanı: ilerlerken
+   piyadeyle uyum
+4. Kararsız testler: garrisontest rastgele haritada nadiren (≈1/7) bir asker kapıda takılır; vehtest istihkâmcı onarımı
+   (30 sn bekleme ile seyrek)
+
+---
+
+# (Tarihsel) Devir notu — 16 Ekim 2026, 3. oturum
 
 Dal: `claude/fervent-euler-a8emja` (PR #1) — **push edildi**; iş worktree'de (`.claude/worktrees/mevzi-uav-soldier`,
 dal `worktree-mevzi-uav-soldier`, `git push origin HEAD:claude/fervent-euler-a8emja`), her push'tan sonra kullanıcının
