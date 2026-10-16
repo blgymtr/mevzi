@@ -1812,9 +1812,23 @@ func _tactics() -> void:
 			threat = attacker.position
 		elif _last_from != Vector3.INF:
 			threat = _last_from
+	if threat == Vector3.INF and target != null and is_instance_valid(target) and target.alive and dist2(target) > 25.0 and not (target is Building):
+		threat = target.position
 	if threat == Vector3.INF:
 		_face_h = INF
 		return
+	# 4) gövde gizleme (hull-down): açıkta duruyorsa yakında tehdide karşı önünde alçak engel (duvar, hurda,
+	# kaya, set) olan, taretin üstünden görebildiği yere geçer
+	# (ağır yaralı araç gizlenmez, temastan çıkar — aşağıda 3)
+	if idle and order == "" and armor > 0 and vtype in ["tank", "ifv", "apc", "aa"] and G.time > _hd_t and hp >= max_hp * 0.6:
+		_hd_t = G.time + 8.0
+		if _cover_score(position, threat) < 0.4:
+			var hd := _hulldown_spot(threat)
+			if hd != Vector3.INF:
+				cmd_move(hd)
+				tac_log.append("hulldown")
+				say("SİPERE GİRİYORUZ", 2.0)
+				return
 	var to_t := threat - position
 	to_t.y = 0.0
 	# 1) cepheyi tehdide çevir: paletli zırhlı araç yerinde döner (tekerlekli araç yerinde dönemez)
@@ -1835,6 +1849,53 @@ func _tactics() -> void:
 			order = ""
 			tac_log.append("withdraw")
 			say("GERİ ÇEKİLİYORUZ!", 2.0)
+
+var _hd_t := 0.0
+
+# p'de tehdide karşı gövde örtüsü: önünde (gövde burnundan 1–5 m ötede) 0,7–2,6 m yüksek engel ve taret
+# yüksekliğinden tehdide görüş — 0 (açık) … 1 (tam gövde gizli, taret ateş edebilir)
+func _cover_score(p: Vector3, t: Vector3) -> float:
+	var d := t - p
+	d.y = 0.0
+	if d.length() < 3.0:
+		return 0.0
+	d = d.normalized()
+	var best := 0.0
+	var s0 := ext.y * 0.6 + 1.0
+	for k in 6:
+		var q := p + d * (s0 + k * 0.9)
+		var h := G.grid.height_at(q)
+		if h >= 0.7 and h <= 2.6:
+			best = maxf(best, clampf((h - 0.5) / 0.9, 0.0, 1.0))
+	if best <= 0.0:
+		return 0.0
+	# taret üstünden görüş (gövde arkada, namlu engelin üstünden)
+	if not G.grid.los(p + Vector3(0, top_h + 0.2, 0), t + Vector3(0, 1.2, 0), 0.5, 0.5):
+		return best * 0.3
+	return best
+
+func _hulldown_spot(t: Vector3) -> Vector3:
+	var best := Vector3.INF
+	var bs := 0.4
+	var dt0 := position.distance_to(t)
+	for r in [6.0, 10.0, 14.0]:
+		for k in 12:
+			var a := k * TAU / 12.0
+			var q: Vector3 = position + Vector3(cos(a), 0, sin(a)) * float(r)
+			q.y = 0.0
+			if not _cell_ok(q) or G.grid.height_at(q) >= 0.3 or not G.grid.bridge_at(q).is_empty():
+				continue
+			if not _veh_clear(q, ext.x + 0.8):
+				continue
+			var sc := _cover_score(q, t)
+			if sc <= bs:
+				continue
+			# tehdide çok yaklaşmasın, yakın ve yürünebilir olsun
+			sc -= maxf(0.0, dt0 - q.distance_to(t)) * 0.02 + float(r) * 0.008
+			if sc > bs and G.grid.walkable_line(position, q, nav_mode):
+				bs = sc
+				best = q
+	return best
 
 func _pop_smoke(to_t: Vector3) -> void:
 	smoke_n -= 1

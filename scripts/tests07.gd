@@ -97,6 +97,8 @@ func run(scene: String) -> void:
 			await trenchpose_test()
 		"ramptest":
 			await ramp_test()
+		"hulldowntest":
+			await hulldown_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -498,6 +500,60 @@ func wound_test() -> void:
 	await m._wait(1.0)
 	await m._shot("wound_09_sever")
 	print("WOUNDTEST RESULT fails=%d" % fails)
+
+# 107: açıkta ateş altındaki tank yakındaki alçak duvarın arkasına geçip gövdesini gizler (taret duvarın üstünden
+# görür); mevzi tut emrinde yerinden oynamaz
+func hulldown_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var res: Array = []
+	for hold in [false, true]:
+		var base := c + Vector3(0 if not hold else -40.0, 0, 0)
+		var tk: Vehicle = m.spawn_vehicle(0, "tank", base, 0.0)
+		tk.fire_mode = 2
+		var en: Vehicle = m.spawn_vehicle(1, "tank", base + Vector3(0, 0, -60), PI)
+		en.cmd_hold()
+		en.fire_mode = 2
+		# alçak duvar: tankın 10 m sağında, tehdide 4 m önde
+		var wc := base + Vector3(10, 0, -4.5)
+		G.grid.set_static_rect(wc, Vector2(7.0, 0.6), 0.0, 1.25, Grid.K_WALL)
+		var wm := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(7.0, 1.25, 0.6)
+		wm.mesh = bm
+		G.main.world.add_child(wm)
+		wm.global_position = wc + Vector3(0, 0.62, 0)
+		G.grid.flush_nav()
+		if hold:
+			tk.cmd_hold()
+		await m._wait(0.5)
+		var s0 := tk._cover_score(tk.position, en.position)
+		for k in 20:
+			tk.last_hit = G.time
+			tk._last_from = en.position
+			tk.attacker = en
+			await m._wait(0.5)
+		var s1 := tk._cover_score(tk.position, en.position)
+		var moved := tk.position.distance_to(base)
+		print("HULLDOWN hold=%s cover %.2f -> %.2f moved=%.1f log=%s" % [hold, s0, s1, moved, tk.tac_log])
+		res.append([hold, s1, moved])
+		if not hold and (s1 < 0.5 or moved < 4.0):
+			fails += 1
+		if hold and moved > 1.0:
+			fails += 1
+		if not hold:
+			_cam(tk.position + Vector3(0, 0, -6), 18.0)
+			await m._wait(0.2)
+			await m._shot("hulldown")
+	print("HULLDOWNTEST RESULT fails=%d" % fails)
 
 # 76 / 102: inmiş nakliye helikopterine (CH-47 arka rampa, UH-60 yan kapı) askerler sıra hâlinde, tek tek biner
 func ramp_test() -> void:
