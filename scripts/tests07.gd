@@ -99,6 +99,10 @@ func run(scene: String) -> void:
 			await ramp_test()
 		"hulldowntest":
 			await hulldown_test()
+		"nadetest":
+			await nade_test()
+		"fobdark":
+			await fobdark_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -500,6 +504,107 @@ func wound_test() -> void:
 	await m._wait(1.0)
 	await m._shot("wound_09_sever")
 	print("WOUNDTEST RESULT fails=%d" % fails)
+
+# 120: ikmal hattı kesilen ileri üs kararır (üretim durur, görüş daralır), teslimat gelince canlanır; normal
+# ikmal döngüsünde kararmaz
+func fobdark_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var hq: Vector3 = G.hq_pos[0]
+	var fob: Building = m.place_building(0, "fob", G.grid.nearest_free(hq.lerp(G.hq_pos[1], 0.3), Grid.M_HEAVY), 0.0)
+	fob.complete()
+	G.logi.register_base(fob)
+	await m._wait(1.0)
+	var s0 := fob.sight
+	# normal döngü: 40 sn içinde kamyon gelir, kararmaz
+	var dark_seen := false
+	for k in 40:
+		await m._wait(1.0)
+		if fob.dark:
+			dark_seen = true
+	print("FOBDARK normal_cycle dark_seen=%s supplied_ago=%.0f" % [dark_seen, G.time - fob.supplied_t])
+	# hat kesildi: 200 sn teslimat yok
+	fob.supplied_t = G.time - 200.0
+	G.supply[0] = 99999
+	fob.enqueue("rifle_squad")
+	await m._wait(1.2)
+	var dark_on := fob.dark
+	var s1 := fob.sight
+	var q_blocked: bool = not fob.queue.is_empty() and fob.queue[0]["blocked"]
+	_cam(fob.position, 26.0)
+	await m._wait(0.2)
+	await m._shot("fob_dark")
+	# teslimat
+	fob.supplied_t = G.time
+	await m._wait(1.2)
+	print("FOBDARK cut dark=%s sight %.1f -> %.1f prod_blocked=%s | after_delivery dark=%s sight=%.1f" % [dark_on, s0, s1, q_blocked, fob.dark, fob.sight])
+	if dark_seen or not dark_on or s1 >= s0 or not q_blocked or fob.dark or absf(fob.sight - s0) > 0.01:
+		fails += 1
+	print("FOBDARKTEST RESULT fails=%d" % fails)
+
+# 120: yakına düşen canlı el bombasını kapıp kalan fitille geri atma
+func nade_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_INF)
+	G.props.clear_area(c, 60.0)
+	var grabs := 0
+	var thrown := 0
+	var in_hand := 0
+	var shot := false
+	for round in 3:
+		var pairs: Array = []
+		for i in 6:
+			var base := G.grid.nearest_free(c + Vector3(-40 + i * 16.0, 0, -10 + round * 0.0), Grid.M_INF)
+			var df: Soldier = m.spawn_soldier(0, "rifle", base, null)
+			var en: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(base + Vector3(0, 0, -16), Grid.M_INF), null)
+			for s in [df, en]:
+				s.fire_mode = 2
+				s.cmd_hold()
+			pairs.append([df, en, false, false])
+		await m._wait(0.5)
+		for pr in pairs:
+			var df: Soldier = pr[0]
+			var en: Soldier = pr[1]
+			G.bal.grenade(en.position + Vector3(0, 1.8, 0), df.position + Vector3(randf_range(-1.5, 1.5), 0, 1.8), 1, en)
+		for k in 100:
+			await m._wait(0.05)
+			for pr in pairs:
+				var df: Soldier = pr[0]
+				if not is_instance_valid(df):
+					continue
+				if df.state == "nade" and not pr[2]:
+					pr[2] = true
+					grabs += 1
+					if not shot and df.nade_picked:
+						shot = true
+				if pr[2] and not pr[3] and df.state == "throw" and df.throw_released:
+					pr[3] = true
+					thrown += 1
+		for pr in pairs:
+			if pr[2] and not pr[3]:
+				in_hand += 1
+			for s in [pr[0], pr[1]]:
+				if is_instance_valid(s):
+					G.remove_unit(s)
+					s.queue_free()
+		await m._wait(0.3)
+	print("NADE trials=18 grabs=%d thrown_back=%d blew_in_hand=%d" % [grabs, thrown, in_hand])
+	if grabs == 0 or thrown < grabs - 1:
+		fails += 1
+	print("NADETEST RESULT fails=%d" % fails)
 
 # 107: açıkta ateş altındaki tank yakındaki alçak duvarın arkasına geçip gövdesini gizler (taret duvarın üstünden
 # görür); mevzi tut emrinde yerinden oynamaz

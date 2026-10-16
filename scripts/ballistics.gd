@@ -584,7 +584,8 @@ func _rkt_trail(p: Proj, a: Vector3, b: Vector3) -> void:
 	if n > 0:
 		G.fx.emit(Fx.P_SPARK, b, -dir * 30.0, 0.05, 0.16, 0.1, 0.0, 6.0, Color(1.0, 0.78, 0.4, 1))
 
-func grenade(from: Vector3, to: Vector3, team: int, src, smoke := false) -> void:
+# fuse_left ≥ 0: geri atılan bomba — kalan fitille uçar (yeni fitil başlamaz)
+func grenade(from: Vector3, to: Vector3, team: int, src, smoke := false, fuse_left := -1.0) -> void:
 	var p := Proj.new()
 	p.kind = "grenade"
 	p.smoke = smoke
@@ -593,7 +594,7 @@ func grenade(from: Vector3, to: Vector3, team: int, src, smoke := false) -> void
 	var T := 0.7 + L * 0.035
 	var g := Vector3(0, -9.8, 0)
 	p.vel = (to - from - 0.5 * g * T * T) / T
-	p.fuse = 3.0 if not smoke else 2.2
+	p.fuse = (3.0 if not smoke else 2.2) if fuse_left < 0.0 else maxf(fuse_left, 0.05)
 	p.team = team
 	p.src = src
 	p.node = _node(_gmesh)

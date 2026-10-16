@@ -833,6 +833,8 @@ func complete() -> void:
 		queue_free()
 		return
 	hp = max_hp
+	if btype == "fob":
+		supplied_t = G.time
 	# büyük haritada (BA/CoH3 ölçeği, roadmap 53) birlik sınırı daha yüksek: 2 km'de ×1, 8 km'de ×3
 	cap_bonus = int(round(float(B["cap"]) * clampf(G.MAP / 2048.0, 1.0, 3.0)))
 	_apply_construct_look()
@@ -952,6 +954,7 @@ func _process(dt: float) -> void:
 	if think_t <= 0.0:
 		think_t = 0.5
 		_think()
+		_cut_tick()
 	_production(dt)
 	if btype == "mgnest":
 		_mg(dt)
@@ -1091,11 +1094,53 @@ func _bearers() -> void:
 		if b.state == "idle" and b.dist2(self) > 14.0 and b.patient == null and b.job == null:
 			b.cmd_move(position + Vector3(randf_range(-4, 4), 0, size.y * 0.5 + 3.0).rotated(Vector3.UP, rot))
 
+# (120) ikmal hattı kesilen ileri üs kararır: 150 sn kamyon gelmezse üretim durur, görüş daralır, yapı kararır;
+# ilk teslimatta yeniden canlanır
+const CUT_T := 150.0
+var dark := false
+var _sight0 := -1.0
+var _dark_mat: StandardMaterial3D = null
+
+func cut_off() -> bool:
+	# büyük haritada kamyon seferi uzun: süre harita boyuyla (en çok 4 kat)
+	return btype == "fob" and done and alive and G.time - supplied_t > CUT_T * clampf(G.MAP / 512.0, 1.0, 4.0)
+
+func _cut_tick() -> void:
+	if btype != "fob" or not done:
+		return
+	var c := cut_off()
+	if c == dark:
+		return
+	dark = c
+	if _sight0 < 0.0:
+		_sight0 = sight
+	sight = _sight0 * (0.45 if dark else 1.0)
+	if _dark_mat == null:
+		_dark_mat = StandardMaterial3D.new()
+		_dark_mat.albedo_color = Color(0, 0, 0, 0.5)
+		_dark_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_dark_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for mi in _all_meshes(self):
+		(mi as GeometryInstance3D).material_overlay = _dark_mat if dark else null
+	if team == G.player_team and not G.spectate:
+		G.say("İLERİ ÜS: İKMAL HATTI KESİK — KARARDI" if dark else "İLERİ ÜS: İKMAL HATTI KURULDU", position, team)
+
+func _all_meshes(n: Node) -> Array:
+	var out: Array = []
+	for ch in n.get_children():
+		if ch is MeshInstance3D:
+			out.append(ch)
+		out.append_array(_all_meshes(ch))
+	return out
+
 func _production(dt: float) -> void:
 	if queue.is_empty():
 		return
 	var item: Dictionary = queue[0]
 	var P: Dictionary = PDEF[item["id"]]
+	if dark:
+		item["blocked"] = true
+		return
 	if G.cap_used[team] + P["cap"] > G.cap_max[team]:
 		item["blocked"] = true
 		return

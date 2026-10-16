@@ -90,6 +90,14 @@ var state_t := 0.0
 var throw_to := Vector3.ZERO
 var throw_smoke := false
 var throw_released := false
+var throw_fuse := -1.0             # geri atılan bombanın kalan fitili (sn); -1 kendi bombası
+# kapılan canlı bomba (120)
+var nade_pos := Vector3.ZERO
+var nade_end := 0.0
+var nade_from := Vector3.ZERO
+var nade_team := 1
+var nade_picked := false
+var nade_mesh: MeshInstance3D = null
 var covering_until := 0.0
 var build_site: Node3D = null
 var build_slot := -1
@@ -486,6 +494,25 @@ func _follow_veh_tick() -> void:
 		state = "move"
 	cover_pos = cp
 
+# kapıdan pencere yuvasına yürünemeyen (kapısı / içi duvara gömülü küçük kule gibi) bina girilemez: askerler
+# kapının önünde takılıp kalıyordu
+static func house_enterable(hid: int) -> bool:
+	var h: Dictionary = G.blocks.houses[hid]
+	var door: Vector3 = h.get("door", Vector3.INF)
+	if door == Vector3.INF or not h.has("slots") or h["slots"].is_empty():
+		return true
+	var df := G.grid.nearest_free(door, Grid.M_INF, 2)
+	if df.distance_to(door) > 1.2:
+		return false
+	for k in h["slots"].size():
+		var sp: Vector3 = G.grid.nearest_free(h["slots"][k], Grid.M_INF, 3)
+		if G.blocks.house_at(sp) != hid:
+			continue
+		var pth := G.grid.find_path(df, sp, Grid.M_INF)
+		if pth.size() > 0 and Vector2(pth[pth.size() - 1].x - sp.x, pth[pth.size() - 1].z - sp.z).length() < 0.8:
+			return true
+	return false
+
 func cmd_garrison(hid: int) -> bool:
 	if not can_fight() or state == "aboard":
 		return false
@@ -494,6 +521,8 @@ func cmd_garrison(hid: int) -> bool:
 		return false
 	var k := G.blocks.house_free_slot(hid)
 	if k < 0:
+		return false
+	if not house_enterable(hid):
 		return false
 	var sp: Vector3 = G.blocks.houses[hid]["slots"][k]
 	sp = G.grid.nearest_free(sp, Grid.M_INF, 3)
@@ -1121,7 +1150,7 @@ func _process(dt: float) -> void:
 # ilerlemeye bağlı ("move": yer değiştirmeden geçen süre). Sayaç durum değişince sıfırlanır (state_t her
 # geçişte sıfırlanmadığı için ayrı sayaç tutulur).
 const STATE_MAX := {"entering": 8.0, "exiting": 20.0, "rope": 30.0, "rope_wait": 75.0, "rope_up": 45.0,
-	"para": 45.0, "fly": 8.0, "dive": 4.0, "slide": 4.0, "throw": 5.0, "melee": 6.0, "dazed": 8.0,
+	"para": 45.0, "fly": 8.0, "dive": 4.0, "slide": 4.0, "throw": 5.0, "nade": 6.0, "melee": 6.0, "dazed": 8.0,
 	"launch": 12.0, "setup": 120.0, "rescue": 90.0, "drag": 30.0, "heal": 30.0, "escort": 30.0, "guard": 260.0,
 	"stretcher": 240.0, "dragged": 60.0, "healing": 60.0}
 const MOVE_REPATH := 8.0      # yer değiştirmeyen yürüyüş bu kadar sn sonra yeniden yol arar
@@ -1397,7 +1426,7 @@ func _think() -> void:
 		"guard":
 			_think_guard()
 			return
-		"throw":
+		"throw", "nade":
 			return
 		"dazed":
 			if state_t > 2.4:
@@ -1908,6 +1937,38 @@ func _think_grenade() -> void:
 	if ok and randf() < 0.35:
 		_start_throw(tp, false)
 
+# kapılan bombaya koş, eğilip al, geri at; fitil biterse olduğu yerde patlar
+func _nade_tick(dt: float) -> Vector3:
+	if G.time >= nade_end:
+		_nade_boom(position + Vector3(0, 1.0, 0) if nade_picked else nade_pos)
+		return Vector3.ZERO
+	if not nade_picked:
+		var d := nade_pos - position
+		d.y = 0.0
+		if d.length() > 0.35:
+			_face_to(nade_pos)
+			return d.normalized() * 3.6
+		nade_picked = true
+		state_t = 0.0
+		stance = CROUCH
+		return Vector3.ZERO
+	# eğilip aldı (0,35 sn), sonra fırlat
+	if state_t > 0.35:
+		if is_instance_valid(nade_mesh):
+			nade_mesh.queue_free()
+		nade_mesh = null
+		throw_fuse = nade_end - G.time
+		_start_throw(nade_from, false)
+		gren_cd = maxf(gren_cd, 2.0)
+	return Vector3.ZERO
+
+func _nade_boom(p: Vector3) -> void:
+	if is_instance_valid(nade_mesh):
+		nade_mesh.queue_free()
+	nade_mesh = null
+	state = "idle"
+	G.explode(Vector3(p.x, maxf(p.y, 0.1), p.z), 4.2, 120.0, "grenade", nade_team, null)
+
 func _start_throw(tp: Vector3, smoke: bool) -> void:
 	state = "throw"
 	state_t = 0.0
@@ -2133,6 +2194,8 @@ func _movement(dt: float) -> void:
 			want = Vector3(sin(G.time * 1.7 + position.x), 0, cos(G.time * 1.3 + position.z)) * 0.6
 		"throw":
 			_throw(dt)
+		"nade":
+			want = _nade_tick(dt)
 	# ayrışma
 	var sep := Vector3.ZERO
 	var veh_step := Vector3.ZERO
@@ -2166,7 +2229,7 @@ func _movement(dt: float) -> void:
 					sep += Vector3(randf_range(-1, 1), 0, randf_range(-1, 1))
 			elif o is Vehicle and o.alive:
 				pass
-		if hard != Vector3.ZERO and house_id < 0:
+		if hard != Vector3.ZERO and house_id < 0 and order != "garrison" and (G.blocks == null or G.blocks.house_at(position) < 0):
 			var hp2: Vector3 = position + hard.limit_length(0.12)
 			if G.grid.height_at(hp2) < 0.45 and not G.grid.is_water(hp2):
 				position.x = hp2.x
@@ -2326,10 +2389,12 @@ func _back_to_target() -> bool:
 func _follow(spd: float) -> Vector3:
 	# (84) son nokta yakında ve önündeki ara noktadan daha yakınsa, düz hat açıksa doğrudan son noktaya:
 	# kalabalıkta itilip yolundan çıkan asker hedefinin dibindeyken uzaktaki köşe ara noktasına geri dönmesin
-	if path.size() - path_i >= 2:
+	# (ev içi / kapı çevresinde değil: köşe ara noktası duvarın ardındaki kapıdır)
+	if path.size() - path_i >= 2 and house_id < 0 and _exit_goal == Vector3.INF:
 		var lp := path[path.size() - 1]
 		var le := Vector2(lp.x - position.x, lp.z - position.z).length()
-		if le < 4.0 and le < Vector2(path[path_i].x - position.x, path[path_i].z - position.z).length() and G.grid.walkable_line(position, lp, Grid.M_INF):
+		if le < 4.0 and le < Vector2(path[path_i].x - position.x, path[path_i].z - position.z).length() and G.grid.walkable_line(position, lp, Grid.M_INF) \
+				and (G.blocks == null or (G.blocks.house_at(position) < 0 and G.blocks.house_at(lp) < 0)):
 			path_i = path.size() - 1
 	while path_i < path.size():
 		var tp := path[path_i]
@@ -2340,7 +2405,8 @@ func _follow(spd: float) -> Vector3:
 		# kıpırdanıyordu (roadmap 116: "sıkışmış gibi sağa sola kayma")
 		var crowded := near_end and _sep_c.length() > 0.4
 		var arr_r := 1.0
-		if crowded and L < 4.0:
+		# (ev içi pencere yuvasına / kapıya giderken değil: orada yuva tam noktadır)
+		if crowded and L < 4.0 and order != "garrison" and house_id < 0 and (G.blocks == null or G.blocks.house_at(tp) < 0):
 			# (84) hedefte çok asker toplandıysa varış yarıçapı kalabalıkla büyür: dıştakiler ortaya girmeye
 			# çalışıp kalabalığı itmez, kenarında durur
 			var n := 0
@@ -2442,20 +2508,30 @@ func _fly(dt: float) -> void:
 	position.z = clampf(position.z, 1.0, G.MAP - 1.0)
 
 func _throw(_dt: float) -> void:
+	if throw_fuse >= 0.0 and not throw_released and G.time >= nade_end:
+		# geri atamadan fitil bitti: elinde patlar
+		throw_fuse = -1.0
+		_nade_boom(position + Vector3(0, 1.2, 0))
+		return
 	if not throw_released and state_t > 0.42:
 		throw_released = true
 		var hand := position + Vector3(0, 1.8, 0)
-		if throw_smoke:
-			smoke_nades -= 1
+		if throw_fuse >= 0.0:
+			# kapılan bomba: kalan fitille, atanın tarafı değişir
+			G.bal.grenade(hand, throw_to, team, self, false, nade_end - G.time)
+			throw_fuse = -1.0
 		else:
-			grenades -= 1
-		G.bal.grenade(hand, throw_to, team, self, throw_smoke)
+			if throw_smoke:
+				smoke_nades -= 1
+			else:
+				grenades -= 1
+			G.bal.grenade(hand, throw_to, team, self, throw_smoke)
 	if state_t > 0.75:
 		state = "rescue" if patient != null else "idle"
 
 # ------------------------------------------------------------ ateş
 func _combat(_dt: float) -> void:
-	if G.deploy_t > 0.0 or not can_fight() or state in ["throw", "drag", "heal", "build", "dazed", "rescue", "melee"] or flinch_t > 0.0 or bearer:
+	if G.deploy_t > 0.0 or not can_fight() or state in ["throw", "nade", "drag", "heal", "build", "dazed", "rescue", "melee"] or flinch_t > 0.0 or bearer:
 		popped = false
 		return
 	if one_armed():
@@ -3125,6 +3201,14 @@ func die(src, keep_fly := false) -> void:
 	alive = false
 	if G.time - blast_t < 0.1 and blast_k > 0.55 and randf() < 0.35 + blast_k * 0.5:
 		_sever()
+	# kaptığı / elindeki canlı bomba düşer, kalan fitille patlar
+	if (state == "nade" or (state == "throw" and throw_fuse >= 0.0 and not throw_released)) and G.time < nade_end:
+		var gp: Vector3 = (position + Vector3(0, 0.3, 0)) if nade_picked else nade_pos + Vector3(0, 0.1, 0)
+		G.bal.grenade(gp, gp, nade_team, null, false, nade_end - G.time)
+		throw_fuse = -1.0
+	if is_instance_valid(nade_mesh):
+		nade_mesh.queue_free()
+	nade_mesh = null
 	_release_patient()
 	if rescuer != null and is_instance_valid(rescuer):
 		rescuer.patient = null
@@ -3363,14 +3447,28 @@ func on_drone(p: Vector3) -> void:
 		say("DRONE!")
 
 func on_grenade(g_pos: Vector3, fuse_left: float, thrower: Unit) -> bool:
-	# true: geri attı (bomba yok edilir)
-	if not can_fight() or state in ["throw", "drag", "heal"]:
+	# true: bombayı kapmaya koşuyor (uçan mermi kaldırılır, yerdeki bombayı asker üstlenir)
+	if not can_fight() or state in ["throw", "drag", "heal", "nade", "dive", "fly", "dazed"]:
 		return false
 	var d := Vector2(g_pos.x - position.x, g_pos.z - position.z).length()
-	if d < 1.7 and fuse_left > 1.3 and suppression < 60.0 and randf() < 0.12 and thrower != null and is_instance_valid(thrower):
-		_start_throw(thrower.position, false)
-		grenades += 1
-		say("GERİ AL!")
+	# (120) yakına düşen canlı bombayı kapıp geri atma: koşu + eğilip alma + atış süresi fitile yetmeli; soğukkanlılık
+	# baskı ve gerginlikle düşer
+	var need := d / 3.6 + 0.35 + 0.42 + 0.4
+	var p_grab := 0.3 * (1.0 - clampf(suppression / 70.0, 0.0, 1.0)) * (1.0 - 0.5 * float(stress_lv))
+	if d < 3.2 and fuse_left > need and thrower != null and is_instance_valid(thrower) and randf() < p_grab:
+		state = "nade"
+		state_t = 0.0
+		nade_pos = Vector3(g_pos.x, 0.0, g_pos.z)
+		nade_end = G.time + fuse_left
+		nade_from = thrower.position
+		nade_team = thrower.team
+		nade_picked = false
+		path = PackedVector3Array()
+		nade_mesh = MeshInstance3D.new()
+		nade_mesh.mesh = G.bal._gmesh
+		G.main.world.add_child(nade_mesh)
+		nade_mesh.global_position = g_pos
+		say("BOMBA! GERİ ATIYORUM!")
 		return true
 	if randf() < 0.75:
 		var away := position - g_pos
@@ -3455,6 +3553,8 @@ func _pose() -> String:
 			return "prone"
 		"throw":
 			return "throw"
+		"nade":
+			return "crouch" if nade_picked else "run"
 		"drag":
 			return "dragging"
 		"heal":
