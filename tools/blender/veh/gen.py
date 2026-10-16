@@ -11,6 +11,8 @@ import fam_ru
 import fam_uav
 import fam_cargo
 import fam_arty
+import fam_heli
+import fam_extra
 
 FAMS = {}
 FAMS.update(fam_tank.FAMILIES)
@@ -21,6 +23,8 @@ FAMS.update(fam_ru.FAMILIES)
 FAMS.update(fam_uav.FAMILIES)
 FAMS.update(fam_cargo.FAMILIES)
 FAMS.update(fam_arty.FAMILIES)
+FAMS.update(fam_heli.FAMILIES)       # helikopterler: loft gövdeli yeni aileler eskilerin yerine
+FAMS.update(fam_extra.FAMILIES)      # katalogda olmayan taban tipler (çekili tanksavar/uçaksavar, dağ topu, sahil topu, ABD kamyonu)
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 if argv[0] == "--base":
@@ -33,7 +37,8 @@ if argv[0] == "--base":
     for nat in ("usa", "rus"):
         units = {u["id"]: u for u in json.load(open(os.path.join(here, nat + ".json"), encoding="utf-8"))["units"]}
         for base, uid in spec.get(nat, {}).items():
-            u = units.get(uid)
+            # değer katalog kimliği ya da doğrudan {"fam", "v"} tanımı (katalogda karşılığı olmayan taban tipler)
+            u = dict(uid) if isinstance(uid, dict) else units.get(uid)
             if u is None or u["fam"] not in FAMS:
                 print("FAIL", base, nat, uid)
                 continue

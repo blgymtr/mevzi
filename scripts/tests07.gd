@@ -232,7 +232,7 @@ func evade_test() -> void:
 	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
-	m.start_game("green_valley", {}, true)
+	m.start_game("green_valley", {}, true, 267636)
 	_fast()
 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
 	G.reveal = [999.0, 999.0]

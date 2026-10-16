@@ -1242,7 +1242,7 @@ func _run_uav_test() -> void:
 	get_window().size = Vector2i(1920, 1080)
 	Sfx.muted = true
 	var fails := 0
-	start_game("green_valley", {}, true)
+	start_game("green_valley", {}, true, 43)
 	sandbox_ui.run("fog")
 	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
 	var t1 := spawn_vehicle(1, "rus_mbt_72b3", G.grid.nearest_free(c + Vector3(20, 0, 0), Grid.M_HEAVY), 0.0)
@@ -2108,7 +2108,7 @@ func _run_veh_test() -> void:
 	get_window().size = Vector2i(1920, 1080)
 	Sfx.muted = true
 	var fails := 0
-	start_game("green_valley", {}, true)
+	start_game("green_valley", {}, true, 345221)
 	sandbox_ui.run("fog")
 	if G.grid.bridges.is_empty():
 		print("VEH no bridge")

@@ -1146,7 +1146,6 @@
   {
    "cat": "heli_atk",
    "id": "rus_heli_mi28",
-   "scale": 1.178,
    "ref": "Mi-28NM",
    "name": "Taarruz Helikopteri (doğu)",
    "fam": "heli_atk",
@@ -1161,7 +1160,6 @@
   {
    "cat": "heli_atk",
    "id": "rus_heli_mi24",
-   "scale": 1.094,
    "ref": "Mi-24P",
    "name": "Muharebe Nakliye Helikopteri",
    "fam": "heli_hind",
@@ -1172,7 +1170,6 @@
   {
    "cat": "heli_atk",
    "id": "rus_heli_mi35",
-   "scale": 1.094,
    "ref": "Mi-35M",
    "name": "Muharebe Nakliye Helikopteri II",
    "fam": "heli_hind",
@@ -1204,13 +1201,11 @@
    "cost": 700,
    "hp": 680,
    "speed": 17,
-   "id": "rus_heli_mi28n",
-   "scale": 1.178
+   "id": "rus_heli_mi28n"
   },
   {
    "cat": "heli_tr",
    "id": "rus_heli_mi8amtsh",
-   "scale": 1.096,
    "ref": "Mi-8AMTSh",
    "name": "Silahlı Nakliye Helikopteri",
    "fam": "heli_mi8",
@@ -1224,7 +1219,6 @@
   {
    "cat": "heli_tr",
    "id": "rus_heli_mi8",
-   "scale": 1.096,
    "ref": "Mi-8MTV-5",
    "name": "Nakliye Helikopteri (doğu)",
    "fam": "heli_mi8",
@@ -1235,7 +1229,6 @@
   {
    "cat": "heli_tr",
    "id": "rus_heli_mi17",
-   "scale": 1.096,
    "ref": "Mi-17",
    "name": "Nakliye Helikopteri (doğu) II",
    "fam": "heli_mi8",

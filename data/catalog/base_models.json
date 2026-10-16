@@ -1,9 +1,11 @@
 {
-  "note": "Taban tiplerin (üretim listesindeki 'tank', 'heli' vb.) görsel modeli: ulus başına bir katalog biriminden Blender hattıyla üretilir → assets/models/<taban>_<ulus>.glb. Üretim: blender -b -P tools/blender/veh/gen.py -- --base data/catalog/base_models.json assets/models. Listede olmayan taban (atgun, aagun, mtngun, coastal, ABD truck) eski <taban>_blue/red modelini kullanır.",
+  "note": "Taban tiplerin (üretim listesindeki 'tank', 'heli' vb.) görsel modeli: ulus başına bir katalog biriminden Blender hattıyla üretilir → assets/models/<taban>_<ulus>.glb. Üretim: blender -b -P tools/blender/veh/gen.py -- --base data/catalog/base_models.json assets/models. Katalogda karşılığı olmayan tabanlar (atgun, aagun, mtngun, coastal, ABD truck) doğrudan {\"fam\", \"v\"} tanımıyla üretilir (tools/blender/veh/fam_extra.py).",
   "usa": {"tank": "usa_mbt_a2", "apc": "usa_apc_icv", "ifv": "usa_ifv_m2a3", "technical": "usa_lv_m1151", "heli": "usa_heli_ah64e",
           "transport": "usa_heli_uh60", "aa": "usa_aa_avenger", "arty": "usa_spg_a6", "mlrs": "usa_mlrs_himars", "howitzer": "usa_tow_m777",
-          "fieldgun": "usa_tow_m119", "hmortar": "usa_mor_120", "fpv": "usa_lm_bolt"},
+          "fieldgun": "usa_tow_m119", "hmortar": "usa_mor_120", "fpv": "usa_lm_bolt",
+          "atgun": {"fam": "atgun"}, "mtngun": {"fam": "mtngun"}, "aagun": {"fam": "aagun"}, "coastal": {"fam": "coastal"}, "truck": {"fam": "truck_fmtv"}},
   "rus": {"tank": "rus_mbt_72b3", "apc": "rus_apc_btr82", "ifv": "rus_ifv_bmp2m", "technical": "rus_lv_tigr", "heli": "rus_heli_mi28n",
           "transport": "rus_heli_mi8", "aa": "rus_aa_tung", "arty": "rus_spg_msta", "mlrs": "rus_mlrs_grad", "howitzer": "rus_tow_d30",
-          "fieldgun": "rus_tow_nonak", "hmortar": "rus_mor_120", "fpv": "rus_lm_upyr", "truck": "rus_lv_ural"}
+          "fieldgun": "rus_tow_nonak", "hmortar": "rus_mor_120", "fpv": "rus_lm_upyr", "truck": "rus_lv_ural",
+          "atgun": {"fam": "atgun"}, "mtngun": {"fam": "mtngun"}, "aagun": {"fam": "aagun"}, "coastal": {"fam": "coastal"}}
 }
