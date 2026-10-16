@@ -323,7 +323,10 @@ func evade_test() -> void:
 	# görüş hattı kapalı hedef: tankın çevresinde 6 m yüksek engel halkası, yalnız batıda (helikopterin
 	# tersinde) boşluk. Helikopter doğudan gelir; ilk atış konumundan göremez → hedef çevresinde açı
 	# arayıp boşluğu bulmalı (Vehicle._attack_spot). Eskiden aynı noktada sonsuza dek asılı kalıyordu.
-	var fp := G.grid.nearest_free(c + Vector3(-60, 0, 60), Grid.M_HEAVY)
+	# halkanın içi ve boşluğun önü açık olmalı (eskiden harita içeriği değişince hedefin 2 m yanına düşen ev
+	# boşluğu kapatıyordu → çözümsüz kurulum)
+	var fp := _open_spot(c + Vector3(-60, 0, 60), 16.0)
+	G.props.clear_area(fp, 16.0)
 	var tk2: Vehicle = m.spawn_vehicle(1, "rus_mbt_72b3", fp, 0.0)
 	tk2.cmd_hold()
 	tk2.fire_mode = 2
@@ -339,12 +342,17 @@ func evade_test() -> void:
 	var tf := G.time
 	var fired := false
 	var blind0 := false
+	var dbg_b := -9.0
 	while G.time - tf < 90.0:
 		await m._wait(0.1)
 		if not is_instance_valid(h3) or not h3.alive or not is_instance_valid(tk2):
 			break
 		if G.time - tf > 6.0 and G.time - tf < 6.2:
 			blind0 = h3.target == null
+		if G.time - dbg_b > 3.0:
+			dbg_b = G.time
+			var eye3 := h3.turret_world_pos() + Vector3(0, 0.4, 0)
+			print("EVADE bdbg t=%.1f n=%d r=%.0f brg=%.0f alt=%.1f tgt=%s order=%s ft=%s seen=%s los=%s los_ns=%s d=%.0f blk=%s" % [G.time - tf, h3.atk_n, h3.atk_r, rad_to_deg(atan2(h3.position.z - fp.z, h3.position.x - fp.x)), h3.hull.position.y, h3.target != null, h3.order, h3.forced_target != null, G.is_seen(tk2, 0), G.grid.los(eye3, tk2.aim_point(), h3.D["len"] * 0.5, 0.5), _los_nosmoke(eye3, tk2.aim_point()), h3.dist2(tk2), _los_block(eye3, tk2.aim_point(), h3.D["len"] * 0.5, 0.5)])
 		if h3.hf_left < 8 or G.bal.projs.any(func(p): return p.src == h3):
 			fired = true
 			break
@@ -2823,6 +2831,45 @@ func turret_test() -> void:
 			if s.alive and (s.state == "aboard" or s.vehicle_in != null or s.position.y > 0.6):
 				fails += 1
 	print("TURRETTEST RESULT fails=%d" % fails)
+
+# yakınında (r) bina / duvar / su olmayan ilk nokta (sarmal arama, 4 m adım); bulunamazsa en yakın boş hücre
+func _open_spot(p: Vector3, r: float) -> Vector3:
+	for ring in 12:
+		var n := maxi(1, ring * 6)
+		for k in n:
+			var a := TAU * k / n
+			var q := G.on_ground(p + Vector3(cos(a), 0, sin(a)) * ring * 4.0)
+			var ok := true
+			var x := -r
+			while x <= r and ok:
+				var z := -r
+				while z <= r and ok:
+					var s := q + Vector3(x, 0, z)
+					if x * x + z * z <= r * r and ((G.grid.height_at(s) > 0.4 and G.grid.kind_at(s) != Grid.K_TREE) or G.grid.is_water(s) or G.grid.kind_at(s) in [Grid.K_HOUSE, Grid.K_BUILDING, Grid.K_WALL]):
+						ok = false
+					z += 1.0
+				x += 1.0
+			if ok:
+				return q
+	return G.grid.nearest_free(p, Grid.M_HEAVY)
+
+# görüş hattını kesen ilk ızgara hücresi (teşhis): uzaklık, hücre yüksekliği, ışın yüksekliği, tür
+func _los_block(a: Vector3, b: Vector3, skip_a: float, skip_b: float) -> String:
+	var dx := b.x - a.x
+	var dz := b.z - a.z
+	var dy := b.y - a.y
+	var L := sqrt(dx * dx + dz * dz)
+	var steps := int(L / 0.33) + 1
+	for s in range(1, steps):
+		var t := float(s) / steps
+		var dist := t * L
+		if dist < skip_a or dist > L - skip_b:
+			continue
+		var p := Vector3(a.x + dx * t, 0, a.z + dz * t)
+		var hh: float = G.grid.height_at(p)
+		if hh > a.y + dy * t:
+			return "%.1fm h=%.2f ray=%.2f k=%d" % [dist, hh, a.y + dy * t, G.grid.kind_at(p)]
+	return "-"
 
 # testte imha: isabet yönü / mühimmat doğrudan (zırh delme şansına bırakmadan)
 func _tt_kill(v: Vehicle, side: int, k: String) -> void:
