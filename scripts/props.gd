@@ -697,7 +697,7 @@ func shed(p: Vector3, rot: float) -> void:
 func blast(center: Vector3, radius: float, dmg: float) -> void:
 	if radius >= 2.5:
 		shake_trees(center, radius / 3.0)
-	for it in items:
+	for it in _items_near(center, radius + 3.0):
 		if not it["alive"]:
 			continue
 		var p: Vector3 = it["pos"]
@@ -711,7 +711,7 @@ func blast(center: Vector3, radius: float, dmg: float) -> void:
 			_destroy(it, center)
 
 func crush(center: Vector3, r: float, dir: Vector3) -> void:
-	for it in items:
+	for it in _trees_near(center, r):
 		if not it["alive"] or it["kind"] != "tree":
 			continue
 		var p: Vector3 = it["pos"]
@@ -813,7 +813,7 @@ func _fell(it: Dictionary, dir: Vector3) -> void:
 	Sfx.play3d("crumble", it["pos"], -4.0)
 
 func clear_area(c: Vector3, r: float) -> void:
-	for it in items:
+	for it in _items_near(c, r + 3.0):
 		if not it["alive"]:
 			continue
 		var p: Vector3 = it["pos"]
@@ -992,7 +992,7 @@ func _hay_mesh() -> ArrayMesh:
 	return mb.commit(Mats.vc())
 
 # ot çeşitleri: 1 uzun kuru ot + başak, 2 kır çiçekleri (renk dokuda), 3 geniş yapraklı yabani ot
-func _grass_variant_material(kind: int) -> StandardMaterial3D:
+func _grass_variant_material(kind: int) -> Material:
 	var key := "grassmat_v%d" % kind
 	if _cache.has(key):
 		return _cache[key]
@@ -1048,17 +1048,18 @@ func _grass_variant_material(kind: int) -> StandardMaterial3D:
 						var sh := 0.65 + 0.35 * (1.0 - dd / rr)
 						im.set_pixel(x, y, Color(0.5 * sh, 0.72 * sh, 0.38 * sh, 1))
 	im.generate_mipmaps()
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = ImageTexture.create_from_image(im)
-	m.vertex_color_use_as_albedo = true
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-	m.alpha_scissor_threshold = 0.45
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	m.roughness = 0.95
+	var m := _grass_shader_mat(ImageTexture.create_from_image(im))
 	_cache[key] = m
 	return m
 
-func _grass_material() -> StandardMaterial3D:
+# ot malzemesi: rüzgâr + rotor rüzgârı (shaders/grass.gdshader)
+func _grass_shader_mat(tex: Texture2D) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/grass.gdshader")
+	m.set_shader_parameter("albedo_tex", tex)
+	return m
+
+func _grass_material() -> Material:
 	if not _cache.has("grassmat"):
 		var S := 128
 		var im := Image.create(S, S, false, Image.FORMAT_RGBA8)
@@ -1079,14 +1080,7 @@ func _grass_material() -> StandardMaterial3D:
 					if x >= 0 and x < S:
 						im.set_pixel(x, S - 1 - y, Color(shade * (0.6 + 0.4 * t), shade * (0.75 + 0.25 * t), shade * 0.5, 1))
 		im.generate_mipmaps()
-		var m := StandardMaterial3D.new()
-		m.albedo_texture = ImageTexture.create_from_image(im)
-		m.vertex_color_use_as_albedo = true
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-		m.alpha_scissor_threshold = 0.45
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		m.roughness = 0.95
-		_cache["grassmat"] = m
+		_cache["grassmat"] = _grass_shader_mat(ImageTexture.create_from_image(im))
 	return _cache["grassmat"]
 
 func _grass_card() -> ArrayMesh:
@@ -1270,21 +1264,46 @@ var _fade_t := 0.0
 var _faded: Array = []
 
 # ağaç kovası (16 m): saydamlaştırma tüm eşyaları taramasın (8 km'de ~60 bin ağaç)
+# uzamsal kovalar (16 m): öğeler diziden hiç silinmez (yalnız alive=false), yeni eklenenler artımlı
+# kovalanır — eskiden her eklemede 75 bin öğelik tüm dizi yeniden kovalanıyordu; ezme/patlama tüm diziyi
+# tarıyordu (8 km'de 48 araçla kare başına ~1 sn)
 var _thash := {}
-var _thash_n := -1
+var _thash_n := 0
+var _ihash := {}
+var _ihash_n := 0
+var _big_r := 0.0             # kovaya merkezinden taşan en büyük öğe yarıçapı (köprü)
+
+func _items_near(q: Vector3, r: float) -> Array:
+	while _ihash_n < items.size():
+		var it: Dictionary = items[_ihash_n]
+		_ihash_n += 1
+		var p: Vector3 = it["pos"]
+		var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
+		if _ihash.has(k):
+			_ihash[k].append(it)
+		else:
+			_ihash[k] = [it]
+		_big_r = maxf(_big_r, float(it.get("r", 0.5)))
+	var rr := r + minf(_big_r, 64.0)
+	var out: Array = []
+	for dz in range(int((q.z - rr) / 16.0), int((q.z + rr) / 16.0) + 1):
+		for dx in range(int((q.x - rr) / 16.0), int((q.x + rr) / 16.0) + 1):
+			var arr = _ihash.get(Vector2i(dx, dz))
+			if arr != null:
+				out.append_array(arr)
+	return out
 
 func _trees_near(q: Vector3, r: float) -> Array:
-	if _thash_n != items.size():
-		_thash.clear()
-		for it in items:
-			if it["kind"] == "tree" or it["kind"] == "bush":
-				var p: Vector3 = it["pos"]
-				var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
-				if _thash.has(k):
-					_thash[k].append(it)
-				else:
-					_thash[k] = [it]
-		_thash_n = items.size()
+	while _thash_n < items.size():
+		var it: Dictionary = items[_thash_n]
+		_thash_n += 1
+		if it["kind"] == "tree" or it["kind"] == "bush":
+			var p: Vector3 = it["pos"]
+			var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
+			if _thash.has(k):
+				_thash[k].append(it)
+			else:
+				_thash[k] = [it]
 	var out: Array = []
 	for dz in range(int((q.z - r) / 16.0), int((q.z + r) / 16.0) + 1):
 		for dx in range(int((q.x - r) / 16.0), int((q.x + r) / 16.0) + 1):

@@ -23,33 +23,13 @@ def body_loft(secs, mname="paint", n=3):
     loft([(y, rr(w, z0, z1, r, n)) for y, w, z0, z1, r in secs], mname, bev=0.0)
 
 
-def rotor_head(cx, cy, cz, nb, D, chord, droop=0.12, phase=0.0, tip="mark", hub_r=0.32):
-    """Rotor göbeği + pal bağlantıları + palller (uç şeritli). D = rotor çapı."""
-    cyl((cx, cy, cz), hub_r, 0.34, "metal", seg=14)
-    cyl((cx, cy, cz + 0.24), hub_r * 0.55, 0.22, "dark", seg=10)
-    R = D * 0.5
-    for k in range(nb):
-        a = phase + k * math.tau / nb
-        ca, sa = math.cos(a), math.sin(a)
-        # pal manşonu + hatve kolu
-        box((cx + ca * (hub_r + 0.3), cy + sa * (hub_r + 0.3), cz), (0.62, 0.2, 0.16), "metal", rot=(0, 0, a), bev=0.0)
-        box((cx + ca * (hub_r + 0.1) - sa * 0.14, cy + sa * (hub_r + 0.1) + ca * 0.14, cz - 0.16), (0.06, 0.06, 0.36), "dark", rot=(0, 0, a), bev=0.0)
-        # pal: tek parça, hafif sarkık; uçta renkli şerit
-        L = R - hub_r - 0.55
-        d = math.atan2(droop, R)
-        rm = hub_r + 0.6 + L * 0.5
-        box((cx + ca * rm, cy + sa * rm, cz + 0.02 - math.sin(d) * rm), (L, chord, 0.06), "dark", rot=(0, d, a), bev=0.0)
-        rt = R - 0.3
-        box((cx + ca * rt, cy + sa * rt, cz + 0.03 - math.sin(d) * rt), (0.5, chord + 0.01, 0.066), tip, rot=(0, d, a), bev=0.0)
+def rotor_head(cx, cy, cz, nb, D, chord, droop=0.12, phase=0.0, tip="lens", hub_r=0.32):
+    """Rotor göbeği + pal bağlantıları + palller (uç şeritli). D = rotor çapı (vlib.rotor)."""
+    rotor(cx, cy, cz, nb, D, chord, droop=droop, phase=phase, tip=tip, hub_r=hub_r)
 
 
 def tail_rotor(cx, cy, cz, nb, D, side=1):
-    cyl((cx, cy, cz), 0.18, 0.3, "metal", "X", seg=10)
-    R = D * 0.5
-    for k in range(nb):
-        a = k * math.tau / nb
-        box((cx + side * 0.1, cy + math.cos(a) * R * 0.5, cz + math.sin(a) * R * 0.5), (0.05, R - 0.1, 0.24), "dark", rot=(-a, 0, 0), bev=0.0)
-        box((cx + side * 0.1, cy + math.cos(a) * (R - 0.2), cz + math.sin(a) * (R - 0.2)), (0.055, 0.35, 0.25), "mark", rot=(-a, 0, 0), bev=0.0)
+    tail_rotor_x(cx, cy, cz, nb, D, side)
 
 
 def gear_leg(x, y, z_top, r, w, twin=False, tandem=False):

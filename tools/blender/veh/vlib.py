@@ -17,6 +17,7 @@ _M = {}
 NODES = {"body": {}, "turret": {}, "barrel": {}}
 CUR = "body"
 WHEELS = []
+ROT_NB = []                    # rotor pal sayıları (meta 'nb': oyunda dönüş görüntüsü bundan ayarlanır)
 _TMP = None
 SHARP = math.radians(14)       # düz parçalarda keskin kenar eşiği
 SMOOTH = math.radians(33)      # silindir / loft gövdelerde (12+ dilim yumuşak görünür)
@@ -32,6 +33,7 @@ def reset(nat):
     NODES.update({"body": {}, "turret": {}, "barrel": {}})
     _M.clear()
     WHEELS.clear()
+    ROT_NB.clear()
     bpy.ops.wm.read_factory_settings(use_empty=True)
     _TMP = bpy.data.meshes.new("_tmp")
 
@@ -807,6 +809,60 @@ def ir_light(x, y, z, r=0.16, L=0.3):
     box((x, y - 0.02, z - r - 0.06), (0.07, 0.14, 0.14), "paint", bev=0.006)
     rod((x - r * 0.4, y - L * 0.5, z), (x - r * 0.6, y - L * 0.5 - 0.25, z - r - 0.05), 0.012, "rubber", 5)
 
+# ------------------------------------------------------------ rotorlar (roadmap 39/44)
+def rotor(cx, cy, cz, nb, D, chord, droop=0.1, phase=0.0, tip="lens", hub_r=None, mname="dark"):
+    """Ana rotor: direk + eğik plaka (swashplate) + göbek + pal manşonları, hatve kolları ve çubukları,
+    sönümleyiciler + kökten uca sivrilen, burulmuş paller (hücum kenarında aşınma şeridi, uçta görünürlük
+    şeridi ve uç kapağı). D = rotor çapı (m). Pal yerel +X boyunca; düğüm Z etrafında döner."""
+    R = D * 0.5
+    ROT_NB.append(nb)
+    hr = hub_r if hub_r is not None else min(0.42, max(0.18, D * 0.022))
+    cyl((cx, cy, cz - 0.3), hr * 0.38, 0.46, "metal", seg=12)                    # direk
+    cyl((cx, cy, cz - 0.4), hr * 1.05, 0.06, "metal", seg=16)                    # dönen eğik plaka
+    cyl((cx, cy, cz - 0.46), hr * 1.12, 0.05, "dark", seg=16)                    # sabit eğik plaka
+    cyl((cx, cy, cz), hr, 0.26, "metal", seg=16)                                 # göbek
+    cyl((cx, cy, cz + 0.2), hr * 0.45, 0.16, "metal", seg=12, r2=hr * 0.62)      # göbek kubbesi
+    cyl((cx, cy, cz + 0.3), hr * 0.16, 0.08, "dark", seg=8)
+    span0 = hr + 0.42
+    L = max(0.5, R - span0)
+    dz = droop / max(R, 1.0)
+    for k in range(nb):
+        a = phase + k * math.tau / nb
+        f = F((cx, cy, cz), (0, 0, a))
+        f.box((hr + 0.2, 0, 0), (0.44, chord * 0.42 + 0.06, 0.17), "metal")                 # manşon
+        f.box((hr + 0.16, chord * 0.3 + 0.08, -0.06), (0.12, 0.12, 0.06), "metal")            # hatve kolu
+        f.rod((hr + 0.16, chord * 0.3 + 0.1, -0.08), (hr * 0.98, chord * 0.3 + 0.1, -0.4), 0.02, "metal")   # hatve çubuğu
+        f.rod((hr * 0.55, -chord * 0.3 - 0.06, 0.03), (hr + 0.32, -chord * 0.3 - 0.04, 0.03), 0.035, "dark")  # sönümleyici
+        nseg = 5
+        for i in range(nseg):
+            tm = (i + 0.5) / nseg
+            x = span0 + L * tm
+            c = chord * (1.0 - 0.18 * tm * tm)
+            tw = math.radians(7.0 - 9.0 * tm)
+            th = 0.06 * (1.0 - 0.35 * tm)
+            z = -dz * x
+            f.box((x, 0, z), (L / nseg + 0.012, c, th), mname, rot=(tw, -dz, 0))
+            f.box((x, c * 0.5 + 0.006, z), (L / nseg + 0.012, 0.02, th * 0.8), "metal", rot=(tw, -dz, 0))   # aşınma şeridi
+        xt = R - 0.46
+        f.box((xt, 0, -dz * xt + 0.003), (0.3, chord * 0.84 + 0.012, 0.05), tip, rot=(math.radians(-1.5), -dz, 0))   # uç şeridi
+        f.box((R - 0.14, 0, -dz * R + 0.002), (0.26, chord * 0.82 + 0.01, 0.046), "mark", rot=(math.radians(-2.0), -dz, 0))
+
+
+def tail_rotor_x(cx, cy, cz, nb, D, side=1, chord=None, tip="lens"):
+    """Kuyruk rotoru (YZ düzleminde, X ekseni etrafında döner): göbek + manşonlar + paller + uç şeridi."""
+    R = D * 0.5
+    c = chord if chord is not None else max(0.14, D * 0.075)
+    hr = max(0.09, R * 0.11)
+    cyl((cx, cy, cz), hr, 0.26, "metal", "X", seg=12)
+    cyl((cx + side * 0.15, cy, cz), hr * 0.6, 0.1, "dark", "X", seg=10)
+    for k in range(nb):
+        a = k * math.tau / nb
+        f = F((cx + side * 0.07, cy, cz), (a, 0, 0))
+        f.box((0, hr + 0.09, 0), (0.09, 0.18, c * 0.6), "metal")
+        f.box((0, (hr + R) * 0.5 + 0.05, 0), (0.045, R - hr - 0.1, c), "dark", rot=(0, math.radians(8), 0))
+        f.box((0, R - 0.13, 0), (0.05, 0.22, c * 0.96), tip, rot=(0, math.radians(8), 0))
+
+
 def spare_wheel(x, y, z, r, w, axis="X"):
     """Yedek teker (tutucuda): lastik + jant + diş blokları + tespit somunu."""
     cyl((x, y, z), r, w, "rubber", axis, seg=20)
@@ -976,6 +1032,9 @@ def export(path_glb, pivots, meta, ao=True):
                               export_vertex_color='ACTIVE', export_all_vertex_colors=False)
     def g(p):  # Blender → Godot (x, z, -y)
         return [round(p[0], 3), round(p[2], 3), round(-p[1], 3)]
+    if ROT_NB and "nb" not in meta:
+        meta = dict(meta)
+        meta["nb"] = max(ROT_NB)
     js = {"pivots": {k: g(v) for k, v in pivots.items()}, "meta": {k: (g(v) if isinstance(v, (tuple, list)) and len(v) == 3 else v) for k, v in meta.items()}}
     with open(path_glb[:-4] + ".json", "w") as f:
         json.dump(js, f)

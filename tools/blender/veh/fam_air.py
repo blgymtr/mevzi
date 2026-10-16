@@ -5,20 +5,12 @@ import math
 from vlib import *
 
 def blades(cx, cy, cz, n, R, chord=0.32, droop=0.0, mname="dark", y_axis=True, phase=0.0):
-    """Rotor palleri: göbek etrafında n adet (Z ekseni etrafında)."""
-    cyl((cx, cy, cz), 0.22, 0.25, "metal", seg=10)
-    for k in range(n):
-        a = phase + k * math.tau / n
-        # R = rotor çapı; her pal göbekten uca R/2
-        mx, my = math.cos(a) * R * 0.25, math.sin(a) * R * 0.25
-        box((cx + mx, cy + my, cz + 0.05 - droop), (R * 0.5, chord, 0.05), mname, rot=(0, 0, a), bev=0.0)
+    """Ana rotor (R = rotor çapı): ayrıntılı göbek ve sivrilen, burulmuş, uç şeritli paller (vlib.rotor)."""
+    rotor(cx, cy, cz, n, R, chord, droop=max(droop, R * 0.012), phase=phase, mname=mname)
 
 def tail_blades(cx, cy, cz, n, R, side=-1):
-    """Kuyruk rotoru: X ekseni etrafında dönen diskte (YZ düzleminde) paller."""
-    cyl((cx, cy, cz), 0.12, 0.2, "metal", "X", seg=8)
-    for k in range(n):
-        a = k * math.tau / n
-        box((cx + side * 0.05, cy + math.cos(a) * R * 0.25, cz + math.sin(a) * R * 0.25), (0.04, R * 0.5, 0.16), "dark", rot=(a, 0, 0), bev=0.0)
+    """Kuyruk rotoru (R = çap): X ekseni etrafında dönen diskte paller (vlib.tail_rotor_x)."""
+    tail_rotor_x(cx, cy, cz, n, R, side)
 
 def canopy(y0, y1, z0, z1, w, mname="glass"):
     slab(y1, y1 - 0.25, y0, y0, z0, z1, w, w * 0.8, mname, bev=0.008)

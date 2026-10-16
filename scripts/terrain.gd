@@ -171,6 +171,10 @@ func _noise_tex(size: int, freq: float, oct: int, frac: int, normal: bool, bump:
 	return nt
 
 func _process(dt: float) -> void:
+	_trk_t -= dt
+	if _trk_t <= 0.0:
+		_trk_t = 2.0
+		_track_fade()
 	_upd -= dt
 	if _upd <= 0.0 and (not _cdirty.is_empty() or not _hdirty.is_empty()):
 		_upd = 0.25
@@ -514,15 +518,63 @@ func on_road(p: Vector3) -> bool:
 		return false
 	return img.get_pixel(x, z).r > 0.5
 
+# palet / teker izi (roadmap 23): çamurda (yağmur) daha derin; iklime göre silinir — çölde kum rüzgârla
+# ~2,5 dk'da, ılıman arazide ~8 dk'da örter; karda iz kalıcıdır, yalnız kar fırtınası örter.
+# Silinme: damga halkası (konum + zaman) tutulur, yaşlanan damgalar kademeli soldurulur (tüm doku taranmaz).
+var _trk: Array = []          # [x, z, zaman] — zaman sırasıyla eklenir; baştan (en eski) işlenir
+var _trk_h := 0
+var _trk_t := 0.0
+
 func track(p: Vector3, amount := 0.35) -> void:
 	var x := _px(p.x)
 	var z := _px(p.z)
 	if x < 0 or z < 0 or x >= RES or z >= RES:
 		return
+	if G.weather != null and is_instance_valid(G.weather) and G.weather.kind in ["rain", "storm"]:
+		amount *= 1.4
 	var c := img.get_pixel(x, z)
 	c.g = minf(1.0, c.g + amount)
 	img.set_pixel(x, z, c)
 	_mark(x, z, x, z)
+	_trk.append([x, z, G.time])
+	if _trk.size() - _trk_h > 60000:
+		_trk_h += 1          # kalıcı izde (kar) kayıt sınırsız büyümesin; iz dokuda kalır
+		if _trk_h > 8000:
+			_trk = _trk.slice(_trk_h)
+			_trk_h = 0
+
+func _track_fade_age() -> float:
+	var wk: String = G.weather.kind if G.weather != null and is_instance_valid(G.weather) else "clear"
+	if kind == "winter":
+		return 200.0 if wk == "snowstorm" else INF
+	if kind == "desert":
+		return 70.0 if wk == "sandstorm" else 150.0
+	return 300.0 if wk in ["rain", "storm"] else 480.0
+
+func _track_fade() -> void:
+	var age := _track_fade_age()
+	if age == INF or _trk_h >= _trk.size():
+		return
+	var now := G.time
+	var n := 0
+	while _trk_h < _trk.size() and n < 3000:
+		var s: Array = _trk[_trk_h]
+		if now - float(s[2]) < age:
+			break
+		_trk_h += 1
+		n += 1
+		var x: int = s[0]
+		var z: int = s[1]
+		var c := img.get_pixel(x, z)
+		c.g = maxf(0.0, c.g - 0.18)
+		img.set_pixel(x, z, c)
+		_mark(x, z, x, z)
+		if c.g > 0.02:
+			_trk.append([x, z, now - age * 0.75])     # kalan iz biraz sonra yine solar
+	# işlenmiş baş kısmı at (dizi büyümesin)
+	if _trk_h > 8000:
+		_trk = _trk.slice(_trk_h)
+		_trk_h = 0
 
 func road_polyline(pts: PackedVector3Array, w: float, rng: RandomNumberGenerator) -> void:
 	for i in pts.size() - 1:

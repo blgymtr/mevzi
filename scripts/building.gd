@@ -809,7 +809,8 @@ func complete() -> void:
 		queue_free()
 		return
 	hp = max_hp
-	cap_bonus = B["cap"]
+	# büyük haritada (BA/CoH3 ölçeği, roadmap 53) birlik sınırı daha yüksek: 2 km'de ×1, 8 km'de ×3
+	cap_bonus = int(round(float(B["cap"]) * clampf(G.MAP / 2048.0, 1.0, 3.0)))
 	_apply_construct_look()
 	if is_base() and G.logi:
 		G.logi.register_base(self)

@@ -53,6 +53,7 @@ var supply := [600.0, 600.0]
 var cap_max := [0, 0]
 var cap_used := [0, 0]
 var game_over := false
+var vis_freeze := false       # ölçüm (perf8k): tespit güncellemesi kapalı
 var winner := -1
 var rng := RandomNumberGenerator.new()
 var smokes: Array = []      # [Vector3 merkez, yarıçap, bitiş zamanı]
@@ -89,6 +90,33 @@ func _ready() -> void:
 	# ağaç/çalı şok dalgası için son 4 büyük patlama: (x, z, başlangıç, güç)
 	for i in 4:
 		RenderingServer.global_shader_parameter_add("blast%d" % i, RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, -100, 0))
+	# rotor rüzgârı (roadmap 22): alçaktaki 4 helikopter (x, z, güç 0..1, yarıçap m) — ağaç ve ot savrulur
+	for i in 4:
+		RenderingServer.global_shader_parameter_add("rotor%d" % i, RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 1))
+
+var _rotor_t := 0.0
+var rotor_wash: Array = [Vector4(0, 0, 0, 1), Vector4(0, 0, 0, 1), Vector4(0, 0, 0, 1), Vector4(0, 0, 0, 1)]
+# kameraya en yakın, alçakta uçan / inen 4 helikopterin rotor rüzgârı
+func _update_rotor_wash() -> void:
+	var cands: Array = []
+	var cp: Vector3 = cam.position if cam != null else Vector3.ZERO
+	for u in units:
+		if not is_instance_valid(u) or not u.alive or not (u is Vehicle) or not (u.vtype in ["heli", "transport"]):
+			continue
+		var alt: float = u.hull.position.y
+		var k: float = u.rotor_rpm * clampf(1.0 - alt / 26.0, 0.0, 1.0)
+		if k <= 0.02:
+			continue
+		cands.append([Vector2(u.position.x - cp.x, u.position.z - cp.z).length(), u, k, alt])
+	cands.sort_custom(func(a, b): return a[0] < b[0])
+	for i in 4:
+		if i < cands.size():
+			var u: Vehicle = cands[i][1]
+			var rr: float = u.ext.y * 2.2 + cands[i][3] * 0.6
+			rotor_wash[i] = Vector4(u.position.x, u.position.z, cands[i][2], rr)
+		else:
+			rotor_wash[i] = Vector4(0, 0, 0, 1)
+		RenderingServer.global_shader_parameter_set("rotor%d" % i, rotor_wash[i])
 
 var _blast_i := 0
 func push_blast(p: Vector3, power: float) -> void:
@@ -133,10 +161,15 @@ func step(dt: float) -> void:
 		if smokes[i][2] < time:
 			smokes.remove_at(i)
 		i -= 1
+	_rotor_t -= dt
+	if _rotor_t <= 0.0:
+		_rotor_t = 0.1
+		_update_rotor_wash()
 	_vis_t -= dt
 	if _vis_t <= 0.0:
 		_vis_t = 0.25
-		_update_visibility()
+		if not vis_freeze:
+			_update_visibility()
 		_update_cap()
 
 # ------------------------------------------------------------ uzamsal karma

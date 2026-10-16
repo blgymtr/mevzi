@@ -55,6 +55,22 @@ func run(scene: String) -> void:
 			await range_test()
 		"missiletest":
 			await missile_test()
+		"aimatch":
+			await ai_match()
+		"basegallery":
+			await base_gallery()
+		"enginetest":
+			await engine_test()
+		"perf8k":
+			await perf_8k()
+		"mounttest":
+			await mount_test()
+		"rotortest":
+			await rotor_test()
+		"killtest":
+			await kill_test()
+		"tracktest":
+			await track_test()
 	m.get_tree().quit()
 
 func _densest(kind: String) -> Vector3:
@@ -242,7 +258,7 @@ func evade_test() -> void:
 		if G.time - dbg_h > 2.0:
 			dbg_h = G.time
 			var eye := h2.turret_world_pos() + Vector3(0, 0.4, 0)
-			print("EVADE dbg t=%.1f tgt=%s hf=%d cd=%.1f dist=%.0f seen=%s los=%s los_nosmoke=%s smokes=%d atk_n=%d atk_r=%.0f" % [G.time - th, h2.target != null, h2.hf_left, h2.hf_cd, h2.dist2(tk), G.is_seen(tk, h2.team), G.grid.los(eye, tk.aim_point(), h2.D["len"] * 0.5, 0.5), _los_nosmoke(eye, tk.aim_point()), G.smokes.size(), h2.atk_n, h2.atk_r])
+			print("EVADE dbg t=%.1f tgt=%s hf=%d cd=%.1f dist=%.0f seen=%s los=%s los_nosmoke=%s smokes=%d atk_n=%d atk_r=%.0f tk_alive=%s" % [G.time - th, h2.target != null, h2.hf_left, h2.hf_cd, h2.dist2(tk), G.is_seen(tk, h2.team), G.grid.los(eye, tk.aim_point(), h2.D["len"] * 0.5, 0.5), _los_nosmoke(eye, tk.aim_point()), G.smokes.size(), h2.atk_n, h2.atk_r, tk.alive])
 		var ms: Array = G.bal.projs.filter(func(p): return p.kind == "atgm" and p.src == h2)
 		if not ms.is_empty() and not shot_h and ms[0].t > 0.35:
 			shot_h = true
@@ -1445,6 +1461,474 @@ func missile_test() -> void:
 	if not (lj > lk and dv < ds):
 		fails += 1
 	print("MISSILETEST RESULT fails=%d" % fails)
+
+# yapay zekâ maçı (roadmap 21/47): iki YZ komutanı seçilen haritada (--map=, varsayılan battle_8k) Fetih
+# kipinde --minutes= oyun dakikası (varsayılan 30) hızlandırılmış (--ts=, varsayılan 4) oynar. Her oyun dakikası:
+# birlik/ikmal/bölge/puan/kayıp, saldırı gruplarının hedefe uzaklığı, FPS; 5 dakikada bir stratejik görüntü.
+# Sonda maç özeti: kazanan (ya da puan durumu), oyun süresi, gerçek süre.
+func ai_match() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var map_id := "battle_8k"
+	var minutes := 30.0
+	var ts := 4.0
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--map="):
+			map_id = a.substr(6)
+		elif a.begins_with("--minutes="):
+			minutes = float(a.substr(10))
+		elif a.begins_with("--ts="):
+			ts = float(a.substr(5))
+	m.start_units = true
+	G.mode = "conquest"
+	var t_real := Time.get_ticks_msec()
+	m.start_game(map_id, {}, false, 7)
+	G.spectate = true
+	var a0 := AICmd.new(0)
+	m.add_child(a0)
+	G.ais.append(a0)
+	G.deploy_t = 0.0
+	print("AIM start map=%s MAP=%.0f load_s=%.1f units=%d zones=%d goal=%.0f" % [map_id, G.MAP, (Time.get_ticks_msec() - t_real) / 1000.0, G.units.size(), G.modes.zones.size() if G.modes != null else 0, G.modes.goal if G.modes != null else 0.0])
+	# mini harita dokusu (yükleme ekranında üretildi) ayrıca kaydedilir
+	if G.hud != null and G.hud.radar != null and G.hud.radar.tex != null:
+		var mi: Image = G.hud.radar.tex.get_image()
+		mi.save_png(m.shot_dir.path_join("minimap_tex.png"))
+		print("AIM minimap %dx%d" % [mi.get_width(), mi.get_height()])
+	for t in 2:
+		var ds: Array = []
+		for s in G.fob_sites:
+			ds.append(int((s as Vector3).distance_to(G.hq_pos[t])))
+		ds.sort()
+		print("AIM fob_sites T%d nearest=%s" % [t, str(ds.slice(0, 5))])
+	Engine.time_scale = ts
+	var t0 := Time.get_ticks_msec()
+	var minute := 0
+	var first_cap := -1.0
+	var fps_min := 999.0
+	while G.time < minutes * 60.0 and not G.game_over:
+		await m._wait(60.0)
+		minute += 1
+		var n := [[0, 0, 0], [0, 0, 0]]
+		for u in G.units:
+			if is_instance_valid(u) and u.alive and u.team >= 0 and u.team < 2:
+				n[u.team][0 if u is Soldier else (1 if u is Vehicle else 2)] += 1
+		var zs := ""
+		if G.modes != null:
+			for z in G.modes.zones:
+				zs += "%s%s " % [String(z["name"]).substr(0, 1), "-" if z["owner"] < 0 else str(z["owner"])]
+				if z["owner"] >= 0 and first_cap < 0.0:
+					first_cap = G.time
+		var att := ""
+		for ai in G.ais:
+			if is_instance_valid(ai):
+				var live: Array = ai.attackers.filter(func(u): return is_instance_valid(u) and u.alive)
+				var c: Vector3 = ai._centroid(live) if not live.is_empty() else Vector3.INF
+				att += "T%d att=%d d_tgt=%s  " % [ai.team, live.size(), ("%.0f" % c.distance_to(ai.target_pos)) if (c != Vector3.INF and ai.target_pos != Vector3.INF) else "-"]
+		var fps := Engine.get_frames_per_second()
+		fps_min = minf(fps_min, fps)
+		var fob := ["", ""]
+		for u in G.units:
+			if is_instance_valid(u) and u.alive and u is Building and u.btype in ["fob", "barracks", "factory", "helipad", "hospital"] and u.team >= 0 and u.team < 2:
+				fob[u.team] += "%s%s " % [u.btype.substr(0, 2), "" if u.done else "*"]
+		print("AIM    cap=%d/%d %d/%d  bld A: %s B: %s" % [G.cap_used[0], G.cap_max[0], G.cap_used[1], G.cap_max[1], fob[0], fob[1]])
+		for ai in G.ais:
+			if not is_instance_valid(ai):
+				continue
+			var live: Array = ai.attackers.filter(func(u): return is_instance_valid(u) and u.alive)
+			var st := {}
+			var nopath := 0
+			for u in live:
+				var k: String = ("V:" if u is Vehicle else "S:") + (u.state if u is Soldier else ("mv" if absf(u.cur_speed) > 0.3 else "st")) + "/" + u.order
+				st[k] = st.get(k, 0) + 1
+				if u.path_i >= u.path.size():
+					nopath += 1
+			var c: Vector3 = ai._centroid(live) if not live.is_empty() else Vector3.ZERO
+			print("AIM    T%d lead=(%.0f,%.0f) tgt=%s zone=%s route=%d nopath=%d %s" % [ai.team, c.x, c.z, ("(%.0f,%.0f)" % [ai.target_pos.x, ai.target_pos.z]) if ai.target_pos != Vector3.INF else "-", String(ai.target_zone["name"]) if ai.target_zone != null else "-", ai.route.size(), nopath, st])
+		print("AIM t=%dm sol/veh/bld A=%s B=%s supply=%d/%d score=%.0f/%.0f zones=%s kills=%s %s fps=%d" % [minute, n[0], n[1], int(G.supply[0]), int(G.supply[1]), G.modes.score[0] if G.modes != null else 0.0, G.modes.score[1] if G.modes != null else 0.0, zs, G.stats["kills"], att, fps])
+		if minute % 5 == 0:
+			var live_all: Array = []
+			for ai in G.ais:
+				if is_instance_valid(ai):
+					live_all.append_array(ai.attackers.filter(func(u): return is_instance_valid(u) and u.alive))
+			var cc: Vector3 = G.ais[0]._centroid(live_all) if not live_all.is_empty() else Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+			Engine.time_scale = 1.0
+			_cam(cc, minf(G.cam.max_size, 1200.0))
+			await m._wait(0.5)
+			await m._shot("aim_%02d_strat" % minute)
+			_cam(cc, 90.0)
+			await m._wait(0.5)
+			await m._shot("aim_%02d_close" % minute)
+			Engine.time_scale = ts
+	Engine.time_scale = 1.0
+	print("AIMATCH RESULT fails=%d t=%.1fm winner=%d score=%.0f/%.0f first_capture=%.1fm real=%ds fps_min=%d" % [0 if first_cap >= 0.0 else 1, G.time / 60.0, G.winner, G.modes.score[0] if G.modes != null else 0.0, G.modes.score[1] if G.modes != null else 0.0, first_cap / 60.0, (Time.get_ticks_msec() - t0) / 1000, int(fps_min)])
+
+# taban tip modelleri (roadmap 10) ve rotorlar (39/44): iki ulusun tüm taban araçları yan yana; helikopterler
+# havada pervane dönerken; yakın çekimler
+func base_gallery() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 11)
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 60.0)
+	var types := ["tank", "ifv", "apc", "technical", "truck", "aa", "arty", "mlrs", "howitzer", "fieldgun", "hmortar", "atgun", "aagun"]
+	var air: Array = []
+	for t in 2:
+		for i in types.size():
+			var p := c + Vector3(-60 + i * 10.0, 0, -12 + t * 24.0)
+			var v := m.spawn_vehicle(t, types[i], p, PI * 0.75)
+			v.cmd_hold()
+			v.fire_mode = 2
+		for k in 2:
+			var h := m.spawn_vehicle(t, ["heli", "transport"][k], c + Vector3(-20 + k * 24.0, 0, -36 + t * 72.0), PI * 0.75)
+			h.cmd_hold()
+			h.fire_mode = 2
+			air.append(h)
+	print("BASEGAL nations=%s units=%d" % [G.nation, G.units.size()])
+	await m._wait(5.0)
+	_cam(c, 75.0)
+	await m._wait(1.0)
+	await m._shot("base_01_all")
+	_cam(c + Vector3(-45, 0, 0), 30.0)
+	await m._wait(0.6)
+	await m._shot("base_02_armor")
+	_cam(c + Vector3(5, 0, 0), 30.0)
+	await m._wait(0.6)
+	await m._shot("base_03_arty")
+	for i in air.size():
+		var h: Vehicle = air[i]
+		_cam(h.position + Vector3(0, h.hull.position.y, 0), 18.0)
+		await m._wait(0.6)
+		print("BASEGAL %s team=%d rpm=%.2f nb=%d blades_vis=%s" % [h.vtype, h.team, h.rotor_rpm, h.rotor_nb, h.rotor_blades.visible if h.rotor_blades else false])
+		await m._shot("base_heli_%d" % i)
+	print("BASEGALLERY RESULT fails=0")
+
+# roadmap 3: motor arızası (hız düşer / durur, duman), motor yangını ve söndürme, birikimli yıpranma,
+# palet onarımında mürettebat, istihkâm onarımı (çekiç, kıvılcım, yıpranma azalır)
+func engine_test() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 21)
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var tk: Vehicle = m.spawn_vehicle(0, "usa_mbt_a2", c, 0.0)
+	tk.cmd_hold()
+	var sf0 := tk.speed_factor()
+	tk.add_crit("eng", 1)
+	var sf1 := tk.speed_factor()
+	tk.add_crit("eng", 1)
+	var imm := tk.immobile()
+	print("ENG speed_factor %.2f -> %.2f immobile_at_2=%s" % [sf0, sf1, imm])
+	if not (sf1 < sf0 * 0.7) or not imm:
+		fails += 1
+	# yangın: söndürülmezse can kaybı, mürettebat söndürür
+	tk.eng_fire = 12.0
+	var hp0: float = tk.hp
+	_cam(tk.position, 18.0)
+	await m._wait(2.0)
+	await m._shot("eng_01_fire")
+	await m._wait(8.0)
+	print("ENG fire hp %.0f -> %.0f fire_left=%.1f alive=%s" % [hp0, tk.hp, tk.eng_fire, tk.alive])
+	if tk.hp >= hp0 or tk.eng_fire > 0.0 or not tk.alive:
+		fails += 1
+	# yıpranma: aynı isabet yıpranmış araçta daha çok hasar verir (en çok +%25)
+	var a: Vehicle = m.spawn_vehicle(0, "usa_mbt_a1", G.grid.nearest_free(c + Vector3(20, 0, 0), Grid.M_HEAVY), 0.0)
+	var b: Vehicle = m.spawn_vehicle(0, "usa_mbt_a1", G.grid.nearest_free(c + Vector3(30, 0, 0), Grid.M_HEAVY), 0.0)
+	for v in [a, b]:
+		v.cmd_hold()
+		v.fire_mode = 2
+	b.wear = 1.0
+	for v in [a, b]:
+		Vehicle.shot_from = v.position - v.forward() * 30.0
+		v.take_damage(200.0, null, "atgm")
+	var da: float = a.max_hp - a.hp
+	var db: float = b.max_hp - b.hp
+	print("ENG wear dmg fresh=%.0f worn=%.0f ratio=%.2f wear_after=%.2f" % [da, db, db / maxf(da, 1.0), a.wear])
+	if db <= da or db > da * 1.3 or a.wear <= 0.0:
+		fails += 1
+	# palet onarımı: mürettebat dışarıda, çekiçle
+	tk.crit["eng"] = 0
+	tk.tracks_broken = 14.0
+	tk.last_hit = -99.0
+	_cam(tk.position, 14.0)
+	await m._wait(2.5)
+	var rb := tk.repair_body != null
+	await m._shot("eng_02_trackrepair")
+	print("ENG track_repair body=%s left=%.1f" % [rb, tk.tracks_broken])
+	if not rb:
+		fails += 1
+	# istihkâm: hasarlı araca gelir, çekiçle onarır, yıpranma azalır
+	a.wear = 0.8
+	var w0: float = a.wear
+	var hp_a: float = a.hp
+	var eng: Soldier = m.spawn_soldier(0, "engineer", G.grid.nearest_free(a.position + Vector3(0, 0, 8), Grid.M_INF), null)
+	await m._wait(12.0)
+	_cam(a.position, 12.0)
+	await m._wait(0.3)
+	await m._shot("eng_03_engineer")
+	print("ENG engineer hp %.0f -> %.0f wear %.2f -> %.2f vis=%s" % [hp_a, a.hp, w0, a.wear, G.time < eng.repair_vis_t])
+	if a.hp <= hp_a or a.wear >= w0:
+		fails += 1
+	print("ENGINETEST RESULT fails=%d" % fails)
+
+# büyük harita çalışma yükü (roadmap 21/55): 8 km'de ~300 birimlik çatışma; kare süresi ve alt sistemleri
+# tek tek kapatarak payları (asker, araç, tespit, savaş sisi, mini harita/HUD, simgeler, mermiler, ot/ağaç)
+func perf_8k() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	var id := "battle_8k"
+	var n_sq := 12
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--map="):
+			id = a.substr(6)
+		elif a.begins_with("--squads="):
+			n_sq = int(a.substr(9))
+	m.start_game(id, {}, true, 7)
+	G.fog_off = false
+	var c := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	var gap := clampf(G.MAP * 0.05, 60.0, 450.0)
+	var vtypes := ["tank", "ifv", "apc", "technical", "aa", "arty"]
+	for t in 2:
+		var side := -1.0 if t == 0 else 1.0
+		for k in n_sq:
+			var sp := G.grid.nearest_open(c + Vector3(side * gap, 0, (k - n_sq * 0.5) * 22.0), Grid.M_INF)
+			var sq := Squad.new(t, "T%d" % k)
+			G.squads.append(sq)
+			for i in 8:
+				var s := m.spawn_soldier(t, ["leader", "rifle", "rifle", "mg", "rifle", "at", "rifle", "medic"][i], G.grid.nearest_free(sp + Vector3(i % 3 * 1.5, 0, i / 3 * 1.5), Grid.M_INF), sq)
+				s.cmd_move(G.grid.nearest_free(c + Vector3(side * gap * 0.3, 0, (k - n_sq * 0.5) * 22.0), Grid.M_INF))
+		for k in n_sq * 2:
+			var v := m.spawn_vehicle(t, vtypes[k % vtypes.size()], G.grid.nearest_open(c + Vector3(side * (gap + 40.0), 0, (k - n_sq) * 14.0), Grid.M_HEAVY), PI * 0.5 * side)
+			v.cmd_move(G.grid.nearest_free(c + Vector3(side * gap * 0.4, 0, (k - n_sq) * 14.0), Grid.M_HEAVY))
+	var cnt := [0, 0]
+	for u in G.units:
+		if u is Soldier:
+			cnt[0] += 1
+		elif u is Vehicle:
+			cnt[1] += 1
+	print("PERF8K map=%s MAP=%.0f soldiers=%d vehicles=%d units=%d" % [id, G.MAP, cnt[0], cnt[1], G.units.size()])
+	_cam(c, 115.0)
+	await m._wait(8.0)
+	# araç içi bölümler
+	Vehicle.prof = {}
+	Vehicle.prof_on = true
+	for f in 60:
+		await m.get_tree().process_frame
+	Vehicle.prof_on = false
+	var ks: Array = Vehicle.prof.keys()
+	ks.sort_custom(func(a, b): return Vehicle.prof[a] > Vehicle.prof[b])
+	var line := ""
+	for k in ks:
+		line += "%s=%.1f " % [k, Vehicle.prof[k] / 60.0 / 1000.0]
+	print("PERF8K vehicle_ms_per_frame %s" % line)
+	var sections := ["all", "nofire", "soldiers", "vehicles", "visibility", "fog", "hud", "icons", "ballistics", "props"]
+	for sec in sections:
+		_perf_part(sec, false)
+		await m.get_tree().process_frame
+		await m.get_tree().process_frame
+		var n := 0
+		var t1 := Time.get_ticks_usec()
+		var tp := 0.0
+		while n < 90:
+			await m.get_tree().process_frame
+			n += 1
+			tp += Performance.get_monitor(Performance.TIME_PROCESS)
+		var ms := float(Time.get_ticks_usec() - t1) / 1000.0 / n
+		print("PERF8K off=%-10s frame_ms=%.1f process_ms=%.1f fps=%d" % [sec, ms, tp / n * 1000.0, int(1000.0 / maxf(ms, 0.01))])
+		_perf_part(sec, true)
+	print("PERF8K RESULT fails=0")
+
+func _perf_part(part: String, on: bool) -> void:
+	match part:
+		"nofire":
+			for u in G.units:
+				if u is Vehicle or u is Soldier:
+					u.fire_mode = 0 if on else 2
+		"soldiers":
+			for u in G.units:
+				if u is Soldier:
+					u.set_process(on)
+		"vehicles":
+			for u in G.units:
+				if u is Vehicle:
+					u.set_process(on)
+		"visibility":
+			G.vis_freeze = not on
+		"fog":
+			for n in m.world.get_children():
+				if n is FogOfWar:
+					n.set_process(on)
+		"hud":
+			G.hud.set_process(on)
+			G.hud.radar.visible = on
+		"icons":
+			G.hud.icons.set_process(on)
+			G.hud.icons.visible = on
+		"ballistics":
+			G.bal.set_process(on)
+		"props":
+			G.props.set_process(on)
+
+# roadmap 11: tank mürettebatı iner (ayrı askerler, araç yürüyemez/ateş edemez) ve geri biner
+func mount_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 23)
+	G.fog_off = true
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var tk: Vehicle = m.spawn_vehicle(0, "usa_mbt_a2", c, 0.0)
+	tk.cmd_hold()
+	await m._wait(1.0)
+	var n0: int = tk.crew_n
+	tk.cmd_dismount_crew()
+	await m._wait(2.5)
+	var crew_soldiers := 0
+	for u in G.units:
+		if u is Soldier and u.alive and u.home_vehicle == tk:
+			crew_soldiers += 1
+	tk.cmd_move(c + Vector3(30, 0, 0))
+	var p0 := tk.position
+	await m._wait(3.0)
+	var moved := tk.position.distance_to(p0)
+	_cam(tk.position, 22.0)
+	await m._wait(0.3)
+	await m._shot("mount_01_out")
+	print("MOUNT crew_before=%d out_soldiers=%d crew_now=%d immobile=%s moved=%.1f" % [n0, crew_soldiers, tk.crew_n, tk.immobile(), moved])
+	if crew_soldiers != n0 or tk.crew_n != 0 or not tk.immobile() or moved > 1.0:
+		fails += 1
+	tk.cmd_mount_crew()
+	await m._wait(12.0)
+	var left := 0
+	for u in G.units:
+		if u is Soldier and u.alive and u.home_vehicle == tk and u.state != "aboard":
+			left += 1
+	print("MOUNT after crew=%d/%d driver=%s gunner=%s soldiers_left=%d" % [tk.crew_n, tk.crew_max, tk.driver_ok, tk.gunner_ok, left])
+	if tk.crew_n != n0 or not tk.driver_ok or not tk.gunner_ok:
+		fails += 1
+	print("MOUNTTEST RESULT fails=%d" % fails)
+
+# roadmap 22/39/44: alçalan helikopter — paller görünür, rotor rüzgârı otu ve ağaçları savurur, toz kalkar,
+# ses alçaldıkça yükselir; rotor devri inişte rölantiye düşer
+func rotor_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 29)
+	G.fog_off = true
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5 - 30, 0, G.MAP * 0.5 + 20), Grid.M_LIGHT)
+	var h: Vehicle = m.spawn_vehicle(0, "transport", c + Vector3(0, 0, 30), 0.0)
+	h.fire_mode = 2
+	h.cmd_move(c)
+	await m._wait(6.0)
+	h.request_land()
+	var vol_hi := h.engine.volume_db if h.engine != null else 0.0
+	await m._wait(2.5)
+	_cam(c, 30.0)
+	await m._wait(0.4)
+	await m._shot("rotor_01_landing")
+	var r0: Vector4 = G.rotor_wash[0]
+	var vol_lo := h.engine.volume_db if h.engine != null else 0.0
+	print("ROTOR alt=%.1f rpm=%.2f wash=(%.0f,%.0f k=%.2f r=%.1f) vol %.1f -> %.1f blades=%s" % [h.hull.position.y, h.rotor_rpm, r0.x, r0.y, r0.z, r0.w, vol_hi, vol_lo, h.rotor_blades.visible])
+	if r0.z <= 0.05 or not h.rotor_blades.visible:
+		fails += 1
+	await m._wait(6.0)
+	_cam(c, 18.0)
+	await m._wait(0.4)
+	await m._shot("rotor_02_landed")
+	print("ROTOR landed alt=%.2f rpm=%.2f" % [h.hull.position.y, h.rotor_rpm])
+	if h.rotor_rpm > 0.9:
+		fails += 1
+	print("ROTORTEST RESULT fails=%d" % fails)
+
+# roadmap 12: imha biçimi öldüren isabete göre (üstten → cephane infilakı ve dikey taret, yandan → yan
+# savrulan taret, mayın → hafif araç devrilir, ağır topçu → hafif araç yan yatar)
+func kill_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 31)
+	G.fog_off = true
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	var cases := [["rus_mbt_72b3", "topatk", 0], ["rus_mbt_72b3", "atgm", 1], ["rus_mbt_72b3", "ap", 0], ["rus_lv_tigr", "mine", 0], ["rus_lv_tigr", "big", 1], ["rus_ifv_bmp2m", "rpg", 2]]
+	var vs: Array = []
+	for i in cases.size():
+		var v: Vehicle = m.spawn_vehicle(1, cases[i][0], G.grid.nearest_open(c + Vector3((i - 2.5) * 14.0, 0, 0), Grid.M_HEAVY), 0.0)
+		v.cmd_hold()
+		v.fire_mode = 2
+		vs.append(v)
+	await m._wait(1.0)
+	var counts := {}
+	for rep in 3:
+		for i in vs.size():
+			var v: Vehicle = vs[i]
+			if not v.alive:
+				continue
+			var side: int = cases[i][2]
+			var dir: Vector3 = [v.forward(), v.right(), -v.forward()][side]
+			Vehicle.shot_from = v.position + dir * 40.0 + Vector3(0, 30.0 if cases[i][1] in ["topatk", "big"] else 1.0, 0)
+			v.take_damage((v.hp + v.max_hp * 0.3) * 4.0, null, cases[i][1])
+	await m._wait(1.2)
+	_cam(c, 60.0)
+	await m._wait(0.5)
+	await m._shot("kill_01")
+	var res := []
+	for i in vs.size():
+		var v: Vehicle = vs[i]
+		var tp: Vector3 = v.turret.position if v.turret != null else Vector3.ZERO
+		res.append("%s/%s→%s(roll=%.1f tz=%.1f)" % [cases[i][0].substr(4), cases[i][1], v.kill_mode, v.hull.rotation.z, tp.y])
+	print("KILL %s" % str(res))
+	if vs[3].kill_mode != "flip" or vs[0].kill_mode == "" or vs[1].kill_mode == "":
+		fails += 1
+	await m._wait(2.0)
+	_cam(c, 40.0)
+	await m._wait(0.3)
+	await m._shot("kill_02")
+	print("KILLTEST RESULT fails=%d" % fails)
+
+# roadmap 23: palet izi — çölde silinir, karda kalır; görülmeyen düşman aracı iz bırakmaz (savaş sisi)
+func track_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	for mp in ["desert_canal", "winter_village"]:
+		m.start_game(mp, {}, true, 37)
+		var c := G.grid.nearest_open(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+		var tk: Vehicle = m.spawn_vehicle(0, "tank", c, 0.0)
+		tk.cmd_move(G.grid.nearest_free(c + Vector3(0, 0, -30), Grid.M_HEAVY))
+		await m._wait(6.0)
+		var n_own: int = G.terrain._trk.size() - G.terrain._trk_h
+		# görülmeyen düşman tankı: iz bırakmamalı
+		var e: Vehicle = m.spawn_vehicle(1, "tank", G.grid.nearest_open(c + Vector3(60, 0, 40), Grid.M_HEAVY), 0.0)
+		e.fire_mode = 2
+		tk.fire_mode = 2
+		tk.cmd_stop()
+		await m._wait(1.5)
+		var before: int = G.terrain._trk.size()
+		e.cmd_move(G.grid.nearest_free(e.position + Vector3(0, 0, -25), Grid.M_HEAVY))
+		await m._wait(4.0)
+		var enemy_stamps: int = G.terrain._trk.size() - before
+		var seen: bool = e.seen[0]
+		_cam(c + Vector3(0, 0, -15), 26.0)
+		await m._wait(0.3)
+		await m._shot("track_%s_fresh" % mp)
+		# yaşlandır: tüm damgalar eski sayılır
+		var probe: Array = G.terrain._trk[G.terrain._trk.size() - 1] if G.terrain._trk.size() > 0 else [0, 0, 0]
+		var g0: float = G.terrain.img.get_pixel(probe[0], probe[1]).g
+		for s in G.terrain._trk:
+			s[2] = -10000.0
+		G.terrain._track_fade()
+		var g1: float = G.terrain.img.get_pixel(probe[0], probe[1]).g
+		print("TRACK map=%s own_stamps=%d enemy_unseen_stamps=%d enemy_seen=%s g %.2f -> %.2f fade_age=%.0f" % [mp, n_own, enemy_stamps, seen, g0, g1, G.terrain._track_fade_age()])
+		if n_own <= 0 or (not seen and enemy_stamps > 0):
+			fails += 1
+		if mp == "desert_canal" and g1 >= g0:
+			fails += 1
+		if mp == "winter_village" and g1 < g0:
+			fails += 1
+	print("TRACKTEST RESULT fails=%d" % fails)
 
 func _prof_toggle(part: String, on: bool) -> void:
 	match part:

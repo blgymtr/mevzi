@@ -96,15 +96,26 @@ static var shot_from := Vector3.INF
 # mermiye özel delme (Ammo tablosu): [tür, yakın, 60 m+]; take_damage öncesi kurulur, bir kez kullanılır
 static var shot_pen: Array = []
 # kritik hasar (BA): 4 tür x 2 seviye (1 sarı, 2 kırmızı); mürettebat zamanla onarır
-const CRIT_NAME := {"mob": "HAREKET", "opt": "OPTİK", "tgt": "NİŞAN", "load": "DOLUM"}
-var crit := {"mob": 0, "opt": 0, "tgt": 0, "load": 0}
-var crit_t := {"mob": 0.0, "opt": 0.0, "tgt": 0.0, "load": 0.0}
+const CRIT_NAME := {"mob": "HAREKET", "opt": "OPTİK", "tgt": "NİŞAN", "load": "DOLUM", "eng": "MOTOR"}
+var crit := {"mob": 0, "opt": 0, "tgt": 0, "load": 0, "eng": 0}
+var crit_t := {"mob": 0.0, "opt": 0.0, "tgt": 0.0, "load": 0.0, "eng": 0.0}
+# roadmap 3: birikimli yıpranma (0..1) — delen isabetlerle artar; hasar (en çok +%25) ve kritik olasılığını
+# biraz büyütür (dengeli), istihkâm onarımıyla yavaşça azalır. Motor arızası: 1 → hız %60 + duman,
+# 2 → motor durdu (yürüyemez, taret elle döner) + yangın olasılığı; mürettebat söndürür ya da yangın büyür.
+var wear := 0.0
+var eng_fire := 0.0          # motor yangını kalan süre (sn); söndürülmezse can kaybettirir
+var _eng_fx_t := 0.0
 var vstress := 0.0
 var vstress_t := -99.0
 var vstress_lv := 0
 var _nopen_t := 0.0
 var last_side := -1
 var last_pen := 0.0
+# öldüren isabet (roadmap 12): mühimmat türü ve geliş yönü imha biçimini belirler
+var kill_k := ""
+var kill_dir := Vector3.ZERO
+var kill_over := 0.0          # öldüren isabetin fazlası (can 0'ın altına ne kadar indi) / azami can
+var kill_mode := ""
 var speed_max := 6.0
 var cur_speed := 0.0
 var heading := 0.0
@@ -131,6 +142,7 @@ var _crush_t := 0.0
 var _track_acc := 0.0
 var _dust_t := 0.0
 var _stuck_t := 0.0
+var _repath_ok := 0.0
 var _last_pos := Vector3.ZERO
 var shots := 0
 var job: Dictionary = {}      # kamyon görevi (Logistics)
@@ -488,6 +500,12 @@ func _cargo_lost() -> void:
 	cargo.clear()
 var rotor_blades: MeshInstance3D
 var rotor_disc: MeshInstance3D
+# rotor devri (0 durgun … 1 uçuş): kalkışta açılır, inişte rölantiye düşer, düşüşte söner. Ses perdesi ve
+# pal görüntüsü bundan (roadmap 39/44, 22). Görüntü: paller hep görünür; kare başına dönüş, pal aralığının
+# ~%38'iyle sınırlanır (yoksa düşük FPS'te paller geriye dönüyor ya da duruyor gibi görünür), üstte hafif bulanık disk.
+var rotor_rpm := 0.0
+var rotor_nb := 4
+const ROTOR_W := 30.0          # tam devirde açısal hız (rad/sn, ~290 dev/dk)
 # kargo helikopteri: arka rampa, askı yükü (araç), havadan ikmal paletleri
 const SLING_L := 5.5
 var ramp: Node3D = null
@@ -706,6 +724,8 @@ func setup(t: int, vt: String) -> void:
 		rotor_disc = disc
 		disc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		rotor.add_child(disc)
+		rotor_nb = int(M.get("meta", {}).get("nb", 4))
+		rotor_rpm = 1.0 if hull.position.y > 2.0 else 0.6
 		trotor = Node3D.new()
 		trotor.position = M["trotor_pos"]
 		hull.add_child(trotor)
@@ -723,6 +743,11 @@ func setup(t: int, vt: String) -> void:
 			crates = crates_max()
 	set_layer(self, 2)
 	_calc_ext()
+	# modeller gerçek boyutlu (roadmap 38, taban tipler base_models): gövde boyu modelden (önündeki engel,
+	# iniş, enkaz, krater, egzoz yeri bununla)
+	if not is_air() and ext.y * 2.0 > float(D["len"]) + 0.5:
+		D = D.duplicate()
+		D["len"] = ext.y * 2.0
 	_calc_sig()
 	heading = rotation.y
 	rotation.y = 0.0
@@ -755,6 +780,14 @@ func _calc_ext() -> void:
 		a = Transform3D(Basis.from_scale(hull.scale), Vector3.ZERO) * a
 		ext = Vector2(clampf(a.size.x * 0.5, 0.4, 3.0), clampf(a.size.z * 0.5, 0.4, 7.0))
 		top_h = clampf(a.end.y - hull.position.y, 0.8, 5.0)
+
+# izin (yönlü dikdörtgen) p'ye en yakın noktası — p içerideyse kendisi (istihkâm onarımı, yaklaşma)
+func obb_closest(p: Vector3) -> Vector3:
+	var d := p - position
+	d.y = 0.0
+	var f := forward()
+	var r := right()
+	return position + f * clampf(d.dot(f), -ext.y, ext.y) + r * clampf(d.dot(r), -ext.x, ext.x)
 
 func right() -> Vector3:
 	return Vector3(cos(heading), 0, -sin(heading))
@@ -1046,10 +1079,13 @@ func _repath(to: Vector3) -> void:
 		path = G.grid.cached_path(position, to, nav_mode)
 		if path.size() > 0:
 			return
-		path = G.grid.provisional(position, to, nav_mode)
-		if path.size() > 0:
-			G.grid.request_path(position, to, nav_mode, _on_path.bind(path_req))
+		if G.grid.direct(position, to, nav_mode):
+			path = PackedVector3Array([G.grid.nearest_free(to, nav_mode)])
 			return
+		# sonuç gelene dek hedefe doğru engelsiz parça (boş olabilir: araç bekler)
+		path = G.grid.provisional(position, to, nav_mode)
+		G.grid.request_path(position, to, nav_mode, _on_path.bind(path_req))
+		return
 	path = G.grid.find_path(position, to, nav_mode)
 
 func _on_path(res: PackedVector3Array, req: int) -> void:
@@ -1136,6 +1172,7 @@ func _range_old() -> float:
 func _process(dt: float) -> void:
 	if not G.running or dt <= 0.0:
 		return
+	var th := Time.get_ticks_usec() if prof_on else 0
 	tick_bubble(dt)
 	if is_air():
 		_air_shadow_tick()
@@ -1144,9 +1181,13 @@ func _process(dt: float) -> void:
 		return
 	if not alive:
 		_wreck_tick(dt)
+		if prof_on:
+			_pf("wreck", th)
 		return
 	main_cd -= dt * (0.5 if (crew_max >= 3 and crew_n == 1) else 1.0) / load_mult()
 	_stress_tick(dt)
+	if prof_on:
+		th = _pf("head", th)
 	coax_cd -= dt
 	if abandon_t >= 0.0:
 		abandon_t -= dt
@@ -1162,9 +1203,16 @@ func _process(dt: float) -> void:
 			var dry: Vector3 = G.grid.nearest_dry(position, 12.0)
 			position = dry if dry != position else G.grid.nearest_free(position, nav_mode, 30)
 		# emir yarıda kaldıysa (yol boşaldı ama hedefe varılmadı) yeniden yol bul
-		if not is_air() and order in ["move", "amove", "retreat"] and path_i >= path.size() and dist2_p(dest) > 4.0 and not immobile():
+		if not is_air() and order in ["move", "amove", "retreat"] and path_i >= path.size() and dist2_p(dest) > 4.0 and not immobile() and G.time >= _repath_ok:
+			# ulaşılamayan hedefte her düşünmede yeniden arama yapılmaz (3 sn ara)
+			_repath_ok = G.time + 3.0
 			_repath(dest)
+		if prof_on:
+			th = _pf("think_repath", th)
+		var tq := Time.get_ticks_usec() if prof_on else 0
 		_scan()
+		if prof_on:
+			_pf("scan", tq)
 		_refund_check()
 	atgm_cd -= dt
 	sam_cd -= dt
@@ -1180,13 +1228,35 @@ func _process(dt: float) -> void:
 		_fpv(dt)
 		return
 	if vtype in ["heli", "transport"]:
+		var tz := Time.get_ticks_usec() if prof_on else 0
 		_heli(dt)
+		if prof_on:
+			_pf("heli", tz)
 		return
+	var t0 := Time.get_ticks_usec() if prof_on else 0
 	_guard_drive(dt)
+	if prof_on:
+		t0 = _pf("guard", t0)
 	_drive(dt)
+	if prof_on:
+		t0 = _pf("drive", t0)
 	_sep_vehicles()
+	if prof_on:
+		t0 = _pf("sep", t0)
 	_aim_fire(dt)
+	if prof_on:
+		t0 = _pf("aim_fire", t0)
 	_visuals(dt)
+	if prof_on:
+		_pf("visuals", t0)
+
+# çalışma zamanı ölçümü (perf8k): bölüm başına toplam mikro saniye
+static var prof := {}
+static var prof_on := false
+static func _pf(k: String, t0: int) -> int:
+	var t1 := Time.get_ticks_usec()
+	prof[k] = int(prof.get(k, 0)) + t1 - t0
+	return t1
 
 # tekerli mi (katalog ailesinden): lastikler patlar ve tamir edilir
 func needs_setup() -> bool:
@@ -1208,7 +1278,7 @@ func tracked() -> bool:
 	return not wheeled() and not is_air() and not (vtype in TOWED)
 
 func immobile() -> bool:
-	return crit["mob"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (wheeled() and tires >= maxi(wheels.size(), 4))
+	return crit["mob"] >= 2 or crit["eng"] >= 2 or tracks_broken > 0.0 or not driver_ok or (crew_max > 0 and crew_n <= 0) or abandon_t >= 0.0 or (wheeled() and tires >= maxi(wheels.size(), 4))
 
 # piyade eskortu: araç arkasındaki piyadenin koşusuna uyar (koşudan biraz yavaş), geride kalanı bekler
 func _escort_pace() -> float:
@@ -1232,7 +1302,7 @@ func _escort_pace() -> float:
 
 func speed_factor() -> float:
 	var mud: float = G.weather.mud() if G.weather != null and wheeled() else 1.0
-	return clampf(1.0 - 0.2 * tires, 0.3, 1.0) * (0.55 if crit["mob"] == 1 else 1.0) * mud
+	return clampf(1.0 - 0.2 * tires, 0.3, 1.0) * (0.55 if crit["mob"] == 1 else 1.0) * (0.6 if crit["eng"] == 1 else 1.0) * mud
 
 func has_crit() -> bool:
 	for k in crit:
@@ -1267,13 +1337,19 @@ func _crit_roll(dmg: float, m: float, k: String) -> void:
 		ch = 1.0 if light_at else 0.1 + dmg / max_hp * 1.2
 	elif k in ["rpg", "atgm", "ap", "he", "shell", "big", "mortar", "topatk"]:
 		ch = 0.2
+	ch *= 1.0 + wear * 0.5
 	if randf() >= ch:
 		return
 	var lvl := 2 if (pen and (dmg > max_hp * 0.2 or randf() < 0.3)) else 1
 	var r := randf()
 	var top := k in ["topatk", "shell", "big", "mortar", "fpv"]
-	var kk := "mob" if r < 0.3 else ("opt" if r < (0.65 if top else 0.55) else ("tgt" if r < 0.8 else "load"))
+	# arkadan (motor bölmesi) ve üstten gelen isabet motoru daha sık vurur
+	var eng_ch := 0.45 if last_side == 2 else (0.25 if last_side == 3 else 0.1)
+	var kk := "eng" if randf() < eng_ch else ("mob" if r < 0.3 else ("opt" if r < (0.65 if top else 0.55) else ("tgt" if r < 0.8 else "load")))
 	add_crit(kk, lvl)
+	if kk == "eng" and lvl >= 2 and pen and randf() < 0.4:
+		eng_fire = 25.0
+		say(I18n.s("MOTOR YANIYOR!"), 3.0)
 
 func add_vstress(v: float) -> void:
 	if crew_max <= 0 or is_air():
@@ -1318,27 +1394,104 @@ func add_crew(s) -> void:
 	crew_n = mini(crew_max, crew_n + 1)
 	say("MÜRETTEBAT TAMAM" if crew_n >= crew_max and driver_ok and gunner_ok else "YERİME GEÇTİ")
 	if s != null and is_instance_valid(s):
+		crew_out.erase(s)
 		s.vanish()
 
 # palet: mürettebat ateş altında değilken onarır (mühendis daha hızlı)
 func _repair_tick(dt: float) -> void:
-	var busy := tracks_broken > 0.0 and crew_n > 0 and G.time - last_hit > 7.0
-	if busy:
+	_engine_tick(dt)
+	# mürettebat dışarı çıkıp palet / motor onarır (ateş altında değilken): paletin yanında diz çöküp çekiçle,
+	# motor bölmesinde (arka güverte) eğilerek; kıvılcım ve çekiç sesi
+	var quiet := crew_n > 0 and G.time - last_hit > 7.0
+	var work := ""
+	if quiet and tracks_broken > 0.0:
+		work = "track"
 		tracks_broken -= dt
 		if tracks_broken <= 0.0:
 			tracks_broken = 0.0
 			say("PALET ONARILDI")
-	if busy and repair_body == null:
+	elif quiet and eng_fire <= 0.0 and crit["eng"] > 0:
+		work = "engine"
+	if work != "" and repair_body == null:
 		repair_body = SoldierBody.new()
 		hull.add_child(repair_body)
 		repair_body.build(team, "engineer", G.map_kind == "winter")
-		repair_body.position = Vector3(1.9 if randf() < 0.5 else -1.9, 0, 1.0)
-		repair_body.rotation.y = PI * 0.5 * signf(repair_body.position.x)
-	elif not busy and repair_body != null:
+		repair_body.set_tool("hammer")
+		var sx := 1.0 if randf() < 0.5 else -1.0
+		if work == "track":
+			repair_body.position = Vector3(sx * (ext.x + 0.45), 0, ext.y * 0.35)
+			repair_body.rotation.y = PI * 0.5 * sx
+		else:
+			repair_body.position = Vector3(sx * (ext.x + 0.4), 0, ext.y * 0.75)
+			repair_body.rotation.y = PI * 0.5 * sx
+	elif work == "" and repair_body != null:
 		repair_body.queue_free()
 		repair_body = null
 	if repair_body:
-		repair_body.animate(dt, "build", 0.0)
+		repair_body.animate(dt, "build" if work == "track" else "build_hi", 0.0)
+		_eng_fx_t -= dt
+		if _eng_fx_t <= 0.0:
+			_eng_fx_t = randf_range(0.5, 1.1)
+			var hp_w: Vector3 = repair_body.global_position + repair_body.global_transform.basis.z * -0.55 + Vector3(0, 0.5 if work == "track" else 1.2, 0)
+			G.fx.sparks(hp_w, 0.5)
+			Sfx.play3d("hammer", hp_w, -12.0, 0.15, 0.2)
+
+# motor arızası: hasarlı motordan duman, yanan motorda alev; mürettebat söndürmeye çalışır
+func _engine_tick(dt: float) -> void:
+	if crit["eng"] <= 0 and eng_fire <= 0.0:
+		return
+	var rear: Vector3 = position - forward() * (D["len"] * 0.4) + Vector3(0, top_h * 0.8, 0)
+	if eng_fire > 0.0:
+		eng_fire -= dt * (1.6 if crew_n > 0 else 0.6)      # mürettebat yangın tüpüyle söndürür
+		hp -= dt * max_hp * 0.006
+		if randf() < dt * 6.0:
+			G.fx.burn(rear, 0.6, 0.5)
+		if hp <= 0.0:
+			destroy(null)
+			return
+		if eng_fire <= 0.0:
+			say(I18n.s("YANGIN SÖNDÜRÜLDÜ"), 2.0)
+	if randf() < dt * (3.0 if crit["eng"] >= 2 else 1.5):
+		G.fx.exhaust(rear, 1.4 if crit["eng"] >= 2 else 0.8)
+
+# roadmap 11: mürettebat iner — araç sağlam kalır ama sürücüsüz yürüyemez, nişancısız ateş edemez; mürettebat
+# ayrı askerler (tim) olarak aracın arkasında toplanır. "Mürettebat Bin" ile (ya da tankçılar araca sağ tıkla)
+# geri biner; araca başka piyade de binip eksik mürettebatın yerine geçebilir.
+var crew_out: Array = []
+
+func cmd_dismount_crew() -> void:
+	if not alive or crew_n <= 0 or is_air() or abandon_t >= 0.0:
+		return
+	unload()
+	var sq := Squad.new(team, "Mürettebat")
+	G.squads.append(sq)
+	var back := -forward()
+	var sd := Vector3(-back.z, 0, back.x)
+	for i in crew_n:
+		var p: Vector3 = position + back * (D["len"] * 0.5 + 1.0) + sd * (i - (crew_n - 1) * 0.5) * 1.3
+		var s: Soldier = G.main.spawn_soldier(team, "crew", G.grid.nearest_free(p, Grid.M_INF), sq)
+		s.home_vehicle = self
+		s.cmd_move(G.grid.nearest_free(p + back * 3.0, Grid.M_INF))
+		crew_out.append(s)
+	crew_n = 0
+	driver_ok = false
+	gunner_ok = false
+	if gunner:
+		gunner.visible = false
+	target = null
+	coax_target = null
+	path = PackedVector3Array()
+	order = ""
+	say("MÜRETTEBAT İNDİ", 2.5)
+
+func cmd_mount_crew() -> void:
+	crew_out = crew_out.filter(func(s): return is_instance_valid(s) and s.alive and s.can_fight() and s.vehicle_in == null)
+	if crew_out.is_empty():
+		say("MÜRETTEBAT YOK", 2.0)
+		return
+	for s in crew_out:
+		s.cmd_board(self)
+	say("MÜRETTEBAT BİNİYOR", 2.0)
 
 func cmd_abandon() -> void:
 	if not alive or crew_n <= 0 or abandon_t >= 0.0 or is_air():
@@ -1552,9 +1705,10 @@ func _drive(dt: float) -> void:
 	for o in G.near(position + f * 2.0, 2.2):
 		if o is Soldier and o.alive and o.team != team and absf(cur_speed) > 2.0:
 			o.take_damage(200.0, self, "crush")
-	# izler
+	# izler (savaş sisine uyumlu: oyuncunun görmediği düşman aracı iz bırakmaz — yoksa sisin içindeki hareketi ele verirdi)
 	_track_acc += moved
-	if _track_acc > 0.3:
+	var vt_v := G.view_team()
+	if _track_acc > 0.3 and (vt_v < 0 or team == vt_v or seen[vt_v]):
 		_track_acc = 0.0
 		var side := Vector3(-f.z, 0, f.x)
 		var tw := 1.25 if vtype == "tank" else 1.0
@@ -2432,9 +2586,10 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 					_nopen_t = G.time
 					say("SEKTİ!" if last_side == 0 else "DELEMEDİ!")
 		return
-	var dmg := amount * m
+	var dmg := amount * m * (1.0 + wear * 0.25)
 	if dmg <= 0.0:
 		return
+	wear = minf(1.0, wear + dmg / max_hp * 0.6)
 	# delme efekti: geliş yönünde içe saçılma; HEAT'te jet parlaması
 	if k in ["ap", "rpg", "atgm", "topatk"] and m > 0.46:
 		var pd := (aim_point() - from).normalized() if from != Vector3.INF else -forward()
@@ -2447,6 +2602,11 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	_crit_roll(dmg, m, k)
 	add_vstress(dmg / max_hp * 120.0)
 	if hp <= 0.0:
+		kill_k = k
+		var kd: Vector3 = (aim_point() - from) if from != Vector3.INF else (position - src.position if src != null and is_instance_valid(src) else -forward())
+		kd.y = 0.0
+		kill_dir = kd.normalized() if kd.length() > 0.01 else -forward()
+		kill_over = clampf(-hp / max_hp, 0.0, 2.0)
 		destroy(src)
 
 # atışın geldiği yöne göre zırh yanı: 0 ön, 1 yan, 2 arka, 3 üst
@@ -2558,7 +2718,7 @@ func _heli(dt: float) -> void:
 		hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt)
 		position += hvel * dt
 		hull.position.y = move_toward(hull.position.y, 0.6, dt * 2.0)
-		rotor.rotation.y += dt * (28.0 if hull.position.y > 0.7 else 6.0)
+		_rotor_tick(dt, 0.35 if hull.position.y <= 0.7 else 1.0)
 		target = null
 		return
 	var goal := dest
@@ -2639,15 +2799,15 @@ func _heli(dt: float) -> void:
 		hull.position.y = move_toward(hull.position.y, tgt_alt, dt * (5.0 if evade_t > 0.0 else 3.0))
 	else:
 		hull.position.y = tgt_alt + sin(_hb * 1.3) * 0.25
-	rotor.rotation.y += dt * 28.0
-	if rotor_blades:
-		rotor_blades.visible = false
-	if M.get("meta", {}).get("trotor_y", false):
-		trotor.rotation.y -= dt * 28.0
-	else:
-		trotor.rotation.x += dt * 40.0
-	if randf() < dt * 3.0:
-		G.fx.vehicle_dust(position + Vector3(randf_range(-4, 4), 0.2, randf_range(-4, 4)))
+	_rotor_tick(dt, 1.0 if hull.position.y > 1.2 or not landing else 0.75)
+	# rotor rüzgârı: alçaldıkça yerden toz kalkar ve ses yükselir (roadmap 22)
+	var low := clampf(1.0 - hull.position.y / 22.0, 0.0, 1.0) * rotor_rpm
+	if randf() < dt * (1.0 + low * 14.0) and low > 0.05:
+		var ra: float = randf() * TAU
+		var rd: float = randf_range(0.3, 1.0) * (ext.y * 1.6 + 2.0)
+		G.fx.vehicle_dust(position + Vector3(cos(ra) * rd, 0.2, sin(ra) * rd))
+	if engine != null and is_instance_valid(engine):
+		engine.volume_db = -8.0 + low * 6.0
 	rocket_cd -= dt
 	hf_cd -= dt
 	if vtype == "transport":
@@ -2684,7 +2844,8 @@ func _heli(dt: float) -> void:
 		G.fx.flash(hp, 5.0, 8.0, 0.08, Color(1.0, 0.8, 0.5))
 		Sfx.play3d("rpg", hp, 3.0)
 		say("FÜZE ATILDI")
-	elif rocket_cd <= 0.0 and dist < _wr("rkt", 50.0) and (t is Vehicle or t is Building or randf() < 0.5):
+	elif rocket_cd <= 0.0 and dist < _wr("rkt", 50.0) and (t is Vehicle or t is Building or randf() < 0.5) and not (t is Vehicle and t.armor >= 2 and hf_left > 0):
+		# roket salvosu yumuşak / hafif zırhlı hedefe; ağır zırha (tank) güdümlü füze kaldıkça roket harcanmaz
 		salvo = 4
 		salvo_t = 0.0
 		rocket_cd = 9.0
@@ -3165,6 +3326,26 @@ func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> 
 	if shots % 2 == 0:
 		G.fx.tracer_cal(mp, impact, 260.0, Ammo.team_tracer(team), 12.7)
 
+# rotor devri ve görüntüsü: devir hedefe yumuşak yaklaşır (açılış ~4 sn); paller hep görünür, kare başına
+# dönüş pal aralığının %38'iyle sınırlı (stroboskop etkisi yok); disk yalnız yüksek devirde, hafif
+func _rotor_tick(dt: float, want: float) -> void:
+	rotor_rpm = move_toward(rotor_rpm, want, dt * (0.25 if want > rotor_rpm else 0.4))
+	var period := TAU / float(maxi(rotor_nb, 2))
+	var step := minf(ROTOR_W * rotor_rpm * dt, period * 0.38)
+	rotor.rotation.y += step
+	if rotor_blades:
+		rotor_blades.visible = true
+	if rotor_disc:
+		rotor_disc.visible = rotor_rpm > 0.5
+		rotor_disc.transparency = clampf(1.0 - (rotor_rpm - 0.5) * 2.0, 0.0, 1.0)
+	if trotor:
+		if M.get("meta", {}).get("trotor_y", false):
+			trotor.rotation.y -= step
+		else:
+			trotor.rotation.x += minf(ROTOR_W * 4.5 * rotor_rpm * dt, PI * 0.3)
+	if engine != null and is_instance_valid(engine):
+		engine.pitch_scale = 0.55 + 0.45 * rotor_rpm
+
 static func _rotor_disc_mat() -> ShaderMaterial:
 	if _disc_mat == null:
 		var sh := Shader.new()
@@ -3176,9 +3357,10 @@ void fragment() {
 	float r = length(p);
 	float a = atan(p.y, p.x);
 	float blades = 0.5 + 0.5 * sin(a * 5.0 - game_time * 60.0);
-	float ring = smoothstep(1.0, 0.92, r) * smoothstep(0.05, 0.15, r);
-	ALBEDO = vec3(0.12);
-	ALPHA = ring * (0.16 + 0.12 * blades) + smoothstep(0.97, 0.93, r) * smoothstep(0.9, 0.95, r) * 0.25;
+	// hafif bulanıklık: palin süpürdüğü halka uca doğru belirginleşir (uç hızı yüksek), uç şeridi izi
+	float ring = smoothstep(1.0, 0.94, r) * smoothstep(0.08, 0.3, r) * (0.45 + 0.55 * r);
+	ALBEDO = vec3(0.07);
+	ALPHA = ring * (0.07 + 0.05 * blades) + smoothstep(0.985, 0.95, r) * smoothstep(0.9, 0.95, r) * 0.14;
 }
 """
 		_disc_mat = ShaderMaterial.new()
@@ -3297,14 +3479,39 @@ func destroy(src) -> void:
 	G.credit_kill(src, self)
 	if selected and G.player:
 		G.player.deselect(self)
-	# imha biçimi: mühimmat infilakı / felaket / yanma / sadece etkisiz
+	# imha biçimi (roadmap 12) öldüren isabete göre: mühimmat türü, vuruş yönü (yan/arka cephane), fazla hasar.
+	# Üstten saldırı / topçu / FPV: cephane infilakı, taret dimdik fırlar. Yandan-arkadan HEAT / kinetik:
+	# taret ve gövde cephanesi — taret vuruş yönünde savrulur; önden delme çoğunlukla etkisiz bırakır.
+	# Mayın: alttan kaldırır (hafif araç devrilir). Hafif araç ağır patlamada yan yatar / ters döner.
 	var heavy := vtype in ["tank", "ifv", "arty", "aa"]
+	var light := armor == 0 or vtype in ["technical", "truck"]
 	var r := randf()
 	var mode := "brew"
-	if heavy:
-		mode = "cookoff" if r < 0.35 else ("catastrophic" if r < 0.5 else ("brew" if r < 0.8 else "knocked"))
-	else:
-		mode = "catastrophic" if r < 0.25 else ("brew" if r < 0.75 else "knocked")
+	match kill_k:
+		"topatk", "fpv", "big", "shell", "mortar":
+			if heavy:
+				mode = "cookoff" if r < 0.55 else ("catastrophic" if r < 0.8 else "brew")
+			else:
+				mode = "flip" if (light and kill_k in ["big", "shell"] and r < 0.5) else ("catastrophic" if r < 0.6 else "brew")
+		"mine":
+			mode = "flip" if light else ("brew" if r < 0.6 else "knocked")
+		"atgm", "rpg", "ap":
+			var flank := last_side in [1, 2]
+			if heavy:
+				if flank:
+					mode = "cookoff" if r < 0.45 else ("brew" if r < 0.8 else "knocked")
+				else:
+					mode = "knocked" if r < 0.5 else ("brew" if r < 0.85 else "cookoff")
+			else:
+				mode = "flip" if (light and kill_k != "ap" and kill_over > 0.5 and r < 0.45) else ("catastrophic" if r < 0.35 else ("brew" if r < 0.8 else "knocked"))
+		_:
+			if heavy:
+				mode = "cookoff" if r < 0.35 else ("catastrophic" if r < 0.5 else ("brew" if r < 0.8 else "knocked"))
+			else:
+				mode = "catastrophic" if r < 0.25 else ("brew" if r < 0.75 else "knocked")
+	if kill_over > 1.2 and heavy and mode in ["brew", "knocked"]:
+		mode = "catastrophic"
+	kill_mode = mode
 	var cp := position + Vector3(0, 1.0, 0)
 	if G.grid.is_water(position):
 		G.fx.water_splash(position, 1.6)
@@ -3355,6 +3562,21 @@ func destroy(src) -> void:
 			G.fx.fireball(cp, 0.9)
 			G.fx.fire_column(position + Vector3(0, 1.3, 0), randf_range(30.0, 55.0), 1.0 if heavy else 0.8)
 			_debris(2, 4.0)
+		"flip":
+			# patlama aracı kaldırır, patlamanın ters yönüne yan yatar ya da ters döner
+			G.explode(cp, 3.5, 50.0, "big", team, self, team)
+			G.fx.fireball(cp, 1.0)
+			G.fx.fire_column(position + Vector3(0, 0.8, 0), randf_range(25.0, 45.0), 0.8)
+			_debris(3, 6.0)
+			var away := kill_dir
+			var roll_s := signf(away.dot(right())) if absf(away.dot(right())) > 0.2 else (1.0 if randf() < 0.5 else -1.0)
+			var full := kill_over > 0.9 or randf() < 0.35
+			var twf := create_tween()
+			var y0 := hull.position.y
+			twf.tween_property(hull, "position:y", y0 + 1.4, 0.28).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+			twf.parallel().tween_property(hull, "rotation:z", hull.rotation.z - roll_s * (PI if full else PI * 0.5), 0.75)
+			twf.parallel().tween_property(self, "position", position + Vector3(away.x, 0, away.z) * 1.6, 0.75)
+			twf.tween_property(hull, "position:y", y0 + (0.25 if full else ext.x * 0.6), 0.3).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
 		_:
 			G.fx.explosion(cp, 0.8, "rpg")
 			Sfx.play3d("expl_med", cp, 0.0)
@@ -3367,11 +3589,14 @@ func destroy(src) -> void:
 	if engine:
 		engine.stop()
 	if turret and ((mode == "cookoff" and vtype in ["tank", "ifv", "arty", "aa"]) or mode == "catastrophic"):
-		# taret fırlar
+		# taret fırlar: üstten saldırıda dimdik yukarı, yan/arka vuruşta vuruş yönünde savrulur
 		var tw := create_tween()
 		var start := turret.position
-		var side := Vector3(randf_range(-2, 2), 0, randf_range(-2, 2))
-		var hgt := 9.0 if mode == "cookoff" else 5.0
+		var top := kill_k in ["topatk", "fpv", "big", "shell", "mortar"]
+		var push := hull.global_transform.basis.inverse() * kill_dir
+		push.y = 0.0
+		var side := (push * randf_range(1.5, 3.5) if not top else Vector3.ZERO) + Vector3(randf_range(-1.2, 1.2), 0, randf_range(-1.2, 1.2))
+		var hgt := (11.0 if top else 8.0) if mode == "cookoff" else 5.0
 		tw.tween_property(turret, "position", start + Vector3(side.x * 0.5, hgt, side.z * 0.5), 0.5 if mode == "cookoff" else 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
 		tw.parallel().tween_property(turret, "rotation", Vector3(randf_range(-1, 1), randf_range(-3, 3), randf_range(-1, 1)), 0.9)
 		tw.tween_property(turret, "position", start + Vector3(side.x, -0.6, side.z), 0.45).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)

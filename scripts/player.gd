@@ -367,6 +367,12 @@ func exec_order(id: String, gp: Vector3) -> void:
 		"abandon":
 			for v in veh:
 				v.cmd_abandon()
+		"dismount":
+			for v in veh:
+				v.cmd_dismount_crew()
+		"mount":
+			for v in veh:
+				v.cmd_mount_crew()
 		"refund":
 			for u in mobile:
 				u.cmd_refund()
@@ -683,6 +689,9 @@ static func _near_base(p: Vector3, r: float, t: int) -> bool:
 			return true
 	return false
 
+static func fob_reach() -> float:
+	return maxf(95.0, G.MAP * 0.25)
+
 static func can_place(bt: String, p: Vector3, rot: float, t: int) -> String:
 	var B: Dictionary = Building.BDEF[bt]
 	var s: Vector2 = B["size"]
@@ -693,8 +702,10 @@ static func can_place(bt: String, p: Vector3, rot: float, t: int) -> String:
 		for u in G.units:
 			if is_instance_valid(u) and u is Building and u.alive and u.is_base() and u.position.distance_to(p) < 38.0:
 				return "Başka bir üsse çok yakın"
-		if not _near_base(p, 95.0, t):
-			return "Mevcut üsse çok uzak (95 m)"
+		# büyük haritada ileri üs noktaları 1–2 km arayla: menzil haritayla büyür (8 km'de ~1,3 km)
+		var reach := fob_reach()
+		if not _near_base(p, reach, t):
+			return I18n.s("Mevcut üsse çok uzak") + " (%d m)" % int(reach)
 	elif not _near_base(p, 42.0, t):
 		return "Bir üssün 42 m yakınına kurulmalı"
 	var c := cos(rot)

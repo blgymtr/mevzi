@@ -20,6 +20,10 @@ global uniform vec4 blast0;     // (x, z, başlangıç, güç) — son 4 büyük
 global uniform vec4 blast1;
 global uniform vec4 blast2;
 global uniform vec4 blast3;
+global uniform vec4 rotor0;     // (x, z, güç, yarıçap) — alçaktaki helikopter rotor rüzgârı
+global uniform vec4 rotor1;
+global uniform vec4 rotor2;
+global uniform vec4 rotor3;
 
 varying float v_h;
 varying float v_fade;
@@ -61,6 +65,24 @@ void vertex() {
 		if (leaf) {
 			float j2 = VERTEX.x * 5.0 + VERTEX.y * 3.0;
 			off += vec3(sin(age * 31.0 + j2), cos(age * 27.0 + j2) * 0.5, cos(age * 29.0 + j2)) * 0.12 * exp(-age * 2.5) * kk;
+		}
+	}
+	// rotor rüzgârı: göbekten dışa yatar, türbülansla hızlı titrer
+	vec4 rw[4] = vec4[4](rotor0, rotor1, rotor2, rotor3);
+	for (int i = 0; i < 4; i++) {
+		vec4 r = rw[i];
+		if (r.z <= 0.0) continue;
+		vec2 dv = org.xz - r.xy;
+		float d = length(dv);
+		if (d > r.w) continue;
+		float kk = (1.0 - d / r.w) * r.z;
+		vec3 ld = inv * vec3(dv.x, 0.0, dv.y) / max(d, 0.3);
+		ld.y = 0.0;
+		float gust = 0.75 + 0.25 * sin(t * 7.0 + d * 0.9 + phase);
+		off += normalize(ld + vec3(1e-4)) * kk * gust * w * tree_h * 0.12;
+		if (leaf) {
+			float j3 = VERTEX.x * 4.0 + VERTEX.z * 3.0 + VERTEX.y * 2.0;
+			off += vec3(sin(t * 23.0 + j3), cos(t * 19.0 + j3) * 0.5, cos(t * 21.0 + j3)) * 0.07 * kk;
 		}
 	}
 	VERTEX += off;

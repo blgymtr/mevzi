@@ -511,8 +511,16 @@ func _apply_pend() -> void:
 	_pend.clear()
 
 # bu istek iş parçacığına gitmeli mi (uzun yol, büyük harita)
+# büyük haritada (işçi ızgaralı) ana iş parçacığında A* yapılmaz: ulaşılamayan hedefte A* 4 M hücrelik tüm
+# bölgeyi tarıyordu (araç başına 0,1–0,5 sn; 8 km çatışmasında kare 1 sn'ye çıkıyordu). Kısa ve engelsiz
+# yolda arama hiç yapılmaz (direct), gerisi işçide.
 func wants_async(from: Vector3, to: Vector3) -> bool:
-	return not navw.is_empty() and Vector2(to.x - from.x, to.z - from.z).length() > 160.0
+	return not navw.is_empty() and Vector2(to.x - from.x, to.z - from.z).length() > 6.0
+
+# hedef 48 m içinde ve düz çizgide engelsizse arama gereksiz
+func direct(from: Vector3, to: Vector3, mode: int) -> bool:
+	var L := Vector2(to.x - from.x, to.z - from.z).length()
+	return L <= 48.0 and walkable_line(from, to, mode)
 
 func _pkey(from: Vector3, to: Vector3, mode: int) -> Vector4i:
 	return Vector4i(int(from.x / 12.0), int(from.z / 12.0), int(to.x / 12.0) * 4 + mode, int(to.z / 12.0))
@@ -536,9 +544,13 @@ func cached_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
 
 # sonuç gelene kadar yürünecek düz parça: hedefe doğru engelsiz en çok 48 m; yoksa boş
 func provisional(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
-	var d := Vector3(to.x - from.x, 0, to.z - from.z).normalized()
+	var dv := Vector3(to.x - from.x, 0, to.z - from.z)
+	var L := dv.length()
+	var d := dv / maxf(L, 0.001)
 	var best := from
 	for k in range(1, 13):
+		if k * 4.0 > L:
+			break
 		var p := from + d * k * 4.0
 		if not walkable_line(from, p, mode):
 			break

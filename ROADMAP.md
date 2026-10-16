@@ -115,6 +115,18 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Düzeltildi:** Her yanı ağaç/duvar olan küçük bir cepte doğan araç hiç yürüyemiyordu → doğduğunda en yakın açık alana alınır
 - **Düzeltildi:** Araç izi (çarpışma/siper/eskort yeri) namlu taşmasını da sayıyordu ve taret düğümünün yeri hesaba katılmıyordu → gövde + taret
 - **Test altyapısı:** testlerde harita tohumu yazdırılır, `-Extra "--seed=N"` ile aynı harita yeniden üretilir; kararsız testler düzeltildi (topçu testinde hedefler ateş etmez ve obüs/roketatara asgari menzil dışında hedef; stres testi başlangıç birliksiz; eskort ölçütü gerçek tank boyuna göre; holdtest sonuç satırı)
+- **Düzeltildi (21/55): Büyük harita performansı** — 8 km'de 242 birimlik çatışmada kare 1,17 sn → 29 ms (1 → 34 FPS): ağır araçlar saniyede 8 kez 75 bin ağacın hepsini tarıyordu (ezme), her patlama da öyle → artımlı uzamsal kovalar; ulaşılamayan hedefte ana iş parçacığında A* (araç başına 0,1–0,5 sn) → büyük haritada tüm yol aramaları işçide, kısa engelsiz yol aramasız, yeniden arama 3 sn aralıklı; ikmal yolları da işçide (perf8k)
+- **Eklendi (21/53):** YZ büyük haritada: saldırı grubu yol rotası üzerinde ~160 m adımlarla ilerler (düz adım nehre düşüp grubu kıyıda kilitliyordu), 90 sn ilerleyemezse hedef değiştirir; inşaatçı ileri üsse 2,9 km'ye kadar gider; ele geçirilen bölgeye tim bırakır; topçu cephe gerisinde menzile göre mevzilenir; araçlar ulusun gerçek katalog birimlerinden üretilir. İleri üs menzili ve birlik sınırı harita boyutuyla büyür (8 km: 2 km, ×3). 40 dakikalık YZ maçı 90–144 FPS (aimatch)
+- **Değişti (21):** Mini harita yeniden: arazinin kendi tarla / yol / yükseklik dokularından alan ortalamasıyla (512 px), orman, tek ağaçlar, binalar, köprüler; yükleme ekranında üretilir
+- **Eklendi (10):** Taban tip modelleri (YZ'nin ve sandbox'ın ürettiği tank, PSA, ZPT, helikopter, topçu…) ulusa göre ayrıntılı Blender modelleri (`data/catalog/base_models.json`, `<tip>_<ulus>.glb`)
+- **Eklendi (39/44):** Rotor palleri hep görünür: sivrilen, burulmuş pal, hücum kenarı şeridi, uç şeridi, ayrıntılı göbek (eğik plaka, hatve çubukları); dönüş görüntüsü stroboskopsuz, hafif bulanık disk; rotor devri (kalkışta açılır, inişte rölanti) ses perdesine bağlı
+- **Eklendi (22):** Rotor rüzgârı: alçalan helikopterin altında ağaçlar ve otlar savrulur, toz kalkar, ses yükselir (rotortest)
+- **Eklendi (3):** Motor arızası (hız %60 + duman → motor durur, yangın; mürettebat söndürür), birikimli yıpranma (en çok +%25 hasar), mürettebat/istihkâm onarımında çekiç ve kıvılcım; istihkâm gerçek boyutlu araçta gövde kenarına yaklaşır (enginetest)
+- **Eklendi (11):** Tank mürettebatı iner/biner: ayrı askerler olarak iner, araç sürücüsüz yürüyemez/ateş edemez; "Mürettebat Bin" ile geri biner (mounttest)
+- **Eklendi (12):** İmha biçimi öldüren isabete göre: üstten saldırı/topçu → cephane infilakı, taret dimdik fırlar; yandan/arkadan → taret vuruş yönünde savrulur; mayın ve ağır patlama hafif aracı devirir/ters çevirir (killtest)
+- **Eklendi (23):** Palet izi iklime göre silinir (çölde ~2,5 dk, ılımanda ~8 dk, karda kalıcı, kar fırtınası örter), yağmurda daha derin; oyuncunun görmediği düşman aracı iz bırakmaz (tracktest)
+- **Düzeltildi:** Helikopter tanka Hydra roketi harcıyordu (füze kilidi dolmadan tankı öldürüyordu) → güdümlü füze varken ağır zırha roket atmaz
+- **Test altyapısı:** aimatch (YZ–YZ maçı, dakika dakika durum), perf8k, basegallery, enginetest, mounttest, rotortest, killtest, tracktest; mode/logi testleri başlangıç birliksiz
 
 ---
 
@@ -126,15 +138,15 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 |---|---|---|---|
 | 1 | Asker modelleri 1-2. fotoğraftaki gibi (gerçekçi oran, kıyafet katmanları, teçhizat) | ⏳ | v5 var ama stilize. → Gerçek insan taban modeli (MakeHuman CC0) + Blender'da katmanlı üniforma/teçhizat, PBR doku |
 | 2 | Her aracın hızı farklı ve gerçekçi; hava araçları; atış hızları | ✅ | `data/real_perf.json`: araç başına gerçek yol/arazi hızı, 0→32 km/h ivme, ana silah dolumu, otomatik top dakikada atım/seri, roketatar salvosu, hava aracı seyir hızı (kara ×0,5, hava ×0,25 ölçek); tekerlekli araç yolda hızlı (perftest) |
-| 3 | Palet/teker/motor arızası + istihkâm tamir animasyonu; daha önce hasar alan daha kolay hasar alır (dengeli) | 🟡 | Palet/teker kopması ve onarım var. → Motor arızası, birikimli yıpranma katsayısı, istihkâm tamir animasyonu (alet, eğilme, kıvılcım) |
+| 3 | Palet/teker/motor arızası + istihkâm tamir animasyonu; daha önce hasar alan daha kolay hasar alır (dengeli) | ✅ | Motor arızası (duman, yangın, söndürme), birikimli yıpranma, çekiç/kıvılcımlı onarım (enginetest) |
 | 5 | Seçim göstergesi: daha küçük, estetik, kendi tarzımız | 🟡 | Kompakt halka var. → Özgün tasarım (köşeli parantez + rol işareti, takım rengi), RA/SS/CoH analiziyle |
 | 6 | Tüm mühimmatlar gerçekçi: hız, boyut, çarpma, patlama, atış hızı — her araç ve silah | ✅ | `data/ammo.json`: kalibre başına namlu çıkış hızı, kütle, delme, hasar, patlama yarıçapı; ulusa göre iz rengi; araç → mühimmat eşlemesi (ammotest) |
 | 7 | Havan, top, obüs ve kurmalı ekip animasyonları | 🟡 | Çekili top dolum döngüsü var (doğrulama sürüyor). → Havan timi, obüs, ağır silah kurma/sökme/dolum animasyonları |
 | 8 | Drone: havada görünmeme düzeltmesi, irtifa gölgesi, drone sesi, kalkış/inişte dönen pervane, 2 kişilik operatör (istasyoncu + kumandalı pilot), drone türüne göre istihbarat | 🟡 | Mini drone + istasyon var; istasyon artık gerçek ölçekte küçük taktik İHA kaldırıyor ✅. → Ses, pervane, 2 kişilik ekip, türe göre görüş/tespit |
 | 9 | Vurulma yerine göre kan, patlamada uzuv kopması, sağlık çadırı/hastane/paramedikte ilk yardım, timleri isteğe göre birleştirme (tim+tim=manga) | 🟡 | Kan, bölgesel yara, hastane var. → İsabet bölgesine göre kan, uzuv kopması, ilk yardım animasyonu, oyuncu kontrollü tim birleştirme |
 | 10 | Araç modelleri çok detaylı (teker, kapak, yakıt deposu, namlu, zırh, renk) — EN KRİTİK KURAL | 🟡 | Katalog (191 araç) detay çekirdeğiyle yeniden üretildi ✅. → Taban tip modelleri (tank_blue vb.), gerçek boyut (38) |
-| 11 | Tank mürettebatı inip binebilsin (dismount/mount) | ⏳ | → Mürettebat ayrı askerler olarak iner/biner, araç mürettebatsız hareket etmez |
-| 12 | İmha mermi türüne göre değişsin: yan yatma, farklı yönde taret fırlaması, çakılma | 🟡 | Taret fırlaması, ikincil patlama var. → Fizik tabanlı imha (devrilme, taret yörüngesi, mermi türü/açıya göre) |
+| 11 | Tank mürettebatı inip binebilsin (dismount/mount) | ✅ | Mürettebat İn / Bin emirleri; araç mürettebatsız yürümez/ateş etmez (mounttest) |
+| 12 | İmha mermi türüne göre değişsin: yan yatma, farklı yönde taret fırlaması, çakılma | ✅ | Öldüren isabete göre imha: dikey/yönlü taret fırlaması, devrilme, helikopter düşüşü (killtest) |
 | 13 | Nadir teslim olma: beyaz bayrak, silah zoruyla karargâha götürülme | 🟡 | Teslim olma/esir var. → Beyaz bayrak modeli, eller havada yürüme, muhafız silahı doğrultarak eşlik |
 | 14 | Patlama bulutu yarı saydam; suya düşüşte araç boyutuna göre dalga | 🟡 | Yarı saydam duman var. → Bulut saydamlığı, boyuta göre dalga halkası (su shader'ı) |
 | 15 | Hava araçları füzeden kaçınsın; gerçek füze türleri ve atış mekanizmaları | ✅ | Güdüm türleri (IR / tel / lazer hüzme / lazer işaretleme / radar), kilit süreleri, nişancı izleme prosedürü (bastırılınca sapma), görünür tel, füzeye göre fişeğe kanma; helikopter fişek + kaçış (missiletest, evadetest) |
@@ -144,8 +156,8 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 19 | Animasyon için kendi sistemimiz (Unreal ile) | ⏳ | → Bkz. teknik not: Blender + mocap tabanlı kendi animasyon hattımız |
 | 20 | 4. fotoğraftaki gibi keskin hatlı, girilebilir, çatısı detaylı binalar | 🟡 | Çatı eşyaları var; girilebilirlik düzeltildi (kapı yol hücreleri: erişilemeyen pencere yuvası 1006 → 65). → Kalan 10 tür (istasyon, kültür merkezi, karakol kulesi...), fotoğraftan farklılaştırma (35) |
 | 21 | Harita boyutları büyütülecek — **öne alındı:** gerçek muharebeye yetecek büyüklükte, büyük savaş mekanizmasına uygun harita; bundan sonra her şey bu haritada test edilecek, ardından özel haritalar (48) | 🔄 | **Büyük Muharebe 8×8 km** ✅ (motor, stratejik görüş, simgeler, tarla/orman, yükleme ekranı). → Kalan: YZ'nin büyük haritada ilerleyişi, mini harita, yol bulma ızgarası belleği (2,5 GB), 49/50 ile gerçek menzil ve görüş |
-| 22 | Helikopter alçaldıkça pervane sesi artsın, rotor rüzgârı ağaç/çimen sallasın | ⏳ | → Global shader rüzgâr kaynağı (patlama dalgası sistemi gibi), irtifaya bağlı ses |
-| 23 | Palet izi; iklime göre kalıcı/kaybolan; savaş sisine uyumlu | ⏳ | → Arazi iz dokusu, biyoma göre sönüm, görülmeyen izler gizli |
+| 22 | Helikopter alçaldıkça pervane sesi artsın, rotor rüzgârı ağaç/çimen sallasın | ✅ | Rotor rüzgârı (ağaç, ot, toz), alçaldıkça ses yükselir, devir ses perdesinde (rotortest) |
+| 23 | Palet izi; iklime göre kalıcı/kaybolan; savaş sisine uyumlu | ✅ | İklime göre silinme, yağmurda derin iz, görülmeyen düşman iz bırakmaz (tracktest) |
 | 24 | Gerçekçi 3B alev, roketin poddan çıkışı vb. (dengeli) | 🟡 | → Hacimli alev flipbook'u, pod çıkış duman/alev |
 | 25 | Tüm asker animasyonları: tutuş, ateş, şarjör, silah değiştirme, siper, sürünme, atlama, depar, tetikte yürüme, araç arkasında yürüme | 🟡 | Kodla poz + IK var. → Keyframe/mocap klipleri |
 | 26 | Mühimmat efektleri için gerekli programları kur, test et; kurşun ve roket farklı görünsün | ✅ | İz boyutu kalibreye göre; yerden atılan roket/füzede motor alevi + ışık, füzede iz fişeği (ammotest) |
@@ -161,12 +173,12 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 36 | Kum torbaları gerçekçi (web'den CC0 varlık ya da kendi üretimimiz) | ⏳ | → Blender'da torba modeli (kumaş dokusu, sarkma, dikiş), şaşırtmalı dizim |
 | 37 | Kazma ve inşaat animasyonları: silah sırtta, binanın içine girmeden dışarıdan inşa (hata var) | ⏳ | → İnşaat yuvaları iskele dışında, tüfek sırtta, kazma/kürek/çekiç aleti |
 | 38 | Tüm araç boyutları gerçekçi | ✅ | `data/real_dims.json` + `tools/size_audit.gd`: 190 araçta sapma yok (önce 42 kara aracı hatalı). Namlu boyu/taret yeri, kamyon şasisi, köprü/dozer, roketatar kutusu; çekili toplar gerçek yerleşimle yeniden (D-30 atış düzeninde) |
-| 39 | Helikopter pervaneleri gerçekçi, detay dokulu | ⏳ | → Kanat profili, uç bandı, hub; dönüşte hareket bulanıklığı diski |
+| 39 | Helikopter pervaneleri gerçekçi, detay dokulu | ✅ | Sivrilen burulmuş pal, uç ve hücum kenarı şeridi, ayrıntılı göbek |
 | 40 | Hiçbir mermi yuvarlak top/taş gibi görünmesin | ✅ | Topçu/havan yüksek yörünge + iz, moloz köşeli parça (ammotest) |
 | 41 | Köprüler gerçekçi olsun ve hasar alsın; uzaklaşınca (zoom out) gölgeler kayıyor/parlıyor | ⏳ | → Köprü modeli (ayak, kiriş, korkuluk, hasar durumları); yönlü gölge mesafesi yakınlaştırmaya göre basamaklı + sapma ayarı |
 | 42 | Harita başlayınca nehirde durduk yere duman çıkıyor → kaldırılacak; nehre gerçekçi akış | 🟡 | Duman kaldırıldı ✅, su nehir boyunca akıyor ✅. → Köprü ayağında girdap, akıntıyla taşınan köpük çizgileri |
 | 43 | Savaş sisi gerçekçi: karemsi değil, birliklerin görüşüne göre değişsin | ✅ | Görüş çokgenleri (orman/bina/duvar keser), yumuşak kenar, optiğe göre yarıçap, büyük haritada 4 m/piksel |
-| 44 | Helikopter pervaneleri mutlaka görünsün (sesler en son, ama sistem buna uygun) | ⏳ | → 39 ile birlikte: dönen kanat her zaman görünür (kanat + bulanık disk), rotor devri ses için hazır değişken |
+| 44 | Helikopter pervaneleri mutlaka görünsün (sesler en son, ama sistem buna uygun) | ✅ | Paller hep görünür, stroboskopsuz dönüş, rotor devri değişkeni ses perdesine bağlı |
 | 45 | Soldaki bilgilendirmeler daha estetik | ⏳ | → Bilgi/olay paneli yeniden tasarım (tipografi, ikon, kart, solma) |
 | 46 | Harita daha estetik | 🟡 | Tarla deseni, orman zemini, yol köyleri ✅. → Arazi dokusu ve renk paleti, kıyılar, yol kenarları, bitki dağılımı, ışık/atmosfer |
 | 47 | Roadmap bitince genel kalite turu: grafik ayarlarıyla hata kontrolü, sandbox'ta tüm yapılar, tüm animasyonlar (model güncellemesi sonrası), büyük haritada oyuncu gibi uzun ve gerçekçi maç (maç süresi ölçülür), olası hataların bulunup engellenmesi | ⏳ | → Faz 7 |

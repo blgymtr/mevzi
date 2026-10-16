@@ -341,8 +341,18 @@ static func clear_cache() -> void:
 
 # ------------------------------------------------------------ araç
 static func vehicle(vtype: String, team: int) -> Dictionary:
+	# taban tip: ulusun ayrıntılı modeli (data/catalog/base_models.json → <tip>_<ulus>.glb), yoksa eski mavi/kırmızı
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else ""
+	if nat != "" and _has_model("%s_%s" % [vtype, nat]):
+		return vehicle_model("%s_%s" % [vtype, nat], team)
 	var model := "%s_%s" % [vtype, "blue" if team == 0 else "red"]
 	return vehicle_model(model, team)
+
+static var _model_ok := {}
+static func _has_model(name: String) -> bool:
+	if not _model_ok.has(name):
+		_model_ok[name] = ResourceLoader.exists("res://assets/models/%s.glb" % name)
+	return _model_ok[name]
 
 static func vehicle_model(model: String, team: int) -> Dictionary:
 	if not has(model):

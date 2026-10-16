@@ -45,8 +45,8 @@ func _ready() -> void:
 		_start_watchdog()
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
-		start_units = shot_scene in ["battletest", "modetest", "supplytest", "logitest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest"]:
+		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -211,11 +211,11 @@ func _clear_world() -> void:
 # demesin). Yükleme boyunca 3B çizim kapalı (yarım kurulmuş dünyayı çizmek boşa).
 const LOAD_STEPS := {"start": 0.0, "grid": 0.02, "terrain": 0.03, "rivers": 0.05, "roads": 0.09, "rail": 0.11, "sites": 0.12,
 	"town": 0.30, "towns": 0.40, "villages": 0.55, "farms": 0.60, "forests": 0.78, "fields": 0.86, "scatter": 0.90, "details": 0.92,
-	"layout": 0.92, "water": 0.93, "blocks": 0.97, "grid_flush": 0.99, "scatter_end": 0.99, "mapgen": 1.0}
+	"layout": 0.92, "water": 0.93, "blocks": 0.97, "grid_flush": 0.99, "scatter_end": 0.99, "mapgen": 0.99, "minimap": 1.0}
 const LOAD_TEXT := {"start": "Harita hazırlanıyor", "grid": "Arazi ızgarası", "terrain": "Arazi", "rivers": "Nehirler", "roads": "Yol ağı ve köprüler",
 	"rail": "Demiryolu", "sites": "Hedefler ve ileri üsler", "town": "Merkez kasaba", "towns": "Kasabalar", "villages": "Köyler", "farms": "Çiftlikler",
 	"forests": "Ormanlar", "fields": "Tarlalar", "scatter": "Bitki örtüsü", "details": "Ayrıntılar", "layout": "Yerleşim", "water": "Su",
-	"blocks": "Binalar", "grid_flush": "Yol bulma", "mapgen": "Hazır"}
+	"blocks": "Binalar", "grid_flush": "Yol bulma", "mapgen": "Hazır", "minimap": "Harita görünümü"}
 var _load_ci := RID()
 var _load_layer: CanvasLayer = null
 var _load_title := ""
@@ -332,6 +332,11 @@ func build_world(id: String, seed_v: int, data := {}) -> void:
 	G.mapgen = mg
 	mg.build(id, seed_v)
 	G.prof("mapgen")
+	# mini harita dokusu yükleme ekranındayken (oyun başında takılma olmasın)
+	if G.hud != null and G.hud.radar != null:
+		load_step("minimap")
+		G.hud.radar._build_tex()
+		G.prof("minimap")
 	load_end()
 	var lg := Logistics.new()
 	add_child(lg)

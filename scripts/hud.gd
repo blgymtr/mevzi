@@ -30,6 +30,8 @@ const ORDERS := {
 	"airdrop": {"t": "İkmal At", "k": "Y", "tgt": true, "d": "Kargo helikopteri seçilen noktaya mühimmat paleti bırakır; paletler üste/pistte yenilenir. Dost hafif araca sağ tık: askıya al."},
 	"refund": {"t": "Üsse Dön (İade)", "k": "J", "tgt": false, "d": "Birlik en yakın üsse döner ve sahadan çekilir; kalan değerinin %80'i iade edilir."},
 	"abandon": {"t": "Terk Et", "k": "K", "tgt": false, "d": "Mürettebat aracı terk eder; araç 6 sn sonra kendini imha eder."},
+	"dismount": {"t": "Mürettebat İn", "k": "-", "tgt": false, "d": "Mürettebat araçtan iner ve yanında tim olur; araç sağlam kalır ama sürücü ve nişancı olmadan yürüyemez, ateş edemez."},
+	"mount": {"t": "Mürettebat Bin", "k": "-", "tgt": false, "d": "İnmiş mürettebat aracına geri biner. Başka piyade de araca sağ tıklayıp eksik mürettebatın yerine geçebilir."},
 	"grenade": {"t": "El Bombası", "k": "G", "tgt": true, "d": "Seçilen noktaya el bombası at."},
 	"smoke": {"t": "Sis", "k": "Z", "tgt": true, "d": "Sis bombası at / sis atarları ateşle."},
 	"suppress": {"t": "Baskı Ateşi", "k": "B", "tgt": true, "d": "Bir bölgeyi 12 sn boyunca ateş altında tut."},
@@ -39,7 +41,7 @@ const ORDERS := {
 	"dronestation": {"t": "Drone İstasyonu Kur", "k": "O", "tgt": true, "d": "Operatör seçilen yere yer kontrol istasyonu kurar (16 sn). Bitince mancınıktan keşif İHA'sı fırlatılır: yüksek irtifa, geniş görüş, vurulması zor."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronestation", "refund", "abandon", "demolish"]
+const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronestation", "refund", "dismount", "mount", "abandon", "demolish"]
 # emir kısayollarının VARSAYILANLARI; oyuncu atamaları ve eşleşme Keybinds üzerinden (Ayarlar > Klavye Ayarları)
 const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_L: "minidrone", KEY_O: "dronestation", KEY_I: "fastrope", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
@@ -414,6 +416,14 @@ func order_state(id: String, sel: Array) -> int:
 				if veh and u.crew_max > 0 and not u.is_air():
 					any = true
 					ok = ok or (u.crew_n > 0 and u.abandon_t < 0.0)
+			"dismount":
+				if veh and u.crew_max > 0 and not u.is_air():
+					any = true
+					ok = ok or (u.crew_n > 0 and u.abandon_t < 0.0)
+			"mount":
+				if veh and u.crew_max > 0 and not u.is_air():
+					any = true
+					ok = ok or (u.crew_n < u.crew_max and not u.crew_out.is_empty())
 	if not any:
 		return -1
 	return 1 if ok else 0
@@ -1846,30 +1856,97 @@ class Radar extends Control:
 		var k := (s - r.position) / r.size
 		return Vector3(clampf(k.x, 0, 1) * G.MAP, 0, clampf(k.y, 0, 1) * G.MAP)
 
-	# arazi görüntüsü: zemin tonu + tepe gölgesi, su, ağaçlık, yapılar, yollar
+	# arazi görüntüsü (roadmap 21): arazinin kendi boya / tarla / yükseklik dokularından alan ortalamasıyla
+	# küçültülür (eskiden piksel başına tek nokta: 8 km'de 42 m'lik pikselde yol ve köy kayboluyordu):
+	# tarla deseni ve orman zemini, yollar, tepe gölgesi, su, tek ağaçlar ve sıralar, binalar, köprüler
+	static func _down(src: Image, n: int) -> Image:
+		var im := src.duplicate() as Image
+		if im.is_compressed():
+			im.decompress()
+		# yarıya indirerek küçült (her adım 2×2 kutu ortalaması: ince yol / dere kapsama oranıyla kalır)
+		while im.get_width() >= n * 2:
+			im.resize(im.get_width() / 2, im.get_height() / 2, Image.INTERPOLATE_BILINEAR)
+		if im.get_width() != n:
+			im.resize(n, n, Image.INTERPOLATE_BILINEAR)
+		return im
+
 	func _build_tex() -> void:
-		var n := 192
-		var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+		var n := 512 if G.MAP >= 2048.0 else (384 if G.MAP >= 1024.0 else 256)
 		var base := Color(0.86, 0.72, 0.46) if G.map_kind == "desert" else (Color(0.86, 0.89, 0.92) if G.map_kind == "winter" else Color(0.42, 0.56, 0.26))
+		var crop := [base, Color(0.76, 0.66, 0.36), Color(0.36, 0.52, 0.2), Color(0.44, 0.34, 0.23), Color(0.48, 0.6, 0.28), Color(0.16, 0.3, 0.13)]
+		var road := Color(0.74, 0.7, 0.6) if G.map_kind != "winter" else Color(0.55, 0.55, 0.55)
+		var hi := _down(G.terrain.himg, n)
+		var pi := _down(G.terrain.img, n)
+		var fi := _down(G.terrain.fimg, n) if G.terrain.fimg != null else null
+		hi.convert(Image.FORMAT_RF)
+		pi.convert(Image.FORMAT_RGBA8)
+		var hd := hi.get_data()
+		var pd := pi.get_data()
+		var fd := PackedByteArray()
+		if fi != null:
+			fi.convert(Image.FORMAT_RGBA8)
+			fd = fi.get_data()
+		var out := PackedByteArray()
+		out.resize(n * n * 3)
 		var cs := G.MAP / n
+		var hk := 3.0 / maxf(cs, 0.5) * 8.0     # eğim → gölge (piksel boyundan bağımsız)
 		for z in n:
 			for x in n:
-				var p := Vector3((x + 0.5) * cs, 0, (z + 0.5) * cs)
+				var i := z * n + x
+				var h0 := hd.decode_float(i * 4)
+				var hx := hd.decode_float((z * n + mini(x + 1, n - 1)) * 4)
+				var hz := hd.decode_float((mini(z + 1, n - 1) * n + x) * 4)
 				var col := base
-				var h0 := G.terrain.ground_h(p)
-				var hx := G.terrain.ground_h(p + Vector3(cs, 0, 0))
-				var hz := G.terrain.ground_h(p + Vector3(0, 0, cs))
-				col = col.lightened(clampf((h0 - hx + h0 - hz) * 1.6, -0.3, 0.3)) if (h0 - hx + h0 - hz) > 0 else col.darkened(clampf(-(h0 - hx + h0 - hz) * 1.6, 0.0, 0.3))
+				if not fd.is_empty():
+					var fa := fd[i * 4 + 3] / 255.0
+					if fa > 0.04:
+						col = col.lerp(crop[clampi(int(round(fd[i * 4] / 255.0 * 5.0)), 0, 5)], clampf(fa * 1.15, 0.0, 1.0))
+				var rd := pd[i * 4] / 255.0
+				if rd > 0.05:
+					col = col.lerp(road, clampf(rd * 3.4, 0.0, 0.92))
+				var sl := (h0 - hx + h0 - hz) * hk
+				col = col.lightened(clampf(sl, 0.0, 0.28)) if sl > 0.0 else col.darkened(clampf(-sl, 0.0, 0.32))
+				var p := Vector3((x + 0.5) * cs, 0, (z + 0.5) * cs)
 				var gi := G.grid.idx(p)
 				if G.grid.water[gi] >= 1 and G.grid.bridge[gi] == 0:
-					col = Color(0.16, 0.42, 0.55)
-				elif G.grid.kind[gi] == Grid.K_TREE:
-					col = Color(0.16, 0.34, 0.14)
-				elif G.grid.h[gi] >= 0.3:
-					col = Color(0.78, 0.5, 0.36) if G.grid.kind[gi] == Grid.K_HOUSE else Color(0.6, 0.56, 0.5)
-				elif G.grid.h[gi] > 0.05:
-					col = col.lightened(0.15)
-				img.set_pixel(x, z, col)
+					col = Color(0.15, 0.38, 0.5).lerp(Color(0.2, 0.48, 0.6), clampf(-h0 * 0.3, 0.0, 1.0))
+				out[i * 3] = int(clampf(col.r, 0.0, 1.0) * 255.0)
+				out[i * 3 + 1] = int(clampf(col.g, 0.0, 1.0) * 255.0)
+				out[i * 3 + 2] = int(clampf(col.b, 0.0, 1.0) * 255.0)
+		var img := Image.create_from_data(n, n, false, Image.FORMAT_RGB8, out)
+		# tek ağaçlar, ağaç sıraları, koruluklar (orman zemini zaten boyalı): koyu yeşil nokta
+		var tc := Color(0.13, 0.27, 0.11)
+		if G.props != null:
+			for it in G.props.items:
+				if it["kind"] == "tree" and it["alive"]:
+					var tp: Vector3 = it["pos"]
+					var tx := int(tp.x / cs)
+					var tz := int(tp.z / cs)
+					if tx >= 0 and tz >= 0 and tx < n and tz < n:
+						img.set_pixel(tx, tz, img.get_pixel(tx, tz).lerp(tc, 0.55))
+		# binalar: kiremit / beton tonu, büyük haritada en az bir piksel
+		if G.blocks != null:
+			for hs in G.blocks.houses:
+				var hc: Vector3 = hs["center"]
+				var sz: Vector2 = hs["size"]
+				var r := Rect2i(int((hc.x - sz.x * 0.5) / cs), int((hc.z - sz.y * 0.5) / cs), maxi(1, int(ceil(sz.x / cs))), maxi(1, int(ceil(sz.y / cs))))
+				r = r.intersection(Rect2i(0, 0, n, n))
+				if r.size.x > 0 and r.size.y > 0:
+					img.fill_rect(r, Color(0.66, 0.42, 0.32) if G.map_kind != "winter" else Color(0.5, 0.36, 0.3))
+		# köprüler
+		for b in G.grid.bridges:
+			var c: Vector3 = b["c"]
+			var d: Vector3 = b["d"]
+			var L: float = b["L"]
+			var k := 0.0
+			while k <= L:
+				var q: Vector3 = c + d * (k - L * 0.5)
+				var qx := int(q.x / cs)
+				var qz := int(q.z / cs)
+				if qx >= 0 and qz >= 0 and qx < n and qz < n:
+					img.set_pixel(qx, qz, Color(0.78, 0.76, 0.7))
+				k += cs * 0.5
+		img.generate_mipmaps()
 		tex = ImageTexture.create_from_image(img)
 		tex_for = G.terrain.get_instance_id()
 
@@ -1893,6 +1970,7 @@ class Radar extends Control:
 	func _draw() -> void:
 		if not G.running or G.cam == null:
 			return
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		var f: Font = hud.font
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.035, 0.034, 0.9))
 		if G.terrain and (tex == null or tex_for != G.terrain.get_instance_id()):

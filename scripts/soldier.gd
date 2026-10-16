@@ -148,7 +148,9 @@ var job_pt := Vector3.INF
 var job_tgt: Unit = null
 var station: DroneStation = null
 var repair_target: Unit = null
+var repair_vis_t := -1.0      # onarım görüntüsü (çekiç, eğilme, kıvılcım) bu zamana dek
 var vehicle_in: Vehicle = null
+var home_vehicle: Vehicle = null     # inmiş tank mürettebatının aracı (roadmap 11)
 var board_target: Vehicle = null
 var fire_mode := 0          # 0 serbest ateş, 1 sadece karşılık, 2 ateşi kes
 var stance_lock := -1       # -1 otomatik, yoksa STAND/CROUCH/PRONE
@@ -931,10 +933,12 @@ func _set_path(p: Vector3) -> void:
 		path = G.grid.cached_path(position, p, Grid.M_INF)
 		if path.size() > 0:
 			return
-		path = G.grid.provisional(position, p, Grid.M_INF)
-		if path.size() > 0:
-			G.grid.request_path(position, p, Grid.M_INF, _on_path.bind(path_req))
+		if G.grid.direct(position, p, Grid.M_INF):
+			path = PackedVector3Array([G.grid.nearest_free(p, Grid.M_INF)])
 			return
+		path = G.grid.provisional(position, p, Grid.M_INF)
+		G.grid.request_path(position, p, Grid.M_INF, _on_path.bind(path_req))
+		return
 	path = G.grid.find_path(position, p, Grid.M_INF)
 
 var path_req := 0
@@ -1006,7 +1010,7 @@ func _process(dt: float) -> void:
 	body.move_yaw = angle_difference(rotation.y, _yaw_of(vel)) if sp > 0.3 else 0.0
 	body.pistol = G.time - pistol_t < 2.5 or (one_armed() and G.time - threat_time < 10.0)
 	body.limp = injury == "leg"
-	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if state == "build" else ("drone" if state == "launch" and state_t < 1.4 else "")))
+	body.set_tool("crate" if (haul and order == "build" and state == "move") else ("hammer" if (state == "build" or (G.time < repair_vis_t and state == "idle")) else ("drone" if state == "launch" and state_t < 1.4 else "")))
 	body.animate(dt, _pose(), sp, fly_ang if state == "fly" else (state_t / 0.7 if state == "throw" else (state_t / 0.5 if state == "melee" else (1.0 if haul else 0.0))))
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
 	body.position = Vector3(lean_cur.x, body_lift, lean_cur.z).rotated(Vector3.UP, -rotation.y)
@@ -1532,12 +1536,21 @@ func _think_repair() -> void:
 					repair_target = u
 	if repair_target == null:
 		return
-	var rr: float = repair_target.radius + 1.2
-	if dist2(repair_target) > rr + 0.8:
+	# araçta merkeze değil gövdenin en yakın kenarına yaklaşılır (gerçek boyutlu tank 8–10 m)
+	var rp: Vector3 = repair_target.obb_closest(position) if repair_target is Vehicle else repair_target.position
+	var rr: float = 1.2 if repair_target is Vehicle else repair_target.radius + 1.2
+	if Vector2(position.x - rp.x, position.z - rp.z).length() > rr + 0.8:
 		if path_i >= path.size():
-			_set_path(repair_target.position + (position - repair_target.position).normalized() * rr)
+			var away := position - rp
+			away.y = 0.0
+			if away.length() < 0.1:
+				away = Vector3.RIGHT
+			_set_path(G.grid.nearest_free(rp + away.normalized() * rr, Grid.M_INF, 4))
 		state = "move"
 		return
+	repair_vis_t = G.time + 0.7
+	if randf() < 0.45:
+		G.fx.sparks(repair_target.position.lerp(position, 0.55) + Vector3(0, 0.6, 0), 0.5)
 	repair_target.hp = minf(repair_target.max_hp, repair_target.hp + 40.0 * 0.32)
 	if repair_target is Vehicle and repair_target.tires > 0 and randf() < 0.25:
 		repair_target.tires -= 1
@@ -1547,6 +1560,9 @@ func _think_repair() -> void:
 		for ck in repair_target.crit:
 			if repair_target.crit[ck] > 0:
 				repair_target.crit_t[ck] -= 4.0
+		# istihkâm yıpranmayı da yavaşça giderir; yangını söndürür
+		repair_target.wear = maxf(0.0, repair_target.wear - 0.006)
+		repair_target.eng_fire = maxf(0.0, repair_target.eng_fire - 3.0)
 	_face_to(repair_target.position)
 	state_t = 0.0
 	if randf() < 0.3:
@@ -2851,6 +2867,8 @@ func _pose() -> String:
 	if blind_t > 0.0 and state == "idle":
 		return "blind_side" if blind_side else "blind"
 	if bandage_t > 0.0 and state == "idle":
+		return "build"
+	if G.time < repair_vis_t and state == "idle":
 		return "build"
 	var aiming := target != null and is_instance_valid(target) and (popped or burst_left > 0) and can_fight()
 	match stance:

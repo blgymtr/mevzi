@@ -492,6 +492,11 @@ func ricochet(p: Vector3, dir: Vector3, nrm: Vector3) -> void:
 		emit(P_SPARK, p, (r + _rv(0.35)).normalized() * rng.randf_range(10.0, 22.0), rng.randf_range(0.15, 0.35), 0.05, 0.035, 6.0, 1.0, Color(1.0, 0.9, 0.6))
 	flash(p, 2.0, 4.0, 0.06, Color(1.0, 0.9, 0.7))
 
+# onarım kıvılcımı (çekiç / taşlama): az, kısa ömürlü, aşağı düşen kıvılcımlar
+func sparks(p: Vector3, s := 1.0) -> void:
+	for i in int(6 * s) + 2:
+		emit(P_SPARK, p, Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(0.3, 1.6), rng.randf_range(-1.0, 1.0)) * rng.randf_range(2.0, 4.5), rng.randf_range(0.12, 0.3), 0.03, 0.02, 9.0, 1.0, Color(1.0, 0.82, 0.45))
+
 # yüzeye göre el bombası/küçük patlama ek efekti
 func surface_burst(p: Vector3, s: float) -> void:
 	var c: Color
