@@ -1583,7 +1583,11 @@ func _run_build_test() -> void:
 	get_window().size = Vector2i(1920, 1080)
 	Sfx.muted = true
 	var fails := 0
-	start_game("green_valley")
+	var map_id := "green_valley"
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--map="):
+			map_id = arg.substr(6)
+	start_game(map_id)
 	for a in G.ais:
 		a.queue_free()
 	G.ais.clear()
@@ -1619,8 +1623,12 @@ func _run_build_test() -> void:
 		slots[s.build_slot] = true
 		spread = maxf(spread, Vector2(s.position.x - ws[0].position.x, s.position.z - ws[0].position.z).length())
 	var hauls := 0
+	var lifts := 0
 	for k in 40:
 		await _wait(0.25)
+		for s in ws:
+			if s.state == "build" and s.lift_t > 0.0:
+				lifts += 1
 		for s in ws:
 			if s.haul:
 				hauls += 1
@@ -1630,20 +1638,29 @@ func _run_build_test() -> void:
 		fails += 1
 	# 37: işçiler binanın içine girmez (iskele dışında çalışır); tüfek sırtta, elde alet; taşıyıcı eğilip kutu alır
 	var inside := 0
-	var lifts := 0
+	var walk_in := 0
 	var tools := {}
 	for k in 24:
 		await _wait(0.25)
 		for s in ws:
+			var lp: Vector3 = (s.position - b.position).rotated(Vector3.UP, -b.rot)
+			var in_fp: bool = absf(lp.x) < b.size.x * 0.5 * b._hq_k() - 0.2 and absf(lp.z) < b.size.y * 0.5 * b._hq_k() - 0.2
+			if s.state == "move" and in_fp:
+				walk_in += 1                          # 95: yığın ile işçi yeri arası binanın içinden geçmez, yandan dolaşır
 			if s.state == "build":
-				var lp: Vector3 = (s.position - b.position).rotated(Vector3.UP, -b.rot)
-				if absf(lp.x) < b.size.x * 0.5 * b._hq_k() - 0.2 and absf(lp.z) < b.size.y * 0.5 * b._hq_k() - 0.2:
+				if in_fp:
 					inside += 1
 				if s.lift_t > 0.0:
 					lifts += 1
 			tools[s.body._tool] = true
-	print("BUILD inside=%d lifts=%d tools=%s" % [inside, lifts, tools.keys()])
-	if inside > 0 or lifts == 0 or not tools.has("hammer"):
+	print("BUILD inside=%d walk_inside=%d lifts=%d tools=%s" % [inside, walk_in, lifts, tools.keys()])
+	if lifts == 0:
+		# teşhis: taşıyıcılar nerede takıldı
+		for s in ws:
+			if s.build_slot % 3 == 2:
+				var pr: Vector3 = b.pile_reach()
+				print("BUILD hauler slot=%d state=%s haul=%s pos=%s pile=%s reach=%s d_reach=%.1f d_slot=%.1f path=%d" % [s.build_slot, s.state, s.haul, s.position, b.pile_pos(), pr, Vector2(pr.x - s.position.x, pr.z - s.position.z).length(), Vector2(b.slot_pos(s.build_slot).x - s.position.x, b.slot_pos(s.build_slot).z - s.position.z).length(), s.path.size()])
+	if inside > 0 or walk_in > 0 or lifts == 0 or not tools.has("hammer"):
 		fails += 1
 	await _wait(4.0)
 	await _shot("build_02_mid")

@@ -212,6 +212,13 @@ func flush_nav() -> void:
 	_hm_flush()
 	if _dirty.is_empty():
 		return
+	if not _pcache.is_empty():
+		var lo := Vector2(INF, INF)
+		var hi := Vector2(-INF, -INF)
+		for c in _dirty:
+			lo = lo.min(Vector2(c))
+			hi = hi.max(Vector2(c))
+		_pcache_invalidate(lo * NAV - Vector2(2, 2), (hi + Vector2.ONE) * NAV + Vector2(2, 2))
 	var locked := false
 	if not navw.is_empty():
 		locked = _wmx.try_lock()
@@ -261,6 +268,7 @@ func _update_base(c: Vector2i) -> void:
 	var wall_h := false
 	var wet := false
 	var dr := false
+	var bld := false
 	for dz in FPN:
 		for dx in FPN:
 			var i := (c.y * FPN + dz) * N + c.x * FPN + dx
@@ -273,6 +281,8 @@ func _update_base(c: Vector2i) -> void:
 			mx = maxf(mx, v)
 			if v >= 0.45:
 				nblk += 1
+				if k == K_BUILDING:
+					bld = true
 			if k == K_WIRE:
 				wire = true
 			if k == K_TRAP:
@@ -295,7 +305,9 @@ func _update_base(c: Vector2i) -> void:
 	# iri yol bulma hücresinde (2 km+) ince duvar tüm hücreyi kapatmasın: piyade için çoğunluk kuralı
 	var blk := mx >= 0.45 and not vlt
 	if FPN > 2:
-		blk = blk and nblk * 2 > FPN * FPN
+		# taraf yapısı (karargâh, fabrika, kışla ...) dolu gövdedir: köşesi değen hücre de kapalı — çoğunluk
+		# kuralıyla 45° dönük yapının köşe hücreleri açık kalıyor, işçiler / kamyonlar köşeyi içinden kesiyordu
+		blk = blk and (nblk * 2 > FPN * FPN or bld)
 	# kapı boşluğu: 1 m'lik yol hücresi kapı pervazıyla kesişse de piyadeye açık (asıl geçiş ince ızgarada
 	# çarpışmayla) — 1,3 m'lik kapılar hizaya göre tam açık hücre bırakmıyor, bina içi erişilemez kalıyordu
 	if dr:
@@ -538,9 +550,25 @@ func cached_path(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:
 	var out := PackedVector3Array()
 	if _pcache.has(key):
 		out.append_array(_pcache[key])
+		# anahtar 12 m'lik bölgeye yuvarlı: aynı bölgede ama binanın öbür yanındaki birim ilk noktaya düz
+		# yürürken binanın içinden geçerdi → ilk parça buradan yürünemiyorsa önbellek kullanılmaz
+		if out.size() > 0 and not walkable_line(from, out[0], mode):
+			return PackedVector3Array()
 		if out.size() > 0:
 			out[out.size() - 1] = nearest_free(to, mode)
 	return out
+
+# ızgara değişti (yapı yerleşti / yıkıldı): değişen bölgeden geçen önbellekli yollar silinir
+func _pcache_invalidate(lo: Vector2, hi: Vector2) -> void:
+	for key in _pcache.keys():
+		var pts: PackedVector3Array = _pcache[key]
+		var prev := Vector2(key.x * 12.0 + 6.0, key.y * 12.0 + 6.0)
+		for p in pts:
+			var q := Vector2(p.x, p.z)
+			if minf(prev.x, q.x) <= hi.x and maxf(prev.x, q.x) >= lo.x and minf(prev.y, q.y) <= hi.y and maxf(prev.y, q.y) >= lo.y:
+				_pcache.erase(key)
+				break
+			prev = q
 
 # sonuç gelene kadar yürünecek düz parça: hedefe doğru engelsiz en çok 48 m; yoksa boş
 func provisional(from: Vector3, to: Vector3, mode: int) -> PackedVector3Array:

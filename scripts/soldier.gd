@@ -3199,7 +3199,7 @@ func _physics_process(dt: float) -> void:
 			var sp: Vector3 = build_site.slot_pos(build_slot)
 			if build_slot % 3 == 2:
 				# malzeme taşıyıcı: yığından kutu/kalas al, iskeleye götür
-				var tgt: Vector3 = sp if haul else build_site.pile_pos()
+				var tgt: Vector3 = sp if haul else build_site.pile_reach()
 				if Vector2(tgt.x - position.x, tgt.z - position.z).length() > (2.6 if not haul else 1.6):
 					build_goal = tgt
 					_set_path(tgt)
@@ -3213,7 +3213,7 @@ func _physics_process(dt: float) -> void:
 				if haul:
 					build_site.add_work(2.4 * mult)
 				haul = not haul
-				build_goal = build_site.pile_pos() if not haul else sp
+				build_goal = build_site.pile_reach() if not haul else sp
 				_set_path(build_goal)
 				state = "move"
 				return

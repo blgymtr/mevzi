@@ -675,10 +675,34 @@ func _build_pile() -> void:
 	mi.mesh = mb.commit(Mats.vcs())
 	pile.add_child(mi)
 
+var _pile_at := Vector3.INF
+
+# malzeme yığını: yapının dört yanından ilk açık olanında (ağaç / kaya / duvar üstüne düşen yığına taşıyıcı
+# yaklaşamıyor, yığın ile çevresi arasında sonsuza dek gidip geliyordu); bir kez seçilir
 func pile_pos() -> Vector3:
+	if _pile_at != Vector3.INF:
+		return _pile_at
 	var hx := size.x * 0.5 * _hq_k()
 	var hz := size.y * 0.5 * _hq_k()
-	return position + Vector3(hx + 3.2, 0, hz * 0.4).rotated(Vector3.UP, rot)
+	var cands := [Vector3(hx + 3.2, 0, hz * 0.4), Vector3(-hx - 3.2, 0, -hz * 0.4), Vector3(hx * 0.4, 0, hz + 3.2), Vector3(-hx * 0.4, 0, -hz - 3.2)]
+	_pile_at = position + (cands[0] as Vector3).rotated(Vector3.UP, rot)
+	if G.grid == null:
+		return _pile_at
+	for lp in cands:
+		var p: Vector3 = position + (lp as Vector3).rotated(Vector3.UP, rot)
+		var ok := true
+		for o in [Vector3.ZERO, Vector3(1.2, 0, 0), Vector3(-1.2, 0, 0), Vector3(0, 0, 1.2), Vector3(0, 0, -1.2)]:
+			if not G.grid.free_at(p + o, Grid.M_INF):
+				ok = false
+				break
+		if ok:
+			_pile_at = p
+			break
+	return _pile_at
+
+# taşıyıcının yığında duracağı yürünebilir nokta (yığının kendisi katı hücreye denk gelebilir)
+func pile_reach() -> Vector3:
+	return G.grid.nearest_free(pile_pos(), Grid.M_INF, 4)
 
 # çevrede en çok 6 işçi yeri: dikdörtgen çevresine eşit aralıklı, iskelenin hemen dışında
 func claim_slot(s: Node) -> int:
