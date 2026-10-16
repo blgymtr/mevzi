@@ -162,6 +162,7 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Eklendi (24):** Hacimli alev — yanan araç / yapı yangınlarında üst üste binen prosedürel alev dilleri (yeni parçacık türü: gürültüyle çarpıtılmış, yukarı akan damla biçimi; çekirdek beyaz-sarı, kenar turuncu-kızıl, uç kopuk, hafif yalpalama; yumuşak parçacık). Akışkan simülasyonuyla üretilen alev flipbook'u denendi, yetersiz bulunup bırakıldı (`tools/fx_sim.py` PIL olmadan da çalışır)
 - **Eklendi (24/75):** Roketatar atışı: fırlatıcı (pod) kurulumla birlikte atış açısına kalkar, toplanırken iner; her roket podun kendi tüpünden (tüp kafesi salvo sayısından: HIMARS 2×3, M270 3×4, BM-21 4×10; atış sırası kafes boyunca dağınık); kapalı podlarda (≤ 16 tüp) tüp kapağı parçalanır, iki yarım parça dönerek yere düşüp kalır, dolumda yeni pod; tüp ağzında alev dili ve parlama, podun arkasına fışkıran egzoz, yere çarpıp yayılan toz bulutu (salvonun ilk roketinde büyük); roket tüpten önce yavaş süzülüp hızlanarak (≈ t³) tüp ekseninde havalanır, sonra hedefe yörüngeye girer; motor yanarken (~1,9 sn) aralıksız beyaz duman izi (eskiden boncuk boncuk), yanma bitince iz kesilir (firetest)
 - **Düzeltildi:** Başlamış roketatar salvosu hedef kaybolunca donuyordu; artık sürer (toplanırken bekler)
+- **Düzeltildi (kalıcı kural):** Camiye / mescide benzeyen yapılar tamamen kaldırıldı — kubbeli hamam (yanındaki ince bacayla minare silueti veriyordu), kubbeli küçük kerpiç kuyu evi (artık düz damlı), kervansaraylardaki kubbecikler, Harran konik kubbeli evi; kubbe üreticisi (`_r_dome`, kubbe profili, kubbeli revak) koddan silindi, hiçbir yapı kubbe üretemez. Fabrika / kazan dairesi / tuğla harmanı bacası ince, halkalı, tepesi çubuklu kule (minareye benziyordu) yerine kalın beton kaideli, konik tuğla gövdeli, kornişli taçlı, isli açık ağızlı sanayi bacası + yan servis merdiveni + binaya bağlanan duman kanalı; ekmek fırını tonoz örtülü
 
 ---
 
@@ -259,6 +260,8 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 87 | Tank patlayınca üstündeki asker ayakta kalıyor, ölmüyor | ⏳ | → Patlamada araç üstündekiler savrulur (ragdoll), yaralanır ya da ölür |
 | 88 | Roketatarda hızlı salvo seçeneği | ⏳ | → 72 atış modları ile |
 | 89 | Askerler siperde yatamıyor; siper boyutuna göre eğilme / çömelme animasyonu | ⏳ | → Siper derinliğine göre poz: sığ hendekte yüzüstü / diz, derin siperde ayakta siper kenarına yaslanma, başını eğme |
+| 90 | Bazı roketler çok yavaş — hızlar gerçekçi olmalı | ⏳ | → Roket / füze türüne göre gerçek hız (RPG ~115→295 m/sn, Grad ~690, GMLRS ~Mach 2+, ATGM 200–400) |
+| 91 | Silahlı İHA havada durmuyor / görünmüyor | ⏳ | → Silahlı İHA irtifa, görünürlük ve gölge |
 
 ### Uygulama sırası (fazlar)
 - **Faz 0 — Stabilite ✅:** yamalar + test bekçisi, crewtest/paratest/SPIES/evade; takılma bekçisi (asker/araç/sedye, stucktest); yapılamayan emirde sesli uyarı; ekransız test (-Headless, run_tests.sh)

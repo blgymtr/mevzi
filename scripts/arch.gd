@@ -41,7 +41,7 @@ const ROOF_COL := {
 
 # k: kır / köy / kasaba / şehir / sanayi / çöl / kış · b: uygun biyom (g yeşil, w kış, d çöl)
 # w, d: genişlik (cephe) / derinlik aralığı · fl: kat · fh: tek katlı salon yüksekliği (m)
-# fp: rect / L / U / court / T / row / oct / grid / open · rf: flat gable hip shed mansard gambrel saw barrel dome cone sera
+# fp: rect / L / U / court / T / row / oct / grid / open · rf: flat gable hip shed mansard gambrel saw barrel cone sera (kubbe yok — dini yapıya benzer)
 # rm: çatı dokusu · pit: eğim · gf: alınlık cephede (mahya derinlikte) · f: cephe · p: palet · pl: taş/beton kaide
 # wk: pencere (std small slit tall shop band high arch none) · ws: pencere aralığı · dr: kapı (std dbl wide roll gar arc) · sym: ortada kapı
 # x: detaylar
@@ -80,8 +80,7 @@ const ARCH := {
 	"konak": {"n": "Köy konağı", "k": "koy", "b": "gw", "w": [14, 17], "d": [11, 13], "fl": [2, 2], "fp": "U", "rf": "hip", "rm": "clay", "f": "plaster", "p": "krem", "pl": "stone", "x": ["cumba", "chim", "shut", "wide_eave"]},
 	"kasap": {"n": "Kasap", "k": "koy", "b": "gwd", "w": [5, 6], "d": [5, 6], "fl": [1, 1], "rf": "gable", "rm": "tile", "f": "plaster", "p": "beyaz", "wk": "shop", "x": ["sign_r", "awn"], "sign": "KASAP"},
 	"demirci": {"n": "Demirci", "k": "koy", "b": "gwd", "w": [6, 7.5], "d": [5, 6], "fl": [1, 1], "rf": "shed", "rm": "rust", "f": "stone", "p": "tas", "wk": "small", "dr": "wide", "x": ["bigchim", "anvil", "logs"]},
-	"han": {"n": "Han (kervansaray)", "k": "koy", "b": "gwd", "w": [20, 24], "d": [20, 24], "fl": [2, 2], "fp": "court", "rf": "flat", "rm": "conc", "f": "stone", "p": "tas", "wk": "small", "dr": "arc", "sym": true, "x": ["domelets", "cren_low"]},
-	"hamam": {"n": "Hamam", "k": "koy", "b": "gwd", "w": [10, 12], "d": [8, 10], "fl": [1, 1], "fh": 3.6, "rf": "flat", "rm": "lead", "f": "stone", "p": "tas", "wk": "small", "sym": true, "x": ["hamamdomes", "bigchim"]},
+	"han": {"n": "Han (kervansaray)", "k": "koy", "b": "gwd", "w": [20, 24], "d": [20, 24], "fl": [2, 2], "fp": "court", "rf": "flat", "rm": "conc", "f": "stone", "p": "tas", "wk": "small", "dr": "arc", "sym": true, "x": ["cren_low"]},
 	"su_degirmeni": {"n": "Su değirmeni", "k": "koy", "b": "gw", "w": [6, 7], "d": [5, 6], "fl": [1, 1], "rf": "gable", "rm": "clay", "f": "stone", "p": "tas", "wk": "small", "x": ["wheel", "sacks"]},
 	"lojman": {"n": "Öğretmen lojmanı", "k": "koy", "b": "gwd", "w": [7, 8.5], "d": [6, 7], "fl": [2, 2], "rf": "hip", "rm": "clay", "f": "plaster", "p": "pastel", "sym": true, "x": ["bal", "chim", "fence", "dish"]},
 	"kooperatif": {"n": "Tarım kooperatifi", "k": "koy", "b": "gwd", "w": [10, 12], "d": [8, 9], "fl": [1, 1], "fh": 3.6, "rf": "gable", "rm": "metal", "f": "plaster", "p": "krem", "dr": "roll", "x": ["sign", "dock", "sacks"], "sign": "KOOPERATİF"},
@@ -148,7 +147,6 @@ const ARCH := {
 	# ---------------------------------------------------------------- çöl
 	"kerpic_ev": {"n": "Kerpiç ev", "k": "col", "b": "d", "w": [6, 8], "d": [5, 6], "fl": [1, 1], "rf": "flat", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "small", "x": ["viga", "cwall_mud", "jars", "roofladder"], "ext": 3.0},
 	"avlulu_ev": {"n": "Avlulu ev", "k": "col", "b": "d", "w": [12, 14], "d": [10, 12], "fl": [1, 1], "fp": "U", "rf": "flat", "rm": "mud", "f": "plaster", "p": "beyaz", "wk": "small", "x": ["courtwall", "viga", "tank", "cren_low"]},
-	"harran_evi": {"n": "Kümbet ev (Harran)", "k": "col", "b": "d", "w": [7.2, 7.2], "d": [3.6, 7.2], "fl": [1, 1], "fh": 2.3, "fp": "grid", "rf": "cone", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "small", "x": ["conevents"]},
 	"sarnic": {"n": "Sarnıç", "k": "col", "b": "gd", "w": [6, 8], "d": [4.5, 6], "fl": [1, 1], "fh": 1.3, "rf": "vault", "rm": "mud", "f": "stone", "p": "tas", "wk": "none", "dr": "none", "x": ["wellhead", "cstair"]},
 	"badgirli_ev": {"n": "Rüzgâr kuleli ev", "k": "col", "b": "d", "w": [7, 9], "d": [6, 8], "fl": [2, 2], "rf": "flat", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "small", "x": ["badgir", "cren", "viga"]},
 	"kemerli_carsi": {"n": "Kemerli çarşı", "k": "col", "b": "gd", "w": [16, 20], "d": [6, 7], "fl": [1, 1], "rf": "flat", "rm": "conc", "f": "stone", "p": "tas", "wk": "shop", "ws": 3.4, "x": ["arcade", "stalls", "signs"]},
@@ -158,8 +156,8 @@ const ARCH := {
 	"kerpic_dukkan": {"n": "Kerpiç dükkânlar", "k": "col", "b": "d", "w": [12, 16], "d": [5, 6], "fl": [1, 1], "rf": "flat", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "shop", "ws": 3.6, "x": ["clothawn", "sacks", "viga", "stalls"]},
 	"hurma_ambari": {"n": "Hurma ambarı", "k": "col", "b": "d", "w": [8, 10], "d": [6, 7], "fl": [1, 1], "rf": "flat", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "slit", "x": ["ventholes", "viga", "sacks"]},
 	"kubik_ev": {"n": "Beyaz kübik ev", "k": "col", "b": "gd", "w": [6, 8], "d": [6, 7], "fl": [1, 2], "rf": "flat", "rm": "conc", "f": "plaster", "p": "beyaz", "x": ["blueshut", "extstair", "perg"]},
-	"col_hani": {"n": "Çöl kervansarayı", "k": "col", "b": "d", "w": [20, 24], "d": [20, 24], "fl": [1, 1], "fh": 4.4, "fp": "court", "rf": "flat", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "small", "dr": "arc", "sym": true, "x": ["domelets", "cren_low", "gatehouse"]},
-	"kuyu_bekci": {"n": "Su kuyusu bekçi evi", "k": "col", "b": "d", "w": [4.5, 5.5], "d": [4, 4.5], "fl": [1, 1], "rf": "dome", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "small", "x": ["well", "jars"]},
+	"col_hani": {"n": "Çöl kervansarayı", "k": "col", "b": "d", "w": [20, 24], "d": [20, 24], "fl": [1, 1], "fh": 4.4, "fp": "court", "rf": "flat", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "small", "dr": "arc", "sym": true, "x": ["cren_low", "gatehouse"]},
+	"kuyu_bekci": {"n": "Su kuyusu bekçi evi", "k": "col", "b": "d", "w": [4.5, 5.5], "d": [4, 4.5], "fl": [1, 1], "rf": "flat", "rm": "mud", "f": "adobe", "p": "kerpic", "wk": "small", "x": ["well", "jars"]},
 	# ---------------------------------------------------------------- kış
 	"sale": {"n": "Dağ evi (şale)", "k": "kis", "b": "w", "w": [8, 10], "d": [7, 8], "fl": [2, 2], "rf": "gable", "pit": 0.9, "gf": true, "rm": "wood", "f": "timber", "p": "ahsap", "pl": "stone", "x": ["bal_wood_wrap", "chim_stone", "logpile", "wide_eave"]},
 	"kutuk_ev": {"n": "Kütük ev", "k": "kis", "b": "gw", "w": [6, 8], "d": [5, 6], "fl": [1, 1], "rf": "gable", "pit": 1.0, "rm": "wood", "f": "log", "p": "ahsap", "wk": "small", "x": ["chim_stone", "porch", "logpile", "logends"]},
@@ -416,8 +414,8 @@ func _footprint(fp: String) -> Array:
 				out.append(_wg(Rect2(hw - gw, hd - 6.0, gw, 6.0), {"fl": 1, "fh": 2.7, "garage": true, "rf": "flat"}))
 			else:
 				out.append(_wg(Rect2(-hw, -hd, W, D), {"main": true}))
-	# kuleler: yapıya bitişik kanat (kapısı içeri açılır). Oyunda dini yapı yok: çan kulesi / minare / soğan
-	# kubbe kulesi üreticileri kaldırıldı (kullanıcı kararı, 15 Ekim).
+	# kuleler: yapıya bitişik kanat (kapısı içeri açılır). Oyunda dini yapı ve ona benzeyen hiçbir şey yok:
+	# çan kulesi, minare, kubbe, soğan kubbe, ince halkalı kule üretilmez (kullanıcı kararı, 15–16 Ekim).
 	if X.has("hosetower"):
 		out.append(_wg(Rect2(hw - 3.2, -hd - 3.2, 3.2, 3.2), {"fl": 1, "fh": 12.0, "rf": "flat", "tower": true}))
 	# halka kanatlar (blok silindir): silo, tank, baca, köşe kulesi
@@ -434,7 +432,7 @@ func _footprint(fp: String) -> Array:
 				sz2 = -hd + sr + (i / 2) * (sr * 2.0 + 0.2)
 			out.append(_ringwg(sx, sz2, sr, 12, sh, "silo", scol, 1.0, {"silo": true}))
 	if X.has("stack"):
-		out.append(_ringwg(-hw - 2.2, -hd + 2.0, 1.15, 10, rng.randf_range(18.0, 24.0), "stack", Color(0.62, 0.32, 0.24, FAC_A["brick"]), 1.0))
+		out.append(_ringwg(-hw - 3.4, -hd + 3.0, 2.3, 12, rng.randf_range(24.0, 32.0), "stack", Color(0.62, 0.32, 0.24, FAC_A["brick"]), 1.0))
 	if X.has("ftanks"):
 		for i in 3:
 			var tr := rng.randf_range(3.4, 4.2)
@@ -1530,7 +1528,7 @@ func _marquee(wg: Dictionary, dp: Vector3, dir: Vector3, out: Vector3, bas: Basi
 	for j in 6:
 		md.box(bp + dir * 0.11 + up * (1.6 - j * 0.65), Vector3(0.02, 0.45, 0.6), Color(0.98, 0.95, 0.85), bas)
 
-func _arcade(wg: Dictionary, la: Vector3, dir: Vector3, out: Vector3, bas: Basis, L: float, dep: float, domes := false) -> void:
+func _arcade(wg: Dictionary, la: Vector3, dir: Vector3, out: Vector3, bas: Basis, L: float, dep: float) -> void:
 	var md: MB = wg["md"]
 	var up := Vector3.UP
 	var off := out * (t2 * 0.5)
@@ -1551,16 +1549,10 @@ func _arcade(wg: Dictionary, la: Vector3, dir: Vector3, out: Vector3, bas: Basis
 			var a1 := PI * (j + 1) / 7.0
 			_beam(md, c + dir * (cos(a0) * r) + up * (sin(a0) * r * 0.7), c + dir * (cos(a1) * r) + up * (sin(a1) * r * 0.7), 0.3, 0.16, cc)
 	md.box(la + dir * (L * 0.5) + off + out * (dep * 0.5) + up * (h + r_top(span)), Vector3(L + 0.2, 0.4, dep + 0.1), (wg["rgb"] as Color), bas)
-	if domes:
-		var mr := _mr(wg, "lead")
-		for i in n:
-			var c := la + dir * ((i + 0.5) * span) + off + out * (dep * 0.5) + up * (h + r_top(span) + 0.2)
-			_lathe(mr, c, _dome_prof(minf(span, dep) * 0.42, 0.95), 12, rcol)
-	else:
-		var mr := _mr(wg, rtex if rtex not in ["conc", "mud"] else "lead")
-		var a := la + off + up * (h + r_top(span) + 0.7)
-		var b := a + dir * L
-		mr.quad(a, b, b + out * (dep + 0.3) - up * 0.55, a + out * (dep + 0.3) - up * 0.55, rcol, (out + up * 2.0).normalized())
+	var mr := _mr(wg, rtex if rtex not in ["conc", "mud"] else "lead")
+	var a := la + off + up * (h + r_top(span) + 0.7)
+	var b := a + dir * L
+	mr.quad(a, b, b + out * (dep + 0.3) - up * 0.55, a + out * (dep + 0.3) - up * 0.55, rcol, (out + up * 2.0).normalized())
 
 func r_top(span: float) -> float:
 	return (span * 0.5 - 0.15) * 0.7 + 0.15
@@ -1644,9 +1636,8 @@ func _roof(wg: Dictionary) -> void:
 		pit = minf(pit, 0.8)
 	match rf:
 		"flat", "dome":
+			# kubbe üretilmez (oyunda dini yapıya benzeyen kubbe yok — kullanıcı kuralı); eski kayıtlar düz çatı olur
 			_r_flat(wg)
-			if rf == "dome":
-				_r_dome(wg)
 		"gable":
 			var p := (pit if pit > 0.0 else (0.62 if not snow else 0.85))
 			_r_ext(wg, [Vector2(-hw, 0), Vector2(0, hw * p), Vector2(hw, 0)], az, ov, ov, rtex)
@@ -1963,14 +1954,6 @@ func _r_flat(wg: Dictionary, ph := -1.0) -> void:
 			var q := Vector3(rng.randf_range(E.position.x + 0.3, E.end.x - 0.3), top + 0.18, rng.randf_range(E.position.y + 0.3, E.end.y - 0.3))
 			mx.sphere(q, Vector3(0.18, 0.1, 0.18), 5, 3, _pick([Color(0.36, 0.42, 0.2), Color(0.48, 0.44, 0.26), Color(0.3, 0.36, 0.18)]))
 
-func _dome_prof(r: float, k: float) -> Array:
-	var pr: Array = []
-	for i in 9:
-		var t := PI * 0.5 * i / 8.0
-		pr.append(Vector2(r * cos(t), r * k * sin(t) * (1.0 + 0.12 * sin(t) * sin(t))))
-	pr.append(Vector2(0.0, r * k * 1.16))
-	return pr
-
 func _lathe(mb: MB, c: Vector3, prof: Array, segs: int, col: Color, half := 0.0) -> void:
 	var n := prof.size()
 	var nrm: Array = []
@@ -2003,30 +1986,7 @@ func _lathe(mb: MB, c: Vector3, prof: Array, segs: int, col: Color, half := 0.0)
 			if q.x > 0.001 or p.x > 0.001:
 				mb.tri_s(v00, v11, v10, n00, n11, n10, col)
 
-func _r_dome(wg: Dictionary) -> void:
-	var r: Rect2 = wg["r"]
-	var top: float = wg["top"]
-	var c := Vector3(r.get_center().x, top + 0.16, r.get_center().y)
-	var mx: MB = wg["mx"]
-	var mr := _mr(wg, rtex if rtex in ["lead", "copper", "mud"] else "lead")
-	var rgb: Color = wg["rgb"]
-	var rd := minf(r.size.x, r.size.y) * 0.36
-	var dh := 1.1 if rd > 2.5 else 0.5
-	var mud := rtex == "mud"
-	if not mud:
-		# kasnak + pencereler + payanda
-		mx.cyl(c, rd + 0.15, rd + 0.15, dh, 16, rgb, Basis(), true, false)
-		for i in 16:
-			var a := TAU * (i + 0.5) / 16.0
-			var d := Vector3(cos(a), 0, sin(a))
-			mx.box(c + d * (rd + 0.16) + Vector3.UP * (dh * 0.5), Vector3(0.05, dh * 0.55, 0.28), Color(0.12, 0.13, 0.15), Basis(Vector3.UP, -a))
-			mx.box(c + d * (rd + 0.2) + Vector3.UP * (dh * 0.5), Vector3(0.2, dh, 0.14), rgb.lightened(0.05), Basis(Vector3.UP, -a + PI * 0.5) if i % 2 == 0 else Basis(Vector3.UP, -a))
-		mx.cyl(c + Vector3.UP * dh, rd + 0.25, rd + 0.25, 0.12, 16, trim)
-		_lathe(mr, c + Vector3.UP * (dh + 0.1), _dome_prof(rd, 0.92), 18, rcol)
-	else:
-		_lathe(mr, c, _dome_prof(rd + 0.3, 0.8), 14, rcol)
-
-# Harran kümbeti: kare hücre üstünde kerpiç sıralı konik kubbe
+# Harran konik evi: kare hücre üstünde kerpiç sıralı konik çatı
 func _r_cone(wg: Dictionary) -> void:
 	var r: Rect2 = wg["r"]
 	var top: float = wg["top"]
@@ -2207,32 +2167,6 @@ func _roof_details(wg: Dictionary) -> void:
 					mx.box(bp + d * 0.81 + Vector3.UP * 2.6 + Vector3(-d.z, 0, d.x) * (-0.45 + j * 0.45), Vector3(0.22 if absf(d.x) < 0.5 else 0.04, 1.2, 0.04 if absf(d.x) < 0.5 else 0.22), Color(0.08, 0.07, 0.06))
 			mx.box(bp + Vector3.UP * 3.45, Vector3(1.8, 0.14, 1.8), trim)
 			_occ.append([Vector2(bp.x, bp.z), 1.4])
-		if X.has("smalldome"):
-			var dp := Vector3(cx - r.size.x * 0.2, top + 0.16, cz + r.size.y * 0.15)
-			_lathe(_mr(wg, "mud" if fac == "adobe" else "conc"), dp, _dome_prof(1.3, 0.85), 12, rgb.lightened(0.04))
-			_occ.append([Vector2(dp.x, dp.z), 1.5])
-		if X.has("hamamdomes"):
-			var n := 0
-			for ix in 3:
-				for iz in 2:
-					var dp := Vector3(cx + (ix - 1) * r.size.x * 0.3, top + 0.16, cz + (iz - 0.5) * r.size.y * 0.45)
-					var rr := 1.1 if ix != 1 else 1.6
-					_lathe(_mr(wg, "lead"), dp, _dome_prof(rr, 0.8), 12, rcol)
-					for k in 8:
-						var a := TAU * k / 8.0
-						mxg.sphere(dp + Vector3(cos(a) * rr * 0.55, rr * 0.62, sin(a) * rr * 0.55), Vector3(0.09, 0.05, 0.09), 5, 3, Color(0.7, 0.85, 0.85))
-					n += 1
-		if X.has("domelets"):
-			var along := r.size.x >= r.size.y
-			var L := maxf(r.size.x, r.size.y)
-			var dw := minf(r.size.x, r.size.y)
-			var n := maxi(1, int(L / 4.0))
-			for i in n:
-				var o := -L * 0.5 + (i + 0.5) * L / n
-				var dp := Vector3(cx + (o if along else 0.0), top + 0.16, cz + (0.0 if along else o))
-				_lathe(_mr(wg, "lead" if fac != "adobe" else "mud"), dp, _dome_prof(minf(dw * 0.32, 1.6), 0.75), 10, rcol)
-				mx.cyl(dp + Vector3.UP * minf(dw * 0.32, 1.6) * 0.86, 0.12, 0.12, 0.35, 6, Color(0.5, 0.45, 0.4))
-			return
 		if X.has("roofshade"):
 			var sp := Vector3(cx - r.size.x * 0.15, top + 0.16, cz)
 			for sx: float in [-1.2, 1.2]:
@@ -2418,7 +2352,7 @@ func _clocktower(wg: Dictionary, p: Vector3, s: float) -> void:
 	_frustum(_mr(wg, "slate" if rtex in ["conc", "mud"] else rtex), Rect2(p.x - s * 0.6, p.z - s * 0.6, s * 1.2, s * 1.2), p.y + s * 1.9, Rect2(p.x, p.z, 0, 0), p.y + s * 2.9, rcol.darkened(0.1), p)
 	mx.cyl(p + Vector3.UP * (s * 2.9), 0.03, 0.03, 0.8, 4, Color(0.85, 0.7, 0.3))
 
-# ============================================================ halka kanat (minare, silo, tank, baca, köşe kulesi, değirmen)
+# ============================================================ halka kanat (silo, tank, sanayi bacası, köşe kulesi, değirmen)
 func _ring_wing(wg: Dictionary) -> void:
 	var n: int = wg["ring"]
 	var rad: float = wg["rad"]
@@ -2518,14 +2452,25 @@ func _ring_wing(wg: Dictionary) -> void:
 				md.box(lc + Vector3(cos(a) * (ro + 0.4), y, sin(a) * (ro + 0.4)), Vector3(0.7, 0.06, 0.3), Color(0.45, 0.45, 0.47), Basis(Vector3.UP, -a))
 			md.cyl(lc, ro + 0.2, ro + 0.2, 0.25, 18, Color(0.6, 0.58, 0.55))
 		"stack":
-			md.box(lc + up * 0.8, Vector3(ro * 2.0 + 0.8, 1.6, ro * 2.0 + 0.8), rgb.darkened(0.2))
-			var y := 4.0
-			while y < top - 1.0:
-				md.cyl(lc + up * y, ro + 0.05, ro + 0.05, 0.3, n, rgb.darkened(0.25), Basis(), false)
-				y += 4.0
-			mx.cyl(lc + up * (top - 0.6), ro + 0.15, ro + 0.15, 0.6, n, Color(0.15, 0.14, 0.13), Basis(), false)
-			mx.cyl(lc + up * top, ro - 0.05, ro - 0.05, 0.05, n, Color(0.05, 0.05, 0.05))
-			mx.cyl(lc + up * top, 0.03, 0.03, 2.0, 4, Color(0.4, 0.4, 0.4))
+			# kare beton kaide + konik tuğla gövde (tabanda kalın, tepeye incelir) + kornişli taç, isli açık ağız
+			md.box(lc + up * 1.2, Vector3(ro * 2.0 + 1.2, 2.4, ro * 2.0 + 1.2), Color(0.55, 0.54, 0.52))
+			var rt := ro * 0.55
+			md.cyl(lc + up * 2.4, ro, rt, top - 3.4, n, rgb, Basis(), false)
+			var y := 6.0
+			while y < top - 3.0:
+				var ry := lerpf(ro, rt, (y - 2.4) / (top - 3.4))
+				md.cyl(lc + up * y, ry + 0.015, ry + 0.015, 0.12, n, Color(0.2, 0.2, 0.21), Basis(), false)     # demir çember (gömülü)
+				y += 5.0
+			md.cyl(lc + up * (top - 1.0), rt, rt + 0.35, 0.6, n, rgb.lightened(0.05), Basis(), false)       # korniş
+			md.cyl(lc + up * (top - 0.4), rt + 0.35, rt + 0.35, 0.4, n, rgb.darkened(0.1), Basis(), false)
+			mx.cyl(lc + up * (top - 1.6), rt + 0.36, rt + 0.36, 1.6, n, Color(0.12, 0.11, 0.1), Basis(), false)  # is
+			mx.cyl(lc + up * top, rt + 0.1, rt + 0.1, 0.03, n, Color(0.03, 0.03, 0.03))                          # ağız
+			# yan servis merdiveni (kafesli)
+			var lad := lc + Vector3(ro + 0.05, 0, 0)
+			_beam(md, lad + up * 2.4, lc + Vector3(rt + 0.12, 0, 0) + up * (top - 1.0), 0.05, 0.05, Color(0.3, 0.3, 0.3))
+			_beam(md, lad + up * 2.4 + Vector3(0, 0, 0.45), lc + Vector3(rt + 0.12, 0, 0.45) + up * (top - 1.0), 0.05, 0.05, Color(0.3, 0.3, 0.3))
+			# binadan bacaya duman kanalı (sanayi bacası olduğu okunur)
+			md.box(lc + Vector3(-ro - 1.6, 1.6, 0), Vector3(3.2, 1.2, 1.2), Color(0.5, 0.42, 0.36))
 		"fortcap":
 			_mr(wg, "mud").cyl(lc + up * top, rad, rad, 0.12, n, rgb.darkened(0.1))
 			for k in n:
@@ -2993,7 +2938,7 @@ func _extras() -> void:
 	if X.has("bread"):
 		var op := Vector3(-hw - 1.6, 0, -hd + 1.6)
 		me.box(op + up * 0.5, Vector3(2.0, 1.0, 2.0), Color(0.75, 0.7, 0.62))
-		_lathe(me, op + up * 1.0, _dome_prof(0.95, 0.8), 10, Color(0.72, 0.62, 0.5))
+		me.cyl_between(op + Vector3(-1.0, 1.0, 0), op + Vector3(1.0, 1.0, 0), 0.9, 0.9, 12, Color(0.72, 0.62, 0.5))   # tonoz örtü
 		me.box(op + Vector3(0, 0.75, 1.0), Vector3(0.5, 0.4, 0.04), Color(0.1, 0.08, 0.06))
 		_solid(op, Vector2(2.0, 2.0), 1.8)
 	if X.has("pool"):
