@@ -610,6 +610,19 @@ func crew_test() -> void:
 	print("CREW unloaded=%d exit_shots=%d t=%.1f" % [out, shot_out, G.time - t2])
 	if out < 6:
 		fails += 1
+	# 98: piyade taşıma aracı (M1301 ISV, taban tip technical) 8 yolcu alır, yolcular içeride
+	var isv: Vehicle = m.spawn_vehicle(G.player_team, "usa_lv_isv", G.grid.nearest_free(c + Vector3(-25, 0, 10), Grid.M_LIGHT), 0.6)
+	isv.cmd_hold()
+	for i in 8:
+		var s: Soldier = m.spawn_soldier(G.player_team, "rifle", G.grid.nearest_free(isv.position + Vector3(-6 + i * 1.5, 0, 9), Grid.M_INF), null)
+		s.cmd_board(isv)
+	var t3 := G.time
+	while G.time - t3 < 45.0 and isv.cargo.size() < 8:
+		await m._wait(0.1)
+	var vis_r: int = isv.cargo.filter(func(x): return x.visible).size()
+	print("CREW isv capacity=%d boarded=%d visible_riders=%d t=%.1f" % [isv.capacity(), isv.cargo.size(), vis_r, G.time - t3])
+	if isv.cargo.size() < 8 or vis_r > 0:
+		fails += 1
 	print("CREWTEST RESULT fails=%d" % fails)
 
 # görsel savaş sisi: başlangıçta yalnız karargâh çevresi açık; ilerleyen tim yolu açar

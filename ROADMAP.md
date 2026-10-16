@@ -177,6 +177,7 @@ Her madde bir commit'e dayanır (`git log` ile doğrulanabilir). **Eklendi** = y
 - **Düzeltildi (106 / 103):** Boşaltma sırasında vurulan kamyonun iki hamalı elde ikmal kutusuyla yerinde donup kalıyordu (kamyon listeden çıkınca hamallar temizlenmiyordu) → kamyon kaybında hamallar da kalkar. supplytest artık geçiyor: kamyonu vuran önceden yerleşik düşmanlar test başında kaldırılır, boşaltma sonrası karargâha dönüş (~18 sn) ve vurulan kamyonda hamal temizliği denetlenir
 - **Değişti (108):** Araç yakına düşen patlamayla kolay yok olmuyor — eskiden patlama yarıçapındaki araca en az %30 hasar düşüyordu (kamyonun yakınına düşen tek obüs mermisi onu yok ediyordu); şimdi doğrudan isabet tam hasar, yakına düşüşte hasar mesafeyle karesel azalır ve tek patlamada canın %40'ını geçmez (parça hasarı teker / motor gibi alt sistemleri yine işler)
 - **Değişti (109):** Araçların kendiliğinden ateşi: takımın uzaktan gördüğü her hedefe azami menzilden ateş açıyorlardı → doğrudan atışlı araç yalnız kendi optiğiyle seçebildiği hedefe ve silahın etkili menziline (azami menzilin %65'i) kadar kendiliğinden ateş eder; oyuncunun saldırı emri tam menzili ve takım görüşünü kullanır, dolaylı atış gözcüyle sürer (rangetest: menzilin %80'indeki tanka kendiliğinden ateş yok, emirle var; %45'tekine var)
+- **Düzeltildi (98):** Piyade taşıma aracı (M1301 ISV) ve kapalı gövdeli hafif araçlar (MRAP, HMMWV, JLTV) taban tip "technical"ın 2 kişilik kasa kapasitesini kullanıyordu → aileye göre gerçek yolcu yeri (ISV 8, MRAP 6×6 6, MRAP 4×4 4, HMMWV / JLTV 3), yolcular araç içinde; binmiş yolcuları savaş sisi güncellemesi yeniden görünür yapıyordu (crewtest: ISV'ye 8 asker biner, hiçbiri dışarıda görünmez)
 - **Test altyapısı:** vehtest önceden yerleşik düşmanları kaldırır (konvoyu vurup palet / teker / mürettebat aşamalarını kararsız yapıyordu); fftest bina patlaması askerleri binanın dar yanına koyar
 
 ---
@@ -283,7 +284,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 95 | Üs yapımı bittikten sonra asker hâlâ ikmal deposu varmış gibi depoya malzeme götürüyor; askerler malzeme / ikmal alırken binanın içinde takılıyor — yanlardan dolaşsınlar | ✅ | Bitişte / yıkımda yürüyen ve taşıyan işçiler de işi bırakır; yol önbelleği ve iri hücre düzeltmesiyle yandan dolaşır; yığın açık yana konur (buildtest, battle_8k dahil) |
 | 96 | Kamyon binaların içinden geçmemeli | ✅ | Üs rotası kapanınca yeniden aranır, yoldaki kamyon yeni yapıdan dolaşır; iri hücrede yapı köşesi kapalı (logitest) |
 | 97 | ABD Ana Muharebe Tankı 2'de taret hatalı, kocaman — düzelt, küçült | ⏳ | |
-| 98 | Piyade taşıma aracı 6 kişilik ama 2 kişi biniyor | ⏳ | |
+| 98 | Piyade taşıma aracı 6 kişilik ama 2 kişi biniyor | ✅ | Kapalı gövdeli hafif araçlara gerçek yolcu yeri (ISV 8, MRAP 6×6 6, MRAP 4×4 4, HMMWV / JLTV 3; katalogda "seats" ile birime özel), yolcular içeride (crewtest) |
 | 99 | Patlama sonrası Rus topçuları kraterde hiçbir şey olmamış gibi bekliyor; top araç gibi patlıyor ama askerlere bir şey olmuyor | ⏳ | |
 | 100 | Modelleme aşamasında her aracın modeli askerlerin animasyonlarıyla uyumlu olmalı | ⏳ | → Kapı / rampa / kapak düğümleri, oturma yerleri, güverte yüksekliği, tutamaklar model üretiminde birlikte |
 | 101 | Topçu ve benzeri birlikler için mermi indirme, çıkarma, yükleme, atış (patlama) ve topu iple çekme animasyonları | ⏳ | |
@@ -296,6 +297,7 @@ Durum: ✅ bitti · 🟡 kısmen var (temel mevcut, istek tam karşılanmadı) �
 | 108 | Araçlar ancak büyük hasar alınca yok olmalı / işlevsiz kalmalı | ✅ | Yakına düşen patlama karesel azalır ve tek seferde canın %40'ını geçmez; doğrudan isabet tam hasar (vehtest: 130'luk mermi 4 m + 400'lük 5 m → kamyon 75/160 ile sağ, doğrudan isabette yok olur) |
 | 109 | Spawn edilen araçlar menzil ne olursa olsun hemen sıkmaya başlıyor — menzil düzenlemesi | ✅ | Kendiliğinden ateş: yalnız aracın kendi optiğiyle seçtiği hedefe, silahın etkili menziline (azami ~%65) kadar; saldırı emri tam menzil + takım görüşü; dolaylı atış gözcüyle (rangetest) |
 | 110 | Savaş sisi yamuk yumuk duruyor; her birimin görüşü farklı olmalı, abartısız | ⏳ | |
+| 111 | (Modelleme) Askerler mermi yüklerken mermiyi kucaklıyor gibi duruyor — mermiyi gerçekten taşımalı | ⏳ | → 101 ile: mermi modeli ele bağlı, iki elle alttan / omuzda taşıma pozu |
 
 ### Uygulama sırası (fazlar)
 - **Faz 0 — Stabilite ✅:** yamalar + test bekçisi, crewtest/paratest/SPIES/evade; takılma bekçisi (asker/araç/sedye, stucktest); yapılamayan emirde sesli uyarı; ekransız test (-Headless, run_tests.sh)

@@ -300,6 +300,9 @@ func apply_visibility() -> void:
 	if state == "hospital":
 		visible = false
 		return
+	if state == "aboard" and vehicle_in != null and is_instance_valid(vehicle_in) and not vehicle_in.riders_visible():
+		visible = false          # kapalı araçtaki yolcu: savaş sisi güncellemesi onu yeniden göstermesin
+		return
 	super.apply_visibility()
 
 func torso_h() -> float:

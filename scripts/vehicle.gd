@@ -305,9 +305,18 @@ static func cat_scale(id: String) -> Vector3:
 func is_drone() -> bool:
 	return vtype in ["fpv", "uav", "uav_armed", "loiter"]
 
+# kapalı gövdeli hafif araçların gerçek yolcu yeri (sürücü / nişancı hariç) — taban tip "technical" (2) yerine
+# (roadmap 98: M1301 ISV 9 kişilik ama 2 asker binebiliyordu); katalogda "seats" birime özel değeri geçersiz kılar
+const SEATS_FAM := {"lv_isv": 8, "mrap6": 6, "mrap4": 4, "lv_hmmwv": 3, "lv_jltv": 3}
+
 func capacity() -> int:
 	if is_cargo():
 		return 20 if heavy_lift() else 16
+	if cat.has("seats"):
+		return int(cat["seats"])
+	var fam := String(cat.get("fam", ""))
+	if SEATS_FAM.has(fam):
+		return SEATS_FAM[fam]
 	return CAPACITY.get(vtype, 0)
 
 func is_cargo() -> bool:
@@ -385,14 +394,15 @@ func can_load() -> bool:
 	return alive and cargo.size() < capacity() and (not is_air() or hull.position.y < 2.5)
 
 func riders_visible() -> bool:
-	return vtype in ["tank", "technical"]
+	# açık kasalı pikap (technical) ve tank güvertesi; kapalı gövdeli hafif araçta yolcu içeride
+	return vtype == "tank" or (vtype == "technical" and not SEATS_FAM.has(String(cat.get("fam", ""))))
 
 func seat_pos(s) -> Vector3:
 	var i := cargo.find(s)
 	if vtype == "tank":
 		var seats := [Vector3(-1.1, 1.55, 1.2), Vector3(1.1, 1.55, 1.2), Vector3(-1.1, 1.55, 2.4), Vector3(1.1, 1.55, 2.4)]
 		return hull.global_transform * seats[clampi(i, 0, 3)]
-	if vtype == "technical":
+	if vtype == "technical" and riders_visible():
 		return hull.global_transform * Vector3(0.5 * (1 if i % 2 == 0 else -1), 1.0, 1.6)
 	return position + Vector3(0, -50, 0)
 
