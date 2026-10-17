@@ -337,12 +337,9 @@ func _build_model() -> void:
 				mb.box(Vector3(-2.5 + i * 2.0, 0.25, 3.4), Vector3(0.6, 0.12, 1.9), Color(0.4, 0.42, 0.3))
 			_flag(mb, Vector3(3.6, 0, 3.0), tc, 3.0)
 		"mgnest":
-			for i in 10:
-				var ang := TAU * i / 10.0
-				if i == 7:
-					continue
-				for rr in 2:
-					mb.box(Vector3(cos(ang) * 1.7, 0.18 + rr * 0.3, sin(ang) * 1.7), Vector3(0.95, 0.3, 0.5), Color(0.74, 0.65, 0.45).darkened(0.05 * ((i + rr) % 2)), Basis(Vector3.UP, -ang + PI * 0.5))
+			# gerçek kum torbası çemberi (roadmap 36): hat siperiyle aynı torba modeli / malzemesi, dört sıra, sıra
+			# başına yarım torba kaydırmalı; giriş açıklığı (eski 7. dilim)
+			model.add_child(_bag_ring(1.7, 4, TAU * 6.5 / 10.0, TAU * 7.5 / 10.0))
 		"tower":
 			for sx in [-1.0, 1.0]:
 				for sz in [-1.0, 1.0]:
@@ -517,6 +514,45 @@ static func _flag_mat(col: Color) -> Material:
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_smat[key] = m
 	return _smat[key]
+
+static var _bag_mesh: ArrayMesh = null
+
+# kum torbası çemberi: r yarıçap, rows sıra; [gap0, gap1] açı aralığı boş (giriş)
+func _bag_ring(r: float, rows: int, gap0: float, gap1: float) -> MultiMeshInstance3D:
+	if _bag_mesh == null:
+		_bag_mesh = Blocks.sandbag_mesh()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(position.x * 13.0 + position.z * 7.0)
+	var BL := 0.62
+	var BH := 0.16
+	var BT := 0.4
+	var n := maxi(6, int(round(TAU * r / BL)))
+	var xs: Array = []
+	var cs: Array = []
+	for row in rows:
+		var off := 0.5 if row % 2 == 1 else 0.0
+		for i in n:
+			var ang := TAU * (i + off) / n
+			if ang >= gap0 and ang <= gap1:
+				continue
+			var p := Vector3(cos(ang) * r, BH * (row + 0.5), sin(ang) * r)
+			p += Vector3(cos(ang), 0, sin(ang)) * rng.randf_range(-0.03, 0.03)
+			var b := Basis(Vector3.UP, -ang + PI * 0.5 + rng.randf_range(-0.08, 0.08))
+			b = b.scaled(Vector3(BL * rng.randf_range(0.95, 1.05), BH * rng.randf_range(0.92, 1.06), BT * rng.randf_range(0.95, 1.05)))
+			xs.append(Transform3D(b, p))
+			cs.append(Mats.bag_color(rng, row, rows))
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = _bag_mesh
+	mm.instance_count = xs.size()
+	for k in xs.size():
+		mm.set_instance_transform(k, xs[k])
+		mm.set_instance_color(k, cs[k])
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.material_override = Mats.sandbag()
+	return mi
 
 func _glb_model() -> bool:
 	glb_model = false

@@ -107,8 +107,9 @@ static func sandbag_mesh() -> ArrayMesh:
 			for k in NV + 1:
 				var v := -1.0 + 2.0 * k / NV
 				# kesit: yastık profili (kenara doğru incelir); bağlı uçta (u>0.7) daha da yassı
-				var fu := pow(maxf(0.0, 1.0 - pow(absf(u), 6.0)), 0.5)
-				var fv := pow(maxf(0.0, 1.0 - pow(absf(v), 4.0)), 0.45)
+				# kenarlar yuvarlak (dolgun torba; keskin kenarlı tuğla gibi durmasın)
+				var fu := pow(maxf(0.0, 1.0 - pow(absf(u), 4.0)), 0.5)
+				var fv := pow(maxf(0.0, 1.0 - pow(absf(v), 3.0)), 0.5)
 				var tie := 1.0 - 0.45 * smoothstep(0.55, 1.0, u)
 				var hgt := 0.5 * fu * fv * tie
 				if side == 0:
@@ -386,7 +387,9 @@ func wall_line(a: Vector3, b: Vector3, rows: int, col: Color, k: int, opt := {})
 				c = c.darkened(0.12)
 			var pos := a + dir * sc + Vector3(0, y0 + bh * (r + 0.5), 0)
 			if t == T_SANDBAG:
-				# elle dizilmiş torbalar: birkaç derece dönük, öne-arkaya kaymış, biraz farklı boyda
+				# elle dizilmiş torbalar: birkaç derece dönük, öne-arkaya kaymış, biraz farklı boyda; renk torba başına
+				# gerçek torba renklerinden (alt sıra çamurlu, üst sıra solgun)
+				c = Mats.bag_color(rng, r, rows)
 				var nrm := Vector3(-dir.z, 0, dir.x)
 				add_block(pos + nrm * rng.randf_range(-0.025, 0.025) + dir * rng.randf_range(-0.02, 0.02), Vector3((s1 - s0) * rng.randf_range(0.94, 1.04), bh * rng.randf_range(0.92, 1.06), bt * rng.randf_range(0.95, 1.05)), rot + rng.randf_range(-0.07, 0.07), c, t, w, r, k, solid)
 				continue

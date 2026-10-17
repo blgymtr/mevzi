@@ -42,21 +42,30 @@ static func metal() -> StandardMaterial3D:
 		_c["metal"] = m
 	return _c["metal"]
 
-# kum torbası: çuval (hessian, CC0) dokusu × blok rengi
+# kum torbası: çuval (hessian, CC0) dokusunun yalnız örgüsü; renk torba başına (shaders/sandbag.gdshader)
 static func sandbag() -> Material:
 	if not _c.has("sandbag"):
-		var m := StandardMaterial3D.new()
-		m.vertex_color_use_as_albedo = true
-		m.albedo_texture = _mt("hessian_230", "albedo")
-		var nt := _mt("hessian_230", "normal")
-		if nt:
-			m.normal_enabled = true
-			m.normal_texture = nt
-			m.normal_scale = 1.2
-		m.roughness = 0.96
-		m.uv1_scale = Vector3(2.2, 2.2, 1.0)
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/sandbag.gdshader")
+		m.set_shader_parameter("alb", _mt("hessian_230", "albedo"))
+		m.set_shader_parameter("nrm", _mt("hessian_230", "normal"))
 		_c["sandbag"] = m
 	return _c["sandbag"]
+
+# kum torbası renkleri (sRGB): solgun haki polipropilen, zeytin yeşili, gri-ten, kirli kahve; torba başına seçilir
+const BAG_TONES := [Color(0.66, 0.6, 0.47), Color(0.47, 0.46, 0.35), Color(0.6, 0.57, 0.5), Color(0.53, 0.46, 0.36), Color(0.63, 0.58, 0.45)]
+
+static func bag_color(rng: RandomNumberGenerator, row: int, rows: int) -> Color:
+	var c: Color = BAG_TONES[rng.randi() % BAG_TONES.size()]
+	c = c.lerp(BAG_TONES[rng.randi() % BAG_TONES.size()], rng.randf() * 0.5)
+	var k := rng.randf_range(-0.05, 0.05)
+	c = Color(c.r + k, c.g + k, c.b + k * 0.8)
+	# alt sıra toprakla kirlenmiş, üst sıra güneşte solmuş
+	if row == 0:
+		c = c.lerp(Color(0.38, 0.32, 0.25), 0.4)
+	elif row == rows - 1:
+		c = c.lightened(0.05)
+	return c.srgb_to_linear()
 
 static func _mt(id: String, map: String) -> Texture2D:
 	var p := "res://assets/materials/%s/%s.jpg" % [id, map]
