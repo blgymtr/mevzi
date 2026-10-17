@@ -1365,6 +1365,12 @@ func door_test() -> void:
 	m.get_window().size = Vector2i(1600, 900)
 	Sfx.muted = true
 	var fails := 0
+	for vid in ["usa_ifv_m2a3", "usa_apc_icv"]:
+		fails += await _door_case(vid)
+	print("DOORTEST RESULT fails=%d" % fails)
+
+func _door_case(vid: String) -> int:
+	var fails := 0
 	m.start_game("green_valley", {}, true, 71)
 	for a in G.ais:
 		a.queue_free()
@@ -1373,7 +1379,7 @@ func door_test() -> void:
 	await m._wait(1.0)
 	var c := G.grid.nearest_open(Vector3(G.MAP * 0.45, 0, G.MAP * 0.55), Grid.M_HEAVY)
 	G.props.clear_area(c, 25.0)
-	var v: Vehicle = m.spawn_vehicle(0, "usa_ifv_m2a3", c, 0.0)
+	var v: Vehicle = m.spawn_vehicle(0, vid, c, 0.0)
 	v.fire_mode = 2
 	var sq := Squad.new(0, "Tim")
 	G.squads.append(sq)
@@ -1398,7 +1404,7 @@ func door_test() -> void:
 			shot = true
 			_cam(v.position - v.forward() * 4.0, 8.0)
 			await m._wait(0.05)
-			await m._shot("door_board")
+			await m._shot("door_board_%s" % vid)
 	var board_t := G.time - t0
 	print("DOOR boarded=%d in %.0f s door_max=%.2f" % [v.cargo.size(), board_t, kmax])
 	if v.cargo.size() < 6 or kmax < 0.9:
@@ -1434,13 +1440,14 @@ func door_test() -> void:
 			G.cam.target_yaw = G.cam.yaw
 			_cam(v.position - v.forward() * 3.0, 7.0)
 			await m._wait(0.3)
-			await m._shot("door_unload")
+			await m._shot("door_unload_%s" % vid)
 	await m._wait(5.0)
 	var out := ss.filter(func(s): return is_instance_valid(s) and s.vehicle_in == null and s.state != "exiting").size()
 	print("DOOR unloaded=%d door_max=%.2f door_now=%.2f" % [out, kmax, v.door_k])
 	if out < 6 or kmax < 0.9 or v.door_k > 0.2:
 		fails += 1
-	print("DOORTEST RESULT fails=%d" % fails)
+	print("DOOR %s fails=%d" % [vid, fails])
+	return fails
 
 # 86: inşaat / malzeme taşıma pozları yakın görüntü (yığından alma, taşıma, iskeleye bırakma, çakma)
 func work_poses() -> void:

@@ -46,11 +46,9 @@ def tracked(L, W, n, r, xc, tw, zt, nose=1.0, rear=0.15, glacis_z=None, sprocket
 def _ramp(L, W, z, h, zt, door=True):
     """Arka rampa: levha + kenar çerçevesi + menteşeler + rampa kapısı + tutamaklar + lambalar.
     (79) Ayrı 'door' düğümü: menteşe rampanın ALT kenarında; oyunda biniş / inişte aşağı açılır (vlib.DOOR)."""
-    prev = vlib.CUR
-    node("door")
-    vlib.DOOR.update({"pivot": (0, -L / 2 - 0.03, z - h / 2), "open": 1.35})
+    door_begin((0, -L / 2 - 0.03, z - h / 2), 1.35)
     _ramp_geo(L, W, z, h, zt, door)
-    node(prev)
+    door_end()
 
 def _ramp_geo(L, W, z, h, zt, door=True):
     y = -L / 2 - 0.03

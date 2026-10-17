@@ -47,6 +47,16 @@ def node(n):
     CUR = n
     NODES.setdefault(n, {})
 
+def door_begin(pivot, open_rad=1.35):
+    """(79) Arka rampa / kapak geometrisinin başı: 'door' düğümü, menteşe = pivot (alt kenar), aşağı açılma açısı."""
+    DOOR["prev"] = CUR
+    DOOR["pivot"] = tuple(pivot)
+    DOOR["open"] = open_rad
+    node("door")
+
+def door_end():
+    node(DOOR.pop("prev", "body"))
+
 def clear_node(n):
     for b in NODES.get(n, {}).values():
         b.free()

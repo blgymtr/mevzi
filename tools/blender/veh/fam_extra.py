@@ -102,7 +102,12 @@ def truck_fmtv(v):
         for k in range(5):
             box((s * 1.22, yb - 2.0 + k * 1.0, zd + 0.5), (0.04, 0.06, 0.75), "trim", bev=0.0)  # dikmeler
     box((0, yb + 2.3, zd + 0.85), (2.4, 0.08, 1.45), "paint", bev=0.008)                      # ön kalkan
+    # (79) arka kapak: alt kenardan menteşeli, iner (askerler kasaya buradan tırmanır)
+    door_begin((0, yb - 2.3, zd + 0.13), 1.5)
     box((0, yb - 2.3, zd + 0.5), (2.4, 0.06, 0.75), "paint", bev=0.008)                       # arka kapak
+    for s in (-1, 1):
+        box((s * 0.9, yb - 2.34, zd + 0.8), (0.12, 0.04, 0.06), "metal", bev=0.0)                # kilit mandalı
+    door_end()
     # branda (yuvarlatılmış tavan) + kemer izleri
     tz = zd + 0.9
     hull_pts([(x, y, z) for y in (yb - 2.28, yb + 2.26) for (x, z) in ((-1.2, tz), (-1.2, tz + 0.95), (-0.8, tz + 1.25), (0.8, tz + 1.25), (1.2, tz + 0.95), (1.2, tz))], "canvas", bev=0.0)

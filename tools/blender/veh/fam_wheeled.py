@@ -34,7 +34,13 @@ def chassis8(v):
     hatch(-0.55 if not lav else 0.55, L / 2 - 1.35, zt, 0.28)
     for k in (-1, 0, 1):
         periscope((-0.55 if not lav else 0.55) + k * 0.2, L / 2 - 1.05, zt - 0.02, -k * 0.3)
+    # (79) arka rampa: alt kenardan menteşeli, biniş / inişte yere iner
+    door_begin((0, -L / 2 - 0.03, zb + 0.2), 1.35)
     box((0, -L / 2 - 0.03, zb + 0.75), (W * 0.62, 0.06, 1.1), "paint", bev=0.008)
+    for s in (-1, 1):
+        grab_handle((s * W * 0.22, -L / 2 - 0.065, zb + 0.95), (0, 0, 1), (0, -1, 0), L=0.22, h=0.05)
+    seam((-W * 0.3, -L / 2 - 0.063, zb + 1.28), (W * 0.3, -L / 2 - 0.063, zb + 1.28), (0, -1, 0))
+    door_end()
     grille(0.75, L / 2 - 2.0, zt + 0.01, 0.7, 0.9, 6)
     antenna(-1.0, -L / 2 + 0.5, zt, 1.6)
     antenna(1.0, -L / 2 + 0.5, zt, 1.6 if not v.get("cmd") else 2.4)

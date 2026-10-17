@@ -1226,8 +1226,15 @@ def truck_cargo(v):
         for k in range(8):
             box((s * 1.232, -3.5 + k * 0.54, zd + 0.85), (0.02, 0.025, 0.12), "dark", bev=0.0)            # bağlama ipleri
     box((0, 0.36, zd + 0.75), (2.4, 0.06, 0.7), "paint", bev=0.008)
+    # (79) arka kapak (iner) + brandanın arka perdesi yukarı sarılı (kapalı perdeden içeri girilmiyordu)
+    door_begin((0, -3.62, zd + 0.4), 1.5)
     box((0, -3.62, zd + 0.75), (2.4, 0.06, 0.7), "paint", bev=0.008)
-    box((0, -3.65, zd + 1.45), (2.3, 0.02, 1.25), "canvas", bev=0.0)
+    for s in (-1, 1):
+        box((s * 0.9, -3.66, zd + 1.02), (0.12, 0.04, 0.06), "metal", bev=0.0)
+    door_end()
+    cyl((0, -3.66, zd + 2.0), 0.11, 2.3, "canvas", "X", seg=10)                                  # sarılı perde
+    for s in (-0.8, 0.8):
+        box((s, -3.68, zd + 1.95), (0.04, 0.02, 0.2), "dark", bev=0.0)                                # perde kayışı
     spare_wheel(0, 0.55, zd + 1.0, 0.55, 0.4, "Y")
     return wheel_pivots({"body": (0, 0, 0)}), {"radius": 2.4}
 
