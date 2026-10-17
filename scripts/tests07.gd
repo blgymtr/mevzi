@@ -4850,6 +4850,14 @@ func ruin_test() -> void:
 		await m._wait(0.15)
 	await m._wait(0.4)
 	await m._shot("ruin_04_collapsing")
+	# (143) devrilen duvar levhası sahnede mi (blocks altında Node3D pivot + kutu)
+	var slabs := 0
+	for ch in B.get_children():
+		if ch is Node3D and ch.get_child_count() == 1 and ch.get_child(0) is MeshInstance3D and (ch.get_child(0) as MeshInstance3D).mesh is BoxMesh:
+			slabs += 1
+	print("RUIN topple slabs=%d hit_recorded=%s" % [slabs, h2.has("hit")])
+	if slabs < 1:
+		fails += 1
 	await m._wait(1.2)
 	await m._shot("ruin_05_falling")
 	await m._wait(3.5)

@@ -655,6 +655,8 @@ func _kill(id: int, center: Vector3, power: float, cells: Dictionary) -> void:
 		var hh: int = walls[w]["house"]
 		if hh >= 0:
 			houses[hh]["alive"] -= 1
+			# (143) son vuruşun yeri: çökmede duvar bunun tersine devrilir
+			houses[hh]["hit"] = center
 			_check_house(hh)
 		var ow = walls[w]["owner"]
 		if ow != null and is_instance_valid(ow) and ow.has_method("on_block_lost"):
@@ -968,6 +970,128 @@ func _heap_mesh(R: Vector2, h: float, col: Color) -> ArrayMesh:
 	st.generate_normals()
 	return st.commit()
 
+# (143) duvar devrilmesi: evin vuruşa göre uzak yanındaki duvar, diz hizasının üstü tek levha olarak dış kenarı
+# çevresinde 90° dışa devrilir (yerçekimiyle hızlanarak, yere vurup hafifçe seker), yerde moloz şeridi ve uzun toz
+# bırakır; altında kalan askerler yaralanır. Döndürdüğü: levhaya dönüşen (gizlenen) bloklar
+func _topple_wall(hh: int) -> Dictionary:
+	var h: Dictionary = houses[hh]
+	var hc: Vector3 = h["center"]
+	var hit: Vector3 = h.get("hit", hc + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)))
+	var away := Vector3(hc.x - hit.x, 0, hc.z - hit.z)
+	away = away.normalized() if away.length() > 0.2 else Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+	# en uzak duvar: ağırlık merkezi vuruştan en uzakta (yönü "away" ile en hizalı)
+	var best := -1
+	var bs := -1e9
+	var info := {}
+	for wi in walls.size():
+		var w: Dictionary = walls[wi]
+		if w["house"] != hh:
+			continue
+		var cen := Vector3.ZERO
+		var n := 0
+		for id in w["blocks"]:
+			if balive[id] == 1:
+				cen += bpos[id]
+				n += 1
+		if n < 6:
+			continue
+		cen /= n
+		var out := Vector3(cen.x - hc.x, 0, cen.z - hc.z)
+		if out.length() < 0.3:
+			continue
+		var sc := out.normalized().dot(away)
+		if sc > bs:
+			bs = sc
+			best = wi
+			info = {"cen": cen, "out": out.normalized()}
+	var hidden := {}
+	if best < 0:
+		return hidden
+	var nrm: Vector3 = info["out"]
+	var tan := Vector3(-nrm.z, 0, nrm.x)
+	var base_y := 0.6
+	var lo := 1e9
+	var hi := -1e9
+	var top := 0.0
+	var col := Color(0.7, 0.68, 0.64)
+	var cells := {}
+	for id in walls[best]["blocks"]:
+		if balive[id] == 0 or bpos[id].y < base_y:
+			continue
+		var cw: Vector3 = info["cen"]
+		var along: float = (bpos[id] - cw).dot(tan)
+		lo = minf(lo, along - bsize[id].x * 0.5)
+		hi = maxf(hi, along + bsize[id].x * 0.5)
+		top = maxf(top, bpos[id].y + bsize[id].y * 0.5)
+		col = bcol[id]
+		balive[id] = 0
+		var mm: MultiMesh = bmm[id]
+		if mm != null:
+			mm.set_instance_transform(bidx[id], Transform3D(Basis().scaled(Vector3(0.001, 0.001, 0.001)), Vector3(bpos[id].x, -5, bpos[id].z)))
+		for ci in bcells[id]:
+			cells[ci] = true
+		hidden[id] = true
+		h["alive"] -= 1
+	if hidden.size() < 4 or hi <= lo:
+		return hidden
+	# geçiş ızgarası: devrilen duvarın yeri açılır
+	var changed: Array = []
+	for ci in cells:
+		var mx := 0.0
+		if cell_blocks.has(ci):
+			for o in cell_blocks[ci]:
+				if balive[o] == 1 and bpos[o].y - bsize[o].y * 0.5 < LINTEL:
+					mx = maxf(mx, bpos[o].y + bsize[o].y * 0.5)
+		G.grid.hb[ci] = Grid.hq(mx)
+		changed.append(ci)
+	G.grid.refresh(changed)
+	var L := hi - lo
+	var H := maxf(top - base_y, 0.8)
+	var cen0: Vector3 = info["cen"]
+	var mid: Vector3 = cen0 + tan * ((lo + hi) * 0.5)
+	# levha: dış yüzü tabanda menteşe
+	var pivot := Node3D.new()
+	add_child(pivot)
+	pivot.position = Vector3(mid.x, base_y, mid.z) + nrm * 0.15
+	# yerel x = duvar boyu, y = yukarı, z = içeri (sağ elli: tan × up = -nrm); x çevresinde eksi dönüş tepeyi dışa yatırır
+	pivot.basis = Basis(tan, Vector3.UP, -nrm)
+	var slab := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(L, H, 0.3)
+	slab.mesh = bm
+	var sm := StandardMaterial3D.new()
+	sm.albedo_color = col
+	sm.roughness = 0.95
+	slab.material_override = sm
+	slab.position = Vector3(0, H * 0.5, 0.15)
+	pivot.add_child(slab)
+	# dışa devril: X ekseni (tan) çevresinde, -Z (dış) yönüne
+	var tw := pivot.create_tween()
+	tw.tween_property(pivot, "rotation:x", pivot.rotation.x - PI * 0.5, 1.15).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	tw.tween_property(pivot, "rotation:x", pivot.rotation.x - PI * 0.5 + 0.06, 0.12).set_ease(Tween.EASE_OUT)
+	tw.tween_property(pivot, "rotation:x", pivot.rotation.x - PI * 0.5, 0.1).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func():
+		var land: Vector3 = Vector3(mid.x, 0, mid.z) + nrm * (H * 0.5 + 0.3)
+		if G.fx:
+			G.fx.dust_burst(land + Vector3(0, 0.4, 0), clampf(L * 0.35, 1.2, 4.0))
+		Sfx.play3d("crumble", land, 2.0)
+		# altında kalanlar
+		for u in G.near(land, maxf(L, H) * 0.6):
+			if u is Soldier and u.alive:
+				var rel: Vector3 = u.position - land
+				if absf(rel.dot(tan)) < L * 0.5 and absf(rel.dot(nrm)) < H * 0.5 + 0.3:
+					u.take_damage(randf_range(60.0, 120.0), null, "blast")
+		# levha kırılır: moloz şeridi
+		var nr := clampi(int(L * H * 1.2), 8, 70)
+		for j in nr:
+			var a := rng.randf_range(-0.5, 0.5) * L
+			var b := rng.randf_range(0.0, 1.0) * H
+			var p := Vector3(mid.x, 0, mid.z) + tan * a + nrm * (b + 0.3)
+			var sc := Vector3(rng.randf_range(0.25, 0.8), rng.randf_range(0.12, 0.3), rng.randf_range(0.2, 0.6))
+			_add_rubble(p, sc, col.darkened(rng.randf_range(0.0, 0.25)), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(sc), Vector3(p.x, sc.y * 0.4, p.z)))
+		pivot.queue_free())
+	return hidden
+
 func _check_house(hh: int) -> void:
 	var h: Dictionary = houses[hh]
 	if h["collapsed"] or h["total"] == 0:
@@ -986,6 +1110,9 @@ func _check_house(hh: int) -> void:
 						ids.append(id)
 						if rng.randf() < 0.18:
 							keep[id] = true
+		# (143) vuruşun öbür yanındaki duvar tek parça dışa devrilir (diğerleri tepeden aşağı çöker)
+		var toppled := _topple_wall(hh)
+		ids = ids.filter(func(x): return balive[x] == 1 and not toppled.has(x))
 		collapsing.append({"h": hh, "t": 0.0, "roof": roof, "y0": roof.position.y if roof and is_instance_valid(roof) else 0.0,
 			"b0": roof.basis if roof and is_instance_valid(roof) else Basis(), "ax": Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized(),
 			"ids": ids, "keep": keep, "dust": 0})
