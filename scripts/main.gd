@@ -672,11 +672,13 @@ func apply_video() -> void:
 # İnceleme dersi: "grafik ayarları başarımı neredeyse değiştirmiyor". Her ayar ölçülebilir maliyeti olan bir şeye
 # bağlı (gfxbench sahnesi ön ayar başına kare süresini ölçer): çizim çözünürlüğü (FSR 1 ile ölçekleme), MSAA,
 # gölge (atlas boyu, yumuşatma süzgeci, kapalı), SSAO, parlama, ot yoğunluğu (yeni üretilen ot karoları), FPS sınırı.
-const GFX_KEYS := ["scale", "msaa", "shadow_q", "ssao", "glow", "grass", "fps_cap"]
+const GFX_KEYS := ["scale", "msaa", "shadow_q", "ssao", "glow", "grass", "fx", "fps_cap"]
+# (154) gfxbench ölçümüne göre (RTX 5060, ~150 birlik çatışma): MSAA 4× tek başına ~57 ms GPU, yumuşak gölge
+# ~38 ms, duman / toz ~27 ms — "Yüksek" MSAA 2× (FXAA zaten açık), 4× yalnız Özel'de
 const GFX_PRESETS := [
-	{"scale": 0.67, "msaa": 0, "shadow_q": 1, "ssao": false, "glow": false, "grass": 0.35},    # düşük
-	{"scale": 0.85, "msaa": 1, "shadow_q": 2, "ssao": false, "glow": true, "grass": 0.65},     # orta
-	{"scale": 1.0, "msaa": 2, "shadow_q": 3, "ssao": true, "glow": true, "grass": 1.0},        # yüksek
+	{"scale": 0.67, "msaa": 0, "shadow_q": 1, "ssao": false, "glow": false, "grass": 0.35, "fx": 0.4},    # düşük
+	{"scale": 0.85, "msaa": 1, "shadow_q": 2, "ssao": false, "glow": true, "grass": 0.65, "fx": 0.7},     # orta
+	{"scale": 1.0, "msaa": 1, "shadow_q": 3, "ssao": true, "glow": true, "grass": 1.0, "fx": 1.0},        # yüksek
 ]
 
 func gfx(key: String):
@@ -729,8 +731,12 @@ func apply_gfx() -> void:
 		vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][clampi(int(gfx("msaa")), 0, 2)]
 	if env:
 		env.ssao_enabled = bool(gfx("ssao"))
+		# (154) SSAO yüksek kalite + tam çözünürlükte büyük çatışmada tek başına ~145 ms GPU ölçüldü (gfxbench) →
+		# orta kalite, yarım çözünürlük (görünümde fark çok az)
+		RenderingServer.environment_set_ssao_quality(RenderingServer.ENV_SSAO_QUALITY_MEDIUM, true, 0.5, 2, 50.0, 300.0)
 		env.glow_enabled = bool(gfx("glow"))
 	Props.grass_k = clampf(float(gfx("grass")), 0.1, 1.0)
+	Fx.density = clampf(float(gfx("fx")), 0.2, 1.0)
 	Engine.max_fps = int(gfx("fps_cap"))
 
 func save_cfg() -> void:

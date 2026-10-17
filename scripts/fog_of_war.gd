@@ -29,11 +29,14 @@ class Painter extends Node2D:
 		if vt < 0:
 			return
 		var k := float(fow.N) / G.MAP
+		var rid := get_canvas_item()
 		for o in fow.owners(vt):
 			var pts: PackedVector2Array = fow.poly_of(o)
 			if pts.size() < 3:
 				continue
-			fow.draw_poly(self, pts, k, fow.center_of(o), fow.feather_of(o))
+			# (154) önbellekli üçgen dizisi, gözcü başına tek çizim çağrısı
+			var tri: Array = fow.tris_of(o, pts, k)
+			RenderingServer.canvas_item_add_triangle_array(rid, tri[0], tri[1], tri[2])
 
 func _ready() -> void:
 	# 8 km'de 2048 piksel (4 m/piksel), küçük haritada 1 m/piksel; doğrusal süzme + yumuşak kenar
@@ -236,7 +239,55 @@ func _ray(eye: Vector3, dir: Vector2, r: float, block_h: float, skip: float) -> 
 		dd += st
 	return r
 
-# çokgen + yumuşak dış halka: gözcüden dışa sabit genişlikte (feather m) saydamlaşır
+# (154) çokgen + yumuşak halka tek üçgen dizisi: çokgen gözcüden ışınla kurulduğu için göze göre yıldız
+# biçimli → gözden yelpaze üçgenleme doğrudur. Eskiden her çizimde içbükey çokgen genel üçgenlemeyle
+# (draw_colored_polygon, 200–480 köşe) ve halka yüzlerce ayrı draw_polygon çağrısıyla çiziliyordu; büyük
+# muharebede (~80 gözcü × 2 doku, saniyede 10 kez) kare süresinin %80'i buydu (153 birlikte 355 → 60 ms).
+# Dizi çokgenle birlikte önbelleklenir (çokgen yenilenince yeniden kurulur).
+func tris_of(o, pts: PackedVector2Array, k: float) -> Array:
+	var id: int = o.get_instance_id()
+	var c = _cache.get(id)
+	if c != null and c.has("tri") and c["tri_pts"] == pts.size() and c["tri_k"] == k and (c["tri"] as Array).size() == 3 and c.get("tri_src") == c["t"]:
+		return c["tri"]
+	var ctr: Vector2 = center_of(o)
+	var fe: float = feather_of(o)
+	var n := pts.size()
+	var P := PackedVector2Array()
+	P.resize(1 + n * 2)
+	var C := PackedColorArray()
+	C.resize(1 + n * 2)
+	P[0] = ctr * k
+	C[0] = Color(1, 1, 1, 1)
+	for i in n:
+		var dv := pts[i] - ctr
+		var L := dv.length()
+		P[1 + i] = pts[i] * k
+		C[1 + i] = Color(1, 1, 1, 1)
+		P[1 + n + i] = (pts[i] + (dv / maxf(L, 0.01)) * minf(fe, L * 0.5 + 1.0)) * k
+		C[1 + n + i] = Color(1, 1, 1, 0)
+	var I := PackedInt32Array()
+	I.resize(n * 9)
+	for i in n:
+		var j := (i + 1) % n
+		var b := i * 9
+		I[b] = 0
+		I[b + 1] = 1 + i
+		I[b + 2] = 1 + j
+		I[b + 3] = 1 + i
+		I[b + 4] = 1 + n + i
+		I[b + 5] = 1 + n + j
+		I[b + 6] = 1 + i
+		I[b + 7] = 1 + n + j
+		I[b + 8] = 1 + j
+	var tri := [I, P, C]
+	if c != null:
+		c["tri"] = tri
+		c["tri_pts"] = n
+		c["tri_k"] = k
+		c["tri_src"] = c["t"]
+	return tri
+
+# çokgen + yumuşak dış halka: gözcüden dışa sabit genişlikte (feather m) saydamlaşır (eski yol, yedek)
 func draw_poly(ci: CanvasItem, pts: PackedVector2Array, k: float, c: Vector2, feather: float) -> void:
 	var n := pts.size()
 	var inner := PackedVector2Array()

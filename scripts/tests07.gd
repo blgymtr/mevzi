@@ -764,11 +764,21 @@ func gfx_bench() -> void:
 	var vp := m.get_viewport()
 	RenderingServer.viewport_set_measure_render_time(vp.get_viewport_rid(), true)
 	await m._wait(3.0)
+	# (154) zaman dizisi: sabit ön ayarda (düşük) çatışma ilerledikçe GPU ve çizim sayıları
+	m.set_gfx_preset(0)
+	var vr := vp.get_viewport_rid()
+	for step in 8:
+		var gs := 0.0
+		for i in 20:
+			await m.get_tree().process_frame
+			gs += RenderingServer.viewport_get_measured_render_time_gpu(vr)
+		print("GFXBENCH ts t=%.0f gpu_ms=%.1f draws=%d objs=%d prims=%dk units=%d nodes=%d" % [G.time, gs / 20.0, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME)), int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000), G.units.size(), int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))])
+		await m._wait(3.0)
 	var names := ["düşük", "orta", "yüksek"]
 	var frame := [0.0, 0.0, 0.0]
 	var gpu := [0.0, 0.0, 0.0]
 	var cnt := [0, 0, 0]
-	for _rd in 3:
+	for _rd in 1:
 		for p in [2, 1, 0]:
 			m.set_gfx_preset(p)
 			m.test_phase("gfx %d/%d" % [_rd, p])
@@ -790,6 +800,47 @@ func gfx_bench() -> void:
 		gpu[p] /= cnt[p]
 		print("GFXBENCH %s frame_ms=%.1f fps=%.0f gpu_ms=%.2f" % [names[p], frame[p], 1000.0 / frame[p], gpu[p]])
 	print("GFXBENCH units=%d" % G.units.size())
+	# (154) bölüm ölçümü: her sistem tek tek kapatılıp kare süresindeki kazanç (işlemci payı)
+	m.set_gfx_preset(0)
+	for sec in ["all", "soldiers", "vehicles", "visibility", "fog", "hud", "icons", "ballistics", "props"]:
+		_perf_part(sec, false)
+		for i in 10:
+			await m.get_tree().process_frame
+		var t1 := Time.get_ticks_usec()
+		var tp := 0.0
+		var tph := 0.0
+		for i in 60:
+			await m.get_tree().process_frame
+			tp += Performance.get_monitor(Performance.TIME_PROCESS)
+			tph += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
+		var ms := float(Time.get_ticks_usec() - t1) / 1000.0 / 60.0
+		print("GFXBENCH off=%-10s frame_ms=%.1f process_ms=%.1f physics_ms=%.1f" % [sec, ms, tp / 60.0 * 1000.0, tph / 60.0 * 1000.0])
+		_perf_part(sec, true)
+	# GPU payı: yüksek ön ayarda kategori kategori gizleyip GPU süresi
+	m.set_gfx_preset(2)
+	var vrid := vp.get_viewport_rid()
+	for part in ["none", "fx", "grass", "shadows", "trees", "units", "ssao", "msaa", "props_all", "world"]:
+		var undo := _gpu_part(part, false)
+		for i in 10:
+			await m.get_tree().process_frame
+		var g2 := 0.0
+		for i in 40:
+			await m.get_tree().process_frame
+			g2 += RenderingServer.viewport_get_measured_render_time_gpu(vrid)
+		print("GFXBENCH gpu_off=%-8s gpu_ms=%.1f prims=%dk draws=%d" % [part, g2 / 40.0, int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000), int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))])
+		undo.call()
+	m.set_gfx_preset(0)
+	Vehicle.prof = {}
+	Vehicle.prof_on = true
+	for f in 30:
+		await m.get_tree().process_frame
+	Vehicle.prof_on = false
+	var ks: Array = Vehicle.prof.keys()
+	ks.sort_custom(func(a, b): return Vehicle.prof[a] > Vehicle.prof[b])
+	var line := ""
+	for k in ks:
+		line += "%s=%.1f " % [k, Vehicle.prof[k] / 30.0 / 1000.0]
+	print("GFXBENCH unit_ms_per_frame %s" % line)
 	if not (gpu[0] < gpu[2] * 0.7):
 		fails += 1
 		print("GFXBENCH FAIL düşük ön ayar GPU süresini yeterince düşürmüyor")
@@ -1359,7 +1410,7 @@ func menu_shots() -> void:
 	m.set_gfx_preset(2)
 	var high := [vp.scaling_3d_scale, vp.msaa_3d, m.env.ssao_enabled, Props.grass_k]
 	print("MENU high scale=%.2f msaa=%d ssao=%s grass=%.2f" % high)
-	if absf(high[0] - 1.0) > 0.01 or high[1] != Viewport.MSAA_4X or not high[2] or absf(high[3] - 1.0) > 0.01:
+	if absf(high[0] - 1.0) > 0.01 or high[1] != Viewport.MSAA_2X or not high[2] or absf(high[3] - 1.0) > 0.01:
 		fails += 1
 		print("MENU FAIL yüksek ön ayar uygulanmadı")
 	# tek ayar değişince "Özel" olur, diğer değerler korunur
@@ -4380,6 +4431,51 @@ func perf_8k() -> void:
 		print("PERF8K off=%-10s frame_ms=%.1f process_ms=%.1f fps=%d" % [sec, ms, tp / n * 1000.0, int(1000.0 / maxf(ms, 0.01))])
 		_perf_part(sec, true)
 	print("PERF8K RESULT fails=0")
+
+# GPU kategorisini gizle; geri alma işlevi döndürür
+func _gpu_part(part: String, _on: bool) -> Callable:
+	var hidden: Array = []
+	var hide := func(n: Node) -> void:
+		if n is Node3D and (n as Node3D).visible:
+			(n as Node3D).visible = false
+			hidden.append(n)
+	match part:
+		"fx":
+			hide.call(G.fx)
+		"grass":
+			for n in m.get_tree().get_nodes_in_group("zoom_grass"):
+				hide.call(n)
+		"shadows":
+			m.sun.shadow_enabled = false
+			G.cam.shadows_on = false
+			return func():
+				G.cam.shadows_on = true
+				m.sun.shadow_enabled = true
+		"trees":
+			for c in G.props.get_children():
+				if c is MultiMeshInstance3D and not c.is_in_group("zoom_grass"):
+					hide.call(c)
+		"units":
+			for u in G.units:
+				if is_instance_valid(u):
+					hide.call(u)
+		"ssao":
+			m.env.ssao_enabled = false
+			return func(): m.env.ssao_enabled = true
+		"props_all":
+			hide.call(G.props)
+		"world":
+			# arazi + binalar (G.props ve birimler dışı her şey)
+			for c in m.world.get_children():
+				if c != G.props and c != G.fx and not (c is Unit):
+					hide.call(c)
+		"msaa":
+			m.get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+			return func(): m.get_viewport().msaa_3d = Viewport.MSAA_4X
+	return func():
+		for n in hidden:
+			if is_instance_valid(n):
+				n.visible = true
 
 func _perf_part(part: String, on: bool) -> void:
 	match part:

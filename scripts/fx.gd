@@ -276,7 +276,13 @@ func _make_scorch() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 # ------------------------------------------------------------ çekirdek emit
+# (154 / 146) parçacık yoğunluğu (Ayarlar > Grafik): büyük çatışmada duman / toz bulutları ekranı kaplayıp GPU'yu
+# boğuyordu (üst üste binen saydam kartlar) — düşük ayarda parçacıkların bir kısmı hiç üretilmez
+static var density := 1.0
+
 func emit(k: int, pos: Vector3, vel: Vector3, life: float, s0: float, s1: float, grav: float, drag: float, col: Color, delay := 0.0, spin := 0.0) -> void:
+	if density < 0.999 and rng.randf() > density:
+		return
 	var mm: MultiMesh = mms[k]
 	var i: int = heads[k]
 	heads[k] = (i + 1) % CAP[k]

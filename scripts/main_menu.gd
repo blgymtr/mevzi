@@ -153,6 +153,8 @@ const EN := {
 	"Parlama": "Glow",
 	"Ot yoğunluğu": "Grass density",
 	"Yeni yüklenen bölgelerde ve yeni haritada geçerli.": "Applies to newly loaded areas and the next map.",
+	"Duman ve parçacık": "Smoke and particles",
+	"Büyük çatışmada etkili: patlama dumanı, toz, ateş.": "Matters in large battles: explosion smoke, dust, fire.",
 }
 
 static var _reopen := ""            # dil değişince yeniden kurulan menü bu sayfayı açar
@@ -979,6 +981,10 @@ func _fill_graphics(root_box: VBoxContainer) -> void:
 		m.set_gfx("grass", x)
 	_slider(content, "Ot yoğunluğu", 0.1, 1.0, 0.05, float(m.gfx("grass")), pct, set_grass)
 	_hint(content, "Yeni yüklenen bölgelerde ve yeni haritada geçerli.")
+	var set_fx := func(x: float) -> void:
+		m.set_gfx("fx", x)
+	_slider(content, "Duman ve parçacık", 0.2, 1.0, 0.05, float(m.gfx("fx")), pct, set_fx)
+	_hint(content, "Büyük çatışmada etkili: patlama dumanı, toz, ateş.")
 
 func _hint(parent: Node, text: String) -> void:
 	var h := HBoxContainer.new()
