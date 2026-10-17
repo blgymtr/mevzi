@@ -203,6 +203,7 @@ var pistol_t := 0.0
 var bearer := false
 var carried := false
 var body_lift := 0.0
+const COLLAPSE_T := 1.1         # (162) vurulup yığılma süresi
 var slope_drop := 0.0            # (60) eğimde kalçanın inişi (iki ayak yere bassın)
 var _aim_hold_t := -99.0         # (124) nişan pozunun seriler arasında tutulması
 var surrender_chk := 0.0
@@ -301,7 +302,7 @@ func move_vel() -> Vector3:
 	return vel
 
 func can_fight() -> bool:
-	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "prisoner", "dive", "aboard", "stretchered", "hospital", "stretcher", "slide", "rope", "rope_up", "rope_wait", "exiting", "entering", "para"])
+	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "prisoner", "dive", "aboard", "stretchered", "hospital", "stretcher", "slide", "rope", "rope_up", "rope_wait", "exiting", "entering", "para", "collapse"])
 
 # (155) su derinliği yüzmeyi gerektiriyor mu (yüzey ile dip arası ~1,2 m'den fazla: göğüs hizasını aşar)
 func swimming() -> bool:
@@ -310,7 +311,7 @@ func swimming() -> bool:
 	return Terrain.WATER_Y - G.terrain.ground_hs(position) > 1.2
 
 func incapacitated() -> bool:
-	return state in ["wounded", "dragged", "healing", "stretchered"]
+	return state in ["wounded", "dragged", "healing", "stretchered", "collapse"]
 
 func hostile() -> bool:
 	if not alive or state in ["surrender", "prisoner", "hospital"]:
@@ -1196,6 +1197,14 @@ func _process(dt: float) -> void:
 		return
 	if state in ["rope", "rope_up", "rope_wait"]:
 		_rope_process(dt)
+		return
+	# (162) vurulup düşen asker kendini yere atmaz: dizleri çözülür, sendeler, sırtüstü yığılır (~1,1 sn)
+	if state == "collapse":
+		body.animate(dt, "collapse", 0.0, clampf(state_t / COLLAPSE_T, 0.0, 1.0))
+		if state_t >= COLLAPSE_T:
+			state = "wounded"
+			state_t = 0.0
+			G.fx.blood_pool(position)
 		return
 	if state in ["exiting", "entering"]:
 		_door_process(dt)
@@ -3292,7 +3301,8 @@ func _down(src, explosive := false) -> void:
 		say("VURULDUM!", 2.0)
 		return
 	_drop_canopy()
-	state = "wounded"
+	# patlamayla savrulan zaten yerde: doğrudan yaralı; kurşunla düşen önce yığılır
+	state = "wounded" if explosive else "collapse"
 	state_t = 0.0
 	stance = PRONE
 	target = null
@@ -3301,7 +3311,8 @@ func _down(src, explosive := false) -> void:
 	cover_type = 0
 	popped = false
 	say(["SIHHİYE!", "SIHHİYE! VURULDUM!", "YARDIM EDİN!"][randi() % 3], 3.0)
-	G.fx.blood_pool(position)
+	if explosive:
+		G.fx.blood_pool(position)
 
 func _injure(explosive: bool) -> void:
 	# patlamada uzuvlar, kurşunda gövde/kol daha olası
@@ -3420,7 +3431,11 @@ func die(src, keep_fly := false) -> void:
 		var away: Vector3 = position - src.position
 		away.y = 0
 		if away.length() > 0.01:
-			rv = away.normalized() * randf_range(1.2, 2.8) + Vector3(0, randf_range(0.4, 1.4), 0)
+			if G.time - blast_t < 0.3:
+				rv = away.normalized() * randf_range(1.2, 2.8) + Vector3(0, randf_range(0.4, 1.4), 0)
+			else:
+				# (162) kurşun bedeni savurmaz: dizler çözülür, beden olduğu yere yığılır (isabet yönünde hafif itme)
+				rv = away.normalized() * randf_range(0.25, 0.8) + Vector3(0, randf_range(-0.2, 0.15), 0)
 	state = "dead"
 	keep_fly = keep_fly
 	_leave_house()

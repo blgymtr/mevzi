@@ -993,6 +993,31 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["alz"] = -0.4
 			T["flx"] = 0.4
 			wpn = 3
+		"collapse":
+			# (162) vurulup yığılma, extra = 0..1: 0–0,4 dizler çözülür (kalça iner, gövde öne sarkar, silah düşer),
+			# 0,4–1 dengesini kaybedip sırtüstü yere (yaralı pozunun başlangıcı)
+			var ck := clampf(extra, 0.0, 1.0)
+			var a1 := smoothstep(0.0, 0.42, ck)            # diz çözülmesi
+			var a2 := smoothstep(0.38, 1.0, ck)            # sırtüstü düşüş
+			if dead_pose.is_empty():
+				dead_pose = {"arz": rng.randf_range(0.4, 1.5), "alz": -rng.randf_range(0.4, 1.5), "lrz": rng.randf_range(0.0, 0.4), "llz": -rng.randf_range(0.0, 0.4), "prz": rng.randf_range(-0.3, 0.3), "srz": rng.randf_range(-0.2, 0.2)}
+			T["py"] = lerpf(lerpf(HIP, 0.55, a1), 0.13, a2)
+			T["prx"] = lerpf(lerpf(0.0, -0.25, a1), PI * 0.5, a2)
+			T["prz"] = lerpf(0.0, float(dead_pose["prz"]), a2)
+			T["srx"] = lerpf(lerpf(0.0, 0.55, a1), 0.0, a2)
+			T["lrx"] = lerpf(lerpf(0.0, 1.25, a1), 0.0, a2)
+			T["llx"] = lerpf(lerpf(0.0, 1.1, a1), 0.0, a2)
+			T["krx"] = lerpf(lerpf(0.0, -1.6, a1), -0.25, a2)
+			T["klx"] = lerpf(lerpf(0.0, -1.45, a1), -0.4, a2)
+			T["lrz"] = lerpf(0.0, float(dead_pose["lrz"]), a2)
+			T["llz"] = lerpf(0.0, float(dead_pose["llz"]), a2)
+			T["arx"] = lerpf(lerpf(0.6, 0.15, a1), 0.2, a2)
+			T["arz"] = lerpf(0.1, float(dead_pose["arz"]), a2)
+			T["frx"] = 0.3
+			T["alx"] = lerpf(lerpf(0.6, 0.2, a1), 0.2, a2)
+			T["alz"] = lerpf(-0.1, float(dead_pose["alz"]), a2)
+			T["flx"] = 0.3
+			wpn = 4 if ck > 0.25 else 1
 		"dead", "wounded", "dragged", "healing":
 			if dead_pose.is_empty():
 				dead_pose = {"arz": rng.randf_range(0.4, 1.5), "alz": -rng.randf_range(0.4, 1.5), "lrz": rng.randf_range(0.0, 0.4), "llz": -rng.randf_range(0.0, 0.4), "prz": rng.randf_range(-0.3, 0.3), "srz": rng.randf_range(-0.2, 0.2)}

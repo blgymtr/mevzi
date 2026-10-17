@@ -139,6 +139,8 @@ func run(scene: String) -> void:
 			await foot_ik_test()
 		"departtest":
 			await depart_test()
+		"hitfall":
+			await hitfall_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1367,6 +1369,57 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 162: vurulma — kurşunla düşen asker yığılır (collapse, ~1,1 sn) sonra yaralı; ölen beden savrulmaz (ölüm yeri ile
+# beden arasındaki mesafe küçük). Ardışık görüntüler.
+func hitfall_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 79)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.46, 0, G.MAP * 0.52), Grid.M_INF)
+	G.props.clear_area(c, 15.0)
+	var shooter: Soldier = m.spawn_soldier(1, "rifle", c + Vector3(0, 0, -20), null)
+	shooter.fire_mode = 2
+	var a: Soldier = m.spawn_soldier(0, "rifle", c + Vector3(-1.5, 0, 0), null)
+	var b: Soldier = m.spawn_soldier(0, "rifle", c + Vector3(1.5, 0, 0), null)
+	a.fire_mode = 2
+	b.fire_mode = 2
+	await m._wait(1.0)
+	_cam(c, 7.0)
+	# a: yaralanır (canı biter, ölmez — ölüm zarı tutarsa yeni asker), b: ölür
+	var seen := {}
+	for tr in 8:
+		a.downs = 0
+		a.hp = 2.0
+		a.take_damage(4.0, shooter, "bullet")
+		if a.alive:
+			break
+		a = m.spawn_soldier(0, "rifle", c + Vector3(-1.5, 0, 0.8 * (tr + 1)), null)
+		a.fire_mode = 2
+		await m._wait(0.3)
+	var p0 := b.position
+	b.hp = 1.0
+	b.downs = 2
+	b.take_damage(60.0, shooter, "bullet")
+	for k in 6:
+		await m._wait(0.25)
+		seen[a.state] = true
+		await m._shot("hitfall_%d" % k)
+	await m._wait(2.5)
+	var drift := 0.0
+	if b.rag != null:
+		var hc: Vector3 = b.rag.center()
+		drift = Vector2(hc.x - p0.x, hc.z - p0.z).length()
+	print("HITFALL a_states=%s a_final=%s b_alive=%s body_drift=%.2f" % [seen.keys(), a.state, b.alive, drift])
+	if not seen.has("collapse") or a.state != "wounded" or b.alive or drift > 1.3:
+		fails += 1
+	print("HITFALLTEST RESULT fails=%d" % fails)
 
 # 158: Chinook'a biniş sürerken kalkış emri — bekleyenlerin emri iptal, rampadakiler girer, rampa kapanmadan kalkmaz,
 # askerler helikopteri geri indiremez (oyuncu emri geçerli)
