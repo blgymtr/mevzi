@@ -1635,7 +1635,7 @@ func _think() -> void:
 					# (kullanıcı: girişte 1 sn bekliyorlar) sıra aralığı 0,95 → 0,35 sn, rampa ağzı yarıçapı genişledi:
 					# askerler koşar adım arka arkaya girer
 					if qi == 0 and hv.can_load() and dist2_p(ent) < 2.0 and G.time >= hv._ramp_free_t:
-						hv._ramp_free_t = G.time + 0.35
+						hv._ramp_free_t = G.time + (0.35 if hv.is_cargo() else 0.6)    # yan kapı dar: daha seyrek
 						hv._ramp_q.erase(self)
 						door_veh = hv
 						board_target = null

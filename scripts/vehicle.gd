@@ -397,7 +397,7 @@ func request_land() -> void:
 		return
 	landing = true
 	land_hold = true
-	dest = G.on_ground(position)
+	dest = land_spot(G.on_ground(position))      # (157) bina / ağaç üstüne değil, açık yere
 	path = PackedVector3Array([dest])
 	path_i = 0
 	say("İNİŞE GEÇİYORUZ")
@@ -2055,6 +2055,66 @@ func cancel_boarders(msg := "") -> void:
 	_ramp_q.clear()
 	if n > 0 and msg != "":
 		say(msg, 2.0)
+
+# (157) bir alandaki en yüksek engel (m, zemine göre): bina çatısı (duvar üstü + çatı), statik ızgara yüksekliği,
+# ağaç tepesi; merkez + 4 köşe örneklenir
+var _clr_t := 0.0
+var _clr_under := 0.0
+var _clr_ahead := 0.0
+
+# çatı yükseklik ızgarası (4 m hücre → [ev no, çatı tepesi]); harita başına bir kez, ev sayısı değişince yeniden
+static var _roof := {}
+static var _roof_n := -1
+static var _roof_map: Object = null
+
+static func _roof_grid() -> Dictionary:
+	if G.blocks == null:
+		return {}
+	if _roof_n != G.blocks.houses.size() or _roof_map != G.blocks:
+		_roof.clear()
+		_roof_n = G.blocks.houses.size()
+		_roof_map = G.blocks
+		for i in G.blocks.houses.size():
+			var h: Dictionary = G.blocks.houses[i]
+			var c: Vector3 = h["center"]
+			var sz: Vector2 = h["size"]
+			var tp := float(h["top"]) + 3.5
+			for ix in range(int(floor((c.x - sz.x * 0.5 - 0.5) / 4.0)), int(floor((c.x + sz.x * 0.5 + 0.5) / 4.0)) + 1):
+				for iz in range(int(floor((c.z - sz.y * 0.5 - 0.5) / 4.0)), int(floor((c.z + sz.y * 0.5 + 0.5) / 4.0)) + 1):
+					var k := Vector2i(ix, iz)
+					if not _roof.has(k) or float(_roof[k][1]) < tp:
+						_roof[k] = [i, tp]
+	return _roof
+
+func _obst_area(c: Vector3, r: float) -> float:
+	var top := 0.0
+	var rg := _roof_grid()
+	for o in [Vector3.ZERO, Vector3(r, 0, r), Vector3(-r, 0, r), Vector3(r, 0, -r), Vector3(-r, 0, -r), Vector3(r, 0, 0), Vector3(-r, 0, 0), Vector3(0, 0, r), Vector3(0, 0, -r)]:
+		var p: Vector3 = c + o
+		if p.x < 1.0 or p.z < 1.0 or p.x > G.MAP - 1.0 or p.z > G.MAP - 1.0:
+			continue
+		var e = rg.get(Vector2i(int(floor(p.x / 4.0)), int(floor(p.z / 4.0))))
+		if e != null and not bool(G.blocks.houses[int(e[0])]["collapsed"]):
+			top = maxf(top, float(e[1]))
+		top = maxf(top, G.grid.height_at(p))
+		if G.grid.kind_at(p) == Grid.K_TREE:
+			top = maxf(top, 13.0)
+	return top
+
+# iniş yeri: gövde + pal dairesi boyunca engelsiz, su olmayan en yakın nokta (halka halka 4 m adımla, 80 m'ye dek)
+func land_spot(p: Vector3) -> Vector3:
+	var r := maxf(ext.x, ext.y) * 0.9 + 1.0
+	for ring in 21:
+		var rr := ring * 4.0
+		var n := maxi(1, ring * 6)
+		for i in n:
+			var a := TAU * i / n
+			var q := G.on_ground(p + Vector3(cos(a), 0, sin(a)) * rr)
+			if G.grid.is_water(q):
+				continue
+			if _obst_area(q, r) < 0.5:
+				return q
+	return p
 
 # helikopter yerde mi (kara araçları / askerler için engel)
 func landed() -> bool:
@@ -4589,6 +4649,29 @@ func _heli(dt: float) -> void:
 			if hull.position.y < 6.4:
 				_drop_crate()
 		_cargo_visuals(dt)
+	# (157) hava aracı bina / ağaç içinden geçmez: altındaki ve önündeki en yüksek engelin 4 m üstünde uçar;
+	# alçak hedef (iniş, kanca, halat) yalnız tam altı boşsa — doluysa önce yükselir, en yakın açık yere kayar
+	_clr_t -= dt
+	if _clr_t <= 0.0:
+		_clr_t = 0.25
+		_clr_under = _obst_area(position, maxf(ext.x, ext.y) * 0.8)
+		var ahead := hvel.normalized() if hvel.length() > 0.5 else Vector3.ZERO
+		_clr_ahead = _clr_under
+		for k in [8.0, 16.0, 24.0]:
+			if ahead != Vector3.ZERO:
+				_clr_ahead = maxf(_clr_ahead, _obst_area(position + ahead * k, maxf(ext.x, ext.y) * 0.8))
+	var low_ok := tgt_alt >= _clr_ahead + 4.0 or (_clr_under < 0.5 and L < 4.0)
+	if not low_ok:
+		tgt_alt = maxf(tgt_alt, _clr_ahead + 4.0)
+		if landing and L < 4.0 and _clr_under >= 0.5:
+			# iniş yeri dolu: pal çapı boyunca boş en yakın yere
+			dest = land_spot(position)
+			path = PackedVector3Array([dest])
+			path_i = 0
+			_clr_t = 0.0
+	# engele alçakta yaklaşırken önce yüksel (yatay hız kesilir)
+	if hull.position.y < _clr_ahead + 2.0 and tgt_alt > hull.position.y:
+		hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt * 2.0)
 	var local_v := hvel.rotated(Vector3.UP, -heading)
 	var bank := 0.55 if evade_t > 0.0 else 0.3
 	hull.rotation = Vector3(lerpf(hull.rotation.x, clampf(local_v.z * 0.025, -0.3, 0.3), dt * 3.0), heading, lerpf(hull.rotation.z, clampf(-local_v.x * 0.035, -bank, bank), dt * 4.0))

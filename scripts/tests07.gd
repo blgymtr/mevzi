@@ -141,6 +141,8 @@ func run(scene: String) -> void:
 			await depart_test()
 		"hitfall":
 			await hitfall_test()
+		"heliroof":
+			await heliroof_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1369,6 +1371,67 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 157: helikopter köyün üstünden geçer — gövde ile altındaki çatı arası hiç 1 m'nin altına inmez; bir evin üstünde
+# iniş emri verilince evin içine değil yanındaki açık yere iner
+func heliroof_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("large_front", {}, true, 83)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	# en kalabalık ev kümesi
+	var best: Vector3 = G.blocks.houses[0]["center"]
+	var bn := 0
+	for i in mini(G.blocks.houses.size(), 120):
+		var c0: Vector3 = G.blocks.houses[i]["center"]
+		var n := 0
+		for h in G.blocks.houses:
+			if (h["center"] as Vector3).distance_to(c0) < 40.0:
+				n += 1
+		if n > bn:
+			bn = n
+			best = c0
+	var start := G.grid.nearest_open(best + Vector3(-70, 0, 0), Grid.M_HEAVY)
+	var h: Vehicle = m.spawn_vehicle(0, "usa_heli_uh60", start, 0.0)
+	h.fire_mode = 2
+	await m._wait(3.0)
+	h.cmd_move(best + Vector3(70, 0, 0))
+	var worst := 99.0
+	var t := 0.0
+	while t < 25.0:
+		await m._wait(0.1)
+		t += 0.1
+		var under: float = h._obst_area(h.position, 2.0)
+		if under > 0.5:
+			worst = minf(worst, h.hull.global_position.y - under)
+	print("HELIROOF houses_near=%d min_clearance_over_obstacles=%.1f" % [bn, worst])
+	if worst < 1.0:
+		fails += 1
+	# evin üstünde iniş emri
+	var hh: Dictionary = {}
+	for i in G.blocks.houses.size():
+		if (G.blocks.houses[i]["center"] as Vector3).distance_to(best) < 1.0:
+			hh = G.blocks.houses[i]
+	h.cmd_move(best)
+	await m._wait(10.0)
+	h.request_land()
+	t = 0.0
+	while t < 25.0 and h.hull.position.y > 0.7:
+		await m._wait(0.2)
+		t += 0.2
+	var on_house: float = h._obst_area(h.position, 0.0)
+	print("HELIROOF landed=%s alt=%.1f obstacle_under=%.1f dist_from_house=%.1f" % [h.hull.position.y < 0.7, h.hull.position.y, on_house, h.position.distance_to(best)])
+	if h.hull.position.y > 0.7 or on_house > 0.5:
+		fails += 1
+	_cam(h.position, 30.0)
+	await m._wait(0.3)
+	await m._shot("heliroof_land")
+	print("HELIROOFTEST RESULT fails=%d" % fails)
 
 # 162: vurulma — kurşunla düşen asker yığılır (collapse, ~1,1 sn) sonra yaralı; ölen beden savrulmaz (ölüm yeri ile
 # beden arasındaki mesafe küçük). Ardışık görüntüler.
