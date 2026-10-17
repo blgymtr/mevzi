@@ -17,6 +17,9 @@ uniform float depth_scale = 1.4;
 uniform float foam_amt = 1.0;
 uniform float flow_speed = 0.55;   // m/sn (oyun ölçeği)
 uniform float clarity = 0.35;
+// (144) gerçekçilik: dalga yüzlerinde gökyüzü yansıması, kıyıda kesik ince köpük
+uniform vec3 sky_col : source_color = vec3(0.6, 0.68, 0.74);
+uniform float sky_refl = 0.1;
 uniform sampler2D river_mask : filter_linear, repeat_disable;
 uniform float map_size = 256.0;
 uniform vec4 piers[32];            // köprü ayakları: (x, z, akış yönünde yarı boy, yarı kalınlık)
@@ -156,12 +159,18 @@ void fragment() {
 	vec3 refr = texture(screen_tex, SCREEN_UV + nxy * 0.01).rgb;
 	vec3 col = mix(shallow, deep, k);
 	col = mix(refr * shallow * 1.2, col, clamp(k + (1.0 - clarity), 0.0, 1.0));
-	// köpük: kıyıda ve dalga tepelerinde
+	// (144) dalga yüzlerinde gökyüzü yansıması: göğe bakan yüzler açık, öbürleri koyu (düz tek renk yerine
+	// pırıltılı yüzey); akıntı yönündeki uzun dalga sırtları hafif aydınlık
+	float facet = clamp(0.5 + nxy.x * 0.9 + nxy.y * 0.5, 0.0, 1.0);
+	col = mix(col, sky_col, sky_refl * (0.35 + 0.65 * facet));
+	col *= 0.94 + 0.12 * facet;
+	// köpük: kıyıda ince ve kesik (eskiden iki kıyıda kesintisiz kalın beyaz çizgi — karikatür görünüm), dalga
+	// tepelerinde seyrek
 	float f = mix(texture(foam_tex, (w - off0 * 1.2) / 3.0).r, texture(foam_tex, (w - off1 * 1.2) / 3.0 + vec2(0.5, 0.25)).r, bw);
-	float shore = 1.0 - smoothstep(0.0, 0.35, thick);
-	float crest = smoothstep(0.62, 0.9, f * (0.6 + 0.6 * n1.x + 0.3 * n2.y));
-	float foam = clamp(shore * (0.5 + f) + crest * 0.35 + lines * 0.3 + pfoam * 0.7 + rfoam, 0.0, 1.0) * foam_amt;
-	col = mix(col, vec3(0.95, 0.97, 0.98), foam);
+	float shore = (1.0 - smoothstep(0.0, 0.16, thick)) * smoothstep(0.42, 0.78, f);
+	float crest = smoothstep(0.68, 0.92, f * (0.6 + 0.6 * n1.x + 0.3 * n2.y));
+	float foam = clamp(shore * 0.7 + crest * 0.25 + lines * 0.22 + pfoam * 0.7 + rfoam, 0.0, 1.0) * foam_amt;
+	col = mix(col, vec3(0.86, 0.88, 0.86), foam);
 	ALBEDO = col;
 	ROUGHNESS = 0.08;
 	SPECULAR = 0.6;

@@ -500,6 +500,9 @@ func make_water() -> void:
 	water_mat.set_shader_parameter("shallow", biome["water_shallow"])
 	water_mat.set_shader_parameter("deep", biome["water_deep"])
 	water_mat.set_shader_parameter("clarity", biome["clarity"])
+	# (144) derinlik geçişi daha geniş (kıyıda sığ / bulanık, ortada koyu), biyoma göre gök yansıması
+	water_mat.set_shader_parameter("depth_scale", biome.get("water_depth", 2.6))
+	water_mat.set_shader_parameter("sky_col", biome.get("water_sky", Color(0.6, 0.68, 0.74)))
 	var mi := Image.create(HRES, HRES, false, Image.FORMAT_L8)
 	var kk := float(HRES) / G.MAP
 	for rc in wet_rects:
