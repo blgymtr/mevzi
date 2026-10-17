@@ -117,6 +117,8 @@ func run(scene: String) -> void:
 			await crew_shots()
 		"obstacletest":
 			await obstacle_test()
+		"engagetest":
+			await engage_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1125,10 +1127,6 @@ func obstacle_test() -> void:
 	for u in units:
 		G.player.select(u)
 	G.player.move_group(units, goal)
-	await m._wait(2.0)
-	for u in units:
-		if u is Vehicle:
-			print("OBSTACLE dbg %s pos=(%.0f,%.0f) order=%s path=%d/%d dest=(%.0f,%.0f) speed=%.1f immobile=%s crew=%d" % [u.vtype, u.position.x, u.position.z, u.order, u.path_i, u.path.size(), u.dest.x, u.dest.z, u.cur_speed, u.immobile(), u.crew_n])
 	var t0 := G.time
 	var inside_max := 0.0
 	while G.time - t0 < 60.0:
@@ -1156,6 +1154,221 @@ func obstacle_test() -> void:
 	if not stuck.is_empty() or inside_max > 0.0:
 		fails += 1
 	print("OBSTACLETEST RESULT fails=%d" % fails)
+
+# 150: özerklik — görüşe giren düşmana kendiliğinden ateş. Savunan boşta (serbest ateş), saldıran menzilin
+# 1,5 katından açık koridordan yürür (ateş kes). Ölçülen: ilk görülme / ilk atış mesafesi, "görüldü + menzilde"
+# anından ilk atışa gecikme, sonra hedef varken susulan süre oranı. İkinci bölüm: düz hareket emrindeki tim
+# yanından geçtiği düşmana yürürken ateş eder mi.
+func engage_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, false, 37)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.deploy_t = 0.0
+	await m._wait(1.0)
+	for cs in [["rifle", "rifle"], ["at", "apc"], ["tank", "tank"]]:
+		var r: Dictionary = await _engage_case(cs[0], cs[1])
+		var delay: float = r["t_fire"] - r["t_inr"] if r["t_fire"] >= 0.0 and r["t_inr"] >= 0.0 else -1.0
+		var ref: float = minf(r["rng"], r["d_seen"]) if r["d_seen"] > 0.0 else r["rng"]
+		var ok: bool = r["t_fire"] >= 0.0 and delay <= (3.0 if cs[0] == "tank" else 2.5) and r["d_fire"] >= 0.7 * ref and r["silent"] <= 0.25
+		print("ENGAGE %s vs %s: menzil=%.0f görüldü=%.0f m ilk atış=%.0f m gecikme=%.1f sn sessiz=%%%d %s" % [cs[0], cs[1], r["rng"], r["d_seen"], r["d_fire"], delay, int(r["silent"] * 100), "OK" if ok else "FAIL"])
+		if not ok:
+			fails += 1
+	# hareket hâlinde ateş: tim düşman timinin önünden menzilin ~0,6'sı uzaktan geçer
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.32, 0, G.MAP * 0.7), Grid.M_INF)
+	G.props.clear_area(c, 40.0)
+	var en: Array = []
+	for i in 4:
+		var e: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(i * 1.6, 0, 0), Grid.M_INF), null)
+		e.fire_mode = 2
+		en.append(e)
+	var sq := Squad.new(0, "Yürüyen")
+	G.squads.append(sq)
+	var mv: Array = []
+	var rng: float = 0.0
+	for i in 5:
+		var s: Soldier = m.spawn_soldier(0, ["rifle", "rifle", "mg", "rifle", "leader"][i], G.grid.nearest_free(c + Vector3(-30 + i * 1.4, 0, 20), Grid.M_INF), sq)
+		rng = maxf(rng, s.weapon()["range"])
+		mv.append(s)
+	await m._wait(0.5)
+	G.player.move_group(mv, c + Vector3(34, 0, 20))
+	var t0 := G.time
+	var t_inr := -1.0
+	var t_fire := -1.0
+	while G.time - t0 < 30.0:
+		await m._wait(0.1)
+		var dmin := 1e9
+		var seen := false
+		for e in en:
+			if e.alive and G.is_seen(e, 0):
+				seen = true
+				for s in mv:
+					if s.alive:
+						dmin = minf(dmin, s.position.distance_to(e.position))
+		if seen and dmin <= rng and t_inr < 0.0:
+			t_inr = G.time
+		var sh := 0
+		for s in mv:
+			sh += s.shots
+		if sh > 0 and t_fire < 0.0:
+			t_fire = G.time
+			break
+		if mv.all(func(s): return s.position.distance_to(c + Vector3(34, 0, 20)) < 6.0):
+			break
+	var moving_ok := t_fire >= 0.0 and t_inr >= 0.0 and t_fire - t_inr <= 3.0
+	print("ENGAGE hareket: menzilde=%.1f sn ilk atış=%.1f sn %s" % [t_inr - t0 if t_inr >= 0.0 else -1.0, t_fire - t0 if t_fire >= 0.0 else -1.0, "OK" if moving_ok else "FAIL"])
+	if not moving_ok:
+		fails += 1
+	for u in mv + en:
+		if is_instance_valid(u) and u.alive:
+			u.queue_free()
+	await m._wait(0.3)
+	# ateş altındaki boştaki tim: menzili dışından ateş eden makineli tüfeğe karşı ~4 sn içinde çöker / sipere girer
+	var c2 := G.grid.nearest_open(Vector3(G.MAP * 0.6, 0, G.MAP * 0.35), Grid.M_INF)
+	G.props.clear_area(c2, 30.0)
+	var sq2 := Squad.new(0, "Açıkta")
+	G.squads.append(sq2)
+	var idle: Array = []
+	for i in 5:
+		idle.append(m.spawn_soldier(0, "rifle", G.grid.nearest_free(c2 + Vector3((i % 3) * 1.6, 0, (i / 3) * 1.6), Grid.M_INF), sq2))
+	var mg: Soldier = m.spawn_soldier(1, "mg", G.grid.nearest_free(c2 + Vector3(0, 0, -(idle[0].weapon()["range"] + 6.0)), Grid.M_INF), null)
+	await m._wait(0.5)
+	mg.forced_target = idle[0]
+	mg.target = idle[0]
+	var t_sup := -1.0
+	var react_t := -1.0
+	var t1 := G.time
+	while G.time - t1 < 15.0:
+		await m._wait(0.1)
+		if t_sup < 0.0 and idle.any(func(s): return s.suppression > 5.0):
+			t_sup = G.time
+		if t_sup >= 0.0:
+			var down := idle.filter(func(s): return not s.alive or s.incapacitated() or s.stance != Soldier.STAND or s.cover_type > 0).size()
+			if down >= 4:
+				react_t = G.time - t_sup
+				break
+	var react_ok := react_t >= 0.0 and react_t <= 4.0
+	print("ENGAGE ateş altında: ilk baskı=%.1f sn  tepki=%.1f sn %s" % [t_sup - t1 if t_sup >= 0.0 else -1.0, react_t, "OK" if react_ok else "FAIL"])
+	if not react_ok:
+		fails += 1
+	print("ENGAGETEST RESULT fails=%d" % fails)
+
+func _engage_group(team: int, kind: String, p: Vector3, sq: Squad) -> Array:
+	var out: Array = []
+	match kind:
+		"rifle":
+			for i in 6:
+				out.append(m.spawn_soldier(team, ["leader", "rifle", "rifle", "mg", "rifle", "rifle"][i], G.grid.nearest_free(p + Vector3((i % 3) * 1.6 - 1.6, 0, (i / 3) * 1.6), Grid.M_INF), sq))
+		"at":
+			for i in 4:
+				out.append(m.spawn_soldier(team, ["at", "at", "rifle", "leader"][i], G.grid.nearest_free(p + Vector3((i % 2) * 1.6, 0, (i / 2) * 1.6), Grid.M_INF), sq))
+		_:
+			out.append(m.spawn_vehicle(team, kind, G.grid.nearest_open(p, Grid.M_HEAVY), 0.0))
+	return out
+
+func _engage_case(dk: String, ak: String) -> Dictionary:
+	var sq := Squad.new(0, "Savunan")
+	G.squads.append(sq)
+	# en uzun açık doğrultu: aday köşe noktaları × 8 yön; menzilin 1,5 katı ya da harita içinde sığan kadar
+	var best := [-1.0, Vector3.ZERO, Vector3.ZERO]
+	var probe: Array = _engage_group(0, dk, Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), sq)
+	await m._wait(0.3)
+	var rng := 0.0
+	for u in probe:
+		if u is Soldier:
+			rng = maxf(rng, u.weapon()["range"] * (1.25 if (u.role == "at" and ak != "rifle") else 1.0))
+		else:
+			# araç kendiliğinden yalnız etkili menzile (azami × AUTO_RNG_K, roadmap 109) kadar ateş açar
+			rng = maxf(rng, u._range() * Vehicle.AUTO_RNG_K + 4.0)
+	for u in probe:
+		u.queue_free()
+	await m._wait(0.2)
+	var want := rng * 1.5
+	for p0 in [Vector3(30, 0, 30), Vector3(G.MAP - 30, 0, 30), Vector3(30, 0, G.MAP - 30), Vector3(G.MAP - 30, 0, G.MAP - 30), Vector3(G.MAP * 0.5, 0, 30), Vector3(30, 0, G.MAP * 0.5)]:
+		var q0 := G.grid.nearest_open(p0, Grid.M_HEAVY)
+		for k in 8:
+			var dir := Vector3(cos(k * TAU / 8.0), 0, sin(k * TAU / 8.0))
+			var d := 0.0
+			while d < want:
+				var q := q0 + dir * (d + 5.0)
+				if q.x < 8.0 or q.z < 8.0 or q.x > G.MAP - 8.0 or q.z > G.MAP - 8.0 or G.grid.is_water(q):
+					break
+				d += 5.0
+			var y0 := G.terrain.ground_h(q0) + 2.2
+			var q1 := q0 + dir * d
+			# karargâhlardan uzak (serbest ateşteki savunan üssü vurup oyunu bitirmesin)
+			var near_hq := false
+			for h in G.hq_pos:
+				if q0.distance_to(h) < 70.0 or q1.distance_to(h) < 70.0:
+					near_hq = true
+			if not near_hq and d > best[0] and G.grid.los(Vector3(q0.x, y0, q0.z), Vector3(q1.x, G.terrain.ground_h(q1) + 2.2, q1.z)):
+				best = [d, q0, dir]
+	var dist: float = best[0]
+	var p: Vector3 = best[1]
+	var dr: Vector3 = best[2]
+	var s := 0.0
+	while s <= dist + 6.0:
+		G.props.clear_area(p + dr * s, 9.0)
+		s += 8.0
+	var dfn: Array = _engage_group(0, dk, p, sq)
+	var att: Array = _engage_group(1, ak, p + dr * dist, null)
+	for u in att:
+		u.fire_mode = 2
+	_cam(p + dr * dist * 0.5, maxf(40.0, dist * 0.6))
+	await m._wait(0.5)
+	for u in att:
+		u.cmd_move(p + dr * 4.0)
+	var t0 := G.time
+	var r := {"rng": rng, "d_seen": -1.0, "d_fire": -1.0, "t_inr": -1.0, "t_fire": -1.0, "silent": 0.0}
+	var ticks := 0
+	var quiet := 0
+	var last_sh := 0
+	var last_sh_t := G.time
+	var next_tick := G.time + 0.5
+	while G.time - t0 < 45.0:
+		await m._wait(0.1)
+		var dmin := 1e9
+		var seen := false
+		for a in att:
+			if is_instance_valid(a) and a.alive and G.is_seen(a, 0):
+				seen = true
+				for u in dfn:
+					if is_instance_valid(u) and u.alive:
+						dmin = minf(dmin, u.position.distance_to(a.position))
+		if seen and r["d_seen"] < 0.0:
+			r["d_seen"] = dmin
+		var inr := seen and dmin <= rng
+		if inr and r["t_inr"] < 0.0:
+			r["t_inr"] = G.time
+		var sh := 0
+		for u in dfn:
+			if is_instance_valid(u):
+				sh += u.shots
+		if sh != last_sh:
+			last_sh = sh
+			last_sh_t = G.time
+			if r["t_fire"] < 0.0:
+				r["t_fire"] = G.time
+				r["d_fire"] = dmin
+		if r["t_fire"] >= 0.0 and G.time >= next_tick:
+			next_tick = G.time + 0.5
+			if inr:
+				ticks += 1
+				# atış aralığı (doldurma, tank topu) payı: 6 sn ateşsiz kalırsa susmuş sayılır
+				if G.time - last_sh_t > 6.0:
+					quiet += 1
+		if att.all(func(a): return not is_instance_valid(a) or not a.alive):
+			break
+	r["silent"] = float(quiet) / maxf(ticks, 1)
+	await m._shot("engage_%s_%s" % [dk, ak])
+	for u in dfn + att:
+		if is_instance_valid(u) and u.alive:
+			u.queue_free()
+	await m._wait(0.3)
+	return r
 
 # 113: iki çit arasında kalan / çitlerin arasından geçen asker kendiliğinden yere yatmamalı
 func fence_test() -> void:

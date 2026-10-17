@@ -3442,6 +3442,7 @@ func _auto_ival(def: float) -> float:
 	return maxf(60.0 / rpm, 0.04) if rpm > 0.0 else def
 
 func _fire_atgun(t: Unit) -> void:
+	shots += 1
 	main_cd = _rl(4.2)
 	var mp := muzzle_world()
 	var tp := t.aim_point()
@@ -3454,6 +3455,7 @@ func _fire_atgun(t: Unit) -> void:
 	on_crew_fire()
 
 func _fire_hmortar(tp: Vector3) -> void:
+	shots += 1
 	main_cd = _rl(randf_range(4.5, 5.5))
 	var d := dist2_p(tp)
 	var err := d * 0.05 + 2.0
@@ -3805,6 +3807,7 @@ func _fire_ground() -> void:
 			main_cd = 1.0
 
 func _fire_flak(t: Unit) -> void:
+	shots += 1
 	fired_t = G.time
 	if burst <= 0:
 		burst = _burst_len(6, 12)
@@ -3837,6 +3840,7 @@ func _fire_flak(t: Unit) -> void:
 	G.fx.tracer_cal(mp, impact, 300.0, Ammo.team_tracer(team).lightened(0.2), 30.0)
 
 func _fire_arty(t: Unit) -> void:
+	shots += 1
 	main_cd = _rl(9.0)
 	fired_t = G.time
 	var mp := muzzle_world()
@@ -3851,6 +3855,7 @@ func _fire_arty(t: Unit) -> void:
 	G.cam.shake(0.2, position)
 
 func _fire_cannon(t: Unit) -> void:
+	shots += 1
 	fired_t = G.time
 	main_cd = _rl(6.5)
 	var mp := muzzle_world()
@@ -3938,6 +3943,7 @@ func _atgm_model() -> String:
 	return "refleks" if vtype == "tank" else String(ATGM_MODEL.get(vid, "tow" if nat in ["usa", "gbr"] else "konkurs"))
 
 func _fire_atgm(t: Unit, dist: float) -> void:
+	shots += 1
 	var model := _atgm_model()
 	var mp := muzzle_world() + Vector3(0, 0.4, 0)
 	fired_t = G.time
