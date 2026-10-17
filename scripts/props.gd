@@ -908,13 +908,13 @@ func _pine_mesh(seed_v: int, win: bool) -> ArrayMesh:
 	var m := wood.commit(Mats.vc())
 	return nd.commit(Mats.vc2(), m)
 
-func bush(p: Vector3, big := false) -> void:
-	if not winter and _real_tree(p, "bush", 1.5 if big else 1.0):
+func bush(p: Vector3, big := false, sc := 1.0) -> void:
+	if not winter and _real_tree(p, "bush", (1.5 if big else 1.0) * sc):
 		return
 	var v := rng.randi() % 5
 	var key := ("bushw%d" if winter else "bush%d") % v
 	var mesh := _cached(key, func(): return _bush_mesh(v))
-	_loose(_place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.4) * (1.6 if big else 1.0)), p, "bush", 0.6, 0.8)
+	_loose(_place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.4) * (1.6 if big else 1.0) * sc), p, "bush", 0.6 * sc, 0.8 * sc)
 
 func _bush_mesh(v: int) -> ArrayMesh:
 	var r0 := RandomNumberGenerator.new()

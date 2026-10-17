@@ -412,6 +412,16 @@ func _forest(c: Vector3, rx: float, rz: float, ang: float, pine_k: float, step: 
 						mg.p_pine(p, big)
 					else:
 						mg.p_tree(p, big)
+					# (145) alt bitki: kenar kuşağında ağaç aralarında sık çalı (saçak), içeride seyrek çalı ve ara sıra devrik gövde
+					var off := Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)) * step
+					var q := p + off
+					if e > edge * 0.7:
+						if rng.randf() < 0.6 and mg.free_at(q, 0.6, 2.0):
+							mg.p_bush(q, rng.randf() < 0.4, rng.randf_range(1.3, 1.8))
+					elif rng.randf() < 0.12 and mg.free_at(q, 0.6, 2.0):
+						mg.p_bush(q, false)
+					elif rng.randf() < 0.008 and mg.free_at(q, 1.2, 2.5):
+						mg.p_asset("dead_tree_trunk_02" if rng.randf() < 0.6 else "tree_stump_01", q, rng.randf() * TAU, rng.randf_range(0.85, 1.2))
 			z += step
 		x += step
 

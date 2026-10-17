@@ -74,7 +74,7 @@ void fragment() {
 	float lw3 = texture(foam_tex, vec2((v_uv.x - spd * ph1 * 5.5) / 70.0 + 0.63, v_uv.y * 5.0 + 0.1)).r;
 	float lstr = mix(lw0, lw1, bw) * 0.6 + mix(lw2, lw3, bw) * 0.4;
 	// (71) akıntı çizgileri ortada da görünür (eskiden yalnız kıyıya yakın): akış yönü her yerde okunur
-	float lines = smoothstep(0.66, 0.88, lstr) * (0.55 + 0.45 * smoothstep(0.3, 0.9, abs(v_uv.y)));
+	float lines = smoothstep(0.74, 0.92, lstr) * (0.3 + 0.7 * smoothstep(0.3, 0.9, abs(v_uv.y)));
 	// köprü ayakları: burunda kabarma ve köpük, mansapta türbülans izi + dönüşümlü girdaplar
 	vec2 pp = vec2(-fd.y, fd.x);
 	vec2 swirl = vec2(0.0);
@@ -170,7 +170,7 @@ void fragment() {
 	float f = mix(texture(foam_tex, (w - off0 * 1.2) / 3.0).r, texture(foam_tex, (w - off1 * 1.2) / 3.0 + vec2(0.5, 0.25)).r, bw);
 	float shore = (1.0 - smoothstep(0.0, 0.16, thick)) * smoothstep(0.42, 0.78, f);
 	float crest = smoothstep(0.68, 0.92, f * (0.6 + 0.6 * n1.x + 0.3 * n2.y));
-	float foam = clamp(shore * 0.7 + crest * 0.25 + lines * 0.38 + pfoam * 0.7 + rfoam, 0.0, 1.0) * foam_amt;
+	float foam = clamp(shore * 0.7 + crest * 0.25 + lines * 0.16 + pfoam * 0.7 + rfoam, 0.0, 1.0) * foam_amt;
 	col = mix(col, vec3(0.86, 0.88, 0.86), foam);
 	// (71) akıntı izi: akış yönünde uzayan, akıntıyla kayan soluk aydınlık / koyu şeritler (yüzeyde sürüklenen
 	// kırışıklık) — ortada belirgin, kıyıda sönük; tek yönlü sert akış uzaktan okunur

@@ -131,6 +131,8 @@ func run(scene: String) -> void:
 			await work_poses()
 		"doortest":
 			await door_test()
+		"forestshots":
+			await forest_shots()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1359,6 +1361,54 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 145: orman kenarı alt bitkisi (Geniş Cephe + Büyük Muharebe): en sık ağaçlığın kenarına bak
+func forest_shots() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	for mp in ["large_front", "battle_8k"]:
+		m.start_game(mp, {}, true, 21)
+		G.fog_off = true
+		await m._wait(1.5)
+		var trees: Array = G.props.items.filter(func(it): return it["kind"] == "tree" and it["alive"])
+		var bushes: Array = G.props.items.filter(func(it): return it["kind"] == "bush" and it["alive"])
+		# yoğun ağaçlık merkezi: rastgele 300 ağaç içinde 25 m'de en çok komşusu olan
+		var best: Vector3 = trees[0]["pos"]
+		var bn := 0
+		for k in mini(300, trees.size()):
+			var p: Vector3 = trees[(k * 7919) % trees.size()]["pos"]
+			var n := 0
+			for it in G.props._items_near(p, 25.0):
+				if it["kind"] == "tree":
+					n += 1
+			if n > bn:
+				bn = n
+				best = p
+		# orman kenarı: çevresinde 12 m'de 5–12 ağaç olan (kenar kuşağı) ve en çok komşu çalısı olan çalı
+		var edge := best
+		var be := -1
+		for k in mini(600, bushes.size()):
+			var bp: Vector3 = bushes[(k * 104729) % bushes.size()]["pos"]
+			var nt := 0
+			var nb := 0
+			for it in G.props._items_near(bp, 12.0):
+				if it["kind"] == "tree":
+					nt += 1
+				elif it["kind"] == "bush":
+					nb += 1
+			var wet := false
+			for d in [Vector3(20, 0, 0), Vector3(-20, 0, 0), Vector3(0, 0, 20), Vector3(0, 0, -20), Vector3.ZERO]:
+				if G.grid.is_water(bp + d):
+					wet = true
+			if not wet and nt >= 5 and nt <= 12 and nb > be:
+				be = nb
+				edge = bp
+		print("FOREST %s edge_bushes=%d" % [mp, be])
+		print("FOREST %s trees=%d bushes=%d dense=%d" % [mp, trees.size(), bushes.size(), bn])
+		_cam(edge, 36.0)
+		await m._wait(1.0)
+		await m._shot("forest_%s" % mp)
+	print("FORESTSHOTS RESULT fails=0")
 
 # 79: arka rampadan biniş / iniş — rampa açılır, askerler rampadan girer / çıkar, araç rampa kapanmadan yürümez
 func door_test() -> void:

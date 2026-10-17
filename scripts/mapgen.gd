@@ -1400,7 +1400,7 @@ func _run(op: Dictionary):
 		"pine":
 			P.pine(v3(op["p"]), float(op.get("sc", 1.0)))
 		"bush":
-			P.bush(v3(op["p"]), bool(op.get("big", false)))
+			P.bush(v3(op["p"]), bool(op.get("big", false)), float(op.get("sc", 1.0)))
 		"rock":
 			P.rock(v3(op["p"]), float(op.get("sc", 1.0)))
 		"hay":
@@ -1746,8 +1746,11 @@ func p_pine(p: Vector3, sc := 1.0) -> void:
 	else:
 		exec({"t": "pine", "p": vv(p)})
 
-func p_bush(p: Vector3, big := false) -> void:
-	exec({"t": "bush", "p": vv(p), "big": big})
+func p_bush(p: Vector3, big := false, sc := 1.0) -> void:
+	if sc != 1.0:
+		exec({"t": "bush", "p": vv(p), "big": big, "sc": snappedf(sc, 0.01)})
+	else:
+		exec({"t": "bush", "p": vv(p), "big": big})
 
 func p_rock(p: Vector3, sc := 1.0) -> void:
 	exec({"t": "rock", "p": vv(p), "sc": sc})

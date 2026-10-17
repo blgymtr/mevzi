@@ -83,10 +83,20 @@ func build(m: MapGen) -> void:
 				mg.p_pine(p)
 			else:
 				mg.p_tree(p)
-		for i in int(R * 1.2):
-			var p := c2 + Vector3(rng.randf_range(-R * 1.15, R * 1.15), 0, rng.randf_range(-R * 1.15, R * 1.15))
+		# (145) alt bitki: çalıların çoğu orman kenarında sık bir kuşak (gerçek orman kenarı — saçak), kalanı içeride
+		# seyrek; içeride kütük / devrik gövde (CC0)
+		for i in int(R * 1.7):
+			var a := rng.randf() * TAU
+			var rr := rng.randf_range(0.8, 1.15) * R if rng.randf() < 0.7 else sqrt(rng.randf()) * R * 0.8
+			var p := c2 + Vector3(cos(a), 0, sin(a)) * rr
 			if mg.free_at(p, 0.6, 1.0):
-				mg.p_bush(p, rng.randf() < 0.3)
+				var edge_b := rr > R * 0.8
+				mg.p_bush(p, rng.randf() < (0.45 if edge_b else 0.2), rng.randf_range(1.3, 1.8) if edge_b else 1.0)
+		if Props.has_asset("tree_stump_01"):
+			for i in rng.randi_range(1, 3):
+				var p := c2 + Vector3(rng.randf_range(-R, R), 0, rng.randf_range(-R, R)) * 0.6
+				if mg.free_at(p, 1.2, 2.0):
+					mg.p_asset("dead_tree_trunk_02" if rng.randf() < 0.5 else "tree_stump_01", p, rng.randf() * TAU, rng.randf_range(0.85, 1.15))
 	for i in int(520 * A):
 		var p := mg.rand_free(0.8, 20, Rect2(10, 10, S - 20, S - 20), 2.0)
 		if p.x > 0:
