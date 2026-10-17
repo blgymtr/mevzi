@@ -9,6 +9,8 @@ class_name FogOfWar extends Node3D
 # Önbellek: birim yerinden oynamadıkça çokgen yeniden hesaplanmaz (kare başına sınırlı hesap).
 # Tam ekran sis katmanı (fow.gdshader) iki dokuyu dünya konumuna göre okur.
 
+const FOW_LAYER := 1 << 19
+
 var vis_vp: SubViewport
 var exp_vp: SubViewport
 var quad: MeshInstance3D
@@ -44,6 +46,8 @@ func _ready() -> void:
 	quad.mesh = qm
 	quad.extra_cull_margin = 16384.0
 	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# kendi katmanında: mini harita için alınan kuşbakışı görüntüye girmez (Hud.Radar._capture)
+	quad.layers = FOW_LAYER
 	mat = ShaderMaterial.new()
 	mat.shader = preload("res://shaders/fow.gdshader")
 	mat.render_priority = 120

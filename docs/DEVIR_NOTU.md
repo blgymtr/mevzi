@@ -1,4 +1,23 @@
-# Devir notu — kaldığımız yer (17 Ekim 2026, 3. oturumun devamı)
+# Devir notu — kaldığımız yer (17 Ekim 2026, öğleden önce)
+
+## Son yapılanlar
+- 136 kamera, 139 nehir kraterine su, 140 suda takılan asker, 141 çekili top mürettebatı (commit `33e1dad`)
+- 65/57 HUD eskiz teması, ilk geçiş: `scripts/sketch.gd` (class_name Sketch: kâğıt dokusu, mürekkep çerçeve, düğme
+  durumları, `Sketch.sc()` Türkçe cümle düzeni), `shaders/sketch_thumb.gdshader` (küçük resim → mürekkep çizim),
+  mini harita gerçek kuşbakışı görüntü (`Hud.Radar._capture`, sis dörtgeni `FogOfWar.FOW_LAYER` katmanında) + saha
+  ızgarası; test: `hudshots` (görüntüler shots/hudshots)
+- Not: yeni `class_name` eklenince testler bir kez `-NoImport` OLMADAN koşulmalı (sınıf önbelleği)
+
+## Sıradaki
+1. HUD kalanı: ana menü / ayarlar / düzenleyici aynı temaya (hâlâ eski Hud.TXT / AMBER sabitleri), dünya üstü
+   etiketler (Overlay), tim görünümünde boş alan; kullanıcı görüşüne göre ince ayar
+2. Modelleme aşaması (aşağıdaki listeye ek: 142 hurda modelleri, 143 bina çökmesi, 144 gerçekçi su, 145 zemin dokusu —
+   kullanıcının masaüstündeki `1.png` / `2.png` esin görselleri, kopyalanmaz)
+3. İnceleme dersleri (146–153): başka oyunun olumsuz incelemesinden; HUD / yapay zekâ / denge işinde bu listeye bak
+
+---
+
+# (Tarihsel) Devir notu — 17 Ekim 2026, 3. oturumun devamı
 
 ## Bu bölümde yapılan (commit'li, push'lu; son commit `eee8bbb`)
 - 103, 107 (araç zekâsı: cephe, sis, geri çekilme, tanksavarcı önceliği, **gövde gizleme**), 110 savaş sisi, 112 sürücü /

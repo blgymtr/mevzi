@@ -19,11 +19,12 @@ func get_thumb(id: String, team: int) -> Texture2D:
 	var we := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.2, 0.19, 0.16) if G.map_kind == "desert" else (Color(0.24, 0.26, 0.28) if G.map_kind == "winter" else Color(0.16, 0.18, 0.14))
+	# eskiz arayüzü: zemin kâğıt tonunda (gölgeler HUD gölgelendiricisinde taramaya döner)
+	env.background_color = Color(0.78, 0.75, 0.68)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.8, 0.75, 0.68)
-	env.ambient_light_energy = 0.45
-	env.tonemap_exposure = 0.85
+	env.ambient_light_energy = 0.6
+	env.tonemap_exposure = 1.0
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	we.environment = env
 	vp.add_child(we)

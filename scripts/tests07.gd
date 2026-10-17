@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"hudshots":
+			await hud_shots()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -655,6 +657,42 @@ func towcrew_test() -> void:
 	await m._wait(0.3)
 	await m._shot("towcrew")
 	print("TOWCREWTEST RESULT fails=%d" % fails)
+
+# 65/57: HUD görüntüleri — tim seçili, tek asker, tank, uyarılar (tasarım incelemesi için)
+func hud_shots() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, false, 11)
+	G.deploy_t = 0.0
+	await m._wait(1.0)
+	var c := G.grid.nearest_free(G.hq_pos[0] + (G.hq_pos[1] - G.hq_pos[0]).normalized() * 30.0, Grid.M_HEAVY)
+	var sq := Squad.new(0, "1. Tim")
+	G.squads.append(sq)
+	var ss: Array = []
+	for i in 6:
+		ss.append(m.spawn_soldier(0, ["leader", "rifle", "rifle", "mg", "at", "medic"][i], G.grid.nearest_free(c + Vector3(i * 1.4, 0, 0), Grid.M_INF), sq))
+	var tk: Vehicle = m.spawn_vehicle(0, "tank", G.grid.nearest_free(c + Vector3(0, 0, 10), Grid.M_HEAVY), 0.0)
+	G.say("İleri üs için uygun yer bulundu", c, 0)
+	G.say("Düşman zırhlısı görüldü", c + Vector3(40, 0, 40), 0)
+	_cam(c + Vector3(3, 0, 4), 34.0)
+	G.player.clear_sel()
+	for s in ss:
+		G.player.select(s)
+	await m._wait(1.0)
+	await m._shot("hud_squad")
+	G.player.clear_sel()
+	G.player.select(ss[3])
+	await m._wait(0.6)
+	await m._shot("hud_soldier")
+	G.player.clear_sel()
+	G.player.select(tk)
+	await m._wait(0.6)
+	await m._shot("hud_tank")
+	G.hud.toggle_pause()
+	await m._wait(0.3)
+	await m._shot("hud_pause")
+	G.hud.toggle_pause()
+	print("HUDSHOTS RESULT fails=0")
 
 # 136: kamera 360° döner (45° adım), serbest bakışta eğilir, seçili birime kilitlenir ve bırakılır
 func cam_test() -> void:
