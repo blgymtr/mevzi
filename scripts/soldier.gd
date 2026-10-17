@@ -303,6 +303,12 @@ func move_vel() -> Vector3:
 func can_fight() -> bool:
 	return alive and not (state in ["wounded", "dragged", "healing", "dead", "fly", "surrender", "prisoner", "dive", "aboard", "stretchered", "hospital", "stretcher", "slide", "rope", "rope_up", "rope_wait", "exiting", "entering", "para"])
 
+# (155) su derinliği yüzmeyi gerektiriyor mu (yüzey ile dip arası ~1,2 m'den fazla: göğüs hizasını aşar)
+func swimming() -> bool:
+	if G.terrain == null or not G.grid.is_water(position) or G.grid.on_bridge(position):
+		return false
+	return Terrain.WATER_Y - G.terrain.ground_hs(position) > 1.2
+
 func incapacitated() -> bool:
 	return state in ["wounded", "dragged", "healing", "stretchered"]
 
@@ -2179,7 +2185,7 @@ func _movement(dt: float) -> void:
 			if cold > 50.0:
 				spd *= 0.78
 			if G.grid.is_water(position) and not G.grid.on_bridge(position):
-				spd = minf(spd, 1.1)          # suda yürüyüş (bel hizası)
+				spd = minf(spd, 0.9 if swimming() else 1.1)          # suda yürüyüş (bel hizası) / yüzme (155)
 			want = _follow(spd)
 		"escort":
 			want = _escort_move()
@@ -2372,6 +2378,9 @@ func _movement(dt: float) -> void:
 			elif G.grid.height_at(nz) < 0.45:
 				position = nz
 	position.y = _ground_y(position)
+	# (155) derin suda yüzer: gövde su yüzeyinde (yürürken yatay kulaç, dururken dik — baş ve omuz su üstünde)
+	if swimming():
+		position.y = Terrain.WATER_Y - (0.42 if vel.length() > 0.2 else 1.38)
 	# alçak duvar / engelin üstünden atlama
 	var hh := G.grid.height_at(position)
 	body_lift = lerpf(body_lift, hh + 0.02 if (hh >= 0.3 and hh < 1.15) else 0.0, clampf(dt * 14.0, 0, 1))
@@ -2791,6 +2800,8 @@ func _mortar_fire() -> void:
 		say("ATEŞ! HAVAN!")
 
 func _shoot(t: Unit) -> void:
+	if swimming():
+		return                         # (155) yüzerken ateş edilmez (silah sırtta)
 	var W := weapon()
 	if ammo <= 0:
 		if randf() < 0.05:
@@ -3561,6 +3572,8 @@ func _pose() -> String:
 			return "drop"                             # sıradaki mermiyi namluya bırakır
 		if mortar_cd > 2.5:
 			return "crouch_aim"
+	if state in ["idle", "move", "escort", "guard", "rescue"] and swimming():
+		return "swim" if vel.length() > 0.2 else "tread"
 	if flinch_t > 0.0 and state in ["idle", "move", "escort", "guard"]:
 		return "flinch"
 	if body_lift > 0.2 and state in ["move", "rescue", "escort", "prisoner", "stretcher"]:

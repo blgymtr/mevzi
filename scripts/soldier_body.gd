@@ -827,6 +827,46 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 					T["llx"] = lerpf(0.0, -0.05, q)
 					T["krx"] = lerpf(-0.1, -1.52, q)
 					T["klx"] = lerpf(-0.1, -1.62, q)
+		"swim":
+			# (155) kurbağalama: gövde yatay su yüzeyinde (baş yukarıda), kollar önde açılıp yanlara çekilir, bacaklar
+			# toplanıp tekmeler; tüfek sırtta. phase hızla ilerler; döngü ~1,3 sn
+			var sk := fmod(G.time * 0.8 + phase * 0.05, 1.0)
+			var pull := smoothstep(0.0, 0.45, sk) * (1.0 - smoothstep(0.45, 0.6, sk))
+			var reach := 1.0 - pull
+			var kick := smoothstep(0.4, 0.62, sk) * (1.0 - smoothstep(0.62, 0.95, sk))
+			T["py"] = 0.3
+			T["prx"] = -PI * 0.5 + 0.35          # yüzüstü, baş yukarıda
+			T["srx"] = -0.35
+			T["arx"] = 2.5 + reach * 0.45
+			T["alx"] = 2.5 + reach * 0.45
+			T["arz"] = 0.25 + pull * 0.9
+			T["alz"] = -0.25 - pull * 0.9
+			T["frx"] = 0.25 + pull * 0.9
+			T["flx"] = 0.25 + pull * 0.9
+			T["lrx"] = 0.15 + (1.0 - kick) * 0.55
+			T["llx"] = 0.15 + (1.0 - kick) * 0.55
+			T["lrz"] = 0.15 + kick * 0.35
+			T["llz"] = -0.15 - kick * 0.35
+			T["krx"] = -0.2 - (1.0 - kick) * 1.3
+			T["klx"] = -0.2 - (1.0 - kick) * 1.3
+			wpn = 4
+		"tread":
+			# (155) suda dik durma: bacaklar bisiklet çevirir, kollar yüzeyde sağa sola çalkalar
+			var tw := G.time * 2.6 + phase
+			T["py"] = HIP
+			T["prx"] = 0.0
+			T["srx"] = 0.1
+			T["arx"] = 1.35 + sin(tw) * 0.2
+			T["alx"] = 1.35 - sin(tw) * 0.2
+			T["arz"] = 0.6 + cos(tw) * 0.25
+			T["alz"] = -0.6 - cos(tw) * 0.25
+			T["frx"] = 0.4
+			T["flx"] = 0.4
+			T["lrx"] = 0.5 + sin(tw * 0.8) * 0.4
+			T["llx"] = 0.5 - sin(tw * 0.8) * 0.4
+			T["krx"] = -0.9 - maxf(0.0, cos(tw * 0.8)) * 0.6
+			T["klx"] = -0.9 - maxf(0.0, -cos(tw * 0.8)) * 0.6
+			wpn = 4
 		"lanyard":
 			# (101) obüs ateşleme ipi: topun yanında ayakta, gövde toptan yana dönük; sağ el ipi gergin tutar,
 			# extra 0 → 1: ipi sertçe geri çeker (kol geri, gövde geri yaslanır, ağırlık arka ayağa)

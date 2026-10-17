@@ -115,6 +115,8 @@ func run(scene: String) -> void:
 			await chinook_test()
 		"crewshots":
 			await crew_shots()
+		"swimtest":
+			await swim_test()
 		"wreckshots":
 			await wreck_shots()
 		"groundshots":
@@ -1058,6 +1060,82 @@ func crew_shots() -> void:
 	if shots.size() < 3:
 		fails += 1
 	print("CREWSHOTS RESULT fails=%d" % fails)
+
+# 155: derin suda yüzme — asker nehrin karşısına gönderilir: derin kısımda "swim" pozu, gövde su yüzeyinde
+# (dipte yürümez), karşı kıyıya çıkar
+func swim_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	# en derin nehir noktası (köprüden uzak)
+	var best := Vector3.INF
+	var bd := 0.0
+	for i in 3000:
+		var q := Vector3(randf_range(20, G.MAP - 20), 0, randf_range(20, G.MAP - 20))
+		if not G.grid.is_water(q) or G.grid.on_bridge(q) or not G.grid.bridge_at(q).is_empty():
+			continue
+		var dep := Terrain.WATER_Y - G.terrain.ground_hs(q)
+		var near_br := false
+		for b in G.grid.bridges:
+			if (b["c"] as Vector3).distance_to(q) < 40.0:
+				near_br = true
+		if dep > bd and not near_br:
+			bd = dep
+			best = q
+	print("SWIM deepest=%.2f m at %s" % [bd, best])
+	if best == Vector3.INF or bd < 1.21:
+		print("SWIMTEST RESULT fails=1")
+		return
+	# kıyıdan kıyıya: en yakın iki kuru nokta (karşılıklı)
+	var dirs := [Vector3(1, 0, 0), Vector3(0, 0, 1), Vector3(1, 0, 1).normalized(), Vector3(1, 0, -1).normalized()]
+	var a_pt := Vector3.INF
+	var b_pt := Vector3.INF
+	var bw := 1e9
+	for d in dirs:
+		var pa := Vector3.INF
+		var pb := Vector3.INF
+		for k in range(1, 60):
+			if pa == Vector3.INF and not G.grid.is_water(best - d * k):
+				pa = best - d * (k + 4)
+			if pb == Vector3.INF and not G.grid.is_water(best + d * k):
+				pb = best + d * (k + 4)
+		if pa != Vector3.INF and pb != Vector3.INF and pa.distance_to(pb) < bw:
+			bw = pa.distance_to(pb)
+			a_pt = pa
+			b_pt = pb
+	# yaya yol bulma suyu dolaşır (asker nehri kendiliğinden yüzerek geçmez); yüzme suya düşen / itilen askerde:
+	# asker derin noktaya konur, kıyıya çıkması beklenir (140'taki "en yakın kuru yer" davranışı)
+	var s: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(a_pt, Grid.M_INF, 4), null)
+	s.fire_mode = 2
+	await m._wait(0.3)
+	s.position = Vector3(best.x, Terrain.WATER_Y - 1.0, best.z)
+	s.cmd_stop()
+	b_pt = G.grid.nearest_dry(best, 30.0)
+	var swam := false
+	var min_y := 9.0
+	var shot := false
+	var t0 := G.time
+	while G.time - t0 < 90.0 and s.position.distance_to(b_pt) > 3.0:
+		await m._wait(0.2)
+		if s.swimming():
+			if s._pose() == "swim":
+				swam = true
+			min_y = minf(min_y, s.position.y)
+			if not shot and s.position.distance_to(best) < 6.0:
+				shot = true
+				_cam(s.position, 9.0)
+				await m._wait(0.1)
+				await m._shot("swim_mid")
+	print("SWIM swam=%s min_body_y=%.2f (surface %.2f) reached=%s t=%.0f" % [swam, min_y, Terrain.WATER_Y, s.position.distance_to(b_pt) <= 3.5, G.time - t0])
+	if not swam or min_y < Terrain.WATER_Y - 1.5 or s.position.distance_to(b_pt) > 3.5:
+		fails += 1
+	print("SWIMTEST RESULT fails=%d" % fails)
 
 # 142: hurda görünümü yakın çekim — tank, ZPT, kamyon "knocked" (uzun alev yok) imha, yangın sönünce
 func wreck_shots() -> void:
