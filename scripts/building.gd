@@ -470,6 +470,8 @@ static func _struct_collect(n: Node, xf: Transform3D, out: Array) -> void:
 			if nm == "flag":
 				flag = i
 			m.surface_set_material(i, _struct_mat(nm))
+		if flag >= 0:
+			m = _flag_uv(m, flag)
 		out.append([m, t, flag])
 	for c in n.get_children():
 		_struct_collect(c, t, out)
@@ -528,12 +530,36 @@ static func _struct_mat(nm: String) -> Material:
 static func _flag_mat(col: Color) -> Material:
 	var key := "flag_" + col.to_html()
 	if not _smat.has(key):
-		var m := StandardMaterial3D.new()
-		m.albedo_color = col
-		m.roughness = 0.95
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		# (33) dalgalanan bayrak: shaders/flag.gdshader (UV.x = direkten uzaklık, _flag_uv'de hesaplanır)
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/flag.gdshader")
+		m.set_shader_parameter("col", col)
 		_smat[key] = m
 	return _smat[key]
+
+# yapı modelindeki bayrak yüzeyine UV: x = direkten serbest uca 0..1 (bayrak model X ekseni boyunca uzanır), y = üstten
+# alta 0..1. Diğer yüzeyler olduğu gibi kopyalanır (Blender dışa aktarımı bayrağa UV yazmıyor)
+static func _flag_uv(m: Mesh, fi: int) -> Mesh:
+	if not (m is ArrayMesh):
+		return m
+	var am := ArrayMesh.new()
+	for i in m.get_surface_count():
+		var arr: Array = m.surface_get_arrays(i)
+		if i == fi:
+			var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var mn := Vector3(INF, INF, INF)
+			var mx := -mn
+			for v in vs:
+				mn = mn.min(v)
+				mx = mx.max(v)
+			var uv := PackedVector2Array()
+			uv.resize(vs.size())
+			for k in vs.size():
+				uv[k] = Vector2((vs[k].x - mn.x) / maxf(mx.x - mn.x, 0.01), (mx.y - vs[k].y) / maxf(mx.y - mn.y, 0.01))
+			arr[Mesh.ARRAY_TEX_UV] = uv
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		am.surface_set_material(i, m.surface_get_material(i))
+	return am
 
 static var _bag_mesh: ArrayMesh = null
 

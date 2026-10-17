@@ -732,6 +732,25 @@ func hud_shots() -> void:
 			break
 	await m._wait(0.6)
 	await m._shot("hud_building")
+	# (33) karargâh bayrağı yakın: iki kare arası dalga değişmeli
+	for u in G.units:
+		if u is Building and u.btype == "hq" and u.team == 0:
+			var fp: Vector3 = u.position
+			for mi in u.model.get_children():
+				if mi is MeshInstance3D and (mi as MeshInstance3D).get_surface_override_material(0) == null:
+					var msh: Mesh = (mi as MeshInstance3D).mesh
+					for si in msh.get_surface_count():
+						if (mi as MeshInstance3D).get_surface_override_material(si) is ShaderMaterial:
+							var vs: PackedVector3Array = msh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]
+							if vs.size() > 0:
+								fp = (mi as MeshInstance3D).global_transform * vs[0]
+			print("HUD flag at=(%.1f,%.1f,%.1f)" % [fp.x, fp.y, fp.z])
+			_cam(_ray_ground(fp), 6.0)
+			await m._wait(0.5)
+			await m._shot("flag_a")
+			await m._wait(0.5)
+			await m._shot("flag_b")
+			break
 	for u in G.units:
 		if u is Building and u.btype == "hq" and u.team == 0:
 			u.queue.clear()
