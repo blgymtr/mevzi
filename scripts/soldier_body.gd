@@ -1187,6 +1187,9 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	knee_r.rotation = Vector3(j["krx"], 0, 0)
 	leg_l.rotation = Vector3(j["llx"], 0, -j["llz"])
 	knee_l.rotation = Vector3(j["klx"], 0, 0)
+	if ik_on and ground_fn.is_valid():
+		_foot_ik(leg_r, knee_r)
+		_foot_ik(leg_l, knee_l)
 	var wt := _weapon_xf(wpn)
 	if reloading or (recoil > 0.0 and wpn == 1):
 		# kabza (sağ el) çevresinde: şarjörde sola yatırma, atışta namlu kalkışı
@@ -1198,6 +1201,37 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	weapon.transform = _mxf(wp_cur)
 	_place_shell()
 	sync_skin()
+
+# (60) tam ayak IK: eğimde, krater / şev kenarında her ayak kendi altındaki zemine basar. Gövde kökü (Soldier.slope_drop)
+# alttaki ayağa göre indirilir; burada her bacak iki kemikli çözümle (kalça → diz → taban) kendi zemin farkı kadar
+# kısalır / uzar: diz bükülür, kalça öne döner, taban kalçanın altında kalır. Salınım fazındaki (havadaki) ayağa dokunulmaz.
+var ik_on := false
+var ground_fn := Callable()     # (Vector3) -> float: dünya zemin yüksekliği
+var ik_drop := 0.0              # gövdenin bu karede indirildiği miktar (slope_drop)
+var ik_base := 0.0              # askerin durduğu yerin zemin yüksekliği
+
+func _foot_ik(leg: Node3D, knee: Node3D) -> void:
+	var H: Vector3 = leg.global_position
+	var F: Vector3 = knee.global_transform * Vector3(0, -SHIN, 0)
+	# düz zeminde (gövde indirilmeden) ayağın olacağı yükseklik ile zeminin farkı: taban yerdeyse (|fark| küçük) uygula
+	var flat_h := F.y + ik_drop - ik_base
+	if flat_h > 0.18:
+		return                     # salınımdaki ayak
+	var dy: float = float(ground_fn.call(F)) - ik_base + ik_drop
+	if absf(dy) < 0.01:
+		return
+	var L := H.distance_to(F)
+	var Ft := F + Vector3(0, dy, 0)
+	var L2 := clampf(H.distance_to(Ft), absf(THIGH - SHIN) + 0.05, THIGH + SHIN - 0.005)
+	var knee_ang := func(l: float) -> float:
+		return acos(clampf((THIGH * THIGH + SHIN * SHIN - l * l) / (2.0 * THIGH * SHIN), -1.0, 1.0))
+	var thigh_ang := func(l: float) -> float:
+		return acos(clampf((THIGH * THIGH + l * l - SHIN * SHIN) / (2.0 * THIGH * l), -1.0, 1.0))
+	# iç açı küçüldükçe diz bükülür (tablo kuralı: krx eksi = bük); kalça aynı ölçüde öne (lrx artı)
+	var dk: float = float(knee_ang.call(L2)) - float(knee_ang.call(L))
+	var dt2: float = float(thigh_ang.call(L2)) - float(thigh_ang.call(L))
+	knee.rotation.x += dk
+	leg.rotation.x += dt2
 
 # (111) top mermisi iki avucun arasında: ekseni elden ele, merkezi ellerin ortası (her karede; poz ne olursa
 # olsun eller mermiyi gerçekten tutar)

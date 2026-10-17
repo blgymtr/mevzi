@@ -135,6 +135,8 @@ func run(scene: String) -> void:
 			await forest_shots()
 		"breakshots":
 			await break_shots()
+		"footik":
+			await foot_ik_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1363,6 +1365,54 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 60: tam ayak IK — krater şevinde duran askerlerin iki ayağı da zemine basmalı (ayak-zemin boşluğu ölçülür)
+func foot_ik_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 73)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.44, 0, G.MAP * 0.56), Grid.M_HEAVY)
+	G.props.clear_area(c, 20.0)
+	# gerçek şev: 6 m yarıçap, 1,6 m derin krater (askerler iç şevde)
+	G.terrain.carve_crater(c, 6.0, 1.6)
+	await m._wait(0.5)
+	var ss: Array = []
+	for i in 8:
+		var a := TAU * i / 8.0
+		var p := c + Vector3(cos(a), 0, sin(a)) * 3.2
+		var s: Soldier = m.spawn_soldier(0, ["rifle", "mg"][i % 2], p, null)
+		s.fire_mode = 2
+		s.position = p
+		ss.append(s)
+	G.cam.size = 14.0
+	G.cam.target_size = 14.0
+	_cam(c, 14.0)
+	await m._wait(2.0)
+	var gaps: Array = []
+	var worst := 0.0
+	for s in ss:
+		var b: SoldierBody = s.body
+		for kn in [b.knee_r, b.knee_l]:
+			var F: Vector3 = kn.global_transform * Vector3(0, -SoldierBody.SHIN, 0)
+			var g: float = s._ground_y(F)
+			# taban kalınlığı ~0,08: ayak bileği zeminden 0,0–0,15 yukarıda olmalı
+			var gap := F.y - g
+			gaps.append(snappedf(gap, 0.01))
+			worst = maxf(worst, absf(gap - 0.07))
+	var slopes: Array = []
+	for s in ss:
+		slopes.append(snappedf(s.slope_drop, 0.01))
+	print("FOOTIK ik=%s slope_drop=%s gaps=%s worst=%.2f" % [ss[0].body.ik_on, slopes, gaps, worst])
+	if worst > 0.14:
+		fails += 1
+	await m._shot("footik")
+	print("FOOTIKTEST RESULT fails=%d" % fails)
 
 # 67: malzemeye göre yıkım — tuğla, sıvalı, beton, ahşap, kerpiç, taş evler yan yana; her birinin yanında top mermisi
 func break_shots() -> void:

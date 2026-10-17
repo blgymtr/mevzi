@@ -2482,10 +2482,21 @@ func _movement(dt: float) -> void:
 	var sd := 0.0
 	if stance != PRONE and body_lift < 0.05 and G.cam != null and G.cam.size < 120.0 and visible:
 		var fw := Vector3(-sin(rotation.y), 0, -cos(rotation.y))
-		var ha := _ground_y(position + fw * 0.35)
-		var hb := _ground_y(position - fw * 0.35)
-		sd = clampf(absf(ha - hb) * 0.5, 0.0, 0.2)
+		var sw := Vector3(fw.z, 0, -fw.x)
+		# önde / arkada (adım) ve yanlarda (ayak genişliği): yamaca yan duran askerde de alttaki ayak yere bassın
+		var h0 := _ground_y(position)
+		var lo := h0
+		for q in [fw * 0.35, -fw * 0.35, sw * 0.16, -sw * 0.16]:
+			lo = minf(lo, _ground_y(position + q))
+		sd = clampf(h0 - lo, 0.0, 0.2)
 	slope_drop = lerpf(slope_drop, sd, clampf(dt * 10.0, 0, 1))
+	# (60) tam ayak IK: yakın görüşte, ayakta / çömelik, düz zemin dışında
+	body.ik_on = sd > 0.01 or slope_drop > 0.01
+	if body.ik_on:
+		if not body.ground_fn.is_valid():
+			body.ground_fn = _ground_y
+		body.ik_drop = slope_drop
+		body.ik_base = _ground_y(position)
 	# yön
 	var aiming := target != null and is_instance_valid(target) and can_fight() and state in ["idle", "move", "escort", "guard"] and (burst_left > 0 or fire_cd < 0.6 or popped) and not _fleeing()
 	if state == "melee" and melee_target != null and is_instance_valid(melee_target):
