@@ -153,6 +153,26 @@ static func _make_button(img: Image, state: String) -> void:
 			ink_line(img, Vector2(8, 39), Vector2(88, 38), RED, 1.2, rng, 0.8)
 			ink_line(img, Vector2(12, 41), Vector2(84, 40.5), Color(RED.r, RED.g, RED.b, 0.6), 0.8, rng, 0.8)
 
+# yalnız alt çizgi (menü bağlantıları): "red" üzerinde kırmızı kalem, "ink" seçili sayfa; zemin saydam
+static func underline(kind: String, cm := 4) -> StyleBoxTexture:
+	var t := _tex("ul_" + kind, 160, 40, _make_underline.bind(kind))
+	var s := _box(t, 0, cm)
+	s.texture_margin_left = 0
+	s.texture_margin_right = 0
+	s.texture_margin_top = 0
+	s.texture_margin_bottom = 0
+	s.axis_stretch_horizontal = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	s.axis_stretch_vertical = StyleBoxTexture.AXIS_STRETCH_MODE_STRETCH
+	return s
+
+static func _make_underline(img: Image, kind: String) -> void:
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31 if kind == "red" else 32
+	var c := RED if kind == "red" else INK
+	ink_line(img, Vector2(2, 34), Vector2(150, 33), c, 1.3, rng, 0.9)
+	ink_line(img, Vector2(6, 36.5), Vector2(140, 35.5), Color(c.r, c.g, c.b, 0.55), 0.8, rng, 0.9)
+
 # büyük harfli Türkçe metni cümle düzenine çevirir (İ→i, I→ı); kısaltmalar (≤3 harf, sesli harf az) olduğu gibi kalır
 static func sc(t: String) -> String:
 	var parts := PackedStringArray()
@@ -160,7 +180,8 @@ static func sc(t: String) -> String:
 	for w in t.split(" "):
 		var lw := w
 		var caps := w.to_upper() == w and w.to_lower() != w
-		if caps and (w.length() > 3 or _has_vowel(w) or w.ends_with(".")) and not w in ACRONYMS:
+		var core := w.lstrip("([«").rstrip(")]»,.:;")
+		if caps and (w.length() > 3 or _has_vowel(w) or w.ends_with(".")) and not core in ACRONYMS:
 			lw = _lower_tr(w)
 		# cümlenin ilk sözcüğü büyük harfle başlar (biçim kodları / ayraçlar atlanır)
 		if first and caps and lw.length() > 0:
@@ -169,7 +190,7 @@ static func sc(t: String) -> String:
 		parts.append(lw)
 	return " ".join(parts)
 
-const ACRONYMS := ["İHA", "AT", "TOW", "XP", "HQ", "UAV", "ATGM", "RPG", "NATO"]
+const ACRONYMS := ["İHA", "AT", "TOW", "XP", "HQ", "UAV", "ATGM", "RPG", "NATO", "MSAA", "SSAO", "FSR", "FPS", "V-SYNC", "VSYNC", "FOB", "AI", "YZ"]
 
 static func _has_vowel(w: String) -> bool:
 	for c in w:

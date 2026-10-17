@@ -109,6 +109,10 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"gfxbench":
+			await gfx_bench()
+		"menushots":
+			await menu_shots()
 		"hudshots":
 			await hud_shots()
 		"basegallery":
@@ -693,6 +697,112 @@ func hud_shots() -> void:
 	await m._shot("hud_pause")
 	G.hud.toggle_pause()
 	print("HUDSHOTS RESULT fails=0")
+
+# 146: grafik ön ayarlarının gerçek başarım farkı. Büyük çatışma (iki karşılaşma ~110 birlik) yakın kamerada;
+# ön ayarlar sırayla dönüşümlü (savaşın gidişi bir ön ayarı kayırmasın) ölçülür: kare süresi ve GPU çizim
+# süresi. Düşük ön ayarın GPU süresi yüksektekinin %70'inden azsa geçer. Oyuncunun ayarları sonda geri yüklenir.
+func gfx_bench() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var keep: Dictionary = m.cfg.duplicate(true)
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	m.start_game("green_valley", {}, false, 5)
+	G.deploy_t = 0.0
+	await m._wait(1.0)
+	var c := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	m._skirmish(c)
+	m._skirmish(c + Vector3(40, 0, -30))
+	_cam(c + Vector3(15, 0, -10), 70.0)
+	var vp := m.get_viewport()
+	RenderingServer.viewport_set_measure_render_time(vp.get_viewport_rid(), true)
+	await m._wait(3.0)
+	var names := ["düşük", "orta", "yüksek"]
+	var frame := [0.0, 0.0, 0.0]
+	var gpu := [0.0, 0.0, 0.0]
+	var cnt := [0, 0, 0]
+	for _rd in 3:
+		for p in [2, 1, 0]:
+			m.set_gfx_preset(p)
+			m.test_phase("gfx %d/%d" % [_rd, p])
+			for i in 20:
+				await m.get_tree().process_frame
+			var t0 := Time.get_ticks_usec()
+			var g := 0.0
+			var n := 90
+			print("GFXBENCH tur=%d %s ms=%d" % [_rd, names[p], Time.get_ticks_msec()])
+			for i in n:
+				await m.get_tree().process_frame
+				g += RenderingServer.viewport_get_measured_render_time_gpu(vp.get_viewport_rid())
+			frame[p] += (Time.get_ticks_usec() - t0) / 1000.0 / n
+			gpu[p] += g / n
+			cnt[p] += 1
+	var fails := 0
+	for p in 3:
+		frame[p] /= cnt[p]
+		gpu[p] /= cnt[p]
+		print("GFXBENCH %s frame_ms=%.1f fps=%.0f gpu_ms=%.2f" % [names[p], frame[p], 1000.0 / frame[p], gpu[p]])
+	print("GFXBENCH units=%d" % G.units.size())
+	if not (gpu[0] < gpu[2] * 0.7):
+		fails += 1
+		print("GFXBENCH FAIL düşük ön ayar GPU süresini yeterince düşürmüyor")
+	m.cfg = keep
+	m.apply_video()
+	m.save_cfg()
+	print("GFXBENCH RESULT fails=%d" % fails)
+
+# 65/57 + 146: ana menü eskiz teması görüntüleri; grafik ön ayarları gerçekten çizimi değiştiriyor mu
+# (ayar dosyası oyuncunun gerçek dosyası: test sonunda eski hâline döner)
+func menu_shots() -> void:
+	m.get_window().size = Vector2i(1920, 1080)
+	Sfx.muted = true
+	var keep: Dictionary = m.cfg.duplicate(true)
+	var fails := 0
+	m.to_menu()
+	await m._wait(2.5)
+	await m._shot("menu_home")
+	var mm: MainMenu = G.hud.menu
+	mm.open_page("classic")
+	await m._wait(0.4)
+	await m._shot("menu_classic")
+	mm.open_settings_tab("graphics")
+	await m._wait(0.4)
+	await m._shot("menu_graphics")
+	# ön ayarlar
+	var vp := m.get_viewport()
+	m.set_gfx_preset(0)
+	var low := [vp.scaling_3d_scale, vp.msaa_3d, m.env.ssao_enabled, Props.grass_k]
+	print("MENU low scale=%.2f msaa=%d ssao=%s grass=%.2f" % low)
+	if absf(low[0] - 0.67) > 0.01 or low[1] != Viewport.MSAA_DISABLED or low[2] or absf(low[3] - 0.35) > 0.01:
+		fails += 1
+		print("MENU FAIL düşük ön ayar uygulanmadı")
+	m.set_gfx_preset(2)
+	var high := [vp.scaling_3d_scale, vp.msaa_3d, m.env.ssao_enabled, Props.grass_k]
+	print("MENU high scale=%.2f msaa=%d ssao=%s grass=%.2f" % high)
+	if absf(high[0] - 1.0) > 0.01 or high[1] != Viewport.MSAA_4X or not high[2] or absf(high[3] - 1.0) > 0.01:
+		fails += 1
+		print("MENU FAIL yüksek ön ayar uygulanmadı")
+	# tek ayar değişince "Özel" olur, diğer değerler korunur
+	m.set_gfx("msaa", 1)
+	print("MENU custom gfx=%d msaa=%d scale=%.2f" % [int(m.cfg.get("gfx", -1)), vp.msaa_3d, vp.scaling_3d_scale])
+	if int(m.cfg.get("gfx", -1)) != 3 or vp.msaa_3d != Viewport.MSAA_2X or absf(vp.scaling_3d_scale - 1.0) > 0.01:
+		fails += 1
+		print("MENU FAIL özel ayar")
+	mm.open_settings_tab("graphics")
+	await m._wait(0.4)
+	await m._shot("menu_graphics_custom")
+	mm.open_settings_tab("keys")
+	await m._wait(0.4)
+	await m._shot("menu_keys")
+	mm.open_page("")
+	mm.confirm_quit()
+	await m._wait(0.3)
+	await m._shot("menu_quit")
+	mm._close_confirm()
+	# oyuncunun ayarlarını geri yükle
+	m.cfg = keep
+	m.apply_video()
+	m.save_cfg()
+	print("MENUSHOTS RESULT fails=%d" % fails)
 
 # 136: kamera 360° döner (45° adım), serbest bakışta eğilir, seçili birime kilitlenir ve bırakılır
 func cam_test() -> void:

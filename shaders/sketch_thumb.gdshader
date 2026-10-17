@@ -11,22 +11,23 @@ float lum(vec3 c) {
 	return dot(c, vec3(0.299, 0.587, 0.114));
 }
 
-float L(vec2 uv) {
-	return lum(texture(TEXTURE, uv).rgb);
+// TEXTURE yalnız fragment() içinde okunabilir: örnekleyici parametreyle geçer
+float L(sampler2D tex, vec2 uv) {
+	return lum(texture(tex, uv).rgb);
 }
 
 void fragment() {
 	vec2 px = TEXTURE_PIXEL_SIZE;
 	vec4 src = texture(TEXTURE, UV);
 	float l = lum(src.rgb);
-	float tl = L(UV + px * vec2(-1.0, -1.0));
-	float tc = L(UV + px * vec2(0.0, -1.0));
-	float tr = L(UV + px * vec2(1.0, -1.0));
-	float ml = L(UV + px * vec2(-1.0, 0.0));
-	float mr = L(UV + px * vec2(1.0, 0.0));
-	float bl = L(UV + px * vec2(-1.0, 1.0));
-	float bc = L(UV + px * vec2(0.0, 1.0));
-	float br = L(UV + px * vec2(1.0, 1.0));
+	float tl = L(TEXTURE, UV + px * vec2(-1.0, -1.0));
+	float tc = L(TEXTURE, UV + px * vec2(0.0, -1.0));
+	float tr = L(TEXTURE, UV + px * vec2(1.0, -1.0));
+	float ml = L(TEXTURE, UV + px * vec2(-1.0, 0.0));
+	float mr = L(TEXTURE, UV + px * vec2(1.0, 0.0));
+	float bl = L(TEXTURE, UV + px * vec2(-1.0, 1.0));
+	float bc = L(TEXTURE, UV + px * vec2(0.0, 1.0));
+	float br = L(TEXTURE, UV + px * vec2(1.0, 1.0));
 	float gx = (tr + 2.0 * mr + br) - (tl + 2.0 * ml + bl);
 	float gy = (bl + 2.0 * bc + br) - (tl + 2.0 * tc + tr);
 	float e = clamp(length(vec2(gx, gy)) * edge_k - 0.12, 0.0, 1.0);

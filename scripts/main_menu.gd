@@ -5,7 +5,7 @@ class_name MainMenu extends Control
 # (tuş atama: Keybinds). Bu dosyadaki yeni metinlerin İngilizcesi EN sözlüğünde —
 # ileride I18n.EN'e taşınacak (t() önce burada, sonra I18n'de arar).
 
-const PX := 560.0       # sayfa paneli sol kenarı
+const PX := 610.0       # sayfa paneli sol kenarı
 const PY := 120.0       # sayfa paneli üst kenarı
 const PW := 820.0       # sayfa paneli genişliği
 const NAV_W := 400.0
@@ -134,6 +134,25 @@ const EN := {
 	"Hedefli emirde Shift+sol tık: emir açık kalır, art arda uygula": "Targeted orders with Shift+left click: the order stays active for repeated use",
 	"Orta tuş sürükle: kamera · Tekerlek: yakınlaştır · Shift basılı: hızlı kaydırma": "Middle-drag: camera · Wheel: zoom · Hold Shift: fast scrolling",
 	"Senaryo Oluşturucu: R döndür · 1 / 2 / 3 fırça boyutu · Enter çizgiyi bitir · Esc iptal": "Scenario editor: R rotate · 1 / 2 / 3 brush size · Enter finish line · Esc cancel",
+	"Modern savaş · gerçek siper · ikmal hatları": "Modern war · real cover · supply lines",
+	"FPS sınırı": "FPS cap",
+	"Sınırsız": "Unlimited",
+	"Kalite": "Quality",
+	"Ön ayar": "Preset",
+	"Düşük": "Low",
+	"Orta": "Medium",
+	"Yüksek": "High",
+	"Özel": "Custom",
+	"Kapalı": "Off",
+	"Çizim çözünürlüğü": "Render resolution",
+	"En büyük etki. %100 altında FSR ile ölçeklenir.": "Biggest impact. Below 100% it is upscaled with FSR.",
+	"Kenar yumuşatma": "Anti-aliasing",
+	"Gölgeler": "Shadows",
+	"Büyük etki: gölge haritası boyu ve yumuşatma süzgeci.": "High impact: shadow map size and soft filter.",
+	"Ortam gölgelemesi (SSAO)": "Ambient occlusion (SSAO)",
+	"Parlama": "Glow",
+	"Ot yoğunluğu": "Grass density",
+	"Yeni yüklenen bölgelerde ve yeni haritada geçerli.": "Applies to newly loaded areas and the next map.",
 }
 
 static var _reopen := ""            # dil değişince yeniden kurulan menü bu sayfayı açar
@@ -164,11 +183,10 @@ static func t(s: String) -> String:
 		return EN[s]
 	return I18n.s(s)
 
-# Türkçe büyük harf (i -> İ); İngilizcede düz to_upper
+# eskiden Türkçe büyük harfe çeviriyordu; eskiz temasında (65/57) metin olduğu gibi kalır, büyük harfli anahtarlar
+# Sketch.sc ile cümle düzenine iner
 static func up(s: String) -> String:
-	if I18n.lang == "tr":
-		return s.replace("i", "İ").to_upper()
-	return s.to_upper()
+	return s
 
 # ayarlar dosyasındaki ek seçenekleri uygula (Hud._ready'den; main.gd'ye dokunmadan)
 static func apply_cfg() -> void:
@@ -194,53 +212,39 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	set_process_input(false)
-	var grad := TextureRect.new()
-	var gt := GradientTexture2D.new()
-	var gr := Gradient.new()
-	gr.set_color(0, Color(0, 0, 0, 0.86))
-	gr.set_color(1, Color(0, 0, 0, 0.0))
-	gt.gradient = gr
-	gt.fill_from = Vector2(0, 0)
-	gt.fill_to = Vector2(1, 0)
-	grad.texture = gt
-	grad.set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	grad.offset_right = 880
-	grad.stretch_mode = TextureRect.STRETCH_SCALE
-	grad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(grad)
+	# eskiz teması (65/57, inceleme dersi 146): solda tek kâğıt kart — başlık, altı bağlantı, kısa ipucu. Numara,
+	# ipucu etiketi, amber çizgi, koyu degrade yok; arkada yapay zekâ savaşı görünür kalır.
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", Sketch.panel(0.95, 30, 51))
+	card.position = Vector2(70, PY - 20)
+	card.custom_minimum_size = Vector2(NAV_W + 40, 0)
+	add_child(card)
 	var vb := VBoxContainer.new()
-	vb.position = Vector2(90, PY)
-	vb.add_theme_constant_override("separation", 6)
-	add_child(vb)
-	var title := _lbl(vb, "MEVZİ", 116, Color(0.97, 0.94, 0.86), hud.font_b)
-	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	title.add_theme_constant_override("shadow_offset_y", 4)
-	_lbl(vb, "MODERN SAVAŞ · GERÇEK SİPER · İKMAL HATLARI", 21, Hud.AMBER, hud.font_m)
-	var bar := ColorRect.new()
-	bar.color = Hud.AMBER
-	bar.custom_minimum_size = Vector2(56, 3)
-	bar.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	vb.add_child(bar)
-	_gap(vb, 30)
-	_nav_btn(vb, "campaign", 1, "KAMPANYA", "HAZIRLANIYOR")
-	_nav_btn(vb, "classic", 2, "KLASİK HARİTA", "YZ'YE KARŞI")
-	_nav_btn(vb, "sandbox", 3, "SANDBOX TEST", "SINIRSIZ İKMAL")
-	_nav_sep(vb)
-	_nav_btn(vb, "editor", 4, "SENARYO OLUŞTURUCU", "HARİTA + SENARYO")
+	vb.add_theme_constant_override("separation", 2)
+	card.add_child(vb)
+	var title := _lbl(vb, "MEVZİ", 92, Sketch.INK, hud.font_b)
+	title.text = "MEVZİ"
+	_lbl(vb, "Modern savaş · gerçek siper · ikmal hatları", 19, Sketch.INK2, hud.font_m)
+	var ul := Panel.new()
+	ul.add_theme_stylebox_override("panel", Sketch.underline("red"))
+	ul.custom_minimum_size = Vector2(150, 16)
+	ul.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	ul.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(ul)
+	_gap(vb, 22)
+	_nav_btn(vb, "classic", 1, "KLASİK HARİTA", "")
+	_nav_btn(vb, "campaign", 2, "KAMPANYA", "HAZIRLANIYOR")
+	_nav_btn(vb, "sandbox", 3, "SANDBOX TEST", "")
+	_nav_btn(vb, "editor", 4, "SENARYO OLUŞTURUCU", "")
 	_nav_btn(vb, "settings", 5, "AYARLAR", "")
-	_nav_sep(vb)
+	_gap(vb, 10)
 	_nav_btn(vb, "quit", 6, "MASAÜSTÜNE ÇIK", "")
-	_help = _lbl(self, "Sol tık seç · Sağ tık emir ver · Askerler kendi siperlerini bulur, yaralıları kurtarır.\nÜs kur, yolu koru: ikmal kamyonları ileri üslere ulaşmazsa gelir kesilir.", 16, Color(0.85, 0.82, 0.75), hud.font_m)
-	_help.anchor_top = 1.0
-	_help.anchor_bottom = 1.0
-	_help.offset_left = 90
-	_help.offset_top = -150
-	var cr := _lbl(self, "", 13, Hud.DIM, hud.font_m)
+	_gap(vb, 18)
+	_help = _lbl(vb, "Sol tık seç · Sağ tık emir ver · Askerler kendi siperlerini bulur, yaralıları kurtarır.\nÜs kur, yolu koru: ikmal kamyonları ileri üslere ulaşmazsa gelir kesilir.", 14, Sketch.INK2, hud.font_m)
+	_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_help.custom_minimum_size = Vector2(NAV_W, 0)
+	var cr := _lbl(vb, "", 12, Sketch.INK3, hud.font_m)
 	cr.text = "v0.2"
-	cr.anchor_top = 1.0
-	cr.anchor_bottom = 1.0
-	cr.offset_top = -30
-	cr.offset_left = 24
 	if _reopen != "":
 		var p := _reopen
 		_reopen = ""
@@ -263,9 +267,9 @@ func _unhandled_input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 # ------------------------------------------------------------ yardımcılar
-func _lbl(parent: Node, text: String, size := 17, col := Hud.TXT, f: Font = null, wrap := false) -> Label:
+func _lbl(parent: Node, text: String, size := 17, col := Sketch.INK, f: Font = null, wrap := false) -> Label:
 	var l := Label.new()
-	l.text = t(text)
+	l.text = Sketch.sc(t(text))
 	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
@@ -279,10 +283,10 @@ func _lbl(parent: Node, text: String, size := 17, col := Hud.TXT, f: Font = null
 
 func _btn(parent: Node, text: String, cb: Callable, fsize := 18, minw := 0.0, h := 38.0) -> Button:
 	var b := Button.new()
-	b.text = t(text)
+	b.text = Sketch.sc(t(text))
 	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_font_override("font", hud.font_b)
+	b.add_theme_font_override("font", hud.font_m)
 	b.add_theme_font_size_override("font_size", fsize)
 	b.custom_minimum_size = Vector2(minw, h)
 	b.pressed.connect(func():
@@ -297,20 +301,24 @@ func _sb(bg: Color, border: Color, bw := 1, m := -1.0) -> StyleBoxFlat:
 		s.set_content_margin_all(m)
 	return s
 
-# dolgulu amber ana eylem düğmesi
+# kâğıt şerit (kutu, satır, brifing)
+func _slip(m := 12.0, seed := 7) -> StyleBoxTexture:
+	var s := Sketch.slip(0.9, int(m), seed)
+	s.content_margin_top = m * 0.8
+	s.content_margin_bottom = m * 0.8
+	return s
+
+# ana eylem düğmesi: mürekkep dolgu, kâğıt yazı; üzerinde kırmızı kalem
 func _primary(b: Button) -> void:
-	var n := _sb(Color(1, 0.74, 0.3, 0.92), Hud.AMBER, 1)
-	var h := _sb(Color(1, 0.82, 0.45, 1.0), Color(1, 0.92, 0.75), 1)
-	for s in [n, h]:
-		s.content_margin_left = 22
-		s.content_margin_right = 22
+	var n := Sketch.button("pressed", 22)
 	b.add_theme_stylebox_override("normal", n)
-	b.add_theme_stylebox_override("hover", h)
-	b.add_theme_stylebox_override("pressed", h)
-	b.add_theme_stylebox_override("hover_pressed", h)
-	var dark := Color(0.07, 0.06, 0.04)
-	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
-		b.add_theme_color_override(c, dark)
+	b.add_theme_stylebox_override("hover", n)
+	b.add_theme_stylebox_override("pressed", n)
+	b.add_theme_stylebox_override("hover_pressed", n)
+	b.add_theme_font_override("font", hud.font_b)
+	for c in ["font_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(c, Sketch.PAPER)
+	b.add_theme_color_override("font_hover_color", Color(0.95, 0.62, 0.5))
 
 func _gap(parent: Node, h: float) -> void:
 	var c := Control.new()
@@ -318,7 +326,7 @@ func _gap(parent: Node, h: float) -> void:
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(c)
 
-func _hline(parent: Node, col := Color(1, 1, 1, 0.08)) -> void:
+func _hline(parent: Node, col := Color(0.13, 0.12, 0.1, 0.22)) -> void:
 	var r := ColorRect.new()
 	r.color = col
 	r.custom_minimum_size = Vector2(0, 1)
@@ -341,17 +349,13 @@ func _margin(parent: Node, l: int, tp: int, r: int, b: int) -> MarginContainer:
 	parent.add_child(m)
 	return m
 
-# bölüm başlığı: amber çentik + metin
+# bölüm başlığı: mürekkep yazı, altında ince çizgi
 func _caption(parent: Node, text: String) -> void:
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 8)
-	parent.add_child(h)
-	var n := ColorRect.new()
-	n.color = Hud.AMBER
-	n.custom_minimum_size = Vector2(3, 16)
-	n.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	h.add_child(n)
-	_lbl(h, up(t(text)), 16, Color(0.82, 0.8, 0.74), hud.font_b)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 1)
+	parent.add_child(v)
+	_lbl(v, text, 17, Sketch.INK, hud.font_b)
+	_hline(v)
 
 func _scroll(parent: Node) -> VBoxContainer:
 	var sc := ScrollContainer.new()
@@ -373,52 +377,43 @@ static func map_title(id: String) -> String:
 	return up(I18n.s(String(MapGen.MAPS[id]["title"])))
 
 # ------------------------------------------------------------ sol menü
-func _nav_btn(parent: Node, id: String, idx: int, text: String, hint: String) -> void:
+func _nav_btn(parent: Node, id: String, _idx: int, text: String, hint: String) -> void:
 	var b := Button.new()
-	b.text = t(text)
+	b.text = Sketch.sc(t(text))
 	b.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	b.custom_minimum_size = Vector2(NAV_W, 52)
-	b.add_theme_font_size_override("font_size", 25)
-	b.add_theme_font_override("font", hud.font_b)
+	b.custom_minimum_size = Vector2(NAV_W, 44)
+	b.add_theme_font_size_override("font_size", 26 if id != "quit" else 20)
+	b.add_theme_font_override("font", hud.font_m)
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	b.focus_mode = Control.FOCUS_NONE
 	b.toggle_mode = id != "quit"
-	var st := {
-		"normal": _sb(Color(0.02, 0.022, 0.02, 0.5), Color(1, 1, 1, 0.07)),
-		"hover": _sb(Color(1, 0.74, 0.3, 0.1), Color(1, 0.74, 0.3, 0.55)),
-		"pressed": _sb(Color(1, 0.74, 0.3, 0.22), Hud.AMBER),
-	}
-	st["hover_pressed"] = st["pressed"]
-	for k in st:
-		var s: StyleBoxFlat = st[k]
-		s.content_margin_left = 52
-		s.content_margin_right = 14
-		b.add_theme_stylebox_override(k, s)
-	if id == "quit":
-		b.add_theme_color_override("font_hover_color", Hud.RED)
-		(st["hover"] as StyleBoxFlat).border_color = Color(1.0, 0.42, 0.33, 0.6)
-		(st["hover"] as StyleBoxFlat).bg_color = Color(1.0, 0.42, 0.33, 0.08)
-	var acc := ColorRect.new()
-	acc.color = Color(1, 1, 1, 0.14)
-	acc.position = Vector2(0, 0)
-	acc.size = Vector2(3, 52)
-	acc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	b.add_child(acc)
-	var num := _lbl(b, "%02d" % idx, 15, Color(1, 1, 1, 0.32), hud.font_b)
-	num.position = Vector2(16, 15)
+	# düz mürekkep yazı; üzerinde kırmızı kalem alt çizgi, açık sayfada mürekkep alt çizgi
+	var none := StyleBoxEmpty.new()
+	none.content_margin_left = 2
+	none.content_margin_bottom = 6
+	var red := Sketch.underline("red", 0)
+	red.content_margin_left = 2
+	red.content_margin_bottom = 6
+	var ink := Sketch.underline("ink", 0)
+	ink.content_margin_left = 2
+	ink.content_margin_bottom = 6
+	b.add_theme_stylebox_override("normal", none)
+	b.add_theme_stylebox_override("hover", red)
+	b.add_theme_stylebox_override("pressed", ink)
+	b.add_theme_stylebox_override("hover_pressed", ink)
+	var fc := Sketch.INK2 if id == "quit" else Sketch.INK
+	for c in ["font_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(c, fc)
+	b.add_theme_color_override("font_hover_color", Sketch.RED)
 	if hint != "":
-		var hl := _lbl(b, hint, 14, Color(1, 0.74, 0.3, 0.75) if id == "campaign" else Color(1, 1, 1, 0.34), hud.font_b)
+		var hl := _lbl(b, hint, 14, Sketch.INK3, hud.font_m)
+		hl.text = Sketch.sc(t(hint))
 		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		hl.anchor_left = 1.0
 		hl.anchor_right = 1.0
 		hl.offset_left = -200
-		hl.offset_right = -14
-		hl.offset_top = 17
-	var lit := func() -> void:
-		acc.color = (Hud.RED if id == "quit" else Hud.AMBER) if (b.button_pressed or b.is_hovered()) else Color(1, 1, 1, 0.14)
-	b.mouse_entered.connect(lit)
-	b.mouse_exited.connect(lit)
-	b.toggled.connect(func(_on): lit.call())
+		hl.offset_right = -4
+		hl.offset_top = 14
 	b.pressed.connect(func():
 		Sfx.play2d("ui_click", -4.0)
 		if id == "quit":
@@ -431,7 +426,7 @@ func _nav_btn(parent: Node, id: String, idx: int, text: String, hint: String) ->
 func _nav_sep(parent: Node) -> void:
 	_gap(parent, 4)
 	var r := ColorRect.new()
-	r.color = Color(1, 1, 1, 0.09)
+	r.color = Color(0.13, 0.12, 0.1, 0.18)
 	r.custom_minimum_size = Vector2(NAV_W, 1)
 	r.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	parent.add_child(r)
@@ -468,9 +463,14 @@ func open_page(id: String) -> void:
 			_page_settings()
 
 # başlık + gövde + alt şerit; {"body": VBox, "foot": HBox}
-func _frame(idx: int, title: String, sub: String) -> Dictionary:
+func _frame(_idx: int, title: String, sub: String) -> Dictionary:
 	var pc := PanelContainer.new()
-	pc.add_theme_stylebox_override("panel", _sb(Color(0.035, 0.038, 0.036, 0.94), Color(1, 1, 1, 0.1), 1, 0.0))
+	var psb := Sketch.panel(0.97, 0, 53)
+	psb.content_margin_left = 8
+	psb.content_margin_right = 8
+	psb.content_margin_top = 8
+	psb.content_margin_bottom = 8
+	pc.add_theme_stylebox_override("panel", psb)
 	pc.anchor_bottom = 1.0
 	pc.offset_left = PX
 	pc.offset_top = PY
@@ -483,19 +483,13 @@ func _frame(idx: int, title: String, sub: String) -> Dictionary:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
 	pc.add_child(v)
-	var bar := ColorRect.new()
-	bar.color = Hud.AMBER
-	bar.custom_minimum_size = Vector2(0, 3)
-	v.add_child(bar)
 	var hm := _margin(v, 26, 14, 26, 14)
 	var hv := VBoxContainer.new()
 	hv.add_theme_constant_override("separation", 0)
 	hm.add_child(hv)
-	var eb := _lbl(hv, "", 13, Color(1, 1, 1, 0.38), hud.font_b)
-	eb.text = "%s  /  %02d" % [t("ANA MENÜ"), idx]
-	_lbl(hv, title, 38, Hud.AMBER, hud.font_b)
+	_lbl(hv, title, 36, Sketch.INK, hud.font_b)
 	if sub != "":
-		_lbl(hv, sub, 16, Color(0.75, 0.74, 0.7), hud.font_m, true)
+		_lbl(hv, sub, 16, Sketch.INK2, hud.font_m, true)
 	_hline(v)
 	var bm := _margin(v, 26, 18, 26, 14)
 	bm.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -508,7 +502,7 @@ func _frame(idx: int, title: String, sub: String) -> Dictionary:
 	fh.add_theme_constant_override("separation", 10)
 	fm.add_child(fh)
 	var back := _btn(fh, "", func(): open_page(""), 19, 140, 44)
-	back.text = "‹  " + t("GERİ")
+	back.text = "‹  " + Sketch.sc(t("GERİ"))
 	_expand(fh)
 	return {"body": body, "foot": fh}
 
@@ -517,7 +511,7 @@ func _page_campaign() -> void:
 	var f := _frame(1, "KAMPANYA", "Seferberlik: birbirine bağlı harekâtlar. Birlikleriniz deneyim kazanır ve görevden göreve taşınır.")
 	var body: VBoxContainer = f["body"]
 	var st := PanelContainer.new()
-	var ssb := _sb(Color(1, 0.74, 0.3, 0.07), Color(1, 0.74, 0.3, 0.45), 1, 14.0)
+	var ssb := _slip(14.0, 61)
 	st.add_theme_stylebox_override("panel", ssb)
 	body.add_child(st)
 	var sh := HBoxContainer.new()
@@ -531,8 +525,8 @@ func _page_campaign() -> void:
 	sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sv.add_theme_constant_override("separation", 2)
 	sh.add_child(sv)
-	_lbl(sv, "HAZIRLANIYOR", 22, Hud.AMBER, hud.font_b)
-	_lbl(sv, "Kampanya henüz oynanabilir değil. Aşağıdaki harekâtlar planlanıyor ve hazır oldukça açılacak. Şimdilik Klasik Harita ve Sandbox Test oynanabilir.", 16, Hud.TXT, hud.font_m, true)
+	_lbl(sv, "HAZIRLANIYOR", 22, Sketch.RED, hud.font_b)
+	_lbl(sv, "Kampanya henüz oynanabilir değil. Aşağıdaki harekâtlar planlanıyor ve hazır oldukça açılacak. Şimdilik Klasik Harita ve Sandbox Test oynanabilir.", 16, Sketch.INK, hud.font_m, true)
 	_gap(body, 4)
 	_caption(body, "PLANLANAN HAREKÂTLAR")
 	var list := _scroll(body)
@@ -540,12 +534,12 @@ func _page_campaign() -> void:
 	for i in OPS.size():
 		var op: Dictionary = OPS[i]
 		var row := PanelContainer.new()
-		row.add_theme_stylebox_override("panel", _sb(Color(1, 1, 1, 0.025), Color(1, 1, 1, 0.06), 1, 12.0))
+		row.add_theme_stylebox_override("panel", _slip(12.0, 70 + i))
 		list.add_child(row)
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 16)
 		row.add_child(h)
-		var code := _lbl(h, "", 17, Color(1, 1, 1, 0.3), hud.font_b)
+		var code := _lbl(h, "", 17, Sketch.INK3, hud.font_b)
 		code.text = "%s-%02d" % [t("HRK"), i]
 		code.custom_minimum_size = Vector2(70, 0)
 		code.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -553,12 +547,12 @@ func _page_campaign() -> void:
 		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		v.add_theme_constant_override("separation", 0)
 		h.add_child(v)
-		_lbl(v, String(op["t"]), 22, Color(0.93, 0.92, 0.88, 0.62), hud.font_b)
+		_lbl(v, String(op["t"]), 22, Sketch.INK2, hud.font_b)
 		var where := t("Eğitim sahası")
 		var mid: String = op["map"]
 		if MapGen.MAPS.has(mid):
 			where = map_title(mid) + "  ·  " + map_size_tag(mid)
-		var dl := _lbl(v, "", 15, Hud.DIM, hud.font_m, true)
+		var dl := _lbl(v, "", 15, Sketch.INK2, hud.font_m, true)
 		dl.text = where + "  —  " + t(String(op["d"]))
 		var tag := HBoxContainer.new()
 		tag.add_theme_constant_override("separation", 6)
@@ -567,9 +561,9 @@ func _page_campaign() -> void:
 		var lk2 := LockIcon.new()
 		lk2.custom_minimum_size = Vector2(12, 15)
 		lk2.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		lk2.col = Color(1, 0.74, 0.3, 0.7)
+		lk2.col = Sketch.RED
 		tag.add_child(lk2)
-		_lbl(tag, "HAZIRLANIYOR", 14, Color(1, 0.74, 0.3, 0.8), hud.font_b)
+		_lbl(tag, "HAZIRLANIYOR", 14, Sketch.RED, hud.font_b)
 	var go := _btn(f["foot"], "", func(): open_page("classic"), 19, 0, 44)
 	go.text = t("KLASİK HARİTAYA GEÇ") + "  ›"
 
@@ -595,7 +589,7 @@ func _map_list(parent: Node, with_custom: bool) -> void:
 			_caption(list, "ÖZEL HARİTALAR")
 			for m in maps:
 				var mn: String = m
-				_map_row(list, "custom:" + mn, mn.to_upper(), t("ÖZEL"))
+				_map_row(list, "custom:" + mn, mn, t("ÖZEL"))
 	elif _sel_map.begins_with("custom:"):
 		_sel_map = ids[0]
 	_select_map(_sel_map)
@@ -611,7 +605,7 @@ func _map_row(list: Node, key: String, title: String, tag: String) -> void:
 	b.add_theme_font_override("font", hud.font_b)
 	b.add_theme_font_size_override("font_size", 20)
 	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var tl := _lbl(b, "", 14, Color(1, 1, 1, 0.42), hud.font_b)
+	var tl := _lbl(b, "", 14, Sketch.INK3, hud.font_b)
 	tl.text = tag
 	tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	tl.anchor_left = 1.0
@@ -637,14 +631,14 @@ func _fill_brief() -> void:
 	for c in _brief.get_children():
 		c.queue_free()
 	if _sel_map.begins_with("custom:"):
-		_lbl(_brief, _sel_map.substr(7).to_upper(), 26, Hud.TXT, hud.font_b)
-		_lbl(_brief, "Kayıtlı özel harita", 15, Hud.DIM, hud.font_m, true)
+		_lbl(_brief, _sel_map.substr(7), 26, Sketch.INK, hud.font_b)
+		_lbl(_brief, "Kayıtlı özel harita", 15, Sketch.INK2, hud.font_m, true)
 	elif MapGen.MAPS.has(_sel_map):
 		var m: Dictionary = MapGen.MAPS[_sel_map]
-		_lbl(_brief, map_title(_sel_map), 26, Hud.TXT, hud.font_b)
-		var tg := _lbl(_brief, "", 14, Hud.AMBER, hud.font_b)
+		_lbl(_brief, map_title(_sel_map), 26, Sketch.INK, hud.font_b)
+		var tg := _lbl(_brief, "", 14, Sketch.RED, hud.font_b)
 		tg.text = map_size_tag(_sel_map) + "  ·  " + t(BIOME.get(String(m.get("biome", "green")), ""))
-		_lbl(_brief, String(m.get("desc", "")), 16, Color(0.82, 0.81, 0.77), hud.font_m, true)
+		_lbl(_brief, String(m.get("desc", "")), 16, Sketch.INK, hud.font_m, true)
 
 func _start_selected(sandbox: bool) -> void:
 	if G.main == null or not G.main.has_method("start_game"):
@@ -681,7 +675,7 @@ func _page_classic() -> void:
 			(refs["mode"] as Label).text = mode_txt.call(i)
 	_selector(right, "MOD", modes.size(), func(): return maxi(0, modes.find(G.mode)), set_mode,
 		func(i): return I18n.s(Modes.MODE_NAME[modes[i]]))
-	refs["mode"] = _lbl(right, "", 14, Hud.DIM, hud.font_m, true)
+	refs["mode"] = _lbl(right, "", 14, Sketch.INK2, hud.font_m, true)
 	(refs["mode"] as Label).text = mode_txt.call(maxi(0, modes.find(G.mode)))
 	var set_weather := func(i: int) -> void:
 		G.weather_pref = WEATHERS[i]
@@ -689,7 +683,7 @@ func _page_classic() -> void:
 			(refs["weather"] as Label).visible = G.weather_pref == "dynamic"
 	_selector(right, "HAVA DURUMU", WEATHERS.size(), func(): return maxi(0, WEATHERS.find(G.weather_pref)), set_weather,
 		func(i): return I18n.s(Weather.NAME[WEATHERS[i]]))
-	refs["weather"] = _lbl(right, "Değişken: biyoma göre hava 3-4 dakikada bir değişir", 14, Hud.DIM, hud.font_m, true)
+	refs["weather"] = _lbl(right, "Değişken: biyoma göre hava 3-4 dakikada bir değişir", 14, Sketch.INK2, hud.font_m, true)
 	(refs["weather"] as Label).visible = G.weather_pref == "dynamic"
 	var set_night := func(i: int) -> void:
 		G.night_pref = i == 1
@@ -698,7 +692,7 @@ func _page_classic() -> void:
 	_gap(right, 10)
 	_caption(right, "BRİFİNG")
 	var bp := PanelContainer.new()
-	bp.add_theme_stylebox_override("panel", _sb(Color(1, 1, 1, 0.03), Color(1, 1, 1, 0.07), 1, 14.0))
+	bp.add_theme_stylebox_override("panel", _slip(14.0, 62))
 	right.add_child(bp)
 	_brief = VBoxContainer.new()
 	_brief.add_theme_constant_override("separation", 4)
@@ -715,12 +709,12 @@ func _selector(parent: Node, caption: String, count: int, get_i: Callable, set_i
 	if parent.get_meta("wide_caption", false):
 		h.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		h.custom_minimum_size = Vector2(640, 0)
-	var cl := _lbl(h, caption, 17, Color(0.7, 0.69, 0.65), hud.font_b)
+	var cl := _lbl(h, caption, 17, Sketch.INK2, hud.font_b)
 	cl.custom_minimum_size = Vector2(250 if parent.get_meta("wide_caption", false) else 150, 0)
 	cl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var val := Button.new()
 	var refresh := func() -> void:
-		val.text = String(name_of.call(int(get_i.call())))
+		val.text = Sketch.sc(String(name_of.call(int(get_i.call()))))
 	var step := func(d: int) -> void:
 		set_i.call(posmod(int(get_i.call()) + d, count))
 		refresh.call()
@@ -746,7 +740,7 @@ func _slider(parent: Node, caption: String, lo: float, hi: float, stp: float, va
 	parent.add_child(h)
 	h.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	h.custom_minimum_size = Vector2(640, 0)
-	var cl := _lbl(h, caption, 17, Color(0.7, 0.69, 0.65), hud.font_b)
+	var cl := _lbl(h, caption, 17, Sketch.INK2, hud.font_b)
 	cl.custom_minimum_size = Vector2(230, 0)
 	cl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var sl := HSlider.new()
@@ -758,18 +752,18 @@ func _slider(parent: Node, caption: String, lo: float, hi: float, stp: float, va
 	sl.step = stp
 	sl.focus_mode = Control.FOCUS_NONE
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color(1, 1, 1, 0.12)
+	track.bg_color = Color(0.13, 0.12, 0.1, 0.2)
 	track.content_margin_top = 2
 	track.content_margin_bottom = 2
 	var fill := StyleBoxFlat.new()
-	fill.bg_color = Color(1, 0.74, 0.3, 0.85)
+	fill.bg_color = Sketch.RED
 	fill.content_margin_top = 2
 	fill.content_margin_bottom = 2
 	sl.add_theme_stylebox_override("slider", track)
 	sl.add_theme_stylebox_override("grabber_area", fill)
 	sl.add_theme_stylebox_override("grabber_area_highlight", fill)
 	h.add_child(sl)
-	var vl := _lbl(h, "", 17, Hud.TXT, hud.font_b)
+	var vl := _lbl(h, "", 17, Sketch.INK, hud.font_b)
 	vl.custom_minimum_size = Vector2(64, 0)
 	vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	sl.value = value
@@ -793,7 +787,7 @@ func _page_sandbox() -> void:
 	h.add_child(right)
 	_caption(right, "BRİFİNG")
 	var bp := PanelContainer.new()
-	bp.add_theme_stylebox_override("panel", _sb(Color(1, 1, 1, 0.03), Color(1, 1, 1, 0.07), 1, 14.0))
+	bp.add_theme_stylebox_override("panel", _slip(14.0, 62))
 	right.add_child(bp)
 	_brief = VBoxContainer.new()
 	_brief.add_theme_constant_override("separation", 4)
@@ -802,7 +796,7 @@ func _page_sandbox() -> void:
 	_gap(right, 10)
 	_caption(right, "NASIL KULLANILIR")
 	for s in ["` / F10: sandbox panelini aç / gizle", "Panelden birlik, araç ve yapı seç; sol tık: yerleştir · sağ tık: iptal", "Kataloğa eklenen her yeni birim ve yapı listede kendiliğinden çıkar"]:
-		var l := _lbl(right, "", 15, Color(0.8, 0.79, 0.75), hud.font_m, true)
+		var l := _lbl(right, "", 15, Sketch.INK2, hud.font_m, true)
 		l.text = "•  " + t(s)
 	var go := _btn(f["foot"], "SANDBOX'I BAŞLAT", func(): _start_selected(true), 22, 230, 44)
 	_primary(go)
@@ -833,7 +827,7 @@ func _page_editor() -> void:
 		b.text = map_title(mid)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		var tl := _lbl(b, "", 13, Color(1, 1, 1, 0.4), hud.font_b)
+		var tl := _lbl(b, "", 13, Sketch.INK3, hud.font_b)
 		tl.text = map_size_tag(mid)
 		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		tl.anchor_left = 1.0
@@ -845,11 +839,11 @@ func _page_editor() -> void:
 	_caption(body, "KAYITLI HARİTALAR")
 	var maps := MapEditor.list_maps()
 	if maps.is_empty():
-		_lbl(body, "Henüz kayıt yok", 15, Hud.DIM, hud.font_m)
+		_lbl(body, "Henüz kayıt yok", 15, Sketch.INK2, hud.font_m)
 	for m in maps:
 		var mn: String = m
 		var b := _btn(body, "", func(): G.main.open_editor(MapEditor.load_map(mn)), 18, 0, 40)
-		b.text = I18n.s("AÇ: ") + mn.to_upper()
+		b.text = I18n.s("AÇ: ") + mn
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 
 # ---------------- ayarlar
@@ -875,7 +869,7 @@ func _page_settings() -> void:
 				(tbtns[k] as Button).set_pressed_no_signal(k == tid)
 			_fill_settings(content))
 	(tbtns.get(_set_tab, tbtns["graphics"]) as Button).set_pressed_no_signal(true)
-	_hline(body, Color(1, 0.74, 0.3, 0.35))
+	_hline(body)
 	body.add_child(content)
 	_fill_settings(content)
 
@@ -893,15 +887,7 @@ func _fill_settings(content: VBoxContainer) -> void:
 	content.set_meta("wide_caption", true)
 	match _set_tab:
 		"graphics":
-			_caption(content, "GÖRÜNTÜ")
-			_toggle(content, up(t("Tam ekran")), "fullscreen", true, true)
-			_toggle(content, up(t("Gölgeler")), "shadows", true, true)
-			var set_vsync := func(i: int) -> void:
-				var cf := _cfg()
-				cf["vsync"] = i == 1
-				apply_cfg()
-				_save()
-			_selector(content, "DİKEY SENKRON (V-SYNC)", 2, func(): return 1 if bool(_cfg().get("vsync", true)) else 0, set_vsync, _onoff)
+			_fill_graphics(content)
 		"audio":
 			_caption(content, "SES DÜZEYİ")
 			var set_vol := func(x: float) -> void:
@@ -934,6 +920,74 @@ func _fill_settings(content: VBoxContainer) -> void:
 		"keys":
 			_keys_tab(content)
 
+# Grafik sekmesi (roadmap 146): ön ayar + her biri ölçülebilir başarım farkı yaratan ayarlar; yanında etkisi
+func _fill_graphics(root_box: VBoxContainer) -> void:
+	var m = G.main
+	if m == null or not m.has_method("gfx"):
+		return
+	var refill := func() -> void:
+		_fill_settings.call_deferred(root_box)
+	var content := _scroll(root_box)
+	content.set_meta("wide_caption", true)
+	content.add_theme_constant_override("separation", 8)
+	_caption(content, "GÖRÜNTÜ")
+	_toggle(content, t("Tam ekran"), "fullscreen", true, true)
+	var set_vsync := func(i: int) -> void:
+		var cf := _cfg()
+		cf["vsync"] = i == 1
+		apply_cfg()
+		_save()
+	_selector(content, "DİKEY SENKRON (V-SYNC)", 2, func(): return 1 if bool(_cfg().get("vsync", true)) else 0, set_vsync, _onoff)
+	var caps := [0, 30, 60, 120, 144]
+	_selector(content, "FPS sınırı", caps.size(), func(): return maxi(0, caps.find(int(m.gfx("fps_cap")))),
+		func(i): m.set_gfx("fps_cap", caps[i]),
+		func(i): return t("Sınırsız") if caps[i] == 0 else str(caps[i]))
+	_gap(content, 8)
+	_caption(content, "Kalite")
+	var set_preset := func(i: int) -> void:
+		if i < 3:
+			m.set_gfx_preset(i)
+		refill.call()
+	_selector(content, "Ön ayar", 4, func(): return clampi(int(_cfg().get("gfx", 2)), 0, 3), set_preset,
+		func(i): return t(["Düşük", "Orta", "Yüksek", "Özel"][i]))
+	var pct := func(x: float) -> String:
+		return "%d%%" % int(round(x * 100.0))
+	var set_scale := func(x: float) -> void:
+		m.set_gfx("scale", x)
+	_slider(content, "Çizim çözünürlüğü", 0.5, 1.0, 0.05, float(m.gfx("scale")), pct, set_scale)
+	_hint(content, "En büyük etki. %100 altında FSR ile ölçeklenir.")
+	var set_msaa := func(i: int) -> void:
+		m.set_gfx("msaa", i)
+		refill.call()
+	_selector(content, "Kenar yumuşatma", 3, func(): return clampi(int(m.gfx("msaa")), 0, 2), set_msaa,
+		func(i): return t(["Kapalı", "MSAA 2×", "MSAA 4×"][i]))
+	var set_sh := func(i: int) -> void:
+		m.set_gfx("shadow_q", i)
+		refill.call()
+	_selector(content, "Gölgeler", 4, func(): return clampi(int(m.gfx("shadow_q")), 0, 3), set_sh,
+		func(i): return t(["Kapalı", "Düşük", "Orta", "Yüksek"][i]))
+	_hint(content, "Büyük etki: gölge haritası boyu ve yumuşatma süzgeci.")
+	var set_ao := func(i: int) -> void:
+		m.set_gfx("ssao", i == 1)
+		refill.call()
+	_selector(content, "Ortam gölgelemesi (SSAO)", 2, func(): return 1 if bool(m.gfx("ssao")) else 0, set_ao, _onoff)
+	var set_glow := func(i: int) -> void:
+		m.set_gfx("glow", i == 1)
+		refill.call()
+	_selector(content, "Parlama", 2, func(): return 1 if bool(m.gfx("glow")) else 0, set_glow, _onoff)
+	var set_grass := func(x: float) -> void:
+		m.set_gfx("grass", x)
+	_slider(content, "Ot yoğunluğu", 0.1, 1.0, 0.05, float(m.gfx("grass")), pct, set_grass)
+	_hint(content, "Yeni yüklenen bölgelerde ve yeni haritada geçerli.")
+
+func _hint(parent: Node, text: String) -> void:
+	var h := HBoxContainer.new()
+	parent.add_child(h)
+	var sp := Control.new()
+	sp.custom_minimum_size = Vector2(254, 0)
+	h.add_child(sp)
+	_lbl(h, text, 13, Sketch.INK3, hud.font_m)
+
 func _onoff(i: int) -> String:
 	return I18n.s(["KAPALI", "AÇIK"][i])
 
@@ -964,7 +1018,7 @@ func _keys_tab(content: VBoxContainer) -> void:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 12)
 	content.add_child(top)
-	var info := _lbl(top, "Tuşa tıklayın, sonra yeni tuşa basın. Sağ tık: tuşu temizle · Esc: vazgeç.", 15, Hud.DIM, hud.font_m, true)
+	var info := _lbl(top, "Tuşa tıklayın, sonra yeni tuşa basın. Sağ tık: tuşu temizle · Esc: vazgeç.", 15, Sketch.INK2, hud.font_m, true)
 	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_kb_reset = _btn(top, "VARSAYILANLARA DÖN", func(): _reset_keys(), 16, 0, 36)
 	_kb_warn = PanelContainer.new()
@@ -973,11 +1027,11 @@ func _keys_tab(content: VBoxContainer) -> void:
 	var hdr := HBoxContainer.new()
 	hdr.add_theme_constant_override("separation", 8)
 	content.add_child(hdr)
-	var hl := _lbl(hdr, "", 13, Color(1, 1, 1, 0.4), hud.font_b)
+	var hl := _lbl(hdr, "", 13, Sketch.INK3, hud.font_b)
 	hl.text = "   " + t("EYLEM")
 	hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for s in ["BİRİNCİL", "İKİNCİL"]:
-		var l := _lbl(hdr, s, 13, Color(1, 1, 1, 0.4), hud.font_b)
+		var l := _lbl(hdr, s, 13, Sketch.INK3, hud.font_b)
 		l.custom_minimum_size = Vector2(158, 0)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var list := _scroll(content)
@@ -997,7 +1051,7 @@ func _keys_tab(content: VBoxContainer) -> void:
 	_gap(list, 6)
 	_caption(list, "FARE VE EDİTÖR (SABİT)")
 	for s in MOUSE_HELP:
-		var l := _lbl(list, "", 15, Color(0.72, 0.71, 0.67), hud.font_m, true)
+		var l := _lbl(list, "", 15, Sketch.INK2, hud.font_m, true)
 		l.text = "•  " + t(s)
 	_refresh_keys()
 	if not Keybinds.all_conflicts().is_empty():
@@ -1012,7 +1066,7 @@ func act_name(d: Dictionary) -> String:
 func _key_row(list: Node, d: Dictionary, i: int) -> void:
 	var row := PanelContainer.new()
 	var rsb := StyleBoxFlat.new()
-	rsb.bg_color = Color(1, 1, 1, 0.03 if i % 2 == 0 else 0.0)
+	rsb.bg_color = Color(0.13, 0.12, 0.1, 0.05 if i % 2 == 0 else 0.0)
 	rsb.content_margin_left = 10
 	rsb.content_margin_right = 6
 	rsb.content_margin_top = 2
@@ -1023,14 +1077,14 @@ func _key_row(list: Node, d: Dictionary, i: int) -> void:
 	h.add_theme_constant_override("separation", 8)
 	row.add_child(h)
 	var fixed: bool = d["fixed"]
-	var nl := _lbl(h, "", 17, Hud.DIM if fixed else Hud.TXT, hud.font_m)
+	var nl := _lbl(h, "", 17, Sketch.INK2 if fixed else Sketch.INK, hud.font_m)
 	nl.text = act_name(d)
 	nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	nl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	if fixed:
 		var lk := LockIcon.new()
 		lk.custom_minimum_size = Vector2(11, 14)
-		lk.col = Color(1, 1, 1, 0.3)
+		lk.col = Sketch.INK3
 		lk.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		h.add_child(lk)
 	for slot in 2:
@@ -1059,24 +1113,21 @@ func _key_row(list: Node, d: Dictionary, i: int) -> void:
 
 func _key_style(b: Button, mode: String) -> void:
 	# mode: "" normal, "cap" tuş bekleniyor, "bad" çakışma, "fixed"
-	var bg := Color(1, 1, 1, 0.05)
-	var br := Color(1, 1, 1, 0.12)
-	var fc := Hud.TXT
+	var fc := Sketch.INK
+	var n: StyleBox = Sketch.button("normal", 4)
+	var hv: StyleBox = Sketch.button("hover", 4)
 	match mode:
 		"cap":
-			bg = Color(1, 0.74, 0.3, 0.25)
-			br = Hud.AMBER
-			fc = Color(1, 1, 1)
+			n = Sketch.button("pressed", 4)
+			fc = Sketch.PAPER
 		"bad":
-			bg = Color(1.0, 0.42, 0.33, 0.14)
-			br = Hud.RED
-			fc = Color(1.0, 0.62, 0.55)
+			var sb := _sb(Color(Sketch.RED.r, Sketch.RED.g, Sketch.RED.b, 0.12), Sketch.RED, 1, 4.0)
+			n = sb
+			fc = Sketch.RED
 		"fixed":
-			bg = Color(1, 1, 1, 0.015)
-			br = Color(1, 1, 1, 0.05)
-			fc = Color(0.55, 0.55, 0.52)
-	var n := _sb(bg, br, 1, 4.0)
-	var hv := _sb(Color(1, 0.74, 0.3, 0.14) if mode != "fixed" else bg, Color(1, 0.74, 0.3, 0.7) if mode != "fixed" else br, 1, 4.0)
+			n = Sketch.button("disabled", 4)
+			hv = n
+			fc = Sketch.INK3
 	b.add_theme_stylebox_override("normal", n)
 	b.add_theme_stylebox_override("hover", hv if mode != "cap" else n)
 	b.add_theme_stylebox_override("pressed", n)
@@ -1084,7 +1135,7 @@ func _key_style(b: Button, mode: String) -> void:
 	b.add_theme_stylebox_override("disabled", n)
 	for c in ["font_color", "font_pressed_color", "font_hover_pressed_color", "font_disabled_color"]:
 		b.add_theme_color_override(c, fc)
-	b.add_theme_color_override("font_hover_color", Hud.AMBER if mode in ["", "bad"] else fc)
+	b.add_theme_color_override("font_hover_color", Sketch.RED if mode in ["", "bad"] else fc)
 
 func _refresh_keys() -> void:
 	var bad := Keybinds.all_conflicts()
@@ -1177,12 +1228,12 @@ func _warn(text: String, bad: bool, on_ok := Callable()) -> void:
 		return
 	for c in _kb_warn.get_children():
 		c.queue_free()
-	var col := Hud.RED if bad else Hud.AMBER
+	var col := Sketch.RED if bad else Sketch.INK
 	_kb_warn.add_theme_stylebox_override("panel", _sb(Color(col.r, col.g, col.b, 0.1), Color(col.r, col.g, col.b, 0.7), 1, 10.0))
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 10)
 	_kb_warn.add_child(h)
-	var l := _lbl(h, "", 16, Color(1, 0.9, 0.82), hud.font_m, true)
+	var l := _lbl(h, "", 16, Sketch.INK, hud.font_m, true)
 	l.text = text
 	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	if on_ok.is_valid():
@@ -1233,18 +1284,13 @@ static func make_confirm(h: Hud, parent: Control, title: String, text: String, o
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	c.add_child(cc)
 	var pc := PanelContainer.new()
-	var sb := h._sb(Color(0.035, 0.038, 0.036, 0.97), Color(1.0, 0.42, 0.33, 0.6))
-	sb.set_content_margin_all(0)
+	var sb := Sketch.panel(0.98, 0, 41)
 	pc.add_theme_stylebox_override("panel", sb)
 	pc.custom_minimum_size = Vector2(460, 0)
 	cc.add_child(pc)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
 	pc.add_child(v)
-	var bar := ColorRect.new()
-	bar.color = Hud.RED
-	bar.custom_minimum_size = Vector2(0, 3)
-	v.add_child(bar)
 	var m := MarginContainer.new()
 	for s in ["margin_left", "margin_right"]:
 		m.add_theme_constant_override(s, 26)
@@ -1254,9 +1300,9 @@ static func make_confirm(h: Hud, parent: Control, title: String, text: String, o
 	var iv := VBoxContainer.new()
 	iv.add_theme_constant_override("separation", 6)
 	m.add_child(iv)
-	for p in [[title, 32, Hud.TXT, h.font_b], [text, 18, Color(0.8, 0.79, 0.75), h.font_m]]:
+	for p in [[title, 32, Sketch.INK, h.font_b], [text, 18, Sketch.INK2, h.font_m]]:
 		var l := Label.new()
-		l.text = t(p[0])
+		l.text = Sketch.sc(t(p[0]))
 		l.add_theme_font_size_override("font_size", p[1])
 		l.add_theme_color_override("font_color", p[2])
 		l.add_theme_font_override("font", p[3])
@@ -1270,10 +1316,10 @@ static func make_confirm(h: Hud, parent: Control, title: String, text: String, o
 	iv.add_child(bh)
 	for p in [["İPTAL", on_cancel, false], [ok_text, on_ok, true]]:
 		var b := Button.new()
-		b.text = t(p[0])
+		b.text = Sketch.sc(t(p[0]))
 		b.focus_mode = Control.FOCUS_NONE
 		b.custom_minimum_size = Vector2(150, 44)
-		b.add_theme_font_override("font", h.font_b)
+		b.add_theme_font_override("font", h.font_m)
 		b.add_theme_font_size_override("font_size", 20)
 		var cb: Callable = p[1]
 		var is_ok: bool = p[2]
@@ -1284,19 +1330,21 @@ static func make_confirm(h: Hud, parent: Control, title: String, text: String, o
 			if cb.is_valid():
 				cb.call())
 		if p[2]:
-			var n := h._sb(Color(1.0, 0.42, 0.33, 0.85), Hud.RED)
-			var hv := h._sb(Color(1.0, 0.52, 0.42, 1.0), Color(1, 0.8, 0.75))
+			# onay: mürekkep dolgu, üzerinde kırmızı yazı
+			var n := Sketch.button("pressed", 8)
 			b.add_theme_stylebox_override("normal", n)
-			b.add_theme_stylebox_override("hover", hv)
-			b.add_theme_stylebox_override("pressed", hv)
-			for k in ["font_color", "font_hover_color", "font_pressed_color"]:
-				b.add_theme_color_override(k, Color(0.08, 0.04, 0.03))
+			b.add_theme_stylebox_override("hover", n)
+			b.add_theme_stylebox_override("pressed", n)
+			b.add_theme_font_override("font", h.font_b)
+			for k in ["font_color", "font_pressed_color"]:
+				b.add_theme_color_override(k, Sketch.PAPER)
+			b.add_theme_color_override("font_hover_color", Color(0.95, 0.62, 0.5))
 		bh.add_child(b)
 	return c
 
 # ============================================================ küçük bileşenler
 class LockIcon extends Control:
-	var col := Color(1, 0.74, 0.3, 0.9)
+	var col := Sketch.INK2
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -4,6 +4,7 @@ class_name Props extends Node3D
 var items: Array = []   # {node, pos, kind, hp, alive, r}
 var _cache := {}
 var rng := RandomNumberGenerator.new()
+static var grass_k := 1.0          # ot yoğunluğu (Ayarlar > Grafik; Main.apply_gfx)
 var winter := false
 
 func _ready() -> void:
@@ -1078,6 +1079,17 @@ func _grass_field_v(n: int, col: Color, region: Rect2, size: float, avoid_fn: Ca
 		var s := rng.randf_range(0.6, 1.4) * size
 		xs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * 1.4, s, s * 1.4)), p + Vector3(0, G.terrain.ground_h(p), 0)))
 		cs.append(MB.jit(col, rng, 0.18))
+	# grafik ayarı: ot yoğunluğu. Üretim (rastgele sayı tüketimi) aynı kalır — harita yerleşimi ayardan bağımsız —
+	# yalnız çizilen öbekler seyreltilir
+	if grass_k < 0.999:
+		var kx: Array = []
+		var kc: Array = []
+		for i in xs.size():
+			if fmod(i * 0.618034, 1.0) < grass_k:
+				kx.append(xs[i])
+				kc.append(cs[i])
+		xs = kx
+		cs = kc
 	mm.instance_count = xs.size()
 	for i in xs.size():
 		mm.set_instance_transform(i, xs[i])

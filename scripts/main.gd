@@ -48,7 +48,7 @@ func _ready() -> void:
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest", "cratertest", "decktest", "jamtest", "aimtest", "smokepasstest", "dozertest", "towtest", "cratertypes", "backfiretest", "crowdtest", "trenchpose", "ramptest", "hulldowntest", "nadetest", "fobdark", "camtest", "towcrewtest", "rivertest", "hudshots"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest", "cratertest", "decktest", "jamtest", "aimtest", "smokepasstest", "dozertest", "towtest", "cratertypes", "backfiretest", "crowdtest", "trenchpose", "ramptest", "hulldowntest", "nadetest", "fobdark", "camtest", "towcrewtest", "rivertest", "hudshots", "menushots", "gfxbench"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -664,12 +664,74 @@ func apply_video() -> void:
 		var want := DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN if fs else DisplayServer.WINDOW_MODE_MAXIMIZED
 		if DisplayServer.window_get_mode() != want:
 			DisplayServer.window_set_mode(want)
-	if sun:
-		sun.shadow_enabled = cfg.get("shadows", true)
+	apply_gfx()
 	if G.cam:
-		# kamera her karede gölgeyi yakınlaştırmaya göre açıp kapatıyor: ayar oradan da geçerli olsun (eskiden etkisizdi)
-		G.cam.shadows_on = cfg.get("shadows", true)
 		G.cam.edge_scroll = cfg.get("edge_scroll", true)
+
+# ------------------------------------------------------------ grafik kalitesi (roadmap 146)
+# İnceleme dersi: "grafik ayarları başarımı neredeyse değiştirmiyor". Her ayar ölçülebilir maliyeti olan bir şeye
+# bağlı (gfxbench sahnesi ön ayar başına kare süresini ölçer): çizim çözünürlüğü (FSR 1 ile ölçekleme), MSAA,
+# gölge (atlas boyu, yumuşatma süzgeci, kapalı), SSAO, parlama, ot yoğunluğu (yeni üretilen ot karoları), FPS sınırı.
+const GFX_KEYS := ["scale", "msaa", "shadow_q", "ssao", "glow", "grass", "fps_cap"]
+const GFX_PRESETS := [
+	{"scale": 0.67, "msaa": 0, "shadow_q": 1, "ssao": false, "glow": false, "grass": 0.35},    # düşük
+	{"scale": 0.85, "msaa": 1, "shadow_q": 2, "ssao": false, "glow": true, "grass": 0.65},     # orta
+	{"scale": 1.0, "msaa": 2, "shadow_q": 3, "ssao": true, "glow": true, "grass": 1.0},        # yüksek
+]
+
+func gfx(key: String):
+	if cfg.has(key):
+		return cfg[key]
+	var p: Dictionary = GFX_PRESETS[clampi(int(cfg.get("gfx", 2)), 0, 2)]
+	return p.get(key, 0 if key == "fps_cap" else null)
+
+# ön ayarı uygula: tek tek ayarları ön ayar değerine döndürür (fps sınırı korunur)
+func set_gfx_preset(i: int) -> void:
+	cfg["gfx"] = i
+	for k in GFX_KEYS:
+		if k != "fps_cap":
+			cfg.erase(k)
+	cfg["shadows"] = int(gfx("shadow_q")) > 0
+	apply_gfx()
+	save_cfg()
+
+# tek ayar değişince ön ayar "Özel" olur
+func set_gfx(key: String, v) -> void:
+	if int(cfg.get("gfx", 2)) != 3:
+		for k in GFX_KEYS:
+			cfg[k] = gfx(k)
+		cfg["gfx"] = 3
+	cfg[key] = v
+	if key == "shadow_q":
+		cfg["shadows"] = int(v) > 0
+	apply_gfx()
+	save_cfg()
+
+func apply_gfx() -> void:
+	# eski "Gölgeler: kapalı" ayarı gölge kalitesi 0 sayılır
+	if cfg.has("shadows") and not bool(cfg["shadows"]) and not cfg.has("shadow_q"):
+		cfg["shadow_q"] = 0
+	var sq := int(gfx("shadow_q"))
+	if sun:
+		sun.shadow_enabled = sq > 0
+		sun.shadow_blur = [0.0, 0.8, 1.2, 1.4][sq]
+	if G.cam:
+		# kamera her karede gölgeyi yakınlaştırmaya göre açıp kapatıyor: ayar oradan da geçerli olsun
+		G.cam.shadows_on = sq > 0
+	if sq > 0:
+		RenderingServer.directional_shadow_atlas_set_size([2048, 2048, 4096, 8192][sq], true)
+		RenderingServer.directional_soft_shadow_filter_set_quality([RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW, RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_HIGH][sq])
+	var vp := get_viewport()
+	if vp:
+		var sc := clampf(float(gfx("scale")), 0.5, 1.0)
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if sc < 0.99 else Viewport.SCALING_3D_MODE_BILINEAR
+		vp.scaling_3d_scale = sc
+		vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][clampi(int(gfx("msaa")), 0, 2)]
+	if env:
+		env.ssao_enabled = bool(gfx("ssao"))
+		env.glow_enabled = bool(gfx("glow"))
+	Props.grass_k = clampf(float(gfx("grass")), 0.1, 1.0)
+	Engine.max_fps = int(gfx("fps_cap"))
 
 func save_cfg() -> void:
 	cfg["volume"] = Sfx.volume
