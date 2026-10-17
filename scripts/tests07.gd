@@ -115,6 +115,8 @@ func run(scene: String) -> void:
 			await chinook_test()
 		"crewshots":
 			await crew_shots()
+		"obstacletest":
+			await obstacle_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1064,6 +1066,83 @@ func crew_shots() -> void:
 	if shots.size() < 3:
 		fails += 1
 	print("CREWSHOTS RESULT fails=%d" % fails)
+
+# 149 (inceleme dersi): oyuncunun yerleştirdiği siper hendekleri, tel ve hurdalar arasından büyük grup (12 asker +
+# 4 araç) hedefe ulaşabilmeli; kimse 60 sn'de takılıp kalmamalı, asker araç gövdesinin içine girmemeli
+func obstacle_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 23)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5 - 40.0, 0, G.MAP * 0.5 + 50.0), Grid.M_HEAVY)
+	G.props.clear_area(c, 45.0)
+	# engel kuşağı: üç kesik hendek hattı, bir tel, iki hurda (aralarında boşluk var)
+	for k in 3:
+		var z := -8.0 + k * 8.0
+		var sh := 6.0 if k == 1 else -6.0
+		var ln: Building = m.place_line(0, "trench", c + Vector3(-14 + sh, 0, z), c + Vector3(10 + sh, 0, z))
+		ln.complete()
+	var wr: Building = m.place_line(0, "wire", c + Vector3(-20, 0, 14), c + Vector3(4, 0, 14))
+	wr.complete()
+	for p in [c + Vector3(-4, 0, -14), c + Vector3(8, 0, 4)]:
+		var w: Vehicle = m.spawn_vehicle(1, "truck", G.grid.nearest_open(p, Grid.M_HEAVY), 0.7)
+		w.force_mode = "knocked"
+		w.take_damage(1e6, null, "ap")
+	await m._wait(1.5)
+	var start := c + Vector3(0, 0, -28)
+	var goal := c + Vector3(0, 0, 30)
+	var units: Array = []
+	var sq := Squad.new(0, "Tim")
+	G.squads.append(sq)
+	for i in 12:
+		var s: Soldier = m.spawn_soldier(0, ["rifle", "mg", "at", "rifle"][i % 4], G.grid.nearest_free(start + Vector3((i % 6) * 1.5 - 4, 0, (i / 6) * 1.5), Grid.M_INF), sq)
+		s.fire_mode = 2
+		units.append(s)
+	for i in 4:
+		var v: Vehicle = m.spawn_vehicle(0, ["tank", "apc", "truck", "technical"][i], G.grid.nearest_open(start + Vector3(-12 + i * 8, 0, -8), Grid.M_HEAVY), 0.0)
+		v.fire_mode = 2
+		units.append(v)
+	await m._wait(0.5)
+	G.player.clear_sel()
+	for u in units:
+		G.player.select(u)
+	G.player.move_group(units, goal)
+	await m._wait(2.0)
+	for u in units:
+		if u is Vehicle:
+			print("OBSTACLE dbg %s pos=(%.0f,%.0f) order=%s path=%d/%d dest=(%.0f,%.0f) speed=%.1f immobile=%s crew=%d" % [u.vtype, u.position.x, u.position.z, u.order, u.path_i, u.path.size(), u.dest.x, u.dest.z, u.cur_speed, u.immobile(), u.crew_n])
+	var t0 := G.time
+	var inside_max := 0.0
+	while G.time - t0 < 60.0:
+		await m._wait(0.5)
+		var arrived := units.filter(func(u): return is_instance_valid(u) and u.alive and Vector2(u.position.x - goal.x, u.position.z - goal.z).length() < 16.0).size()
+		# araç gövdesi içinde asker
+		for s in units:
+			if s is Soldier and s.alive and s.state != "aboard":
+				for v in units:
+					if v is Vehicle and v.alive:
+						var q: Vector3 = v.obb_closest(s.position)
+						var d := Vector2(q.x - s.position.x, q.z - s.position.z).length()
+						if d < 0.05:
+							inside_max = maxf(inside_max, 1.0)
+		if arrived == units.size():
+			break
+	var stuck: Array = []
+	for u in units:
+		if is_instance_valid(u) and u.alive and Vector2(u.position.x - goal.x, u.position.z - goal.z).length() >= 16.0:
+			stuck.append("%s@(%.0f,%.0f)" % [u.role if u is Soldier else u.vtype, u.position.x, u.position.z])
+	_cam(c, 50.0)
+	await m._wait(0.2)
+	await m._shot("obstacle_end")
+	print("OBSTACLE arrived=%d/%d t=%.0f stuck=%s soldier_inside_vehicle=%s" % [units.size() - stuck.size(), units.size(), G.time - t0, stuck, inside_max > 0.0])
+	if not stuck.is_empty() or inside_max > 0.0:
+		fails += 1
+	print("OBSTACLETEST RESULT fails=%d" % fails)
 
 # 113: iki çit arasında kalan / çitlerin arasından geçen asker kendiliğinden yere yatmamalı
 func fence_test() -> void:
