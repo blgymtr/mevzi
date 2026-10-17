@@ -8,7 +8,16 @@
   ızgarası; test: `hudshots` (görüntüler shots/hudshots)
 - Not: yeni `class_name` eklenince testler bir kez `-NoImport` OLMADAN koşulmalı (sınıf önbelleği)
 
-## Sıradaki
+## Sıradaki — KULLANICININ BELİRLEDİĞİ SIRA (17 Ekim)
+"HUD işini bitirdikten sonra modellemeye geç, sonra açık olan 4 işi bitir": HUD (65/57) → modelleme aşaması →
+açık 4 iş: 100–104 (araç–animasyon uyumu, topçu animasyonları, halat / rampa), 135 (mühendis köprü kurar),
+142 (gerçekçi hurda modelleri), 154 (büyük çatışmada işlemci başarımı: 153 birlikte ~4 FPS). Kullanıcı modellemenin
+zor olduğunu biliyor; özenle.
+HUD durumu: modern kompakt tema (kullanıcı "aşırı eskiz" dedi), piyade / araç ayrı emir ızgarası, Drone Kaldır /
+İndir, Gövde Gizle, Saldır / Binaya Gir / Çık / Araca Bin, üzerine gelme kartı, araç zırh şeması. Kalan: düzenleyici
+ve sandbox paneli temaya; kullanıcı görüşüne göre ince ayar.
+
+## (eski) Sıradaki
 1. HUD kalanı: ana menü / ayarlar / düzenleyici aynı temaya (hâlâ eski Hud.TXT / AMBER sabitleri), dünya üstü
    etiketler (Overlay), tim görünümünde boş alan; kullanıcı görüşüne göre ince ayar
 2. Modelleme aşaması (aşağıdaki listeye ek: 142 hurda modelleri, 143 bina çökmesi, 144 gerçekçi su, 145 zemin dokusu —

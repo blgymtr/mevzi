@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"ordertest":
+			await order_test()
 		"gfxbench":
 			await gfx_bench()
 		"menushots":
@@ -692,11 +694,45 @@ func hud_shots() -> void:
 	G.player.select(tk)
 	await m._wait(0.6)
 	await m._shot("hud_tank")
+	# drone operatörü: kendi emir ızgarası (Drone Kaldır / Drone İndir / İstasyon)
+	var op: Soldier = m.spawn_soldier(0, "drone", G.grid.nearest_free(c + Vector3(-4, 0, 3), Grid.M_INF), sq)
+	await m._wait(0.3)
+	G.player.clear_sel()
+	G.player.select(op)
+	await m._wait(0.6)
+	await m._shot("hud_drone")
+	var fails := 0
+	var ids: Array = []
+	for b in G.hud._cmd_live:
+		ids.append(b[1])
+	print("HUD drone orders=%s" % [ids])
+	if not ("minidrone" in ids and "dronerecall" in ids and "dronestation" in ids):
+		fails += 1
+	# tank: araç ızgarası (Saldır, Sis, Gövde Gizle)
+	G.player.clear_sel()
+	G.player.select(tk)
+	await m._wait(0.4)
+	ids.clear()
+	for b in G.hud._cmd_live:
+		ids.append(b[1])
+	print("HUD tank orders=%s" % [ids])
+	if not ("attack" in ids and "smoke" in ids and "hulldown" in ids) or "grenade" in ids:
+		fails += 1
+	# üzerine gelme kartı: tim seçiliyken düşman askerin üstüne gel
+	var en: Soldier = m.spawn_soldier(1, "mg", G.grid.nearest_free(c + Vector3(16, 0, -10), Grid.M_INF), null)
+	G.player.clear_sel()
+	for s in ss:
+		G.player.select(s)
+	await m._wait(1.0)
+	m.get_viewport().warp_mouse(G.cam.screen(en.position + Vector3(0, 0.7, 0)))
+	await m._wait(0.4)
+	print("HUD hover=%s visible=%s text=%s / %s" % [G.hud.hover_u, G.hud.hover_card.visible, G.hud._hv_title.text, G.hud._hv_info.text])
+	await m._shot("hud_hover")
 	G.hud.toggle_pause()
 	await m._wait(0.3)
 	await m._shot("hud_pause")
 	G.hud.toggle_pause()
-	print("HUDSHOTS RESULT fails=0")
+	print("HUDSHOTS RESULT fails=%d" % fails)
 
 # 146: grafik ön ayarlarının gerçek başarım farkı. Büyük çatışma (iki karşılaşma ~110 birlik) yakın kamerada;
 # ön ayarlar sırayla dönüşümlü (savaşın gidişi bir ön ayarı kayırmasın) ölçülür: kare süresi ve GPU çizim
@@ -749,6 +785,96 @@ func gfx_bench() -> void:
 	m.apply_video()
 	m.save_cfg()
 	print("GFXBENCH RESULT fails=%d" % fails)
+
+# 65/57: HUD'a eklenen emirler oyunda gerçekten çalışıyor mu — Drone Kaldır → Drone İndir (çantaya döner),
+# Binaya Gir → Binadan Çık, Saldır (imleç altındaki düşman), Gövde Gizle (uygun yer ya da yerinde mevzi)
+func order_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, false, 11)
+	G.deploy_t = 0.0
+	await m._wait(1.0)
+	var fails := 0
+	# (1) drone
+	var c := G.grid.nearest_free(G.hq_pos[0] + (G.hq_pos[1] - G.hq_pos[0]).normalized() * 30.0, Grid.M_HEAVY)
+	var sq := Squad.new(0, "Drone")
+	G.squads.append(sq)
+	var op: Soldier = m.spawn_soldier(0, "drone", c, sq)
+	await m._wait(0.5)
+	var n0 := op.fpv_left
+	op.cmd_minidrone(c + Vector3(25, 0, 10))
+	var t0 := G.time
+	while G.time - t0 < 8.0 and (op.my_drone == null or not is_instance_valid(op.my_drone)):
+		await m._wait(0.2)
+	var up := op.my_drone != null and is_instance_valid(op.my_drone)
+	await m._wait(3.0)
+	var rec := op.cmd_recall_drone()
+	t0 = G.time
+	while G.time - t0 < 25.0 and op.my_drone != null and is_instance_valid(op.my_drone):
+		await m._wait(0.2)
+	print("ORDER drone up=%s recall=%s back=%s fpv %d->%d (%.1f s)" % [up, rec, op.my_drone == null, n0, op.fpv_left, G.time - t0])
+	if not (up and rec and op.my_drone == null and op.fpv_left == n0):
+		fails += 1
+	# (2) binaya gir / çık (oyuncu emri üzerinden)
+	var hid := -1
+	var bd := 1e9
+	for i in G.blocks.houses.size():
+		if Soldier.house_enterable(i):
+			var d: float = G.blocks.houses[i]["center"].distance_to(c)
+			if d < bd:
+				bd = d
+				hid = i
+	var hc: Vector3 = G.blocks.houses[hid]["center"] if hid >= 0 else c
+	var sq2 := Squad.new(0, "Tim")
+	G.squads.append(sq2)
+	var ss: Array = []
+	for i in 4:
+		ss.append(m.spawn_soldier(0, "rifle", G.grid.nearest_free(hc + Vector3(12 + i * 1.3, 0, 6), Grid.M_INF), sq2))
+	await m._wait(0.5)
+	G.player.clear_sel()
+	for s in ss:
+		G.player.select(s)
+	print("ORDER dbg house_at(center)=%d sel=%d slot=%d team=%d" % [G.blocks.house_at(hc), G.player.selected.size(), G.blocks.house_free_slot(hid), G.blocks.house_team(hid)])
+	G.player.exec_order("garrison", hc)
+	print("ORDER dbg after: %s" % [ss.map(func(s): return [s.house_id, s.order, s.state])])
+	t0 = G.time
+	while G.time - t0 < 25.0 and not ss.all(func(s): return s.house_id >= 0 and s.state == "idle"):
+		await m._wait(0.3)
+	var inside := ss.filter(func(s): return s.house_id >= 0).size()
+	G.player.exec_order("exitbldg", Vector3.INF)
+	t0 = G.time
+	while G.time - t0 < 25.0 and ss.any(func(s): return s.house_id >= 0 or s.state == "move"):
+		await m._wait(0.3)
+	var out := ss.filter(func(s): return s.house_id < 0 and G.blocks.house_at(s.position) != hid).size()
+	print("ORDER garrison hid=%d inside=%d/4 out=%d/4" % [hid, inside, out])
+	if hid < 0 or inside < 3 or out < 4:
+		fails += 1
+	# (3) saldır: imleç altındaki düşman
+	var en: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(ss[0].position + Vector3(30, 0, 0), Grid.M_INF), null)
+	en.fire_mode = 2
+	_cam(en.position, 40.0)
+	await m._wait(1.0)
+	m.get_viewport().warp_mouse(G.cam.screen(en.position + Vector3(0, 0.7, 0)))
+	await m._wait(0.5)
+	var tu := G.player.unit_at(m.get_viewport().get_mouse_position())
+	print("ORDER dbg mouse=%s en_scr=%s tu=%s en_vis=%s sel=%d" % [m.get_viewport().get_mouse_position(), G.cam.screen(en.position), tu, en.visible, G.player.selected.size()])
+	G.player.exec_order("attack", en.position)
+	var att := ss.filter(func(s): return s.forced_target == en).size()
+	print("ORDER attack forced=%d/4" % att)
+	if att < 4:
+		fails += 1
+	# (4) gövde gizle: tank, tehdit yönü verilir — uygun yer bulursa gider ve mevzi tutar, bulamazsa false
+	var tk: Vehicle = m.spawn_vehicle(0, "tank", G.grid.nearest_free(c + Vector3(-20, 0, -20), Grid.M_HEAVY), 0.0)
+	await m._wait(0.5)
+	var thr := tk.position + Vector3(120, 0, 0)
+	var ok := tk.cmd_hulldown(thr)
+	t0 = G.time
+	while ok and G.time - t0 < 20.0 and not (tk.order == "hold" and tk.path_i >= tk.path.size()):
+		await m._wait(0.3)
+	print("ORDER hulldown ok=%s order=%s cover=%.2f" % [ok, tk.order, tk._cover_score(tk.position, thr)])
+	if ok and tk.order != "hold":
+		fails += 1
+	print("ORDERTEST RESULT fails=%d" % fails)
 
 # 65/57 + 146: ana menü eskiz teması görüntüleri; grafik ön ayarları gerçekten çizimi değiştiriyor mu
 # (ayar dosyası oyuncunun gerçek dosyası: test sonunda eski hâline döner)

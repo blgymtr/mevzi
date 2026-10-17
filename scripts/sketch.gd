@@ -1,16 +1,18 @@
 class_name Sketch extends RefCounted
-# Eskiz (el çizimi) arayüz takımı (roadmap 65/57): saha defteri kâğıdı üstüne mürekkep. Kâğıt dokusu ve
-# mürekkep çerçeveleri yordamsal üretilir (lif, leke, kenar kararması; hafif titrek, köşede taşan çift çizgi) —
-# hazır görsel / parlama / gradyan yok. Renkler: kâğıt, mürekkep, kırmızı ve mavi kopya kalemi.
+# Arayüz takımı (roadmap 65/57). Kullanıcı kararı (17 Ekim): "eskiz ama aşırı değil — modern, kompakt". Temel:
+# düz koyu grafit paneller, 1 px ince çizgi, küçük köşe yarıçapı, tek vurgu rengi; parıltı / degrade / doku yok.
+# Eskiz yalnız vurgu olarak kalır: kalem alt çizgi (seçili sekme, menü bağlantısı), mürekkep çizimi küçük
+# resimler, mini haritadaki saha ızgarası. Ad eşlemesi: PAPER = panel zemini, INK = birincil yazı.
 
-const PAPER := Color(0.87, 0.84, 0.76)
-const PAPER_D := Color(0.8, 0.76, 0.66)
-const INK := Color(0.13, 0.12, 0.1)
-const INK2 := Color(0.36, 0.34, 0.29)
-const INK3 := Color(0.52, 0.49, 0.42)
-const RED := Color(0.64, 0.19, 0.14)
-const BLUE := Color(0.17, 0.31, 0.55)
-const OLIVE := Color(0.27, 0.4, 0.18)
+const PAPER := Color(0.105, 0.11, 0.105)
+const PAPER_D := Color(0.15, 0.155, 0.15)
+const INK := Color(0.93, 0.92, 0.88)
+const INK2 := Color(0.67, 0.67, 0.63)
+const INK3 := Color(0.45, 0.45, 0.43)
+const RED := Color(0.88, 0.4, 0.28)
+const BLUE := Color(0.5, 0.7, 0.95)
+const OLIVE := Color(0.56, 0.8, 0.44)
+const LINE := Color(1, 1, 1, 0.09)
 
 static var _cache := {}
 
@@ -112,46 +114,41 @@ static func _box(t: Texture2D, m: int, cm := 10) -> StyleBoxTexture:
 	s.content_margin_bottom = cm * 0.8
 	return s
 
-# kâğıt pano (alt paneller, harita çerçevesi)
-static func panel(alpha := 0.96, cm := 12, seed := 3) -> StyleBoxTexture:
-	var t := _tex("panel%d_%.2f" % [seed, alpha], 192, 192, func(img: Image):
-		var rng := RandomNumberGenerator.new()
-		rng.seed = seed
-		_paper(img, rng, PAPER, alpha)
-		ink_frame(img, 4.0, INK, rng, 1.2, true))
-	return _box(t, 22, cm)
+static func _flat(bg: Color, border: Color, r := 4, cm := 8.0, bw := 1) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.border_color = border
+	s.set_border_width_all(bw)
+	s.set_corner_radius_all(r)
+	s.content_margin_left = cm
+	s.content_margin_right = cm
+	s.content_margin_top = cm * 0.7
+	s.content_margin_bottom = cm * 0.7
+	s.anti_aliasing = true
+	return s
+
+# pano (alt paneller, harita çerçevesi, menü kartı): koyu grafit, ince çizgi
+static func panel(alpha := 0.92, cm := 10, _seed := 3) -> StyleBoxFlat:
+	return _flat(Color(PAPER.r, PAPER.g, PAPER.b, minf(alpha, 0.92)), LINE, 4, cm)
 
 # ince şerit (üst kaynak satırı, ipucu, uyarı fişi)
-static func slip(alpha := 0.94, cm := 8, seed := 7) -> StyleBoxTexture:
-	var t := _tex("slip%d_%.2f" % [seed, alpha], 128, 64, func(img: Image):
-		var rng := RandomNumberGenerator.new()
-		rng.seed = seed
-		_paper(img, rng, PAPER, alpha)
-		ink_frame(img, 2.5, INK, rng, 0.9, false))
-	return _box(t, 12, cm)
+static func slip(alpha := 0.9, cm := 8, _seed := 7) -> StyleBoxFlat:
+	return _flat(Color(PAPER_D.r, PAPER_D.g, PAPER_D.b, minf(alpha, 0.9)), LINE, 3, cm)
 
-# düğme durumları: normal (kâğıt + ince çerçeve), üzerinde (kırmızı kalem alt çizgi), basılı (mürekkep dolgu),
-# devre dışı (soluk)
-static func button(state: String, cm := 6) -> StyleBoxTexture:
-	var t := _tex("btn_" + state, 96, 48, _make_button.bind(state))
-	return _box(t, 10, cm)
-
-static func _make_button(img: Image, state: String) -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = {"normal": 11, "hover": 12, "pressed": 13, "disabled": 14}.get(state, 11)
-	if state == "pressed":
-		_paper(img, rng, INK.lightened(0.08), 0.97)
-		ink_frame(img, 2.0, INK, rng, 1.0, false)
-	elif state == "disabled":
-		_paper(img, rng, PAPER_D, 0.55)
-		ink_frame(img, 2.0, INK3, rng, 0.8, false)
-	else:
-		_paper(img, rng, PAPER, 0.97)
-		ink_frame(img, 2.0, INK, rng, 0.95, false)
-		if state == "hover":
-			# kırmızı kalemle iki kez çizilmiş alt çizgi
-			ink_line(img, Vector2(8, 39), Vector2(88, 38), RED, 1.2, rng, 0.8)
-			ink_line(img, Vector2(12, 41), Vector2(84, 40.5), Color(RED.r, RED.g, RED.b, 0.6), 0.8, rng, 0.8)
+# düğme durumları: normal (hafif zemin), üzerinde (vurgu renkli alt kenar), basılı / etkin (açık dolgu, koyu
+# yazı), devre dışı (soluk)
+static func button(state: String, cm := 6) -> StyleBoxFlat:
+	match state:
+		"pressed":
+			return _flat(Color(INK.r, INK.g, INK.b, 0.92), Color(INK.r, INK.g, INK.b, 0.92), 3, cm)
+		"disabled":
+			return _flat(Color(1, 1, 1, 0.02), Color(1, 1, 1, 0.04), 3, cm)
+		"hover":
+			var h := _flat(Color(1, 1, 1, 0.1), Color(1, 1, 1, 0.14), 3, cm)
+			h.border_width_bottom = 2
+			h.border_color = RED
+			return h
+	return _flat(Color(1, 1, 1, 0.05), LINE, 3, cm)
 
 # yalnız alt çizgi (menü bağlantıları): "red" üzerinde kırmızı kalem, "ink" seçili sayfa; zemin saydam
 static func underline(kind: String, cm := 4) -> StyleBoxTexture:

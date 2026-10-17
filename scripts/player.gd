@@ -253,6 +253,77 @@ func exec_order(id: String, gp: Vector3) -> void:
 			markers.append([gp, G.time, Color(1.0, 0.45, 0.3) if id == "amove" else Color(0.4, 1.0, 0.5)])
 			Sfx.play2d("ui_attack" if id == "amove" else "ui_move", -9.0)
 			_voice(mobile, ["Saldırıyoruz!", "İlerliyoruz!"] if id == "amove" else (["Koş!", "Hareket!"] if id == "fast" else ["Anlaşıldı!", "Tamam!"]))
+		"attack":
+			var tu := unit_at(get_viewport().get_mouse_position())
+			if (tu == null or tu.team == team or tu.team < 0) and gp != Vector3.INF:
+				tu = _near_unit(gp, 4.0, func(x): return x.team != team and x.team >= 0 and x.visible)
+			if tu != null and tu.team != team and tu.team >= 0 and tu.alive:
+				for u in mobile:
+					u.cmd_attack(tu)
+				markers.append([tu.position, G.time, Color(1.0, 0.3, 0.2)])
+				Sfx.play2d("ui_attack", -8.0)
+				_voice(mobile, ["Hedef alındı!", "Ateş!"])
+			else:
+				G.say("Hedef yok: bir düşman birliğe tıklayın", gp, team)
+				Sfx.play2d("ui_error", -6.0)
+		"garrison":
+			var hid := G.blocks.house_at(gp) if G.blocks and gp != Vector3.INF else -1
+			var n := 0
+			if hid >= 0:
+				for u in sol:
+					if u.can_fight() and u.cmd_garrison(hid):
+						n += 1
+			if n > 0:
+				markers.append([G.blocks.houses[hid]["center"], G.time, Color(0.4, 0.9, 0.5)])
+				_voice(sol, ["Binaya giriyoruz!"])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("Girilecek bina yok ya da dolu" if hid < 0 else "Bina dolu", gp, team)
+				Sfx.play2d("ui_error", -6.0)
+		"exitbldg":
+			for u in sol:
+				if u.house_id >= 0:
+					var hs: Dictionary = G.blocks.houses[u.house_id]
+					var c: Vector3 = hs["center"]
+					var door: Vector3 = hs.get("door", Vector3.INF)
+					var sz: Vector2 = hs["size"]
+					var out := c + Vector3(0, 0, sz.y * 0.5 + 4.0)
+					if door != Vector3.INF and door.distance_to(c) > 0.5:
+						out = door + (door - c).normalized() * 4.0
+					u.cmd_move(G.grid.nearest_free(out, Grid.M_INF, 6))
+			_voice(sol, ["Dışarı!"])
+			Sfx.play2d("ui_move", -8.0)
+		"board":
+			var tv := unit_at(get_viewport().get_mouse_position())
+			if (tv == null or not (tv is Vehicle) or tv.team != team) and gp != Vector3.INF:
+				tv = _near_unit(gp, 5.0, func(x): return x is Vehicle and x.team == team and x.capacity() > 0)
+			if tv != null and tv is Vehicle and tv.team == team and tv.capacity() > 0:
+				for u in sol:
+					if u.can_fight():
+						u.cmd_board(tv)
+				markers.append([tv.position, G.time, Color(0.4, 0.8, 1.0)])
+				_voice(sol, ["Biniyoruz!", "Araca!"])
+			else:
+				G.say("Binilecek dost araç yok: bir araca tıklayın", gp, team)
+				Sfx.play2d("ui_error", -6.0)
+		"dronerecall":
+			var nr := 0
+			for u in sol:
+				if u.role == "drone" and u.cmd_recall_drone():
+					nr += 1
+			if nr == 0:
+				Sfx.play2d("ui_error", -6.0)
+		"hulldown":
+			var nh := 0
+			for v in veh:
+				if v.cmd_hulldown(gp):
+					nh += 1
+			if nh > 0:
+				markers.append([gp, G.time, Color(1.0, 0.45, 0.3)])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("Yakında uygun örtü yok", gp, team)
+				Sfx.play2d("ui_error", -6.0)
 		"reverse":
 			move_group(veh.filter(func(v): return not v.is_air()), gp, false, "reverse")
 			markers.append([gp, G.time, Color(0.4, 0.8, 1.0)])
@@ -507,6 +578,19 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 	markers.append([gp, G.time, Color(0.4, 1.0, 0.5)])
 	Sfx.play2d("ui_move", -9.0)
 	_voice(mobile, ["Anlaşıldı!", "İlerliyoruz!", "Tamam!", "Hareket!"])
+
+# hedefli emirde tıklama birimi tam tutturamadıysa: tıklanan zemin noktasına r m içindeki en yakın uygun birim
+func _near_unit(p: Vector3, r: float, ok: Callable) -> Unit:
+	var best: Unit = null
+	var bd := r
+	for u in G.units:
+		if not is_instance_valid(u) or not u.alive or not ok.call(u):
+			continue
+		var d := Vector2(u.position.x - p.x, u.position.z - p.z).length()
+		if d < bd:
+			bd = d
+			best = u
+	return best
 
 func _voice(units: Array, lines: Array) -> void:
 	for u in units:

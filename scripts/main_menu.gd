@@ -302,7 +302,7 @@ func _sb(bg: Color, border: Color, bw := 1, m := -1.0) -> StyleBoxFlat:
 	return s
 
 # kâğıt şerit (kutu, satır, brifing)
-func _slip(m := 12.0, seed := 7) -> StyleBoxTexture:
+func _slip(m := 12.0, seed := 7) -> StyleBox:
 	var s := Sketch.slip(0.9, int(m), seed)
 	s.content_margin_top = m * 0.8
 	s.content_margin_bottom = m * 0.8
@@ -326,7 +326,7 @@ func _gap(parent: Node, h: float) -> void:
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(c)
 
-func _hline(parent: Node, col := Color(0.13, 0.12, 0.1, 0.22)) -> void:
+func _hline(parent: Node, col := Color(1, 1, 1, 0.22)) -> void:
 	var r := ColorRect.new()
 	r.color = col
 	r.custom_minimum_size = Vector2(0, 1)
@@ -426,7 +426,7 @@ func _nav_btn(parent: Node, id: String, _idx: int, text: String, hint: String) -
 func _nav_sep(parent: Node) -> void:
 	_gap(parent, 4)
 	var r := ColorRect.new()
-	r.color = Color(0.13, 0.12, 0.1, 0.18)
+	r.color = Color(1, 1, 1, 0.18)
 	r.custom_minimum_size = Vector2(NAV_W, 1)
 	r.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	parent.add_child(r)
@@ -752,7 +752,7 @@ func _slider(parent: Node, caption: String, lo: float, hi: float, stp: float, va
 	sl.step = stp
 	sl.focus_mode = Control.FOCUS_NONE
 	var track := StyleBoxFlat.new()
-	track.bg_color = Color(0.13, 0.12, 0.1, 0.2)
+	track.bg_color = Color(1, 1, 1, 0.2)
 	track.content_margin_top = 2
 	track.content_margin_bottom = 2
 	var fill := StyleBoxFlat.new()
@@ -1066,7 +1066,7 @@ func act_name(d: Dictionary) -> String:
 func _key_row(list: Node, d: Dictionary, i: int) -> void:
 	var row := PanelContainer.new()
 	var rsb := StyleBoxFlat.new()
-	rsb.bg_color = Color(0.13, 0.12, 0.1, 0.05 if i % 2 == 0 else 0.0)
+	rsb.bg_color = Color(1, 1, 1, 0.05 if i % 2 == 0 else 0.0)
 	rsb.content_margin_left = 10
 	rsb.content_margin_right = 6
 	rsb.content_margin_top = 2

@@ -1820,6 +1820,15 @@ func cmd_minidrone(p: Vector3, tgt: Unit = null) -> void:
 	_face_to(job_pt)
 	say("DRONE HAZIRLIYORUM")
 
+# havadaki FPV drone'u geri çağır: operatöre döner, alçalır, elle yakalanır, çantaya girer (Vehicle._fpv_return)
+func cmd_recall_drone() -> bool:
+	if my_drone == null or not is_instance_valid(my_drone) or not my_drone.alive or my_drone.recall:
+		return false
+	my_drone.recall = true
+	my_drone.forced_target = null
+	say("DRONE GERİ DÖN", 2.5)
+	return true
+
 func cmd_station(p: Vector3) -> void:
 	if not alive or not can_fight() or role != "drone":
 		return

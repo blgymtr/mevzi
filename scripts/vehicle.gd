@@ -834,6 +834,7 @@ var high_alt := false           # yüksek irtifa keşif İHA'sı: geniş görü�
 var link_lost := false
 var link_t := 0.0
 var loiter_pt := Vector3.INF    # mini drone: hedef yoksa bu noktada asılı kalır
+var recall := false             # mini drone: operatöre dön, yakalanıp çantaya gir ("Drone İndir")
 var battery := 70.0             # mini drone uçuş süresi (sn)
 const HIGH_ALT := 24.0
 # hava savunma füzesi / fişek / kaçış
@@ -1731,6 +1732,7 @@ func cmd_move(p: Vector3, force := false) -> void:
 	if not alive:
 		return
 	order = "move"
+	hd_threat = Vector3.INF
 	force_move = force
 	forced_target = null
 	_yield_to = null
@@ -1831,6 +1833,7 @@ func cmd_attack(u: Unit) -> void:
 
 func cmd_stop() -> void:
 	order = ""
+	hd_threat = Vector3.INF
 	forced_target = null
 	reverse = false
 	retreating = false
@@ -1875,6 +1878,13 @@ func _tactics() -> void:
 			threat = _last_from
 	if threat == Vector3.INF and target != null and is_instance_valid(target) and target.alive and dist2(target) > 25.0 and not (target is Building):
 		threat = target.position
+	# elle gövde gizleme: varınca mevzi tut; tehdit yoksa gösterilen yöne bak
+	if hd_threat != Vector3.INF:
+		if mobile and path_i >= path.size() and order == "":
+			order = "hold"
+			idle = true
+		if threat == Vector3.INF:
+			threat = hd_threat
 	if threat == Vector3.INF:
 		_face_h = INF
 		return
@@ -1912,6 +1922,7 @@ func _tactics() -> void:
 			say("GERİ ÇEKİLİYORUZ!", 2.0)
 
 var _hd_t := 0.0
+var hd_threat := Vector3.INF      # elle "Gövde Gizle": gösterilen tehdit noktası (varınca mevzi + cephe)
 
 # p'de tehdide karşı gövde örtüsü: önünde (gövde burnundan 1–5 m ötede) 0,7–2,6 m yüksek engel ve taret
 # yüksekliğinden tehdide görüş — 0 (açık) … 1 (tam gövde gizli, taret ateş edebilir)
@@ -4697,6 +4708,9 @@ func _fpv(dt: float) -> void:
 	if G.weather != null and G.weather.no_air():
 		hull.position.y = move_toward(hull.position.y, 0.2, dt * 3.0)
 		return
+	if recall and vtype == "fpv":
+		_fpv_return(dt)
+		return
 	var t: Unit = forced_target
 	if t == null or not is_instance_valid(t) or not t.alive:
 		# yeni hedef: yakındaki düşman
@@ -4751,6 +4765,52 @@ func _fpv(dt: float) -> void:
 				break
 	if (dist < 1.2 and absf(to.y) < 1.8) or (vtype == "loiter" and dist < 2.4 and to.y > -2.6):
 		destroy(t)
+
+# "Drone İndir": operatörün önüne uçar, alçalıp yavaşlar; operatörün elinin hizasında yakalanır, çantaya girer
+# (fpv_left +1). Operatör ölmüş / yoksa olduğu yerde asılı kalır (hedef aramaz).
+func _fpv_return(dt: float) -> void:
+	var op = operator
+	if op == null or not is_instance_valid(op) or not op.alive:
+		recall = false
+		loiter_pt = position
+		return
+	var hand: Vector3 = op.position + (-op.basis.z) * 0.5
+	var to := Vector3(hand.x - position.x, 0.0, hand.z - position.z)
+	var d := to.length()
+	var want := to.normalized() * minf(speed_max * 0.7, d * 1.2) if d > 0.3 else Vector3.ZERO
+	hvel = hvel.move_toward(want, D["accel"] * dt)
+	position += hvel * dt
+	if hvel.length() > 0.5:
+		heading = Soldier._yaw_of(hvel)
+	hull.position.y = move_toward(hull.position.y, clampf(d * 0.35, 1.1, 7.0), dt * 3.5)
+	hull.rotation = Vector3(-hvel.length() * 0.02, heading, sin(G.time * 7.0) * 0.03)
+	cur_speed = hvel.length()
+	if d < 0.9 and hull.position.y < 1.5:
+		op.fpv_left += 1
+		op.drone_cd = minf(op.drone_cd, 4.0)
+		if op.my_drone == self:
+			op.my_drone = null
+		op.say("DRONE ALINDI", 2.0)
+		alive = false
+		G.remove_unit(self)
+		queue_free()
+
+# "Gövde Gizle" (elle, 107'nin emir hâli): tehdit noktasına karşı yakında örtülü yer bulur, oraya gider, varınca
+# mevzi tutar ve cephesini tehdide çevirir. Uygun yer yoksa false.
+func cmd_hulldown(t: Vector3) -> bool:
+	if not alive or is_air() or crew_n <= 0 or t == Vector3.INF:
+		return false
+	var spot := _hulldown_spot(t)
+	if spot == Vector3.INF:
+		if _cover_score(position, t) >= 0.4:
+			cmd_hold()
+			hd_threat = t
+			return true
+		return false
+	cmd_move(spot)
+	hd_threat = t
+	say("GÖVDE GİZLİYORUZ", 2.0)
+	return true
 
 func _hitscan_from(mp: Vector3, t: Unit, dmg: float, acc: float, sup: float) -> void:
 	shots += 1
