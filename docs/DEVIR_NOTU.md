@@ -1,6 +1,17 @@
 # Devir notu — kaldığımız yer (17 Ekim 2026, öğleden önce)
 
 ## Son yapılanlar
+- 17 Ekim gece, MODELLEME turu (hepsi push'lu, C:\mevzi + exe güncel ca3f04d):
+  35/67 duvar bloğu ölçeği yerel eksende (`Blocks._xform`: `Basis * Basis.from_scale` — `Basis.scaled` dünya
+  ekseninde ölçekleyip dönük duvarları kafes gibi gösteriyordu; tüm binaları etkiliyordu), çatı kiremit ölçeği,
+  122 C-130 / Il-76 (`tools/blender/veh/fam_plane.py`, `planes.py` → plane_usa/rus.glb), 36 MG yuvası ağır MG,
+  86 iki elle taşınan eşya ellerin arasında (`SoldierBody._place_shell`), 33 dalgalanan bayrak
+  (`shaders/flag.gdshader`, `Building._flag_uv`), 71 nehir akışı 1,6 m/sn, 79 paletli ZPT/PSA arka rampası
+  (`vlib.DOOR` → 'door' düğümü + meta door_open; `Vehicle.door_wanted/_door_tick`; doortest).
+  Araç modeli yeniden üretimi: `GEN_IDS=<id,...> blender -b -P tools/blender/veh/gen.py -- data/catalog/usa.json assets/models`
+  + taban tipler `... gen.py -- --base data/catalog/base_models.json assets/models`
+  Sıradaki modelleme: 79 kalan (tekerlekli ZPT, kamyon kapağı), 145 orman alt bitkisi, 144 yansıma / sıçrama,
+  35 ev çeşitliliği, 60 ayak IK, 67 malzemeye göre yıkım, 121 ambientCG dokuları
 - 17 Ekim akşam: 150 (engagetest, inffighttest — tespit takibi 1,6×), 156 altı yeni mod (modes2test, ≥1 km harita),
   Büyük Muharebe 4 km, 36 kum torbası (`shaders/sandbag.gdshader`, MG yuvası torba çemberi), 121 CC0 eşya hattı
   (`tools/fetch_models.cjs` → `tools/assets_src/` git dışı → `tools/blender/props.py` → `assets/props/*.glb`;
