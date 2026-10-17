@@ -306,6 +306,20 @@ func exec_order(id: String, gp: Vector3) -> void:
 			else:
 				G.say("Binilecek dost araç yok: bir araca tıklayın", gp, team)
 				Sfx.play2d("ui_error", -6.0)
+		"rebuild":
+			var bit: Dictionary = G.props.broken_bridge_at(gp, 30.0) if G.props and gp != Vector3.INF else {}
+			var ok := false
+			if not bit.is_empty():
+				for v in veh:
+					if v.can_clear() and v.cmd_bridge(bit):
+						ok = true
+						break
+			if ok:
+				markers.append([bit["gap"]["gc"], G.time, Color(1.0, 0.8, 0.3)])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("Yakında yıkık köprü yok", gp, team)
+				Sfx.play2d("ui_error", -6.0)
 		"dronerecall":
 			var nr := 0
 			for u in sol:
@@ -502,6 +516,12 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 	# enkaza sağ tık: seçili dozer / kurtarma aracı enkazı yoldan kaldırır (bıçakla iter ya da halatla çeker)
 	var clearers := mobile.filter(func(u): return u is Vehicle and u.can_clear())
 	if not clearers.is_empty():
+		# (135) yıkık köprüye sağ tık: panel köprü kurar
+		var bit: Dictionary = G.props.broken_bridge_at(gp, 14.0) if G.props else {}
+		if not bit.is_empty() and clearers[0].cmd_bridge(bit):
+			markers.append([bit["gap"]["gc"], G.time, Color(1.0, 0.8, 0.3)])
+			Sfx.play2d("ui_move", -8.0)
+			return
 		var wr: Vehicle = Vehicle.wreck_at(gp)
 		if wr != null:
 			clearers[0].cmd_clear(wr)

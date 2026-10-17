@@ -51,16 +51,17 @@ const ORDERS := {
 	"garrison": {"t": "Binaya Gir", "k": "-", "tgt": true, "d": "Tıklanan binaya girer, pencerelere dağılır. Bina dolu ya da kapısı kapalıysa girilmez."},
 	"exitbldg": {"t": "Binadan Çık", "k": "-", "tgt": false, "d": "Binadaki askerler kapıdan çıkıp binanın önünde toplanır."},
 	"board": {"t": "Araca Bin", "k": "-", "tgt": true, "d": "Tıklanan dost araca biner (boş yer kadar). Araç inmiş hâldeyse rampadan sırayla."},
+	"rebuild": {"t": "Köprü Kur", "k": "-", "tgt": true, "d": "Mühendislik aracı (dozer / kurtarma) yıkık köprünün yanına gider, açıklığa panel köprü uzatır; bitince araçlar yeniden geçer. Yıkık köprüye sağ tık da aynı."},
 	"hulldown": {"t": "Gövde Gizle", "k": "-", "tgt": true, "d": "Tehdit yönünü göster: araç yakında önünde alçak engel (set, duvar, hurda) olan yere geçer, gövdesi saklı taretiyle ateş eder ve orada kalır."},
 	"dronestation": {"t": "Drone İstasyonu Kur", "k": "O", "tgt": true, "d": "Operatör seçilen yere yer kontrol istasyonu kurar (16 sn). Bitince mancınıktan keşif İHA'sı fırlatılır: yüksek irtifa, geniş görüş, vurulması zor."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
 	"merge": {"t": "Timleri Birleştir", "k": "-", "tgt": false, "d": "Seçili piyade timleri tek manga olur (en çok 13 kişi); komutu en kalabalık timin lideri alır."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "attack", "reverse", "stop", "hold", "retreat", "garrison", "exitbldg", "board", "hulldown", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronerecall", "dronestation", "refund", "merge", "dismount", "mount", "abandon", "demolish"]
+const ORDER_SEQ := ["move", "fast", "amove", "attack", "reverse", "stop", "hold", "retreat", "garrison", "exitbldg", "board", "hulldown", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronerecall", "dronestation", "rebuild", "refund", "merge", "dismount", "mount", "abandon", "demolish"]
 # seçime göre ayrı emir ızgaraları (5 sütun): piyade — hareket, çatışma, bina / araç, rol (drone); araç — hareket,
 # ateş (hedef, bölge, sis, gövde gizleme), yük / mürettebat. Karışık seçimde ORDER_SEQ.
 const INF_SEQ := ["move", "fast", "amove", "attack", "stop", "hold", "retreat", "stance", "fire", "suppress", "grenade", "smoke", "garrison", "exitbldg", "board", "minidrone", "dronerecall", "dronestation", "merge", "refund"]
-const VEH_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "attack", "suppress", "smoke", "hulldown", "fire", "unload", "airdrop", "fastrope", "ropepick", "dismount", "mount", "abandon", "refund"]
+const VEH_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "attack", "suppress", "smoke", "hulldown", "fire", "unload", "airdrop", "fastrope", "ropepick", "dismount", "mount", "abandon", "rebuild", "refund"]
 # emir kısayollarının VARSAYILANLARI; oyuncu atamaları ve eşleşme Keybinds üzerinden (Ayarlar > Klavye Ayarları)
 const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_L: "minidrone", KEY_O: "dronestation", KEY_I: "fastrope", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
@@ -515,6 +516,9 @@ func order_state(id: String, sel: Array) -> int:
 					ok = ok or (u.my_drone != null and is_instance_valid(u.my_drone) and u.my_drone.alive and not u.my_drone.recall)
 			"hulldown":
 				if veh and not u.is_air() and u.vtype in ["tank", "ifv", "apc", "aa"]:
+					return 1
+			"rebuild":
+				if veh and u.can_clear():
 					return 1
 			"unload":
 				if veh and u.capacity() > 0:
@@ -1813,6 +1817,16 @@ class CmdIcon extends Control:
 						draw_line(c + Vector2(0, -5), c + Vector2(0, -5) + Vector2(sx, sy) * 6.0, col, 1.5)
 						draw_arc(c + Vector2(0, -5) + Vector2(sx, sy) * 6.0, 3.0, 0, TAU, 10, col, 1.0)
 				_arrow(c + Vector2(0, 1), c + Vector2(0, 12), col, 1.6)
+			"rebuild":
+				# iki kıyı + aradaki kafes köprü
+				draw_line(c + Vector2(-14, 8), c + Vector2(-8, 8), col, w)
+				draw_line(c + Vector2(8, 8), c + Vector2(14, 8), col, w)
+				draw_line(c + Vector2(-9, 4), c + Vector2(9, 4), col, w)
+				draw_line(c + Vector2(-9, -4), c + Vector2(9, -4), col, 1.5)
+				for xx in [-9.0, -3.0, 3.0, 9.0]:
+					draw_line(c + Vector2(xx, 4), c + Vector2(xx, -4), col, 1.3)
+				draw_line(c + Vector2(-9, 4), c + Vector2(-3, -4), col, 1.2)
+				draw_line(c + Vector2(3, 4), c + Vector2(9, -4), col, 1.2)
 			"hulldown":
 				# set (yay) arkasında taret ve namlu
 				draw_arc(c + Vector2(-2, 14), 14.0, -PI * 0.92, -PI * 0.08, 14, col, w)

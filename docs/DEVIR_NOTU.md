@@ -17,6 +17,11 @@ HUD durumu: modern kompakt tema (kullanıcı "aşırı eskiz" dedi), piyade / ar
 İndir, Gövde Gizle, Saldır / Binaya Gir / Çık / Araca Bin, üzerine gelme kartı, araç zırh şeması. Kalan: düzenleyici
 ve sandbox paneli temaya; kullanıcı görüşüne göre ince ayar.
 
+## Bilinen kararsız testler (17 Ekim)
+- jamtest: köprüde burun buruna tankların gövde iç içe geçme ölçümü koşudan koşuya −0,5…1,8 m (eşik 0,6) ve pikapın
+  yön değiştirme sayısı 3–7 (eşik 4); 33e1dad'de de aynı. Köprü kurma (135) bu yola dokunmuyor. 154 başarım işiyle
+  birlikte ele alınacak.
+
 ## (eski) Sıradaki
 1. HUD kalanı: ana menü / ayarlar / düzenleyici aynı temaya (hâlâ eski Hud.TXT / AMBER sabitleri), dünya üstü
    etiketler (Overlay), tim görünümünde boş alan; kullanıcı görüşüne göre ince ayar

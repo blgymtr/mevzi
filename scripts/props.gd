@@ -1375,6 +1375,8 @@ func _collapse_bridge(it: Dictionary, center: Vector3) -> void:
 		x_hi = maxf(x_hi, -Ld * 0.5 + (k + 1) * s)
 	var gap := x_hi - x_lo
 	var gc := c + dir * ((x_lo + x_hi) * 0.5)
+	# (135) boşluk kaydı: mühendislik aracı buraya panel köprü kurar
+	it["gap"] = {"gc": gc, "len": gap, "x_lo": x_lo, "x_hi": x_hi, "built": 0.0}
 	G.fx.dust_burst(gc, gap * 0.5)
 	Sfx.play3d("collapse", gc, 6.0)
 	G.grid.clear_bridge(gc, Vector2(gap, W + 0.5), it["rot"])
@@ -1392,6 +1394,104 @@ func _collapse_bridge(it: Dictionary, center: Vector3) -> void:
 			elif u is Soldier:
 				u.die(null)
 	G.say(I18n.s("KÖPRÜ YIKILDI!"), c, G.player_team)
+
+# ------------------------------------------------------------ (135) yıkık köprüye panel köprü
+# Mühendislik aracı (dozer / kurtarma aracı) yıkık açıklığın yanına gelir, Bailey tipi panel köprüyü kıyıdan
+# karşıya parça parça uzatır (her ~3 m bir panel: döşeme + iki yan kafes); bitince geçiş yeniden açılır.
+
+# p'ye en yakın, onarılmamış yıkık köprü (boşluk merkezine r m içinde)
+func broken_bridge_at(p: Vector3, r := 18.0) -> Dictionary:
+	var best: Dictionary = {}
+	var bd := r
+	for it in items:
+		if it.get("kind", "") != "bridge" or it["alive"] or not it.has("gap") or bool(it.get("repaired", false)):
+			continue
+		var gc: Vector3 = it["gap"]["gc"]
+		var d := Vector2(gc.x - p.x, gc.z - p.z).length()
+		if d < bd:
+			bd = d
+			best = it
+	return best
+
+# boşluğun iki ucu (dünya, kıyı tarafı): aracın çalışacağı yer
+func gap_ends(it: Dictionary) -> Array:
+	var c: Vector3 = it["pos"]
+	var dir: Vector3 = it["dir"]
+	var g: Dictionary = it["gap"]
+	return [c + dir * float(g["x_lo"]), c + dir * float(g["x_hi"])]
+
+const PANEL_L := 3.0
+
+# kurulum ilerlemesi 0..1: panel sayısı kadar parça görünür (from_lo: kurulum hangi uçtan)
+func bridge_progress(it: Dictionary, k: float, from_lo: bool) -> void:
+	var g: Dictionary = it["gap"]
+	if not g.has("node"):
+		_panel_bridge_node(it, from_lo)
+	g["built"] = clampf(k, 0.0, 1.0)
+	var panels: Array = g["panels"]
+	var nshow := int(ceil(g["built"] * panels.size() - 0.001))
+	for i in panels.size():
+		(panels[i] as Node3D).visible = i < nshow
+	if g["built"] >= 1.0 and not bool(it.get("repaired", false)):
+		_panel_bridge_done(it)
+
+func _panel_bridge_node(it: Dictionary, from_lo: bool) -> void:
+	var g: Dictionary = it["gap"]
+	var root: Node3D = it["node"]
+	var W: float = it["W"]
+	var x0: float = float(g["x_lo"]) - 1.0
+	var x1: float = float(g["x_hi"]) + 1.0
+	var L := x1 - x0
+	var n := maxi(2, int(ceil(L / PANEL_L)))
+	var pl := L / n
+	var bw := W - 0.9                    # özgün döşeme genişliği (iki şeritli panel köprü)
+	var mesh: ArrayMesh = _cached("panelbr_%d_%d" % [int(pl * 10.0), int(bw * 10.0)], func(): return _panel_mesh(pl, bw))
+	var holder := Node3D.new()
+	root.add_child(holder)
+	var panels: Array = []
+	for i in n:
+		var k := i if from_lo else n - 1 - i
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.position = Vector3(x0 + (k + 0.5) * pl, 0.0, 0.0)
+		mi.visible = false
+		holder.add_child(mi)
+		panels.append(mi)
+	g["node"] = holder
+	g["panels"] = panels
+
+# tek panel: çelik döşeme (kaymaz desenli), iki yanda Bailey kafes (alt / üst başlık, dikmeler, çaprazlar)
+func _panel_mesh(pl: float, bw: float) -> ArrayMesh:
+	var mb := MB.new()
+	var steel := Color(0.24, 0.27, 0.2)
+	var deck := Color(0.3, 0.3, 0.28)
+	mb.box(Vector3(0, -0.12, 0), Vector3(pl - 0.04, 0.2, bw), deck)
+	for k in 4:
+		mb.box(Vector3(0, 0.0, -bw * 0.5 + (k + 0.5) * bw / 4.0), Vector3(pl - 0.08, 0.03, bw / 4.0 - 0.1), deck.lightened(0.06))
+	mb.box(Vector3(0, -0.35, 0), Vector3(pl - 0.1, 0.18, 0.25), steel)       # alt kiriş
+	for sg in [-1.0, 1.0]:
+		var z: float = sg * (bw * 0.5 + 0.12)
+		var h := 1.45
+		mb.box(Vector3(0, 0.05, z), Vector3(pl, 0.14, 0.14), steel)           # alt başlık
+		mb.box(Vector3(0, h, z), Vector3(pl, 0.14, 0.14), steel)              # üst başlık
+		for e in [-0.5, 0.5]:
+			mb.box(Vector3(e * (pl - 0.1), h * 0.5 + 0.05, z), Vector3(0.12, h, 0.12), steel)
+		mb.cyl_between(Vector3(-pl * 0.45, 0.1, z), Vector3(pl * 0.45, h - 0.05, z), 0.05, 0.05, 5, steel)
+		mb.cyl_between(Vector3(pl * 0.45, 0.1, z), Vector3(-pl * 0.45, h - 0.05, z), 0.05, 0.05, 5, steel)
+	return mb.commit(Mats.vcs())
+
+func _panel_bridge_done(it: Dictionary) -> void:
+	it["repaired"] = true
+	var c: Vector3 = it["pos"]
+	var dir: Vector3 = it["dir"]
+	var W: float = it["W"]
+	var L: float = it["L"]
+	G.grid.set_bridge(c, Vector2(L + 2.0, W - 0.8), it["rot"])
+	G.grid.add_bridge(c, dir, L + 2.0, W - 0.8)
+	# yol bulma önbelleği (bölge / yol önbelleği) eski "boşluk" hâlini tutuyordu
+	G.grid.flush_nav()
+	G.fx.dust_burst(it["gap"]["gc"], 3.0)
+	G.say(I18n.s("KÖPRÜ YENİDEN KURULDU"), c, G.player_team)
 
 func _drop_span(it: Dictionary, k: int) -> void:
 	var root: Node3D = it["node"]

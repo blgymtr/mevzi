@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"bridgerebuild":
+			await bridge_rebuild_test()
 		"chinooktest":
 			await chinook_test()
 		"crewshots":
@@ -795,6 +797,91 @@ func gfx_bench() -> void:
 	m.apply_video()
 	m.save_cfg()
 	print("GFXBENCH RESULT fails=%d" % fails)
+
+# 135: yıkık köprüye mühendislik aracı panel köprü kurar; bitince araç karşıya geçebilir
+func bridge_rebuild_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var br: Dictionary = {}
+	for it in G.props.items:
+		if it.get("kind", "") == "bridge" and it["alive"]:
+			br = it
+			break
+	if br.is_empty():
+		print("BRIDGEREBUILD no bridge")
+		print("BRIDGEREBUILDTEST RESULT fails=1")
+		return
+	var c: Vector3 = br["pos"]
+	var dir: Vector3 = br["dir"]
+	# ortasından yık
+	for k in 4:
+		G.props.blast(c, 4.0, 900.0)
+		if not br["alive"]:
+			break
+	await m._wait(2.0)
+	print("BRIDGEREBUILD collapsed=%s gap=%s" % [not br["alive"], br.get("gap", {}).get("len", -1.0)])
+	if br["alive"] or not br.has("gap"):
+		fails += 1
+	var gc: Vector3 = br["gap"]["gc"]
+	var side_a: Vector3 = G.grid.nearest_free(c - dir * (float(br["L"]) * 0.5 + 12.0), Grid.M_HEAVY)
+	var side_b: Vector3 = G.grid.nearest_free(c + dir * (float(br["L"]) * 0.5 + 12.0), Grid.M_HEAVY)
+	var blocked := G.grid.find_path(side_a, side_b, Grid.M_HEAVY)
+	var dz: Vehicle = m.spawn_vehicle(0, "usa_eng_m88", side_a, 0.0)
+	await m._wait(0.5)
+	# oyuncu yolu: araç seçili, yıkık köprüye sağ tık
+	G.player.clear_sel()
+	G.player.select(dz)
+	_cam(gc, 45.0)
+	await m._wait(0.5)
+	G.player._command(G.cam.screen(gc), false, false)
+	print("BRIDGEREBUILD job=%s order=%s" % [not dz.bridge_job.is_empty(), dz.order])
+	if dz.bridge_job.is_empty():
+		fails += 1
+	var t0 := G.time
+	var shot := false
+	while G.time - t0 < 120.0 and not bool(br.get("repaired", false)):
+		await m._wait(0.5)
+		if not shot and float(br["gap"].get("built", 0.0)) > 0.5:
+			shot = true
+			_cam(gc, 30.0)
+			await m._wait(0.2)
+			await m._shot("bridge_building")
+	print("BRIDGEREBUILD repaired=%s in %.0f s" % [br.get("repaired", false), G.time - t0])
+	if not bool(br.get("repaired", false)):
+		fails += 1
+	await m._wait(1.0)
+	_cam(gc, 30.0)
+	await m._wait(0.4)
+	await m._shot("bridge_done")
+	# karşıya geçiş: bir araç öbür kıyıya
+	var tr: Vehicle = m.spawn_vehicle(0, "truck", G.grid.nearest_free(side_a + Vector3(4, 0, 0), Grid.M_HEAVY), 0.0)
+	tr.cmd_move(side_b)
+	t0 = G.time
+	var lt := -1
+	while G.time - t0 < 60.0 and tr.position.distance_to(side_b) > 6.0:
+		await m._wait(0.5)
+		if int(G.time - t0) / 3 != lt:
+			lt = int(G.time - t0) / 3
+			print("BRIDGEREBUILD trk t=%d pos=(%.1f,%.1f) spd=%.1f order=%s path=%d/%d dest=(%.0f,%.0f) yield=%s" % [int(G.time - t0), tr.position.x, tr.position.z, tr.cur_speed, tr.order, tr.path_i, tr.path.size(), tr.dest.x, tr.dest.z, tr.get("_yield_to") != null])
+	var crossed := tr.position.distance_to(side_b) < 8.0
+	var pa := G.grid.find_path(side_a, side_b, Grid.M_HEAVY)
+	var cells := PackedStringArray()
+	for k in range(-8, 9):
+		var q: Vector3 = gc + dir * float(k)
+		cells.append("%d:w%d h%.2f k%d" % [k, int(G.grid.is_water(q)), G.grid.height_at(q), G.grid.kind_at(q)])
+	print("BRIDGEREBUILD cells %s" % [" ".join(cells)])
+	print("BRIDGEREBUILD dbg path_after=%d truck=(%.0f,%.0f) gc=(%.0f,%.0f) dz=(%.0f,%.0f) truck_path=%d/%d order=%s gap_cell_bridge=%s water=%s" % [pa.size(), tr.position.x, tr.position.z, gc.x, gc.z, dz.position.x, dz.position.z, tr.path_i, tr.path.size(), tr.order, G.grid.on_bridge(gc), G.grid.is_water(gc)])
+	print("BRIDGEREBUILD path_before=%d crossed=%s truck_to_b=%.0f" % [blocked.size(), crossed, tr.position.distance_to(side_b)])
+	if not crossed:
+		fails += 1
+	print("BRIDGEREBUILDTEST RESULT fails=%d" % fails)
 
 # 76: Chinook tipi nakliye — en çok 7 asker YA DA 1 ZPT; ZPT rampadan içeri girer (gizli, görülmez), taşınır,
 # inişte rampadan çıkar; ZPT taşırken asker almaz

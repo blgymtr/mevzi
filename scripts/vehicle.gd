@@ -1437,6 +1437,60 @@ func _dump_spot(w: Vehicle) -> Vector3:
 			break
 	return best
 
+# ------------------------------------------------------------ (135) yıkık köprüye panel köprü kurma
+var bridge_job: Dictionary = {}
+var _bj_end := Vector3.ZERO
+var _bj_lo := true
+var _bj_t := 0.0
+
+func cmd_bridge(it: Dictionary) -> bool:
+	if not can_clear() or it.is_empty() or bool(it.get("repaired", false)):
+		return false
+	var ends: Array = G.props.gap_ends(it)
+	# yakın uç; araç kıyıda, boşluğun ağzından gövde boyu kadar geride çalışır
+	var dir: Vector3 = it["dir"]
+	_bj_lo = position.distance_to(ends[0]) <= position.distance_to(ends[1])
+	var e: Vector3 = ends[0] if _bj_lo else ends[1]
+	var back: Vector3 = -dir if _bj_lo else dir
+	_bj_end = G.grid.nearest_free(e + back * (ext.y + 3.0), nav_mode, 10)
+	bridge_job = it
+	cmd_move(_bj_end)
+	order = "bridge"
+	say("KÖPRÜ KURMAYA GİDİYORUM", 2.5)
+	return true
+
+func _bridge_tick(dt: float) -> void:
+	if bridge_job.is_empty():
+		return
+	if order != "bridge" or not alive or bool(bridge_job.get("repaired", false)):
+		bridge_job = {}
+		return
+	if path_i < path.size() or position.distance_to(_bj_end) > 4.0:
+		return
+	# yerinde: boşluğa dön, panelleri uzat (boşluk boyuna göre ~2,5 sn / m), toz ve vinç sesi
+	var g: Dictionary = bridge_job["gap"]
+	var e: Vector3 = G.props.gap_ends(bridge_job)[0 if _bj_lo else 1]
+	_face_h = Soldier._yaw_of(e - position)
+	var dur: float = maxf(12.0, float(g["len"]) * 2.5)
+	var k: float = float(g.get("built", 0.0)) + dt / dur
+	G.props.bridge_progress(bridge_job, k, _bj_lo)
+	_bj_t -= dt
+	if _bj_t <= 0.0:
+		_bj_t = 1.2
+		G.fx.vehicle_dust(e)
+	if k >= 1.0:
+		say("KÖPRÜ HAZIR", 2.5)
+		# köprü ağzını kapatmasın: yolun yanına çekilir (eskiden ağızda kalıp ilk geçecek aracı tıkıyordu)
+		var bdir: Vector3 = bridge_job["dir"]
+		var side := Vector3(-bdir.z, 0, bdir.x)
+		var back: Vector3 = -bdir if _bj_lo else bdir
+		bridge_job = {}
+		order = ""
+		var off: Vector3 = G.grid.nearest_free(position + side * 9.0 + back * 4.0, nav_mode, 10)
+		if off.distance_to(position) < 4.0:
+			off = G.grid.nearest_free(position - side * 9.0 + back * 4.0, nav_mode, 10)
+		cmd_move(off)
+
 func cmd_clear(w: Vehicle) -> void:
 	if not can_clear() or w == null or not is_instance_valid(w) or w.alive:
 		return
@@ -2316,6 +2370,7 @@ func _process(dt: float) -> void:
 	if prof_on:
 		t0 = _pf("guard", t0)
 	_clear_tick(dt)
+	_bridge_tick(dt)
 	_drive(dt)
 	if prof_on:
 		t0 = _pf("drive", t0)
