@@ -115,6 +115,8 @@ func run(scene: String) -> void:
 			await chinook_test()
 		"crewshots":
 			await crew_shots()
+		"fencetest":
+			await fence_test()
 		"grassfiretest":
 			await grassfire_test()
 		"swimtest":
@@ -1062,6 +1064,85 @@ func crew_shots() -> void:
 	if shots.size() < 3:
 		fails += 1
 	print("CREWSHOTS RESULT fails=%d" % fails)
+
+# 113: iki çit arasında kalan / çitlerin arasından geçen asker kendiliğinden yere yatmamalı
+func fence_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 31)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5 - 50.0, 0, G.MAP * 0.5 + 40.0), Grid.M_INF)
+	G.props.clear_area(c, 16.0)
+	# 1,6 m aralıklı iki paralel çit (koridor) + geçiş
+	G.mapgen.fence(c + Vector3(-8, 0, -0.8), c + Vector3(8, 0, -0.8))
+	G.mapgen.fence(c + Vector3(-8, 0, 0.8), c + Vector3(8, 0, 0.8))
+	await m._wait(0.5)
+	var ss: Array = []
+	for i in 3:
+		var s: Soldier = m.spawn_soldier(0, ["rifle", "mg", "at"][i], c + Vector3(-6.0 + i * 1.5, 0, 0), null)
+		s.fire_mode = 2
+		ss.append(s)
+	await m._wait(0.5)
+	for s in ss:
+		s.cmd_move(s.position + Vector3(10, 0, 0))
+	var prone_t := 0.0
+	var poses := {}
+	var t0 := G.time
+	while G.time - t0 < 10.0:
+		await m._wait(0.2)
+		for s in ss:
+			var pz: String = s._pose()
+			poses[pz] = int(poses.get(pz, 0)) + 1
+			if s.stance == Soldier.PRONE or pz in ["prone", "crawl", "vault"]:
+				prone_t += 0.2
+	_cam(c, 14.0)
+	await m._wait(0.2)
+	await m._shot("fence_corridor")
+	print("FENCE poses=%s prone_or_vault_s=%.1f body_lift=%s" % [poses, prone_t, ss.map(func(s): return snappedf(s.body_lift, 0.01))])
+	if prone_t > 1.0:
+		fails += 1
+	# (2) dik geçiş: iki çitin üstünden karşıya, sonra iki çit arasında dur — uzaktan hafif ateş altında
+	for s in ss:
+		s.position = G.grid.nearest_free(Vector3(s.position.x, 0, c.z - 4.0), Grid.M_INF, 2)
+		s.cmd_move(Vector3(s.position.x, 0, c.z + 4.0))
+	poses.clear()
+	var prone2 := 0.0
+	t0 = G.time
+	while G.time - t0 < 8.0:
+		await m._wait(0.2)
+		for s in ss:
+			var pz: String = s._pose()
+			poses[pz] = int(poses.get(pz, 0)) + 1
+			if pz in ["prone", "crawl"]:
+				prone2 += 0.2
+	print("FENCE cross poses=%s prone_s=%.1f" % [poses, prone2])
+	if prone2 > 1.0:
+		fails += 1
+	var foe: Soldier = m.spawn_soldier(1, "rifle", G.grid.nearest_free(c + Vector3(0, 0, 60), Grid.M_INF), null)
+	foe.hp = 1e9
+	for s in ss:
+		s.cmd_move(Vector3(s.position.x, 0, c.z))
+	await m._wait(4.0)
+	for s in ss:
+		s.add_suppression(30.0, foe.position)
+	poses.clear()
+	var prone3 := 0.0
+	t0 = G.time
+	while G.time - t0 < 6.0:
+		await m._wait(0.2)
+		for s in ss:
+			var pz: String = s._pose()
+			poses[pz] = int(poses.get(pz, 0)) + 1
+			if pz in ["prone", "crawl", "prone_aim"]:
+				prone3 += 0.2
+	await m._shot("fence_between")
+	print("FENCE between poses=%s prone_s=%.1f cover=%s" % [poses, prone3, ss.map(func(s): return s.cover_type)])
+	print("FENCETEST RESULT fails=%d" % fails)
 
 # 127: patlayan araç çevresindeki ot tutuşur, alev halkası yayılır, bitince yanmış iz + kararmış ot
 func grassfire_test() -> void:
