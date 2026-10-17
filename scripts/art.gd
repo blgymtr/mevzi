@@ -508,7 +508,7 @@ static func vehicle_model(model: String, team: int) -> Dictionary:
 			if not out.has("props"):
 				out["props"] = []
 			out["props"].append([skinned(model, key, team), nd[key]["pos"], key.substr(4, 1)])
-		elif key == "rotor" or key == "trotor" or key == "ramp":
+		elif key == "rotor" or key == "trotor" or key == "ramp" or key == "door":
 			out[key] = skinned(model, key, team)
 			out[key + "_pos"] = nd[key]["pos"]
 		else:

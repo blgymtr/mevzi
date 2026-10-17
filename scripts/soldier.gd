@@ -1034,6 +1034,14 @@ func dismount(p: Vector3, from_v: Vehicle = null, delay := 0.0) -> void:
 func _door_process(dt: float) -> void:
 	# exiting: bekle → kapıdan çık (0.55 sn eğik) → hedefe yürü; entering: tersi
 	if state == "exiting":
+		# (79) arka rampa açılmadan inilmez: rampa iner, sonra askerler sırayla çıkar
+		var dv0 := door_veh
+		if dv0 != null and is_instance_valid(dv0) and dv0.door != null:
+			dv0.door_wanted()
+			if dv0.door_k < 0.85:
+				state_t = 0.0
+				body.animate(dt, "crouch", 0.0)
+				return
 		if door_wait > 0.0:
 			door_wait -= dt
 			state_t = 0.0
@@ -1058,6 +1066,13 @@ func _door_process(dt: float) -> void:
 		state = "idle"
 		visible = true
 		return
+	# (79) rampa açılana dek kapıda bekler, sonra rampadan yukarı içeri
+	if v.door != null:
+		v.door_wanted()
+		if v.door_k < 0.85:
+			state_t = 0.0
+			body.animate(dt, "crouch", 0.0)
+			return
 	var k2 := clampf(state_t / (0.9 if v.is_air() else 0.6), 0.0, 1.0)
 	var a := v.entry_point(0)
 	var np2 := a.lerp(v.inside_point(), k2)
@@ -1554,6 +1569,9 @@ func _think() -> void:
 				# yol bina ızgaraya işlenmeden hesaplanmış olabilir: ara sıra yeniden bul
 				_set_path(build_goal)
 			if order == "board" and board_target != null:
+				# (79) arka rampası olan araca yaklaşırken rampa açılmaya başlar (kapıya varınca beklemesin)
+				if is_instance_valid(board_target) and board_target.door != null and dist2_p(board_target.entry_point(0)) < 5.0:
+					board_target.door_wanted()
 				if not is_instance_valid(board_target) or not board_target.alive:
 					board_target = null
 					order = ""

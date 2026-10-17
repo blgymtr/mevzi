@@ -396,6 +396,23 @@ func inside_point() -> Vector3:
 		return position
 	return position - forward() * maxf(ext.y - 1.0, 0.3)
 
+# (79) kara aracı arka rampası: biniş / iniş için yaklaşan, giren ya da çıkan asker varken aşağı açılır (rampa
+# yere değer), kimse kalmayınca ve araç dururken kapanır; araç kalkmadan önce kapanır (açıkken yürümez)
+var door: Node3D = null
+var door_open := 1.35
+var door_k := 0.0
+var _door_need_t := 0.0
+
+func door_wanted() -> void:
+	_door_need_t = G.time + 0.6
+
+func _door_tick(dt: float) -> void:
+	if door == null:
+		return
+	var want := 1.0 if G.time < _door_need_t else 0.0
+	door_k = move_toward(door_k, want, dt * (1.3 if want > 0.0 else 0.9))
+	door.rotation.x = door_k * door_open
+
 # rampa sırası (76 / 102): binmek için gelen askerler geliş sırasıyla dizilir, öndeki rampadan girince sıradaki
 var _ramp_q: Array = []
 var _ramp_free_t := 0.0
@@ -1190,6 +1207,15 @@ func setup(t: int, vt: String) -> void:
 			ramp.add_child(rmi2)
 		if is_cargo():
 			crates = crates_max()
+	# (79) arka rampa / kapı: menteşesi alt kenarda ayrı düğüm; biniş / inişte açılır (_door_tick)
+	if M.get("door") != null:
+		door = Node3D.new()
+		door.position = M["door_pos"]
+		hull.add_child(door)
+		var dmi := MeshInstance3D.new()
+		dmi.mesh = M["door"]
+		door.add_child(dmi)
+		door_open = float(M.get("meta", {}).get("door_open", 1.35))
 	set_layer(self, 2)
 	_calc_ext()
 	# modeller gerçek boyutlu (roadmap 38, taban tipler base_models): gövde boyu modelden (önündeki engel,
@@ -2465,6 +2491,11 @@ func _process(dt: float) -> void:
 		t0 = _pf("guard", t0)
 	_clear_tick(dt)
 	_bridge_tick(dt)
+	_door_tick(dt)
+	# rampa açıkken yürümez: kapanana dek bekler (kullanıcı: biniş / iniş atlanmasın)
+	if door != null and door_k > 0.05 and G.time >= _door_need_t:
+		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
+		return
 	_drive(dt)
 	if prof_on:
 		t0 = _pf("drive", t0)

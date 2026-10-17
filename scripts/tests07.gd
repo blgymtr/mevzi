@@ -129,6 +129,8 @@ func run(scene: String) -> void:
 			await prop_gallery()
 		"workposes":
 			await work_poses()
+		"doortest":
+			await door_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1357,6 +1359,88 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 79: arka rampadan biniş / iniş — rampa açılır, askerler rampadan girer / çıkar, araç rampa kapanmadan yürümez
+func door_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 71)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.45, 0, G.MAP * 0.55), Grid.M_HEAVY)
+	G.props.clear_area(c, 25.0)
+	var v: Vehicle = m.spawn_vehicle(0, "usa_ifv_m2a3", c, 0.0)
+	v.fire_mode = 2
+	var sq := Squad.new(0, "Tim")
+	G.squads.append(sq)
+	var ss: Array = []
+	for i in 6:
+		var s: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-6 + (i % 3) * 1.5, 0, 9 + (i / 3) * 1.5), Grid.M_INF), sq)
+		s.fire_mode = 2
+		ss.append(s)
+	await m._wait(0.5)
+	print("DOOR has_door=%s open_rad=%.2f" % [v.door != null, v.door_open])
+	if v.door == null:
+		fails += 1
+	for s in ss:
+		s.cmd_board(v)
+	var kmax := 0.0
+	var shot := false
+	var t0 := G.time
+	while G.time - t0 < 30.0 and v.cargo.size() < 6:
+		await m._wait(0.1)
+		kmax = maxf(kmax, v.door_k)
+		if not shot and v.door_k > 0.9:
+			shot = true
+			_cam(v.position - v.forward() * 4.0, 8.0)
+			await m._wait(0.05)
+			await m._shot("door_board")
+	var board_t := G.time - t0
+	print("DOOR boarded=%d in %.0f s door_max=%.2f" % [v.cargo.size(), board_t, kmax])
+	if v.cargo.size() < 6 or kmax < 0.9:
+		fails += 1
+	# hareket: rampa kapanmadan yürümemeli
+	var p0 := v.position
+	v.cmd_move(c + Vector3(25, 0, 0))
+	var moved_open := false
+	var t1 := G.time
+	while G.time - t1 < 8.0:
+		await m._wait(0.1)
+		if v.door_k > 0.1 and v.position.distance_to(p0) > 0.8:
+			moved_open = true
+	print("DOOR door_after_go=%.2f moved_with_open=%s dist=%.1f" % [v.door_k, moved_open, v.position.distance_to(p0)])
+	if moved_open or v.position.distance_to(p0) < 3.0:
+		fails += 1
+	await m._wait(4.0)
+	if v.has_method("cmd_stop"):
+		v.cmd_stop()
+	await m._wait(1.0)
+	v.unload()
+	kmax = 0.0
+	shot = false
+	var t2 := G.time
+	# indirmede kargo hemen boşalır, askerler "exiting" durumunda rampadan çıkar
+	while G.time - t2 < 25.0 and (G.time - t2 < 1.0 or ss.any(func(s): return is_instance_valid(s) and s.state == "exiting")):
+		await m._wait(0.1)
+		kmax = maxf(kmax, v.door_k)
+		if not shot and v.door_k > 0.9:
+			shot = true
+			# arkadan bak: rampa kameraya dönük
+			G.cam.yaw = atan2(v.forward().x, v.forward().z) + PI
+			G.cam.target_yaw = G.cam.yaw
+			_cam(v.position - v.forward() * 3.0, 7.0)
+			await m._wait(0.3)
+			await m._shot("door_unload")
+	await m._wait(5.0)
+	var out := ss.filter(func(s): return is_instance_valid(s) and s.vehicle_in == null and s.state != "exiting").size()
+	print("DOOR unloaded=%d door_max=%.2f door_now=%.2f" % [out, kmax, v.door_k])
+	if out < 6 or kmax < 0.9 or v.door_k > 0.2:
+		fails += 1
+	print("DOORTEST RESULT fails=%d" % fails)
 
 # 86: inşaat / malzeme taşıma pozları yakın görüntü (yığından alma, taşıma, iskeleye bırakma, çakma)
 func work_poses() -> void:
@@ -2598,7 +2682,9 @@ func ramp_test() -> void:
 		for i in range(1, enter_t.size()):
 			min_gap = minf(min_gap, enter_t[i] - enter_t[i - 1])
 		print("RAMP %s boarded=%d/%d t=%.1f max_on_ramp=%d min_gap=%.2f" % [hid, h.cargo.size(), n, t, max_enter, min_gap])
-		if h.cargo.size() < n or max_enter > 1 or min_gap < 0.5:
+		# (kullanıcı, 17 Ekim: "girişte 1 sn bekliyorlar") arka arkaya sıkı sıra: rampada en çok iki asker (biri
+		# rampanın üstünde, biri girişte), girişler arası ≥0,3 sn — iç içe geçmezler; 7 kişi 10 sn'nin altında
+		if h.cargo.size() < n or max_enter > 2 or min_gap < 0.3 or t > 10.0:
 			fails += 1
 		for s in ss:
 			if is_instance_valid(s):

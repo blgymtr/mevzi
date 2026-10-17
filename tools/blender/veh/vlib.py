@@ -20,6 +20,7 @@ CUR = "body"
 WHEELS = []
 ROT_NB = []                    # rotor pal sayıları (meta 'nb': oyunda dönüş görüntüsü bundan ayarlanır)
 EXTRA_PIVOTS = {}              # ayrı dönen parçaların pivotları (İHA pervaneleri: propy_N / propz_N)
+DOOR = {}                      # (79) arka rampa / kapak: {'pivot': menteşe, 'open': açılma açısı (rad)} → pivot 'door', meta 'door_open'
 _TMP = None
 SHARP = math.radians(14)       # düz parçalarda keskin kenar eşiği
 SMOOTH = math.radians(33)      # silindir / loft gövdelerde (12+ dilim yumuşak görünür)
@@ -37,6 +38,7 @@ def reset(nat):
     WHEELS.clear()
     ROT_NB.clear()
     EXTRA_PIVOTS.clear()
+    DOOR.clear()
     bpy.ops.wm.read_factory_settings(use_empty=True)
     _TMP = bpy.data.meshes.new("_tmp")
 
@@ -1007,10 +1009,18 @@ def apply_fit(v, pivots, meta):
             m = meta[k]
             if isinstance(m, (tuple, list)) and len(m) == 3:
                 meta[k] = (m[0] * S.x, m[1] * S.y, m[2] * S.z)
+        if DOOR and "door" not in pivots:
+            p = DOOR["pivot"]
+            DOOR["pivot"] = (p[0] * S.x, p[1] * S.y, p[2] * S.z)
     return pivots, meta
 
 def export(path_glb, pivots, meta, ao=True):
     import json
+    if DOOR and "door" not in pivots:
+        pivots = dict(pivots)
+        pivots["door"] = DOOR["pivot"]
+        meta = dict(meta)
+        meta["door_open"] = DOOR["open"]
     if EXTRA_PIVOTS:
         pivots = dict(pivots)
         for k, v in EXTRA_PIVOTS.items():

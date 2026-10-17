@@ -2,6 +2,7 @@
 # havan aracı, paletli roketatar, istihkâm (mayın açma, dozer, köprü, kurtarma).
 import math
 from vlib import *
+import vlib
 
 def tracked(L, W, n, r, xc, tw, zt, nose=1.0, rear=0.15, glacis_z=None, sprocket_front=False, rollers=(), skirts=False,
             dress=True, tools_side=True):
@@ -43,7 +44,15 @@ def tracked(L, W, n, r, xc, tw, zt, nose=1.0, rear=0.15, glacis_z=None, sprocket
     return wy
 
 def _ramp(L, W, z, h, zt, door=True):
-    """Arka rampa: levha + kenar çerçevesi + menteşeler + rampa kapısı + tutamaklar + lambalar."""
+    """Arka rampa: levha + kenar çerçevesi + menteşeler + rampa kapısı + tutamaklar + lambalar.
+    (79) Ayrı 'door' düğümü: menteşe rampanın ALT kenarında; oyunda biniş / inişte aşağı açılır (vlib.DOOR)."""
+    prev = vlib.CUR
+    node("door")
+    vlib.DOOR.update({"pivot": (0, -L / 2 - 0.03, z - h / 2), "open": 1.35})
+    _ramp_geo(L, W, z, h, zt, door)
+    node(prev)
+
+def _ramp_geo(L, W, z, h, zt, door=True):
     y = -L / 2 - 0.03
     box((0, y, z), (W, 0.06, h), "paint", bev=0.012)
     for s in (-1, 1):
