@@ -937,9 +937,74 @@ func _drop_canopy() -> void:
 	tw.tween_property(c, "global_position", Vector3(gp.x, 0.4, gp.z) + side * 3.0, 1.4).set_ease(Tween.EASE_IN)
 	tw.parallel().tween_property(c, "scale", Vector3(1.1, 0.12, 0.8), 1.4)
 	tw.parallel().tween_property(c, "rotation:z", 1.2, 1.4)
+	# (123) söndükten sonra yerde kumaş gibi serili kubbe: rüzgâr yönüne uzamış, katlanmış, kıvrımlı; askı ipleri
+	# askerin yanına uzanır (sabit, ezilmiş kubbe yerine)
+	var me := position
+	tw.tween_callback(func():
+		if not is_instance_valid(c) or not (c is MeshInstance3D):
+			return
+		var land: Vector3 = Vector3(gp.x, 0, gp.z) + side * 3.0
+		(c as MeshInstance3D).mesh = _draped_mesh(randi() % 3)
+		c.scale = Vector3.ONE
+		c.rotation = Vector3(0, atan2(-side.x, -side.z) + PI, 0)
+		c.global_position = Vector3(land.x, (G.terrain.ground_h(land) if G.terrain else 0.0) + 0.02, land.z)
+		# ipler: kubbe eteğinden askerin indiği yere
+		var lines := MeshInstance3D.new()
+		var mb := MB.new()
+		var to_me: Vector3 = Vector3(me.x, 0.05, me.z) - c.global_position
+		var base := c.global_transform.affine_inverse().basis * to_me
+		for k in 6:
+			var sp := Vector3(randf_range(-1.6, 1.6), 0.08, randf_range(-1.6, -0.6))
+			mb.cyl_between(sp, base + Vector3(randf_range(-0.2, 0.2), 0, randf_range(-0.2, 0.2)), 0.01, 0.01, 3, Color(0.72, 0.7, 0.62), false)
+		lines.mesh = mb.commit(Mats.vc2())
+		c.add_child(lines))
 	tw.tween_interval(40.0)
 	tw.tween_callback(c.queue_free)
 	canopy = null
+
+# yerde serili paraşüt kumaşı (önbellekli 3 çeşit): kutupsal ızgara, rüzgâr yönünde (+z) uzun, kenarları
+# toplanmış; yükseklik = kıvrım (rüzgâr yönüne dik dalgalar) + gürültü; zeytin dilimler
+static var _drape_m := {}
+static func _draped_mesh(v: int) -> Mesh:
+	if _drape_m.has(v):
+		return _drape_m[v]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77 + v * 13
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var NA := 24
+	var NR := 7
+	var olive := Color(0.36, 0.4, 0.27)
+	var P := []
+	var ph := rng.randf() * TAU
+	for ir in NR + 1:
+		var r := float(ir) / NR
+		var ring := []
+		for ia in NA:
+			var a := TAU * ia / NA
+			var x := cos(a) * r * 1.6
+			var z := sin(a) * r * 2.8 + r * 0.7          # rüzgâr yönüne uzun, öne kaymış
+			var fold := sin(z * 2.6 + ph + x * 0.4) * 0.18 + sin(a * 5.0 + ph) * 0.08 * r
+			var y := maxf(0.02, (1.0 - r) * 0.22 + fold * (0.4 + r) + rng.randf_range(0.0, 0.05))
+			if ir == NR:
+				y = 0.02 + maxf(0.0, fold) * 0.5      # kenar toplanmış, yere yakın
+			ring.append(Vector3(x, y, z))
+		P.append(ring)
+	for ir in NR:
+		for ia in NA:
+			var a: Vector3 = P[ir][ia]
+			var b: Vector3 = P[ir][(ia + 1) % NA]
+			var cc: Vector3 = P[ir + 1][(ia + 1) % NA]
+			var d: Vector3 = P[ir + 1][ia]
+			var col := olive if (ia / 2) % 2 == 0 else olive.darkened(0.14)
+			for q in [a, cc, b, a, d, cc]:
+				st.set_color(col.darkened(rng.randf_range(0.0, 0.08)).srgb_to_linear())
+				st.add_vertex(q)
+	st.generate_normals()
+	var m := st.commit()
+	m.surface_set_material(0, Mats.vc2())
+	_drape_m[v] = m
+	return m
 
 func dismount(p: Vector3, from_v: Vehicle = null, delay := 0.0) -> void:
 	if vehicle_in:

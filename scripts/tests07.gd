@@ -2169,6 +2169,10 @@ func para_test() -> void:
 	var down := sq.members.filter(func(x): return is_instance_valid(x) and x.alive and x.state != "para").size()
 	_cam(c, 22.0)
 	await m._shot("para_10_landed")
+	# (123) yerde kumaş gibi serili kubbeler
+	_cam(c, 12.0)
+	await m._wait(0.3)
+	await m._shot("para_11_canopies")
 	print("PARA jumped=%d landed=%d" % [sq.members.size(), down])
 	if down < 8:
 		fails += 1
