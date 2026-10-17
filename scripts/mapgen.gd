@@ -1557,6 +1557,11 @@ func village_pool() -> Array:
 			return p
 	var g := arch_pool(["koy"])
 	g.append_array(["ciftlik_evi", "kuyu_evi", "bag_evi", "kumes", "traktor_garaji"])
+	# (35) gerçek köyün çoğu konut: konut türleri destede iki kez (dükkân / resmî yapı bir kez)
+	for id in ["tas_ev", "koy_evi", "cumbali_ev", "koy_konutu_tek", "cifte_sundurma", "l_ciftlik_evi", "tugla_ev", "karkas_ev", "mansard_ev",
+			"kirma_ambar_ev", "ahsap_ev", "teras_ev", "ikiz_ev", "tas_kulube", "cati_katli_ev", "ciftlik_evi"]:
+		if Arch.ARCH.has(id):
+			g.append(id)
 	return g
 
 func farm_pool() -> Array:
