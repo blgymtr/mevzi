@@ -4,6 +4,7 @@ class_name Props extends Node3D
 var items: Array = []   # {node, pos, kind, hp, alive, r}
 var _cache := {}
 var rng := RandomNumberGenerator.new()
+static var grass_k := 1.0          # ot yoğunluğu (Ayarlar > Grafik; Main.apply_gfx)
 var winter := false
 
 func _ready() -> void:
@@ -86,16 +87,230 @@ func _palm_mesh(seed_v: int) -> ArrayMesh:
 	var m := trunk.commit(Mats.vc())
 	return leaves.commit(Mats.vc2(), m)
 
+# ------------------------------------------------------------ gerçek ağaç modelleri (tools/trees: ez-tree + CC0 kabuk/yaprak)
+# tür kimliği -> [kabuk dokusu uv ölçeği]; GLB yoksa eski prosedürel ağaca düşer
+const TREE_DIR := "res://assets/trees/"
+const TREE_SETS := {
+	"green": ["oak_s", "oak_m", "oak_l", "oak_m", "ash_s", "ash_m", "ash_l", "aspen_m", "aspen_l", "birch_m", "willow_m"],
+	"desert": ["ash_s", "oak_s", "ash_s", "willow_m"],
+	"pine": ["pine_s", "pine_m", "pine_l", "pine_m"],
+	"bush": ["bush_1", "bush_2", "bush_3", "bush_2"],
+}
+var biome_id := "green"
+
+func _tree_shader_mat(surf_name: String, h: float, crown: float) -> ShaderMaterial:
+	var key := "tm_%s_%d_%s_%s" % [surf_name, int(h * 10.0), biome_id, str(winter)]
+	if _cache.has(key):
+		return _cache[key]
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/tree.gdshader")
+	var leaf := surf_name.begins_with("leaf_")
+	var tex_id := surf_name.substr(5) if leaf else surf_name.substr(5)
+	m.set_shader_parameter("leaf", leaf)
+	m.set_shader_parameter("tree_h", h)
+	m.set_shader_parameter("crown_y", crown)
+	if leaf:
+		m.set_shader_parameter("albedo_tex", load(TREE_DIR + "tex/leaf_%s.png" % tex_id))
+		var tint := Color(0.86, 0.92, 0.74)
+		if biome_id == "desert":
+			tint = Color(0.82, 0.84, 0.62)      # tozlu, solgun zeytin yeşili
+		elif tex_id == "pine":
+			tint = Color(0.78, 0.86, 0.72)
+		elif tex_id == "aspen":
+			tint = Color(0.52, 0.84, 0.42)      # yaz kavağı: sarıya değil yeşile
+		m.set_shader_parameter("tint", tint)
+	else:
+		m.set_shader_parameter("albedo_tex", load(TREE_DIR + "tex/bark_%s_color.jpg" % tex_id))
+		m.set_shader_parameter("normal_tex", load(TREE_DIR + "tex/bark_%s_normal.jpg" % tex_id))
+		m.set_shader_parameter("has_normal", true)
+		m.set_shader_parameter("uv_scale", Vector2(1.0, 0.35) if tex_id != "birch" else Vector2(1.0, 0.25))
+		m.set_shader_parameter("tint", Color(0.92, 0.9, 0.86) if tex_id != "birch" else Color(0.95, 0.95, 0.93))
+	if winter:
+		m.set_shader_parameter("snow", 0.85 if leaf else 0.55)
+	m.set_shader_parameter("sway_amp", 0.5 if surf_name.contains("pine") else 1.0)
+	_cache[key] = m
+	return m
+
+func _tree_model(id: String) -> Mesh:
+	var key := "glb_" + id
+	if _cache.has(key):
+		return _cache[key]
+	var path := TREE_DIR + id + ".glb"
+	if not ResourceLoader.exists(path):
+		_cache[key] = null
+		return null
+	var sc: Node = (load(path) as PackedScene).instantiate()
+	var src: MeshInstance3D = sc.find_children("*", "MeshInstance3D", true, false)[0] if not sc is MeshInstance3D else sc
+	var mesh: Mesh = src.mesh.duplicate()
+	sc.free()
+	var aabb := mesh.get_aabb()
+	var h := maxf(aabb.end.y, 0.5)
+	var crown := 0.45 if id.begins_with("bush") else (0.55 if id.begins_with("pine") else 0.68)
+	for i in mesh.get_surface_count():
+		var mat := mesh.surface_get_material(i)
+		var nm := mat.resource_name if mat != null else ("leaf_oak" if i > 0 else "bark_oak")
+		mesh.surface_set_material(i, _tree_shader_mat(nm, h, crown))
+	_cache[key] = mesh
+	_lod_names[mesh.get_instance_id()] = id
+	return mesh
+
+# ------------------------------------------------------------ uzak görüş ağacı (LOD)
+# Stratejik yakınlaştırmada (≥ 600 m görüş) bankaların örgüsü hafif modele geçer: taç elipsoidi
+# (çam: koni), köşe renkli. 8 km haritada 2 km görüşte ~60 bin ağaç tam modelle ~30 M üçgen ediyordu.
+var _lod_names := {}
+var far_lod := false
+
+func _tree_lod(mesh: Mesh) -> Mesh:
+	var key := "lod_%d" % mesh.get_instance_id()
+	if _cache.has(key):
+		return _cache[key]
+	var aabb := mesh.get_aabb()
+	var h := maxf(aabb.end.y, 0.4)
+	var r := maxf(aabb.size.x, aabb.size.z) * 0.5
+	var nm := String(_lod_names.get(mesh.get_instance_id(), ""))
+	var pine := nm.begins_with("pine")
+	var bush := nm.begins_with("bush")
+	var col := Color(0.13, 0.19, 0.07)
+	if pine:
+		col = Color(0.08, 0.13, 0.065)
+	elif bush:
+		col = Color(0.16, 0.21, 0.09)
+	if winter:
+		col = col.lerp(Color(0.7, 0.72, 0.76), 0.4) if pine else Color(0.24, 0.21, 0.18)
+	elif biome_id == "desert":
+		col = Color(0.2, 0.22, 0.1)
+	var mb := MB.new()
+	if pine:
+		mb.cyl(Vector3(0, h * 0.16, 0), r * 0.8, 0.0, h * 0.84, 7, col, Basis(), true, false)
+		mb.cyl(Vector3.ZERO, r * 0.07, r * 0.06, h * 0.18, 4, Color(0.24, 0.18, 0.13), Basis(), false, false)
+	elif bush:
+		mb.sphere(Vector3(0, h * 0.5, 0), Vector3(r * 0.9, h * 0.5, r * 0.9), 7, 4, col)
+	else:
+		mb.sphere(Vector3(0, h * 0.64, 0), Vector3(r * 0.85, h * 0.36, r * 0.85), 8, 5, col)
+		mb.cyl(Vector3.ZERO, r * 0.08, r * 0.06, h * 0.32, 5, Color(0.25, 0.2, 0.15), Basis(), false, false)
+	var m := mb.commit(Mats.vc())
+	_cache[key] = m
+	return m
+
+func set_far(on: bool) -> void:
+	if on == far_lod:
+		return
+	far_lod = on
+	for key in _banks:
+		var b: Dictionary = _banks[key]
+		if not b.has("mesh0"):
+			continue
+		(b["mm"] as MultiMesh).mesh = b["lod"] if on else b["mesh0"]
+
+func _real_tree(p: Vector3, set_name: String, sc := 1.0) -> bool:
+	var ids: Array = TREE_SETS[set_name]
+	var id: String = ids[rng.randi() % ids.size()]
+	if winter and not id.begins_with("pine") and not id.begins_with("bush"):
+		id += "_bare"
+	# büyük haritada tek tohum (banka/çizim çağrısı sayısı 3'te 1)
+	var mesh := _tree_model("%s_%d" % [id, rng.randi() % (3 if G.MAP <= 1024.0 else 1)])
+	if mesh == null:
+		return false
+	var s2 := sc * rng.randf_range(0.85, 1.15)
+	var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s2, s2, s2)), p)
+	var it: Dictionary
+	if set_name == "bush":
+		it = {"node": null, "pos": p, "kind": "bush", "hp": 20.0, "alive": true, "r": 0.6}
+	else:
+		var big := id.contains("_l")
+		it = {"node": null, "pos": p, "kind": "tree", "hp": (110.0 if big else 75.0) * sc, "alive": true, "r": 0.5 if big else 0.4}
+		G.grid.set_static_circle(p, 0.35 if big else 0.3, 3.0, Grid.K_TREE)
+	it["mesh"] = mesh
+	it["xf"] = xf
+	items.append(it)
+	_mm_add(it, set_name == "bush")
+	return true
+
+# ------------------------------------------------------------ ağaç örnekleme (MultiMesh)
+# Aynı modeldeki tüm ağaçlar tek MultiMesh: çizim çağrısı az, büyük haritada binlerce ağaç.
+# Örnek gizleme: ölçek 0; saydamlaşma: özel veri r (shader'da titreşimli kesim).
+var _banks := {}          # "mesh_karoX_karoZ" -> {"mm": MultiMesh, "items": Array, "dirty": bool}
+
+func _mm_add(it: Dictionary, bush: bool) -> void:
+	var mesh: Mesh = it["mesh"]
+	# banka = model × 256 m karo (karo dışı görüşte kırpılır)
+	var p: Vector3 = it["pos"]
+	var bt := 256.0 if G.MAP <= 1024.0 else 512.0
+	var key := "%d_%d_%d" % [mesh.get_instance_id(), int(p.x / bt), int(p.z / bt)]
+	if not _banks.has(key):
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = mesh
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if bush else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		add_child(mmi)
+		_banks[key] = {"mm": mm, "mmi": mmi, "items": [], "dirty": true, "mesh0": mesh, "lod": _tree_lod(mesh)}
+		if far_lod:
+			mm.mesh = _banks[key]["lod"]
+	var b: Dictionary = _banks[key]
+	it["bank"] = b
+	it["mi_idx"] = b["items"].size()
+	b["items"].append(it)
+	b["dirty"] = true
+	if not _bank_pending:
+		_bank_pending = true
+		_flush_banks.call_deferred()
+
+var _bank_pending := false
+func _flush_banks() -> void:
+	_bank_pending = false
+	for key in _banks:
+		var b: Dictionary = _banks[key]
+		if not b["dirty"]:
+			continue
+		b["dirty"] = false
+		var mm: MultiMesh = b["mm"]
+		var its: Array = b["items"]
+		mm.instance_count = its.size()
+		for i in its.size():
+			var it: Dictionary = its[i]
+			var shown: bool = it["alive"] and it["node"] == null
+			mm.set_instance_transform(i, it["xf"] if shown else Transform3D(Basis().scaled(Vector3.ZERO), it["pos"]))
+			mm.set_instance_custom_data(i, Color(0, 0, 0, 0))
+
+func _mm_hide(it: Dictionary) -> void:
+	var b: Dictionary = it["bank"]
+	(b["mm"] as MultiMesh).set_instance_transform(it["mi_idx"], Transform3D(Basis().scaled(Vector3.ZERO), it["pos"]))
+
+func _mm_fade(it: Dictionary, a: float) -> void:
+	var b: Dictionary = it["bank"]
+	(b["mm"] as MultiMesh).set_instance_custom_data(it["mi_idx"], Color(a, 0, 0, 0))
+
+# devrilecek/yanacak örnek: MultiMesh'ten çıkarılıp ayrı düğüm olur
+func _detach(it: Dictionary) -> MeshInstance3D:
+	if it["node"] != null:
+		return it["node"]
+	_mm_hide(it)
+	var mi := MeshInstance3D.new()
+	mi.mesh = it["mesh"]
+	mi.transform = it["xf"]
+	add_child(mi)
+	it["node"] = mi
+	return mi
+
+# patlama şok dalgası: ağaç shader'ı son 4 büyük patlamayı (global) okuyup uzaktan yatar/sallanır
+func shake_trees(center: Vector3, power: float) -> void:
+	G.push_blast(center, power)
+
 # ------------------------------------------------------------ yapraklı ağaç (kış: sarı kuru yaprak + kar, çöl: koyu yeşil)
-func tree(p: Vector3) -> void:
+func tree(p: Vector3, sc := 1.0) -> void:
+	if _real_tree(p, "desert" if biome_id == "desert" else "green", sc):
+		return
 	var v := rng.randi() % 5
 	var key := ("wtree%d" if winter else "dtree%d") % v
 	var mesh := _cached(key, func(): return _tree_mesh(v, winter))
-	var sc: float = [rng.randf_range(0.55, 0.75), rng.randf_range(0.85, 1.15), rng.randf_range(1.3, 1.7)][rng.randi() % 3]
-	var mi := _place(mesh, p, rng.randf() * TAU, sc)
+	var tsc: float = [rng.randf_range(0.55, 0.75), rng.randf_range(0.85, 1.15), rng.randf_range(1.3, 1.7)][rng.randi() % 3] * sc
+	var mi := _place(mesh, p, rng.randf() * TAU, tsc)
 	if rng.randf() < 0.22:
-		mi.scale = Vector3(0.55, 1.75, 0.55) * sc     # kavak: uzun ve ince
-	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 70.0 * sc, "alive": true, "r": 0.4})
+		mi.scale = Vector3(0.55, 1.75, 0.55) * tsc     # kavak: uzun ve ince
+	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 70.0 * tsc, "alive": true, "r": 0.4})
 	G.grid.set_static_circle(p, 0.3, 3.0, Grid.K_TREE)
 
 func _leaf_material() -> StandardMaterial3D:
@@ -293,6 +508,10 @@ static func car_mesh(v: int) -> ArrayMesh:
 
 # ------------------------------------------------------------ direkler / tente / sandık
 func pole(p: Vector3, lamp := false) -> void:
+	if lamp and has_asset("street_lamp_01"):
+		var lm := asset("street_lamp_01", p, rng.randf() * TAU, 1.2, false)
+		items.append({"node": lm, "pos": p, "kind": "tree", "hp": 30.0, "alive": true, "r": 0.2})
+		return
 	var mesh := _cached("lamp" if lamp else "pole", func(): return _pole_mesh(lamp))
 	var mi := _place(mesh, p, rng.randf_range(-0.1, 0.1) + (PI * 0.25 if not lamp else rng.randf() * TAU))
 	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 30.0, "alive": true, "r": 0.2})
@@ -324,22 +543,100 @@ func canopy(p: Vector3, rot: float) -> void:
 		return mb.commit(Mats.vc2()))
 	_place(mesh, p, rot)
 
+# ------------------------------------------------------------ hazır CC0 eşyalar (roadmap 121)
+# Poly Haven modelleri tools/blender/props.py ile azaltılıp assets/props/<id>.glb olarak gelir; boyutlar
+# assets/props/props.json'da. Bel hizası ve üstü eşya (sandık yığını, beton bariyer, jeneratör, araba) gerçek
+# siper / engel olarak ızgaraya işlenir (120: fiziksel siper).
+const CRATES := ["wooden_military_crate", "old_military_crate", "wooden_crate_01", "wooden_crate_02", "plastic_crate_01"]
+const BARRELS := ["Barrel_01", "Barrel_02", "barrel_03"]
+const SMALL_SUPPLY := ["ammo_box", "metal_jerrycan", "metal_jerrycan_green", "plastic_jerrycan", "medical_box", "propane_tank"]
+static var _ainfo := {}
+
+static func asset_info() -> Dictionary:
+	if _ainfo.is_empty():
+		_ainfo = {"_": {}}
+		var f := FileAccess.open("res://assets/props/props.json", FileAccess.READ)
+		if f:
+			var d = JSON.parse_string(f.get_as_text())
+			if d is Dictionary:
+				_ainfo = d
+	return _ainfo
+
+static func has_asset(id: String) -> bool:
+	return asset_info().has(id) and ResourceLoader.exists("res://assets/props/%s.glb" % id)
+
+# glb içindeki ilk örgü (betik birleştirip tek nesne verir)
+func asset_mesh(id: String) -> Mesh:
+	return _cached("asset:" + id, func():
+		var ps: PackedScene = load("res://assets/props/%s.glb" % id)
+		if ps == null:
+			return null
+		var root := ps.instantiate()
+		var out: Mesh = null
+		var st: Array = [root]
+		while not st.is_empty() and out == null:
+			var n: Node = st.pop_back()
+			if n is MeshInstance3D:
+				out = (n as MeshInstance3D).mesh
+			st.append_array(n.get_children())
+		root.free()
+		return out)
+
+# eşyayı yerleştir; cover: bel hizası (≥0,45 m) ve üstü ızgarada siper / engel
+func asset(id: String, p: Vector3, rot: float, s := 1.0, cover := true) -> MeshInstance3D:
+	if not has_asset(id):
+		return null
+	var mesh := asset_mesh(id)
+	if mesh == null:
+		return null
+	var mi := _place(mesh, p, rot, s)
+	var dm: Array = asset_info()[id]["dims"]
+	var dims := Vector3(dm[0], dm[1], dm[2]) * s
+	_loose(mi, p, "crate", maxf(dims.x, dims.z) * 0.5, dims.y)
+	if cover and dims.y >= 0.45 and maxf(dims.x, dims.z) >= 0.6:
+		G.grid.set_static_rect(p, Vector2(dims.x, dims.z), rot, dims.y, Grid.K_WRECK if dims.y > 1.2 else Grid.K_WALL)
+		# temizlemede yalnız bu iz silinir (çevredeki duvar / ev hücrelerine dokunulmaz)
+		loose[loose.size() - 1]["rect"] = [p, Vector2(dims.x, dims.z), rot]
+	return mi
+
+# ikmal yığını: birkaç sandık, bidon, mühimmat kutusu (ileri üs, mevzi, köy deposu)
+func supply_pile(c: Vector3, n := 6) -> void:
+	for k in n:
+		var a := rng.randf() * TAU
+		var q := c + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, 1.6)
+		var pool: Array = CRATES if rng.randf() < 0.45 else SMALL_SUPPLY
+		asset(pool[rng.randi() % pool.size()], q, rng.randf() * TAU, 1.0, k < 3)
+	# üst üste iki sandık
+	var top := asset(CRATES[rng.randi() % 2], c + Vector3(0.2, 0, -0.3), rng.randf() * TAU)
+	if top:
+		var top2 := asset(CRATES[rng.randi() % 2], c + Vector3(0.2, 0, -0.3), rng.randf() * TAU, 1.0, false)
+		if top2:
+			top2.position.y += float(asset_info()[CRATES[0]]["dims"][1])
+
 func crate(p: Vector3, rot: float, s := 1.0) -> void:
+	if has_asset(CRATES[0]):
+		# sokak eşyası sandık (eski kutu gibi) ızgarada engel değil — yol kenarına serpiliyor, köprü ağzını kesiyordu
+		# (bridgerebuild); siper olan sandıklar ikmal yığınında
+		asset(CRATES[rng.randi() % CRATES.size()], p, rot, s, false)
+		return
 	var mesh := _cached("crate", func():
 		var mb := MB.new()
 		mb.box(Vector3(0, 0.35, 0), Vector3(1.1, 0.7, 0.7), Color(0.45, 0.4, 0.26))
 		mb.box(Vector3(0, 0.71, 0), Vector3(1.12, 0.03, 0.2), Color(0.35, 0.3, 0.2))
 		return mb.commit(Mats.vc()))
-	_place(mesh, p, rot, s)
+	_loose(_place(mesh, p, rot, s), p, "crate", 0.35 * s, 0.7 * s)
 
 func barrel(p: Vector3, col := Color(0.25, 0.32, 0.2)) -> void:
+	if has_asset(BARRELS[0]):
+		asset(BARRELS[rng.randi() % BARRELS.size()], p, rng.randf() * TAU, 1.0, false)
+		return
 	var key := "barrel" + col.to_html()
 	var mesh := _cached(key, func():
 		var mb := MB.new()
 		mb.cyl(Vector3.ZERO, 0.3, 0.3, 0.9, 9, col)
 		mb.cyl(Vector3(0, 0.3, 0), 0.31, 0.31, 0.05, 9, col.darkened(0.2))
 		return mb.commit(Mats.metal()))
-	_place(mesh, p, rng.randf() * TAU)
+	_loose(_place(mesh, p, rng.randf() * TAU), p, "barrel", 0.3, 0.9)
 
 # çatı yarası: kararmış delik + kırık kirişler + saçılmış kiremit (hasarlı bina)
 func roof_damage(p: Vector3, w: float, d: float, top: float, rot: float) -> void:
@@ -450,16 +747,6 @@ func awning(p: Vector3, rot: float, w: float, col: Color) -> void:
 	mi.rotation.y = rot
 	add_child(mi)
 
-func spire(p: Vector3, h: float) -> void:
-	var mb := MB.new()
-	mb.cyl(Vector3(0, 0, 0), 2.3, 0.05, h, 4, Color(0.25, 0.3, 0.32), Basis(Vector3.UP, PI * 0.25))
-	mb.cyl(Vector3(0, h + 0.6, 0), 0.04, 0.04, 1.2, 4, Color(0.6, 0.55, 0.3))
-	mb.box(Vector3(0, h + 0.9, 0), Vector3(0.6, 0.06, 0.06), Color(0.6, 0.55, 0.3))
-	var mi := MeshInstance3D.new()
-	mi.mesh = mb.commit(Mats.vcs())
-	mi.position = p
-	add_child(mi)
-
 func gas_station(p: Vector3, rot: float) -> void:
 	var mb := MB.new()
 	for x in [-3.5, 3.5]:
@@ -491,21 +778,25 @@ func shed(p: Vector3, rot: float) -> void:
 
 # ------------------------------------------------------------ hasar
 func blast(center: Vector3, radius: float, dmg: float) -> void:
-	for it in items:
+	if radius >= 2.5:
+		shake_trees(center, radius / 3.0)
+	for it in _items_near(center, radius + 3.0):
 		if not it["alive"]:
 			continue
 		var p: Vector3 = it["pos"]
 		var d := Vector2(p.x - center.x, p.z - center.z).length()
 		if d > radius + it["r"]:
 			continue
-		if it["kind"] == "bridge" and dmg < 100.0:
-			continue
+		if it["kind"] == "bridge":
+			if dmg < 100.0:
+				continue
+			_bridge_hit(it, center, radius, dmg)
 		it["hp"] -= dmg * (1.0 - clampf(d / (radius + it["r"]), 0.0, 0.9))
 		if it["hp"] <= 0.0:
 			_destroy(it, center)
 
 func crush(center: Vector3, r: float, dir: Vector3) -> void:
-	for it in items:
+	for it in _trees_near(center, r):
 		if not it["alive"] or it["kind"] != "tree":
 			continue
 		var p: Vector3 = it["pos"]
@@ -514,7 +805,13 @@ func crush(center: Vector3, r: float, dir: Vector3) -> void:
 
 func _destroy(it: Dictionary, center: Vector3) -> void:
 	it["alive"] = false
-	var mi: MeshInstance3D = it["node"]
+	if it["kind"] == "bridge":
+		_collapse_bridge(it, center)
+		return
+	if it.has("bank") and it["kind"] != "tree":
+		_mm_hide(it)
+		return
+	var mi: MeshInstance3D = it["node"] if not it.has("bank") else _detach(it)
 	match it["kind"]:
 		"car":
 			mi.material_override = Mats.burnt()
@@ -524,8 +821,6 @@ func _destroy(it: Dictionary, center: Vector3) -> void:
 			var tw := create_tween()
 			tw.tween_property(mi, "position:y", 0.6, 0.15).set_ease(Tween.EASE_OUT)
 			tw.tween_property(mi, "position:y", 0.0, 0.25).set_ease(Tween.EASE_IN)
-		"bridge":
-			_collapse_bridge(it)
 		"tree":
 			var away: Vector3 = it["pos"] - center
 			away.y = 0
@@ -533,66 +828,9 @@ func _destroy(it: Dictionary, center: Vector3) -> void:
 		_:
 			mi.visible = false
 
-# köprü çöküşü: orta açıklık parçalanıp suya düşer, iki uçta kırık ayaklar kalır
-func _collapse_bridge(it: Dictionary) -> void:
-	var mi: MeshInstance3D = it["node"]
-	var c: Vector3 = it["pos"]
-	var dir: Vector3 = it["dir"]
-	var L: float = it["L"]
-	var W: float = it["W"]
-	var rot: float = it["rot"]
-	mi.visible = false
-	var gap := L * 0.55
-	var stone := Color(0.7, 0.66, 0.6)
-	var bas := Basis(Vector3.UP, rot)
-	# iki uçta kalan kırık köprü parçası (sarkık uç)
-	for sg in [-1.0, 1.0]:
-		var seg := (L - gap) * 0.5
-		var mb := MB.new()
-		mb.box(Vector3(0, 0.15, 0), Vector3(seg, 0.4, W), stone, Basis())
-		mb.box(Vector3(-sg * seg * 0.5 + sg * 0.0, -0.3, 0), Vector3(0.6, 0.9, W * 0.9), stone.darkened(0.2), Basis(Vector3.FORWARD, sg * 0.35))
-		for k in 6:
-			mb.box(Vector3(randf_range(-seg * 0.5, seg * 0.5), 0.4, randf_range(-W * 0.4, W * 0.4)), Vector3(0.4, 0.2, 0.4), stone.darkened(randf_range(0.1, 0.3)), Basis(Vector3.UP, randf() * TAU))
-		var e := MeshInstance3D.new()
-		e.mesh = mb.commit(Mats.vcs())
-		e.position = c + dir * sg * (gap * 0.5 + seg * 0.5)
-		e.rotation.y = rot
-		add_child(e)
-	# düşen parçalar
-	for k in 8:
-		var pc := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(randf_range(1.0, 2.5), 0.4, randf_range(1.2, W))
-		pc.mesh = bm
-		pc.material_override = Mats.vcs()
-		var p0 := c + dir * randf_range(-gap * 0.45, gap * 0.45) + Vector3(0, 0.2, 0)
-		pc.position = p0
-		pc.rotation.y = rot
-		add_child(pc)
-		var tw := pc.create_tween()
-		var dur := randf_range(0.6, 1.1)
-		tw.tween_property(pc, "position:y", -1.6, dur).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-		tw.parallel().tween_property(pc, "rotation", Vector3(randf_range(-0.8, 0.8), rot, randf_range(-0.8, 0.8)), dur)
-		tw.tween_callback(func(): G.fx.water_splash(Vector3(p0.x, 0, p0.z), 0.9))
-	G.fx.explosion(c + Vector3(0, 0.5, 0), 2.0, "big")
-	G.fx.dust_burst(c, gap * 0.5)
-	Sfx.play3d("collapse", c, 6.0)
-	G.grid.clear_bridge(c, Vector2(gap, W + 0.5), rot)
-	# üstündekiler suya düşer
-	for u in G.near(c, gap * 0.6 + W):
-		if not u.alive:
-			continue
-		var rel: Vector3 = u.position - c
-		if absf(rel.dot(dir)) < gap * 0.5 and absf(rel.cross(dir).y) < W * 0.5 + 0.5:
-			if u is Vehicle and not u.is_air():
-				u.destroy(null)
-			elif u is Soldier:
-				u.die(null)
-	G.say(I18n.s("KÖPRÜ YIKILDI!"), c, G.player_team)
-
 func _fell(it: Dictionary, dir: Vector3) -> void:
 	it["alive"] = false
-	var mi: MeshInstance3D = it["node"]
+	var mi: MeshInstance3D = it["node"] if not it.has("bank") else _detach(it)
 	var axis := Vector3(dir.z, 0, -dir.x).normalized()
 	if axis.length() < 0.1:
 		axis = Vector3.RIGHT
@@ -604,17 +842,40 @@ func _fell(it: Dictionary, dir: Vector3) -> void:
 	Sfx.play3d("crumble", it["pos"], -4.0)
 
 func clear_area(c: Vector3, r: float) -> void:
-	for it in items:
+	for it in _items_near(c, r + 3.0):
 		if not it["alive"]:
 			continue
 		var p: Vector3 = it["pos"]
-		if Vector2(p.x - c.x, p.z - c.z).length() < r:
+		if Vector2(p.x - c.x, p.z - c.z).length() < r and it["kind"] != "bridge":
 			it["alive"] = false
-			(it["node"] as Node3D).visible = false
+			if it.has("bank") and it["node"] == null:
+				_mm_hide(it)
+			else:
+				(it["node"] as Node3D).visible = false
 			G.grid.set_static_circle(p, 0.5, 0.0, Grid.K_NONE, true)
+	# serbest eşyalar (sandık, varil, bariyer, CC0 eşyalar): görünmez + ızgaradaki siper / engel izi silinir
+	var keep: Array = []
+	for it in loose:
+		var mi = it["node"]
+		if mi == null or not is_instance_valid(mi):
+			continue
+		var q: Vector3 = (mi as Node3D).position
+		if Vector2(q.x - c.x, q.z - c.z).length() < r:
+			(mi as Node3D).visible = false
+			if it.has("rect"):
+				var rc: Array = it["rect"]
+				G.grid.set_static_rect(rc[0], rc[1], rc[2], 0.0, Grid.K_NONE, true)
+			var k := Vector2i(int(q.x / 16.0), int(q.z / 16.0))
+			if _lhash.has(k):
+				_lhash[k].erase(it)
+		else:
+			keep.append(it)
+	loose = keep
 
 # ------------------------------------------------------------ bitki örtüsü (çam, çalı, kaya, saman, ot, kamış)
-func pine(p: Vector3) -> void:
+func pine(p: Vector3, sc := 1.0) -> void:
+	if _real_tree(p, "pine", sc):
+		return
 	var v := rng.randi() % 4
 	var key := ("pine_w%d" if winter else "pine%d") % v
 	var mesh := _cached(key, func(): return _pine_mesh(v, winter))
@@ -647,11 +908,13 @@ func _pine_mesh(seed_v: int, win: bool) -> ArrayMesh:
 	var m := wood.commit(Mats.vc())
 	return nd.commit(Mats.vc2(), m)
 
-func bush(p: Vector3, big := false) -> void:
+func bush(p: Vector3, big := false, sc := 1.0) -> void:
+	if not winter and _real_tree(p, "bush", (1.5 if big else 1.0) * sc):
+		return
 	var v := rng.randi() % 5
 	var key := ("bushw%d" if winter else "bush%d") % v
 	var mesh := _cached(key, func(): return _bush_mesh(v))
-	_place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.4) * (1.6 if big else 1.0))
+	_loose(_place(mesh, p, rng.randf() * TAU, rng.randf_range(0.8, 1.4) * (1.6 if big else 1.0) * sc), p, "bush", 0.6 * sc, 0.8 * sc)
 
 func _bush_mesh(v: int) -> ArrayMesh:
 	var r0 := RandomNumberGenerator.new()
@@ -682,23 +945,93 @@ func _bush_mesh_old(v: int) -> ArrayMesh:
 	return mb.commit(Mats.vc())
 
 func rock(p: Vector3, s := 1.0) -> void:
-	var v := rng.randi() % 4
-	var mesh := _cached("rock%d" % v, func(): return _rock_mesh(v))
-	_place(mesh, p, rng.randf() * TAU, s)
+	var v := rng.randi() % 8
+	var mesh := _cached("rock%d_%s" % [v, str(winter)], func(): return _rock_mesh(v))
+	var mi := _place(mesh, p, rng.randf() * TAU, s)
+	# hafif eğik oturur, yarı gömülü
+	mi.rotation.x = rng.randf_range(-0.12, 0.12)
+	mi.rotation.z = rng.randf_range(-0.12, 0.12)
+	_loose(mi, p, "rock", 0.6 * s, 0.5 * s)
 	if s > 0.9:
 		G.grid.set_static_circle(p, 0.7 * s, 0.8 * s, Grid.K_WRECK)
 
+# kaya: alt bölünmüş ikosfer → elipsoid → rastgele düzlem kesikleri (kırık yüzler, keskin kenar)
+# → üç boyutlu gürültü; doku: tools/rock_tex.py (Voronoi kırık ağı, tabakalanma, liken)
 func _rock_mesh(v: int) -> ArrayMesh:
+	return rock_mesh(v, winter, not winter and biome_id != "desert", 3)
+
+# lvl: ikosfer alt bölme düzeyi (3: kaya ~1280 üçgen, 1: çakıl ~80 üçgen)
+static func rock_mesh(v: int, winter: bool, moss: bool, lvl: int) -> ArrayMesh:
 	var r := RandomNumberGenerator.new()
 	r.seed = 900 + v
-	var mb := MB.new()
-	mb.sphere(Vector3(0, 0.25, 0), Vector3(0.9, 0.6, 0.75), 7, 5, Color(0.42, 0.42, 0.42), Basis(), false, 0.28, r)
-	mb.sphere(Vector3(0.5, 0.15, 0.3), Vector3(0.5, 0.35, 0.45), 6, 4, Color(0.38, 0.38, 0.37), Basis(), false, 0.3, r)
-	return mb.commit(Mats.stone())
+	var t := (1.0 + sqrt(5.0)) * 0.5
+	var vs: Array = [Vector3(-1, t, 0), Vector3(1, t, 0), Vector3(-1, -t, 0), Vector3(1, -t, 0),
+		Vector3(0, -1, t), Vector3(0, 1, t), Vector3(0, -1, -t), Vector3(0, 1, -t),
+		Vector3(t, 0, -1), Vector3(t, 0, 1), Vector3(-t, 0, -1), Vector3(-t, 0, 1)]
+	for i in vs.size():
+		vs[i] = vs[i].normalized()
+	var fs: Array = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
+		[3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]
+	for _l in lvl:
+		var mid := {}
+		var nf: Array = []
+		for f in fs:
+			var m: Array = []
+			for e in 3:
+				var a: int = f[e]
+				var b: int = f[(e + 1) % 3]
+				var key := Vector2i(mini(a, b), maxi(a, b))
+				if not mid.has(key):
+					vs.append(((vs[a] + vs[b]) * 0.5).normalized())
+					mid[key] = vs.size() - 1
+				m.append(mid[key])
+			nf.append([f[0], m[0], m[2]])
+			nf.append([f[1], m[1], m[0]])
+			nf.append([f[2], m[2], m[1]])
+			nf.append([m[0], m[1], m[2]])
+		fs = nf
+	var rad := Vector3(r.randf_range(0.75, 1.05), r.randf_range(0.45, 0.75), r.randf_range(0.6, 0.9))
+	if v % 4 == 3:
+		rad = Vector3(r.randf_range(1.1, 1.4), r.randf_range(0.35, 0.5), r.randf_range(0.7, 0.9))    # yassı levha
+	var cuts: Array = []
+	for k in r.randi_range(5, 8):
+		var cn := Vector3(r.randf_range(-1, 1), r.randf_range(-0.35, 1.0), r.randf_range(-1, 1)).normalized()
+		cuts.append([cn, r.randf_range(0.55, 0.85)])
+	var fn := FastNoiseLite.new()
+	fn.seed = 77 + v
+	fn.frequency = 1.6
+	fn.fractal_octaves = 3
+	var pos := PackedVector3Array()
+	pos.resize(vs.size())
+	for i in vs.size():
+		var n: Vector3 = vs[i]
+		var p := n * rad
+		for c in cuts:
+			var d: float = p.dot(c[0]) - c[1] * (rad * c[0]).length()
+			if d > 0.0:
+				p -= c[0] * d
+		p *= 1.0 + fn.get_noise_3dv(n * 1.3) * 0.16 + fn.get_noise_3dv(n * 5.0) * 0.035
+		if p.y < -0.12:
+			p.y = -0.12 + (p.y + 0.12) * 0.25          # taban düz, toprağa gömülü
+		pos[i] = p + Vector3(0, 0.08, 0)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for f in fs:
+		for e in [0, 2, 1]:
+			var p: Vector3 = pos[f[e]]
+			var hgt := clampf((p.y + 0.1) / (rad.y * 0.9 + 0.1), 0.0, 1.0)
+			var c := Color(0.92, 0.9, 0.86).lerp(Color(0.62, 0.6, 0.56), 1.0 - hgt)   # taban gölgeli/toprak lekeli
+			st.set_color(c)
+			st.add_vertex(p)
+	st.index()
+	st.generate_normals()
+	var mesh := st.commit()
+	mesh.surface_set_material(0, Mats.rock(winter, moss))
+	return mesh
 
 func hay(p: Vector3) -> void:
 	var mesh := _cached("hay", func(): return _hay_mesh())
-	_place(mesh, p, rng.randf() * TAU)
+	_loose(_place(mesh, p, rng.randf() * TAU), p, "hay", 0.6, 1.2)
 	G.grid.set_static_circle(p, 0.6, 1.1, Grid.K_WRECK)
 
 func _hay_mesh() -> ArrayMesh:
@@ -706,7 +1039,75 @@ func _hay_mesh() -> ArrayMesh:
 	mb.cyl(Vector3(-0.6, 0.6, 0), 0.6, 0.6, 1.2, 12, Color(0.86, 0.68, 0.3), Basis(Vector3.FORWARD, PI * 0.5))
 	return mb.commit(Mats.vc())
 
-func _grass_material() -> StandardMaterial3D:
+# ot çeşitleri: 1 uzun kuru ot + başak, 2 kır çiçekleri (renk dokuda), 3 geniş yapraklı yabani ot
+func _grass_variant_material(kind: int) -> Material:
+	var key := "grassmat_v%d" % kind
+	if _cache.has(key):
+		return _cache[key]
+	var S := 128
+	var im := Image.create(S, S, false, Image.FORMAT_RGBA8)
+	im.fill(Color(0, 0, 0, 0))
+	var r := RandomNumberGenerator.new()
+	r.seed = 50 + kind
+	var blades: int = [0, 18, 16, 6][kind]
+	for b in blades:
+		var x0 := r.randf_range(12, S - 12)
+		var lean := r.randf_range(-26, 26)
+		var hgt := r.randf_range(0.6, 1.0) * S if kind == 1 else r.randf_range(0.35, 0.75) * S
+		var w := r.randf_range(1.2, 2.6) if kind == 1 else r.randf_range(2.0, 3.6)
+		var shade := r.randf_range(0.75, 1.0)
+		for y in int(hgt):
+			var t := float(y) / hgt
+			var cx := x0 + lean * t * t
+			var ww := w * (1.0 - t * 0.8)
+			for x in range(int(cx - ww), int(cx + ww) + 1):
+				if x >= 0 and x < S:
+					var c := Color(shade * (0.62 + 0.38 * t), shade * (0.72 + 0.28 * t), shade * 0.48, 1)
+					if kind == 2:
+						c = Color(0.28 * shade, 0.45 * shade, 0.16 * shade, 1)     # çiçek sapı (renk dokuda, örnek rengi beyaz)
+					im.set_pixel(x, S - 1 - y, c)
+		# başak / çiçek
+		var tx := int(x0 + lean)
+		var ty := S - 1 - int(hgt)
+		if kind == 1:
+			for k in 10:
+				var px := tx + r.randi_range(-2, 2)
+				var py := ty + k
+				if px >= 0 and px < S and py >= 0 and py < S:
+					im.set_pixel(px, py, Color(0.95, 0.85, 0.6, 1))
+		elif kind == 2:
+			var pal := [Color(0.95, 0.92, 0.85), Color(0.95, 0.85, 0.2), Color(0.75, 0.25, 0.85), Color(0.95, 0.3, 0.25), Color(0.45, 0.55, 0.95)]
+			var fc: Color = pal[r.randi() % pal.size()]
+			for dy in range(-4, 5):
+				for dx in range(-4, 5):
+					var d2 := dx * dx + dy * dy
+					if d2 <= 16 and tx + dx >= 0 and tx + dx < S and ty + dy >= 0 and ty + dy < S:
+						im.set_pixel(tx + dx, ty + dy, Color(0.95, 0.85, 0.3) if d2 <= 2 else fc)
+	if kind == 3:
+		# yuvarlak geniş yapraklar
+		for k in 9:
+			var cx2 := r.randf_range(25, S - 25)
+			var cy2 := r.randf_range(S * 0.35, S - 15)
+			var rr := r.randf_range(9, 16)
+			for y in range(int(cy2 - rr), int(cy2 + rr)):
+				for x in range(int(cx2 - rr), int(cx2 + rr)):
+					var dd := Vector2(x - cx2, (y - cy2) * 1.6).length()
+					if dd < rr and x >= 0 and x < S and y >= 0 and y < S:
+						var sh := 0.65 + 0.35 * (1.0 - dd / rr)
+						im.set_pixel(x, y, Color(0.5 * sh, 0.72 * sh, 0.38 * sh, 1))
+	im.generate_mipmaps()
+	var m := _grass_shader_mat(ImageTexture.create_from_image(im))
+	_cache[key] = m
+	return m
+
+# ot malzemesi: rüzgâr + rotor rüzgârı (shaders/grass.gdshader)
+func _grass_shader_mat(tex: Texture2D) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/grass.gdshader")
+	m.set_shader_parameter("albedo_tex", tex)
+	return m
+
+func _grass_material() -> Material:
 	if not _cache.has("grassmat"):
 		var S := 128
 		var im := Image.create(S, S, false, Image.FORMAT_RGBA8)
@@ -727,14 +1128,7 @@ func _grass_material() -> StandardMaterial3D:
 					if x >= 0 and x < S:
 						im.set_pixel(x, S - 1 - y, Color(shade * (0.6 + 0.4 * t), shade * (0.75 + 0.25 * t), shade * 0.5, 1))
 		im.generate_mipmaps()
-		var m := StandardMaterial3D.new()
-		m.albedo_texture = ImageTexture.create_from_image(im)
-		m.vertex_color_use_as_albedo = true
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-		m.alpha_scissor_threshold = 0.45
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		m.roughness = 0.95
-		_cache["grassmat"] = m
+		_cache["grassmat"] = _grass_shader_mat(ImageTexture.create_from_image(im))
 	return _cache["grassmat"]
 
 func _grass_card() -> ArrayMesh:
@@ -756,6 +1150,16 @@ func _grass_card() -> ArrayMesh:
 	return m
 
 func grass_field(n: int, col: Color, region := Rect2(2, 2, 252, 252), size := 0.55, avoid_fn: Callable = Callable()) -> void:
+	_grass_field_v(n, col, region, size, avoid_fn, 0)
+	if biome_id == "green" and not winter:
+		# çeşit: uzun kuru ot + başak, kır çiçekleri, geniş yapraklı yabani ot
+		_grass_field_v(int(n * 0.22), Color(0.82, 0.76, 0.5), region, size * 1.5, avoid_fn, 1)
+		_grass_field_v(int(n * 0.1), Color(1, 1, 1), region, size * 0.9, avoid_fn, 2)
+		_grass_field_v(int(n * 0.08), col.lightened(0.1), region, size * 0.8, avoid_fn, 3)
+	elif biome_id == "desert":
+		_grass_field_v(int(n * 0.3), Color(0.78, 0.7, 0.45), region, size * 1.3, avoid_fn, 1)
+
+func _grass_field_v(n: int, col: Color, region: Rect2, size: float, avoid_fn: Callable, kind: int) -> void:
 	# çapraz kartlı ot öbekleri (tek MultiMesh, gölge atmaz)
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -767,21 +1171,34 @@ func grass_field(n: int, col: Color, region := Rect2(2, 2, 252, 252), size := 0.
 	while xs.size() < n and tries < n * 3:
 		tries += 1
 		var p := Vector3(rng.randf_range(region.position.x, region.end.x), 0, rng.randf_range(region.position.y, region.end.y))
-		if G.grid.height_at(p) > 0.05 or G.terrain.ground_h(p) < -0.45:
+		# köprü döşemesinin altındaki kıyıdan çıkan ot döşemeyi deliyordu
+		if G.grid.height_at(p) > 0.05 or G.terrain.ground_h(p) < -0.45 or G.grid.on_bridge(p):
 			continue
 		if avoid_fn.is_valid() and avoid_fn.call(p):
 			continue
 		var s := rng.randf_range(0.6, 1.4) * size
 		xs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * 1.4, s, s * 1.4)), p + Vector3(0, G.terrain.ground_h(p), 0)))
 		cs.append(MB.jit(col, rng, 0.18))
+	# grafik ayarı: ot yoğunluğu. Üretim (rastgele sayı tüketimi) aynı kalır — harita yerleşimi ayardan bağımsız —
+	# yalnız çizilen öbekler seyreltilir
+	if grass_k < 0.999:
+		var kx: Array = []
+		var kc: Array = []
+		for i in xs.size():
+			if fmod(i * 0.618034, 1.0) < grass_k:
+				kx.append(xs[i])
+				kc.append(cs[i])
+		xs = kx
+		cs = kc
 	mm.instance_count = xs.size()
 	for i in xs.size():
 		mm.set_instance_transform(i, xs[i])
 		mm.set_instance_color(i, cs[i])
 	var m := MultiMeshInstance3D.new()
 	m.multimesh = mm
-	m.material_override = _grass_material()
+	m.material_override = _grass_material() if kind == 0 else _grass_variant_material(kind)
 	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	m.add_to_group("zoom_grass")
 	add_child(m)
 
 func reeds_along(pts: PackedVector3Array, half_w: float) -> void:
@@ -797,87 +1214,759 @@ func reeds_along(pts: PackedVector3Array, half_w: float) -> void:
 			var p := a.lerp(b, rng.randf())
 			for sg in [-1.0, 1.0]:
 				var q: Vector3 = p + side * sg * (half_w + rng.randf_range(0.5, 2.6))
-				if rng.randf() < 0.35 and G.grid.height_at(q) < 0.05:
+				if rng.randf() < 0.35 and G.grid.height_at(q) < 0.05 and not G.grid.on_bridge(q):
 					bush(q + Vector3(0, G.terrain.ground_h(q), 0))
 
 func bridge(center: Vector3, dir: Vector3, length: float, width := 6.5) -> void:
+	dir = Vector3(dir.x, 0, dir.z).normalized()
 	var rot := atan2(-dir.z, dir.x)
-	var mesh := _cached("bridge_%d_%d" % [int(length), int(width)], func(): return _bridge_mesh(length, width))
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.position = Vector3(center.x, 0, center.z)
-	mi.rotation.y = rot
-	add_child(mi)
+	var stone := length <= 20.0 or (length <= BridgeMesh.STONE_MAX and int(absf(center.x * 7.3 + center.z * 3.1)) % 2 == 0)
+	var Ld := length + 2.0
+	var n := BridgeMesh.span_count(stone, Ld)
+	var s := Ld / n
+	var W := width
+	var root := Node3D.new()
+	root.position = Vector3(center.x, 0, center.z)
+	root.rotation.y = rot
+	add_child(root)
+	var tk := "%s_%d_%d" % ["s" if stone else "c", int(round(s * 20.0)), int(round(W * 20.0))]
+	var stat := MeshInstance3D.new()
+	stat.mesh = _cached("brs_%s_%d" % [tk, n], func(): return BridgeMesh.static_mesh(stone, Ld, n, W))
+	root.add_child(stat)
+	var halves: Array = []
+	var hl: Array = []
+	for k in n:
+		var xc := -Ld * 0.5 + (k + 0.5) * s
+		for hs in [-1, 1]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = _cached("brh_%s_%d" % [tk, hs], func(): return BridgeMesh.half(stone, s, W, hs, []))
+			mi.position = Vector3(xc, 0, 0)
+			root.add_child(mi)
+			halves.append(mi)
+			hl.append([])
+		if not stone:
+			# aydınlatma direği: açıklık ucunda kenar kirişinde, yanlar sırayla
+			var sg := 1.0 if k % 2 == 0 else -1.0
+			var pm := MeshInstance3D.new()
+			pm.mesh = _cached("br_pole", func(): return BridgeMesh.pole())
+			pm.position = Vector3(s * 0.5 - 1.2, 0.2, sg * (W * 0.5 - 0.11))
+			pm.rotation.y = 0.0 if sg > 0.0 else PI
+			(halves[halves.size() - 1] as Node3D).add_child(pm)
+	# korkuluk / taş korkuluk parçaları (~4 m): vuruşta tek tek kopar
+	var nseg := maxi(2, int(round(Ld / 4.0)))
+	var seg := Ld / nseg
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _cached("brr_%s" % ("s" if stone else "c"), func(): return BridgeMesh.rail_seg(stone))
+	mm.instance_count = nseg * 2
+	var ok: Array = []
+	for i in nseg * 2:
+		mm.set_instance_transform(i, _rail_xf(stone, W, Ld, seg, i, nseg))
+		ok.append(1)
+	var rmi := MultiMeshInstance3D.new()
+	rmi.multimesh = mm
+	root.add_child(rmi)
+	_riprap(center, dir, Ld, W)
+	# suda kalan ara ayaklar: su gölgelendiricisinde köpük ve girdap izi
+	if G.terrain:
+		for k in range(1, n):
+			var pw := center + dir * (-Ld * 0.5 + k * s)
+			if G.terrain.ground_h(pw) < -0.35:
+				G.terrain.add_pier(pw, W * 0.5 + (1.3 if stone else 0.6), 0.8 if stone else 0.45)
 	G.grid.set_bridge(center, Vector2(length + 2.0, width - 0.8), rot)
 	G.grid.add_bridge(center, dir, length + 2.0, width - 0.8)
 	var side := Vector3(-dir.z, 0, dir.x)
 	for sg in [-1.0, 1.0]:
 		G.grid.set_static_rect(center + side * sg * (width * 0.5 - 0.15), Vector2(length, 0.3), rot, 0.75, Grid.K_HOUSE)
 	# yıkılabilir: yalnız ağır patlamalar (topçu, tank mermisi, büyük) hasar verir
-	items.append({"node": mi, "pos": Vector3(center.x, 0, center.z), "kind": "bridge", "hp": 1600.0, "alive": true, "r": length * 0.4, "dir": dir, "L": length, "W": width, "rot": rot})
+	items.append({"node": root, "pos": Vector3(center.x, 0, center.z), "kind": "bridge", "hp": 1600.0, "alive": true, "r": length * 0.4,
+		"dir": dir, "L": length, "W": width, "rot": rot, "stone": stone, "Ld": Ld, "n": n, "s": s, "halves": halves, "hl": hl,
+		"holes": 0, "rails": mm, "nseg": nseg, "seg": seg, "rail_ok": ok, "rail_lost": 0})
 
-func _bridge_mesh(L: float, W: float) -> ArrayMesh:
+func _rail_xf(stone: bool, W: float, Ld: float, seg: float, i: int, nseg: int) -> Transform3D:
+	var sg := -1.0 if i < nseg else 1.0
+	var x := -Ld * 0.5 + (i % nseg + 0.5) * seg
+	var z := sg * (W * 0.5 - (BridgeMesh.PAR * 0.5 if stone else 0.11))
+	return Transform3D(Basis(Vector3.UP, 0.0 if sg > 0.0 else PI) * Basis.from_scale(Vector3(seg / 4.0, 1, 1)), Vector3(x, 0.0 if stone else 0.2, z))
+
+# kıyı tahkimatı: köprü uçlarında şevde iri taşlar
+func _riprap(c: Vector3, dir: Vector3, Ld: float, W: float) -> void:
+	if G.terrain == null:
+		return
+	var side := Vector3(-dir.z, 0, dir.x)
+	var xs: Array = []
+	for e in [-1.0, 1.0]:
+		var got := 0
+		for k in 60:
+			if got >= 14:
+				break
+			var lx: float = e * (Ld * 0.5 - rng.randf_range(0.0, 5.5))
+			var lz := rng.randf_range(-W * 0.5 - 3.5, W * 0.5 + 3.5)
+			var p := c + dir * lx + side * lz
+			var gh := G.terrain.ground_h(p)
+			if gh > -0.06 or gh < -1.4:
+				continue
+			var sc := rng.randf_range(0.3, 0.62)
+			xs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(sc, sc * 0.8, sc)), Vector3(p.x, gh - 0.1, p.z)))
+			got += 1
+	if xs.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _cached("riprap", func(): return rock_mesh(13, winter, false, 2))
+	mm.instance_count = xs.size()
+	for i in xs.size():
+		mm.set_instance_transform(i, xs[i])
+	var m := MultiMeshInstance3D.new()
+	m.multimesh = mm
+	add_child(m)
+
+# ağır vuruş: yakın korkuluk parçaları kopar, döşemede delik açılır
+func _bridge_hit(it: Dictionary, center: Vector3, radius: float, dmg: float) -> void:
+	var dir: Vector3 = it["dir"]
+	var side := Vector3(-dir.z, 0, dir.x)
+	var rel: Vector3 = center - (it["pos"] as Vector3)
+	var lx := rel.dot(dir)
+	var lz := rel.dot(side)
+	var W: float = it["W"]
+	var Ld: float = it["Ld"]
+	if absf(lx) > Ld * 0.5 + radius or absf(lz) > W * 0.5 + radius:
+		return
+	var nseg: int = it["nseg"]
+	var seg: float = it["seg"]
+	var ok: Array = it["rail_ok"]
+	var reach := radius * clampf(dmg / 180.0, 0.6, 1.3)
+	for i in nseg * 2:
+		if int(ok[i]) == 0:
+			continue
+		var sg := -1.0 if i < nseg else 1.0
+		var xc := -Ld * 0.5 + (i % nseg + 0.5) * seg
+		var dx := maxf(absf(lx - xc) - seg * 0.5, 0.0)
+		if Vector2(dx, lz - sg * W * 0.5).length() < reach:
+			_rail_break(it, i)
+	if dmg >= 140.0 and center.y < 2.5 and absf(lx) < Ld * 0.5 - 0.3 and absf(lz) < W * 0.5 - 0.25 and int(it["holes"]) < 12:
+		_bridge_hole(it, lx, lz, clampf(dmg / 300.0, 0.4, 1.15))
+
+func _rail_break(it: Dictionary, i: int) -> void:
+	(it["rail_ok"] as Array)[i] = 0
+	it["rail_lost"] = int(it["rail_lost"]) + 1
+	var mm: MultiMesh = it["rails"]
+	var xf := mm.get_instance_transform(i)
+	mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), xf.origin))
+	var root: Node3D = it["node"]
+	var stone: bool = it["stone"]
+	var W: float = it["W"]
+	var seg: float = it["seg"]
+	var nseg: int = it["nseg"]
+	var sg := -1.0 if i < nseg else 1.0
+	var outp := root.to_global(Vector3(xf.origin.x, 0, sg * (W * 0.5 + 1.2)))
+	var wet := G.grid.is_water(outp)
+	var gy := Terrain.WATER_Y - 0.5 if wet else (G.terrain.ground_h(outp) if G.terrain else 0.0)
+	var wp := root.to_global(xf.origin + Vector3(0, 0.5, 0))
+	if stone:
+		# taş korkuluk yıkılır: taşların çoğu dışa (suya), birkaçı yola düşer
+		G.fx.dust_burst(wp, 1.2)
+		Sfx.play3d("crumble", wp, -2.0)
+		for k in 8:
+			var pc := MeshInstance3D.new()
+			var v := k % 3
+			pc.mesh = _cached("br_stone_%d" % v, func(): return BridgeMesh.stone_chunk(v))
+			var lp := xf.origin + Vector3(randf_range(-0.42, 0.42) * seg, randf_range(0.2, 0.85), randf_range(-0.15, 0.15))
+			pc.position = lp
+			pc.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+			var sc := randf_range(0.55, 1.05)
+			pc.scale = Vector3(sc, sc, sc)
+			root.add_child(pc)
+			var out := k < 6
+			var tgt := lp + Vector3(randf_range(-0.5, 0.5), 0, sg * (randf_range(0.7, 2.4) if out else -randf_range(0.5, 1.6)))
+			# suya düşen taş dibe iner (yüzeye yakın kalırsa kıyı köpüğüyle buz gibi parlıyordu)
+			var ty := 0.1
+			if out:
+				ty = (G.terrain.ground_h(root.to_global(Vector3(tgt.x, 0, tgt.z))) + 0.12 * sc) if (wet and G.terrain) else gy
+			var dur := randf_range(0.45, 0.8)
+			var tw := pc.create_tween()
+			tw.tween_property(pc, "position", Vector3(tgt.x, ty, tgt.z), dur).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			tw.parallel().tween_property(pc, "rotation", pc.rotation + Vector3(randf_range(-3, 3), randf_range(-3, 3), randf_range(-3, 3)), dur)
+			if out and wet and k < 3:
+				var sp := root.to_global(Vector3(tgt.x, 0, tgt.z))
+				tw.tween_callback(func(): G.fx.water_splash(sp, 0.35))
+		return
+	# çelik korkuluk: ya dış kenarda menteşelenip ön yüzden sarkar ya da kopup düşer
+	G.fx.sparks(wp, 2.5)
+	Sfx.play3d("hit_metal", wp, -2.0)
+	var pv := Node3D.new()
+	pv.position = xf.origin + Vector3(0, 0, sg * 0.11)
+	pv.rotation.y = 0.0 if sg > 0.0 else PI
+	root.add_child(pv)
+	var sm := MeshInstance3D.new()
+	sm.mesh = mm.mesh
+	sm.position = Vector3(0, 0, -0.11)
+	sm.scale = Vector3(seg / 4.0, 1, 1)
+	pv.add_child(sm)
+	var tw := pv.create_tween()
+	if randf() < 0.55:
+		tw.tween_property(pv, "rotation:x", randf_range(1.75, 2.25), 0.45).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(pv, "rotation:z", randf_range(-0.25, 0.25), 0.45)
+		tw.tween_property(pv, "rotation:x", randf_range(1.55, 1.75), 0.25).set_ease(Tween.EASE_OUT)
+	else:
+		var dur := 0.7
+		var tgt := Vector3(xf.origin.x + randf_range(-1.0, 1.0), gy - root.position.y, sg * (W * 0.5 + randf_range(1.0, 2.2)))
+		tw.tween_property(pv, "position", tgt, dur).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(pv, "rotation:x", randf_range(1.3, 2.6), dur)
+		tw.parallel().tween_property(pv, "rotation:z", randf_range(-0.6, 0.6), dur)
+		if wet:
+			tw.tween_callback(func(): G.fx.water_splash(outp, 0.6))
+
+# döşemede delik: etkilenen açıklık yarıları deliğiyle yeniden örülür
+func _bridge_hole(it: Dictionary, lx: float, lz: float, r: float) -> void:
+	var Ld: float = it["Ld"]
+	var s: float = it["s"]
+	var n: int = it["n"]
+	var stone: bool = it["stone"]
+	var W: float = it["W"]
+	var halves: Array = it["halves"]
+	var hl: Array = it["hl"]
+	var sd := randf() * 100.0
+	it["holes"] = int(it["holes"]) + 1
+	for k in n:
+		var sx := lx - (-Ld * 0.5 + (k + 0.5) * s)
+		if absf(sx) > s * 0.5 + r * 1.2:
+			continue
+		for h in 2:
+			var x0 := -s * 0.5 if h == 0 else 0.0
+			var x1 := 0.0 if h == 0 else s * 0.5
+			if sx + r * 1.2 < x0 or sx - r * 1.2 > x1:
+				continue
+			var idx := k * 2 + h
+			(hl[idx] as Array).append([Vector2(sx, lz), r, sd])
+			var mi: MeshInstance3D = halves[idx]
+			if is_instance_valid(mi):
+				mi.mesh = BridgeMesh.half(stone, s, W, -1 if h == 0 else 1, hl[idx])
+	var root: Node3D = it["node"]
+	var wp := root.to_global(Vector3(lx, 0, lz))
+	G.fx.scorch(wp, r * 3.4)
+	# delikten düşen parçalar suya
+	if G.terrain and G.terrain.ground_h(wp) < -0.3 and not stone:
+		get_tree().create_timer(0.35).timeout.connect(func(): G.fx.water_splash(wp, 0.45))
+
+# çöküş: vurulan açıklık (bazen komşusu da) ortadan kırılır; betonda iki yarı mesnetleri etrafında dönüp suya
+# V biçiminde düşer, taşta kemer yıkılır (yarılar dibe iner, iri taşlar sudan çıkar). Ayaklar ve öteki açıklıklar kalır.
+func _collapse_bridge(it: Dictionary, center: Vector3) -> void:
+	var c: Vector3 = it["pos"]
+	var dir: Vector3 = it["dir"]
+	var Ld: float = it["Ld"]
+	var s: float = it["s"]
+	var n: int = it["n"]
+	var W: float = it["W"]
+	var lx := (center - c).dot(dir)
+	var k0 := clampi(int(floor((lx + Ld * 0.5) / s)), 0, n - 1)
+	var drop := [k0]
+	if n >= 3:
+		var f := (lx + Ld * 0.5) / s - k0
+		if f < 0.25 and k0 > 0 and randf() < 0.5:
+			drop.append(k0 - 1)
+		elif f > 0.75 and k0 < n - 1 and randf() < 0.5:
+			drop.append(k0 + 1)
+	var x_lo := 1e9
+	var x_hi := -1e9
+	for k in drop:
+		_drop_span(it, k)
+		x_lo = minf(x_lo, -Ld * 0.5 + k * s)
+		x_hi = maxf(x_hi, -Ld * 0.5 + (k + 1) * s)
+	var gap := x_hi - x_lo
+	var gc := c + dir * ((x_lo + x_hi) * 0.5)
+	# (135) boşluk kaydı: mühendislik aracı buraya panel köprü kurar
+	it["gap"] = {"gc": gc, "len": gap, "x_lo": x_lo, "x_hi": x_hi, "built": 0.0}
+	G.fx.dust_burst(gc, gap * 0.5)
+	Sfx.play3d("collapse", gc, 6.0)
+	G.grid.clear_bridge(gc, Vector2(gap, W + 0.5), it["rot"])
+	for b in G.grid.bridges.duplicate():
+		if (b["c"] as Vector3).distance_to(c) < 1.0:
+			G.grid.bridges.erase(b)
+	# üstündekiler suya düşer
+	for u in G.near(gc, gap * 0.6 + W):
+		if not u.alive:
+			continue
+		var rel: Vector3 = u.position - gc
+		if absf(rel.dot(dir)) < gap * 0.5 and absf(rel.cross(dir).y) < W * 0.5 + 0.5:
+			if u is Vehicle and not u.is_air():
+				u.destroy(null)
+			elif u is Soldier:
+				u.die(null)
+	G.say(I18n.s("KÖPRÜ YIKILDI!"), c, G.player_team)
+
+# ------------------------------------------------------------ (135) yıkık köprüye panel köprü
+# Mühendislik aracı (dozer / kurtarma aracı) yıkık açıklığın yanına gelir, Bailey tipi panel köprüyü kıyıdan
+# karşıya parça parça uzatır (her ~3 m bir panel: döşeme + iki yan kafes); bitince geçiş yeniden açılır.
+
+# p'ye en yakın, onarılmamış yıkık köprü (boşluk merkezine r m içinde)
+func broken_bridge_at(p: Vector3, r := 18.0) -> Dictionary:
+	var best: Dictionary = {}
+	var bd := r
+	for it in items:
+		if it.get("kind", "") != "bridge" or it["alive"] or not it.has("gap") or bool(it.get("repaired", false)):
+			continue
+		var gc: Vector3 = it["gap"]["gc"]
+		var d := Vector2(gc.x - p.x, gc.z - p.z).length()
+		if d < bd:
+			bd = d
+			best = it
+	return best
+
+# boşluğun iki ucu (dünya, kıyı tarafı): aracın çalışacağı yer
+func gap_ends(it: Dictionary) -> Array:
+	var c: Vector3 = it["pos"]
+	var dir: Vector3 = it["dir"]
+	var g: Dictionary = it["gap"]
+	return [c + dir * float(g["x_lo"]), c + dir * float(g["x_hi"])]
+
+const PANEL_L := 3.0
+
+# kurulum ilerlemesi 0..1: panel sayısı kadar parça görünür (from_lo: kurulum hangi uçtan)
+func bridge_progress(it: Dictionary, k: float, from_lo: bool) -> void:
+	var g: Dictionary = it["gap"]
+	if not g.has("node"):
+		_panel_bridge_node(it, from_lo)
+	g["built"] = clampf(k, 0.0, 1.0)
+	var panels: Array = g["panels"]
+	var nshow := int(ceil(g["built"] * panels.size() - 0.001))
+	for i in panels.size():
+		(panels[i] as Node3D).visible = i < nshow
+	if g["built"] >= 1.0 and not bool(it.get("repaired", false)):
+		_panel_bridge_done(it)
+
+func _panel_bridge_node(it: Dictionary, from_lo: bool) -> void:
+	var g: Dictionary = it["gap"]
+	var root: Node3D = it["node"]
+	var W: float = it["W"]
+	var x0: float = float(g["x_lo"]) - 1.0
+	var x1: float = float(g["x_hi"]) + 1.0
+	var L := x1 - x0
+	var n := maxi(2, int(ceil(L / PANEL_L)))
+	var pl := L / n
+	var bw := W - 0.9                    # özgün döşeme genişliği (iki şeritli panel köprü)
+	var mesh: ArrayMesh = _cached("panelbr_%d_%d" % [int(pl * 10.0), int(bw * 10.0)], func(): return _panel_mesh(pl, bw))
+	var holder := Node3D.new()
+	root.add_child(holder)
+	var panels: Array = []
+	for i in n:
+		var k := i if from_lo else n - 1 - i
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.position = Vector3(x0 + (k + 0.5) * pl, 0.0, 0.0)
+		mi.visible = false
+		holder.add_child(mi)
+		panels.append(mi)
+	g["node"] = holder
+	g["panels"] = panels
+
+# tek panel: çelik döşeme (kaymaz desenli), iki yanda Bailey kafes (alt / üst başlık, dikmeler, çaprazlar)
+func _panel_mesh(pl: float, bw: float) -> ArrayMesh:
 	var mb := MB.new()
-	var st := Color(0.66, 0.63, 0.58)
-	mb.box(Vector3(0, -0.25, 0), Vector3(L + 2.0, 0.54, W), st)
-	mb.box(Vector3(0, 0.0, 0), Vector3(L + 2.0, 0.04, W - 0.9), Color(0.48, 0.45, 0.42))
+	var steel := Color(0.24, 0.27, 0.2)
+	var deck := Color(0.3, 0.3, 0.28)
+	mb.box(Vector3(0, -0.12, 0), Vector3(pl - 0.04, 0.2, bw), deck)
+	for k in 4:
+		mb.box(Vector3(0, 0.0, -bw * 0.5 + (k + 0.5) * bw / 4.0), Vector3(pl - 0.08, 0.03, bw / 4.0 - 0.1), deck.lightened(0.06))
+	mb.box(Vector3(0, -0.35, 0), Vector3(pl - 0.1, 0.18, 0.25), steel)       # alt kiriş
 	for sg in [-1.0, 1.0]:
-		mb.box(Vector3(0, 0.38, sg * (W * 0.5 - 0.15)), Vector3(L + 2.0, 0.7, 0.3), st.lightened(0.05))
-		var n := int((L + 2.0) / 2.2)
-		for k in n + 1:
-			var x := -(L + 2.0) * 0.5 + k * (L + 2.0) / n
-			mb.box(Vector3(x, 0.5, sg * (W * 0.5 - 0.15)), Vector3(0.45, 1.0, 0.45), st.lightened(0.1))
-	var np := maxi(1, int(L / 5.0))
-	for k in np + 1:
-		var x := -L * 0.5 + k * L / np
-		mb.box(Vector3(x, -1.2, 0), Vector3(0.9, 1.9, W * 0.92), st.darkened(0.1))
-	for k in np:
-		var x0 := -L * 0.5 + k * L / np + 0.45
-		var x1 := -L * 0.5 + (k + 1) * L / np - 0.45
-		var cx := (x0 + x1) * 0.5
-		var rr := (x1 - x0) * 0.5
-		var seg := 8
-		for s in seg:
-			var a0 := PI * s / seg
-			var a1 := PI * (s + 1) / seg
-			for sg in [-1.0, 1.0]:
-				var z: float = sg * W * 0.46
-				var p0 := Vector3(cx + cos(a0) * rr, -0.52, z)
-				var q0 := Vector3(cx + cos(a0) * rr, -1.9 + sin(a0) * 1.2, z)
-				var q1 := Vector3(cx + cos(a1) * rr, -1.9 + sin(a1) * 1.2, z)
-				var p1 := Vector3(cx + cos(a1) * rr, -0.52, z)
-				mb.quad(p0, p1, q1, q0, st.darkened(0.15), Vector3(0, 0, sg))
-	return mb.commit(Mats.masonry())
+		var z: float = sg * (bw * 0.5 + 0.12)
+		var h := 1.45
+		mb.box(Vector3(0, 0.05, z), Vector3(pl, 0.14, 0.14), steel)           # alt başlık
+		mb.box(Vector3(0, h, z), Vector3(pl, 0.14, 0.14), steel)              # üst başlık
+		for e in [-0.5, 0.5]:
+			mb.box(Vector3(e * (pl - 0.1), h * 0.5 + 0.05, z), Vector3(0.12, h, 0.12), steel)
+		mb.cyl_between(Vector3(-pl * 0.45, 0.1, z), Vector3(pl * 0.45, h - 0.05, z), 0.05, 0.05, 5, steel)
+		mb.cyl_between(Vector3(pl * 0.45, 0.1, z), Vector3(-pl * 0.45, h - 0.05, z), 0.05, 0.05, 5, steel)
+	return mb.commit(Mats.vcs())
+
+func _panel_bridge_done(it: Dictionary) -> void:
+	it["repaired"] = true
+	var c: Vector3 = it["pos"]
+	var dir: Vector3 = it["dir"]
+	var W: float = it["W"]
+	var L: float = it["L"]
+	G.grid.set_bridge(c, Vector2(L + 2.0, W - 0.8), it["rot"])
+	G.grid.add_bridge(c, dir, L + 2.0, W - 0.8)
+	# yol bulma önbelleği (bölge / yol önbelleği) eski "boşluk" hâlini tutuyordu
+	G.grid.flush_nav()
+	G.fx.dust_burst(it["gap"]["gc"], 3.0)
+	G.say(I18n.s("KÖPRÜ YENİDEN KURULDU"), c, G.player_team)
+
+func _drop_span(it: Dictionary, k: int) -> void:
+	var root: Node3D = it["node"]
+	var s: float = it["s"]
+	var Ld: float = it["Ld"]
+	var W: float = it["W"]
+	var stone: bool = it["stone"]
+	var halves: Array = it["halves"]
+	var xc := -Ld * 0.5 + (k + 0.5) * s
+	# bu açıklıktaki korkuluklar yarılarıyla birlikte düşer
+	var mm: MultiMesh = it["rails"]
+	var nseg: int = it["nseg"]
+	var ok: Array = it["rail_ok"]
+	for i in nseg * 2:
+		if int(ok[i]) == 0:
+			continue
+		var xf := mm.get_instance_transform(i)
+		var rx := xf.origin.x - xc
+		if absf(rx) > s * 0.5:
+			continue
+		ok[i] = 0
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), xf.origin))
+		var rm := MeshInstance3D.new()
+		rm.mesh = mm.mesh
+		rm.transform = Transform3D(xf.basis, xf.origin - Vector3(xc, 0, 0))
+		(halves[k * 2 + (0 if rx < 0.0 else 1)] as Node3D).add_child(rm)
+	var mid := root.to_global(Vector3(xc, 0, 0))
+	var bed := G.terrain.ground_h(mid) if G.terrain else -1.8
+	var depth := clampf(-(bed + 0.42) + 0.3, 1.1, 2.3)
+	for hh in 2:
+		var h: MeshInstance3D = halves[k * 2 + hh]
+		var sgn := -1.0 if hh == 0 else 1.0      # sol yarı -x ucundaki mesnette döner
+		var pv := Node3D.new()
+		pv.position = Vector3(xc + sgn * s * 0.5, -0.42, 0)
+		root.add_child(pv)
+		h.reparent(pv)
+		var be := MeshInstance3D.new()
+		be.mesh = _cached("br_edge_%s_%d" % ["s" if stone else "c", int(W * 10.0)], func(): return BridgeMesh.broken_edge(stone, W, 7))
+		be.rotation.y = 0.0 if hh == 0 else PI
+		h.add_child(be)
+		var ang := asin(clampf(depth / (s * 0.5), 0.05, 0.9))
+		var tw := pv.create_tween()
+		if stone:
+			tw.tween_interval(randf_range(0.0, 0.12))
+			tw.tween_property(pv, "position:y", -0.42 - depth - 0.5, 0.8).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			tw.parallel().tween_property(pv, "rotation:z", sgn * ang * randf_range(0.5, 1.1), 0.8)
+			tw.parallel().tween_property(pv, "rotation:x", randf_range(-0.12, 0.12), 0.8)
+		else:
+			tw.tween_property(pv, "rotation:z", sgn * ang * 0.06, 0.18)
+			tw.tween_property(pv, "rotation:z", sgn * ang, 0.75).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			tw.tween_property(pv, "rotation:z", sgn * ang * 0.93, 0.12).set_ease(Tween.EASE_OUT)
+			tw.tween_property(pv, "rotation:z", sgn * ang, 0.2).set_ease(Tween.EASE_IN)
+	var tm := get_tree().create_timer(0.9)
+	tm.timeout.connect(func():
+		G.fx.water_splash(mid, 1.8)
+		G.fx.dust_burst(mid, 3.0))
+	if not stone:
+		# kırılma yerinde iri beton kırıkları (bir kısmı sudan çıkar)
+		for j in 8:
+			var pc := MeshInstance3D.new()
+			var v := j % 3
+			pc.mesh = _cached("br_cchunk_%d" % v, func(): return BridgeMesh.conc_chunk(v))
+			var lp := Vector3(xc + randf_range(-0.2, 0.2) * s, randf_range(-0.3, 0.1), randf_range(-W * 0.5, W * 0.5))
+			pc.position = lp
+			pc.rotation = Vector3(randf_range(-0.8, 0.8), randf() * TAU, randf_range(-0.8, 0.8))
+			var sc := randf_range(0.9, 1.7)
+			pc.scale = Vector3(sc, sc, sc)
+			root.add_child(pc)
+			var gp := root.to_global(Vector3(lp.x, 0, lp.z))
+			var gy := G.terrain.ground_h(gp) if G.terrain else -1.8
+			var tw3 := pc.create_tween()
+			tw3.tween_interval(randf_range(0.3, 0.7))
+			tw3.tween_property(pc, "position:y", gy + (0.55 if j < 4 else 0.2) * sc, randf_range(0.4, 0.6)).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	if stone:
+		# kemer taşları: iri bloklar dibe yığılır, bir kısmı sudan çıkar; açıklık uçlarında kırık kemer
+		for j in 16:
+			var pc := MeshInstance3D.new()
+			var v := j % 3
+			pc.mesh = _cached("br_stone_%d" % v, func(): return BridgeMesh.stone_chunk(v))
+			var lp := Vector3(xc + randf_range(-0.42, 0.42) * s, randf_range(-0.3, 0.2), randf_range(-W * 0.55, W * 0.55))
+			pc.position = lp
+			pc.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+			var sc := randf_range(1.6, 2.6) if j < 6 else randf_range(0.9, 1.6)
+			pc.scale = Vector3(sc, sc * 0.8, sc)
+			root.add_child(pc)
+			var gp := root.to_global(Vector3(lp.x, 0, lp.z))
+			var gy := G.terrain.ground_h(gp) if G.terrain else -1.8
+			var tw2 := pc.create_tween()
+			tw2.tween_interval(randf_range(0.05, 0.4))
+			tw2.tween_property(pc, "position:y", gy + (0.5 if j < 6 else 0.15) * sc, randf_range(0.5, 0.8)).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		for e in [-1.0, 1.0]:
+			var be2 := MeshInstance3D.new()
+			be2.mesh = _cached("br_edge_s_%d" % int(W * 10.0), func(): return BridgeMesh.broken_edge(true, W, 7))
+			be2.position = Vector3(xc + e * s * 0.5, 0, 0)
+			be2.rotation.y = 0.0 if e < 0.0 else PI
+			root.add_child(be2)
+
+# (127) yanmış ot: p'nin r m içindeki ot öbekleri kararmış kısa anıza döner (boyu %30, rengi kömür)
+func burn_grass(p: Vector3, r: float) -> void:
+	var r2 := r * r
+	for n in get_tree().get_nodes_in_group("zoom_grass"):
+		var mmi := n as MultiMeshInstance3D
+		if mmi == null or mmi.multimesh == null:
+			continue
+		var mm := mmi.multimesh
+		# hızlı ön eleme: örgünün kapsamı yangına değmiyorsa atla
+		var ab: AABB = mmi.get_aabb()
+		if ab.size != Vector3.ZERO:
+			var lo := ab.position
+			var hi := ab.end
+			if p.x + r < lo.x or p.x - r > hi.x or p.z + r < lo.z or p.z - r > hi.z:
+				continue
+		for i in mm.instance_count:
+			var xf := mm.get_instance_transform(i)
+			var dx := xf.origin.x - p.x
+			var dz := xf.origin.z - p.z
+			if dx * dx + dz * dz > r2:
+				continue
+			mm.set_instance_transform(i, Transform3D(xf.basis.scaled(Vector3(1.0, 0.3, 1.0)), xf.origin))
+			if mm.use_colors:
+				mm.set_instance_color(i, Color(0.09, 0.08, 0.06))
+
+# ------------------------------------------------------------ akışlı ot (büyük harita)
+# 8 km'de haritanın tamamına ot dökmek ~2 M örnek ve ~10 sn üretim demekti: ot yalnız yakın görüşte,
+# kameranın çevresindeki 128 m'lik karolarda üretilir (kare başına bir karo), uzaklaşan karolar silinir.
+# Tohum karodan: aynı yer her seferinde aynı ot. Sürülmüş tarla ve yol üstüne ot düşmez.
+const GT := 128.0
+var _gtiles := {}
+var _gt_t := 0.0
+
+func _grass_tick(dt: float) -> void:
+	_gt_t -= dt
+	if _gt_t > 0.0 or G.cam == null:
+		return
+	_gt_t = 0.05
+	var f: Vector3 = G.cam.focus
+	var r: float = G.cam.size * 1.3 + GT * 0.5
+	# uzak karoları sil (yakınlaştırma bandı dışında yalnız gizlenir, silinmez)
+	var far := maxf(r * 2.5, 700.0)
+	for k in _gtiles.keys():
+		if Vector2((k.x + 0.5) * GT - f.x, (k.y + 0.5) * GT - f.z).length() > far:
+			for n in _gtiles[k]:
+				if is_instance_valid(n):
+					n.queue_free()
+			_gtiles.erase(k)
+	if G.cam.size >= 200.0:
+		return
+	var best := Vector2i(-1, -1)
+	var bd := 1e9
+	for tz in range(maxi(0, int((f.z - r) / GT)), mini(int(G.MAP / GT) - 1, int((f.z + r) / GT)) + 1):
+		for tx in range(maxi(0, int((f.x - r) / GT)), mini(int(G.MAP / GT) - 1, int((f.x + r) / GT)) + 1):
+			var k := Vector2i(tx, tz)
+			if _gtiles.has(k):
+				continue
+			var d := Vector2((tx + 0.5) * GT - f.x, (tz + 0.5) * GT - f.z).length()
+			if d < r + GT * 0.7 and d < bd:
+				bd = d
+				best = k
+	if best.x >= 0:
+		_grass_tile(best)
+
+func _grass_tile(k: Vector2i) -> void:
+	var keep := rng
+	rng = RandomNumberGenerator.new()
+	rng.seed = k.x * 92821 + k.y * 68917 + 7
+	var n0 := get_child_count()
+	var avoid := func(p: Vector3) -> bool:
+		return G.terrain.field_at(p) == 3 or G.terrain.on_road(p)
+	grass_field(2600, Color(0.42, 0.55, 0.24), Rect2(k.x * GT, k.y * GT, GT, GT), 0.5, avoid)
+	var nodes: Array = []
+	for i in range(n0, get_child_count()):
+		nodes.append(get_child(i))
+	_gtiles[k] = nodes
+	rng = keep
 
 # ------------------------------------------------------------ seçili birliklerin üstündeki ağaçları saydamlaştır
 var _fade_t := 0.0
 var _faded: Array = []
 
+# ağaç kovası (16 m): saydamlaştırma tüm eşyaları taramasın (8 km'de ~60 bin ağaç)
+# uzamsal kovalar (16 m): öğeler diziden hiç silinmez (yalnız alive=false), yeni eklenenler artımlı
+# kovalanır — eskiden her eklemede 75 bin öğelik tüm dizi yeniden kovalanıyordu; ezme/patlama tüm diziyi
+# tarıyordu (8 km'de 48 araçla kare başına ~1 sn)
+var _thash := {}
+var _thash_n := 0
+var _ihash := {}
+var _ihash_n := 0
+var _big_r := 0.0             # kovaya merkezinden taşan en büyük öğe yarıçapı (köprü)
+
+func _items_near(q: Vector3, r: float) -> Array:
+	while _ihash_n < items.size():
+		var it: Dictionary = items[_ihash_n]
+		_ihash_n += 1
+		var p: Vector3 = it["pos"]
+		var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
+		if _ihash.has(k):
+			_ihash[k].append(it)
+		else:
+			_ihash[k] = [it]
+		_big_r = maxf(_big_r, float(it.get("r", 0.5)))
+	var rr := r + minf(_big_r, 64.0)
+	var out: Array = []
+	for dz in range(int((q.z - rr) / 16.0), int((q.z + rr) / 16.0) + 1):
+		for dx in range(int((q.x - rr) / 16.0), int((q.x + rr) / 16.0) + 1):
+			var arr = _ihash.get(Vector2i(dx, dz))
+			if arr != null:
+				out.append_array(arr)
+	return out
+
+func _trees_near(q: Vector3, r: float) -> Array:
+	while _thash_n < items.size():
+		var it: Dictionary = items[_thash_n]
+		_thash_n += 1
+		if it["kind"] == "tree" or it["kind"] == "bush":
+			var p: Vector3 = it["pos"]
+			var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
+			if _thash.has(k):
+				_thash[k].append(it)
+			else:
+				_thash[k] = [it]
+	var out: Array = []
+	for dz in range(int((q.z - r) / 16.0), int((q.z + r) / 16.0) + 1):
+		for dx in range(int((q.x - r) / 16.0), int((q.x + r) / 16.0) + 1):
+			var arr = _thash.get(Vector2i(dx, dz))
+			if arr != null:
+				out.append_array(arr)
+	return out
+
+# p çevresinde r içindeki canlı ağaç/çalı sayısı (tespitte gizlenme)
+func veg_count(p: Vector3, r: float, only := "") -> int:
+	var n := 0
+	for it in _trees_near(p, r):
+		if it["alive"] and (only == "" or it["kind"] == only):
+			var q: Vector3 = it["pos"]
+			if Vector2(q.x - p.x, q.z - p.z).length() <= r:
+				n += 1
+	return n
+
 func _process(dt: float) -> void:
+	if G.grass_stream:
+		_grass_tick(dt)
 	_fade_t -= dt
 	if _fade_t > 0.0 or G.player == null or not is_instance_valid(G.player):
 		return
 	_fade_t = 0.2
 	var pts: Array = []
+	# yalnız seçili birlikleri örten ağaçlar (roadmap 117: fare imlecinin altındaki ağaç da saydamlaşıyordu)
 	for u in G.player.selected:
 		if is_instance_valid(u) and not (u is Building):
 			pts.append(u.position)
-	if G.cam and G.cam.cam:
-		pts.append(G.cam.mouse_ground(get_viewport().get_mouse_position()))
 	var now: Array = []
-	for it in items:
-		if it["kind"] != "tree" or not it["alive"]:
-			continue
-		var p: Vector3 = it["pos"]
-		for q in pts:
+	for q in pts:
+		for it in _trees_near(q + Vector3(2.2, 0, 2.2), 6.0):
+			if it["kind"] != "tree" or not it["alive"] or now.has(it):
+				continue
+			var p: Vector3 = it["pos"]
 			# ağaç tepesi ekranda yukarı (-x -z yönündeki zemin) düşer: birliğin +x +z kadar ötesindeki ağaçlar örter
 			var d := Vector2(p.x - 2.2 - q.x, p.z - 2.2 - q.z).length()
 			if d < 4.5:
-				now.append(it["node"])
-				break
-	for n in _faded:
-		if is_instance_valid(n) and not now.has(n):
-			n.transparency = 0.0
-	for n in now:
-		n.transparency = 0.65
+				now.append(it)
+	for it2 in _faded:
+		if not now.has(it2):
+			_set_fade(it2, 0.0)
+	for it2 in now:
+		_set_fade(it2, 0.65)
 	_faded = now
+
+func _set_fade(it: Dictionary, a: float) -> void:
+	if it.has("bank") and it["node"] == null:
+		if it["alive"]:
+			_mm_fade(it, a)
+	elif it["node"] != null and is_instance_valid(it["node"]):
+		(it["node"] as GeometryInstance3D).transparency = a
+
+# ------------------------------------------------------------ kratere oturma / devrilme (128)
+# kayıtsız dekor (sandık, varil, saman, kaya, çalı): yalnız krater oturtması için
+var loose: Array = []   # {node, kind, r, h}
+var _lhash := {}
+
+func _loose(mi: MeshInstance3D, p: Vector3, kind: String, r: float, h: float) -> void:
+	var it := {"node": mi, "kind": kind, "r": r, "h": h}
+	loose.append(it)
+	var k := Vector2i(int(p.x / 16.0), int(p.z / 16.0))
+	if _lhash.has(k):
+		_lhash[k].append(it)
+	else:
+		_lhash[k] = [it]
+
+func _gh(p: Vector3) -> float:
+	if G.terrain == null or G.grid.on_bridge(p):
+		return 0.0
+	return G.terrain.ground_hs(p)
+
+# taban eğimi: [aşağı yön (yatay, birim), eğim açısı]
+func _slope(p: Vector3, s: float) -> Array:
+	var gx := (_gh(p + Vector3(s, 0, 0)) - _gh(p - Vector3(s, 0, 0))) / (2.0 * s)
+	var gz := (_gh(p + Vector3(0, 0, s)) - _gh(p - Vector3(0, 0, s))) / (2.0 * s)
+	var g := Vector2(gx, gz)
+	return [Vector3(-gx, 0, -gz).normalized() if g.length() > 0.001 else Vector3.ZERO, atan(g.length())]
+
+# krater oyulduktan sonra çevresindeki nesneler yeni zemine oturur: hafif eğimde zemine yatar,
+# dik kenarda (ağırlık merkezi tabanın dışına taşınca) çukura devrilip kayar; ağacın kökü açıkta kalırsa içine yıkılır
+func settle(c: Vector3, r: float) -> void:
+	var reach := r * 1.5
+	var objs: Array = []
+	for it in _items_near(c, reach + 2.0):
+		if it["kind"] != "bridge":
+			objs.append(it)
+	for dz in range(int((c.z - reach - 2.0) / 16.0), int((c.z + reach + 2.0) / 16.0) + 1):
+		for dx in range(int((c.x - reach - 2.0) / 16.0), int((c.x + reach + 2.0) / 16.0) + 1):
+			var arr = _lhash.get(Vector2i(dx, dz))
+			if arr != null:
+				objs.append_array(arr)
+	for it in objs:
+		var mi = it["node"]
+		var p: Vector3 = (mi as Node3D).position if mi != null and is_instance_valid(mi) else it.get("pos", Vector3.ZERO)
+		var d := Vector2(p.x - c.x, p.z - c.z).length()
+		if d > reach + float(it.get("r", 0.5)):
+			continue
+		var kind: String = it["kind"]
+		if kind == "tree":
+			# kökü çukurun içinde kalan ağaç çukura yıkılır
+			if it.get("alive", true) and d < r * 0.95 and float(_slope(p, 0.5)[1]) > 0.22:
+				var to_c := Vector3(c.x - p.x, 0, c.z - p.z)
+				_fell(it, to_c.normalized() if to_c.length() > 0.1 else Vector3.RIGHT)
+				var fm = it["node"]
+				if fm != null and is_instance_valid(fm):
+					(fm as Node3D).position.y = _gh(p)
+			continue
+		if mi == null:
+			if not it.has("bank") or not it.get("alive", true):
+				continue
+			mi = _detach(it)
+		if not is_instance_valid(mi) or not (mi as Node3D).visible:
+			continue
+		_settle_one(it, mi as Node3D, p, c, r)
+
+func _settle_one(it: Dictionary, mi: Node3D, p: Vector3, c: Vector3, r: float) -> void:
+	var kind: String = it["kind"]
+	var rad: float = float(it.get("r", 0.5))
+	var h: float = float(it.get("h", 1.4 if kind == "car" else 0.8))
+	var sl: Array = _slope(p, maxf(rad, 0.4))
+	var down: Vector3 = sl[0]
+	var ang: float = sl[1]
+	# devrilme eşiği: taban yarı genişliği / ağırlık merkezi yüksekliği (kaya ve çalı devrilmez, oturur)
+	var tip_at := atan((0.9 if kind == "car" else rad) / maxf(h * 0.5, 0.1))
+	var tips: bool = kind not in ["rock", "bush"] and ang > tip_at * 0.8 and down != Vector3.ZERO
+	var start := mi.transform.basis
+	var tgt := p
+	var nb: Basis
+	if tips:
+		# çukurun dibine doğru yuvarlanıp yan yatar
+		var to_c := Vector3(c.x - p.x, 0, c.z - p.z)
+		var slide := minf(to_c.length() * 0.55, r * 0.6)
+		tgt = p + (to_c.normalized() if to_c.length() > 0.1 else down) * slide
+		var axis := Vector3(down.z, 0, -down.x).normalized()
+		nb = Basis(axis, PI * 0.5 if kind in ["barrel", "hay"] else 1.45) * start
+		tgt.y = _gh(tgt) + (rad * 0.85 if kind in ["barrel", "hay"] else h * 0.15)
+	else:
+		# zemine yatar: yukarı ekseni yüzey normaline döner
+		var n := Vector3(-tan(ang) * down.x, 1.0, -tan(ang) * down.z).normalized() if down != Vector3.ZERO else Vector3.UP
+		nb = Basis(Quaternion(Vector3.UP, n)) * start
+		tgt.y = _gh(p) - (0.15 * rad if kind == "rock" else 0.0)
+	if tgt.distance_to(p) < 0.02 and nb.is_equal_approx(start):
+		return
+	it["tipped"] = tips
+	var q0 := start.get_rotation_quaternion()
+	var q1 := nb.get_rotation_quaternion()
+	var sc := start.get_scale()
+	var lift := 0.08 if tips else 0.0
+	var tw := create_tween()
+	tw.tween_method(func(t: float):
+		if not is_instance_valid(mi):
+			return
+		var e := t * t
+		mi.transform = Transform3D(Basis(q0.slerp(q1, e)).scaled(sc), p.lerp(tgt, e) + Vector3(0, sin(t * PI) * lift, 0)), 0.0, 1.0, 0.7 if tips else 0.35)
+	if tips:
+		Sfx.play3d("crumble", tgt, -10.0)

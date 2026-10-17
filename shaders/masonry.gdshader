@@ -12,9 +12,16 @@ uniform sampler2D concrete_nrm : hint_normal, filter_linear_mipmap_anisotropic, 
 uniform sampler2D streak_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D chip_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
+// malzeme kodu blok renginin alfasında (1 = otomatik; Arch.FAC_A): taş, ahşap, sac, panel, kerpiç, tuğla, sıva, çelik, kütük
+uniform sampler2D wood_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D metal_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D panel_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D rough_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D steel_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float scale = 0.45;
 uniform vec4 grime_col : source_color = vec4(0.32, 0.27, 0.2, 1.0);
 uniform float grime_h = 1.1;
+uniform float grime_y0 = 0.0;       // kir/nem bandının tabanı (köprüde su çizgisi)
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -42,8 +49,37 @@ void fragment() {
 	vec3 n = normalize(wnrm);
 	vec2 uv = proj(wpos * scale, n);
 	vec3 col;
-	vec3 nm;
-	if (brick > 0.5) {
+	vec3 nm = vec3(0.5, 0.6, 1.0);
+	int mid = int(round((1.0 - COLOR.a) * 10.0));
+	if (mid == 6) { brick = 1.0; conc = 0.0; }
+	if (mid == 7) { brick = 0.0; conc = 0.0; }
+	if (mid == 10) { brick = 0.0; conc = 1.0; }
+	if (mid == 1) {
+		// moloz / kesme taş: taş dokusu, blok renginde
+		vec3 st = texture(chip_alb, uv * 0.75).rgb;
+		col = vec3(lum(st) / 0.36) * c * mix(vec3(1.0), st / max(lum(st), 0.05), 0.25);
+		nm = texture(brick_nrm, uv * 0.6).rgb;
+	} else if (mid == 2 || mid == 9) {
+		// ahşap kaplama (yatay tahta) / kütük (kalın)
+		vec2 wu = mid == 9 ? uv * vec2(0.5, 0.33) : uv * vec2(0.7, 0.62);
+		col = vec3(lum(texture(wood_alb, wu).rgb) / 0.55) * c;
+		col *= 0.9 + 0.2 * texture(noise_tex, wpos.xz * 0.6 + wpos.y * 0.3).r;
+	} else if (mid == 3) {
+		// oluklu sac (dikey oluk)
+		col = vec3(lum(texture(metal_alb, uv * vec2(0.55, 0.4)).rgb) / 0.3) * c;
+		col *= mix(1.0, 0.75, smoothstep(0.6, 0.85, texture(noise_tex, uv * 0.4 + 0.2).r));
+	} else if (mid == 4) {
+		// prefabrik beton panel
+		col = vec3(lum(texture(panel_alb, uv * 0.35).rgb) / 0.5) * c;
+	} else if (mid == 5) {
+		// kerpiç / kaba sıva
+		vec3 rt = texture(rough_alb, uv * 0.8).rgb;
+		col = vec3(lum(rt) / 0.42) * c;
+		col *= mix(0.88, 1.08, texture(noise_tex, uv * 0.5).r);
+	} else if (mid == 8) {
+		// çelik sac (tank, silo)
+		col = c * mix(1.0, lum(texture(steel_alb, uv * 0.5).rgb) / 0.3, 0.22);
+	} else if (brick > 0.5) {
 		col = texture(brick_alb, uv * 1.2).rgb * mix(vec3(1.0), c / max(lum(c), 0.05) * 0.6, 0.35);
 		nm = texture(brick_nrm, uv * 1.2).rgb;
 	} else if (conc > 0.5) {
@@ -64,7 +100,7 @@ void fragment() {
 	// yağmur izi ve dipte kir
 	float sl = lum(texture(streak_tex, uv * vec2(0.7, 0.35)).rgb);
 	col *= mix(1.0, clamp(0.7 + sl * 0.9, 0.7, 1.15), 0.35 * (1.0 - abs(n.y)));
-	float g = clamp(1.0 - wpos.y / grime_h, 0.0, 1.0);
+	float g = clamp(1.0 - (wpos.y - grime_y0) / grime_h, 0.0, 1.0);
 	col *= mix(vec3(1.0), vec3(0.78, 0.72, 0.62), g * g * 0.8);
 	ALBEDO = col;
 	// blok mesh'lerinde teğet yok: normal haritası yerine kabartıyı rengin içine kat

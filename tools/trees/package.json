@@ -1,0 +1,12 @@
+{
+  "name": "mevzi-trees",
+  "private": true,
+  "type": "module",
+  "description": "ez-tree (MIT) ile ağaç/çalı GLB üretimi — node gen_trees.mjs",
+  "dependencies": {
+    "@dgreenheck/ez-tree": "1.1.0",
+    "@gltf-transform/core": "4.1.1",
+    "esbuild": "0.24.0",
+    "three": "0.170.0"
+  }
+}

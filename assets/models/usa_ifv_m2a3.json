@@ -1,1 +1,1 @@
-{"pivots": {"body": [0, 0, 0], "turret": [0, 2.0, -0.1], "barrel": [0, 2.4, -1.1]}, "meta": {"muzzle": [0, 2.4, -3.4], "radius": 2.8}}
+{"pivots": {"body": [0, 0, 0], "turret": [0, 2.0, -0.1], "barrel": [0, 2.4, -1.1], "door": [0, 0.55, 3.305]}, "meta": {"muzzle": [0, 2.4, -3.4], "radius": 2.8, "door_open": 1.35}}

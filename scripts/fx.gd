@@ -1,11 +1,15 @@
 class_name Fx extends Node3D
 # Görsel efektler: GPU-hesaplı parçacık halkaları, iz mermileri, parlama ışıkları, krater izleri.
 
-enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS, P_STREAK }
-const CAP := [7000, 4000, 3000, 1800, 2400]
+enum { P_SMOKE, P_FIRE, P_SPARK, P_DEBRIS, P_STREAK, P_FLIP, P_FLIPS, P_FLIPD, P_FLAME }
+const CAP := [7000, 4000, 3000, 1800, 2400, 300, 400, 300, 1600]
+# flipbook atlasları (tools/blender/fx_flipbook.py, Mantaflow simülasyonu): yoksa bu türler kullanılmaz
+var has_flip := false
+var has_flip_smoke := false
+var has_flip_dust := false
 
 var mms: Array = []
-var heads := [0, 0, 0, 0, 0]
+var heads := [0, 0, 0, 0, 0, 0, 0, 0, 0]
 var tr_mm: MultiMesh
 var tr_head := 0
 const TR_CAP := 900
@@ -18,6 +22,7 @@ var emitters: Array = []    # sürekli kaynaklar: [konum, bitiş, tür, güç, b
 var rng := RandomNumberGenerator.new()
 var puff_tex: ImageTexture
 var dot_tex: ImageTexture
+var debris_tex: ImageTexture
 var crater_tex: ImageTexture
 var scorch_tex: ImageTexture
 var winter := false
@@ -27,6 +32,7 @@ func _ready() -> void:
 	rng.randomize()
 	puff_tex = _make_puff()
 	dot_tex = _make_dot()
+	debris_tex = _make_debris()
 	crater_tex = _make_crater()
 	scorch_tex = _make_scorch()
 	var base: Shader = load("res://shaders/puff.gdshader")
@@ -34,7 +40,22 @@ func _ready() -> void:
 	add_sh.code = base.code.replace("render_mode unshaded", "render_mode blend_add, unshaded")
 	var quad := QuadMesh.new()
 	quad.size = Vector2(1, 1)
-	for k in 5:
+	has_flip = ResourceLoader.exists("res://assets/fx/expl_flip.png")
+	has_flip_smoke = ResourceLoader.exists("res://assets/fx/smoke_flip.png")
+	has_flip_dust = ResourceLoader.exists("res://assets/fx/dust_flip.png")
+	# hacimli duman pufu (tools/fx_smoke_puff.py): normal + kalınlık + örtme
+	var smoke_puff: Texture2D = load("res://assets/fx/smoke_puff.png") if ResourceLoader.exists("res://assets/fx/smoke_puff.png") else null
+	# alev dili gürültüsü (yukarı akan, döşenebilir)
+	var fnt := NoiseTexture2D.new()
+	fnt.width = 256
+	fnt.height = 256
+	fnt.seamless = true
+	var ffn := FastNoiseLite.new()
+	ffn.frequency = 0.02
+	ffn.fractal_octaves = 4
+	ffn.seed = 31
+	fnt.noise = ffn
+	for k in CAP.size():
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
@@ -46,16 +67,30 @@ func _ready() -> void:
 			mm.set_instance_transform(i, dead)
 		var mi := MultiMeshInstance3D.new()
 		mi.multimesh = mm
-		mi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(1300, 400, 1300))
+		mi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(G.MAP + 1000.0, 400, G.MAP + 1000.0))
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		var mat := ShaderMaterial.new()
 		mat.shader = add_sh if k == P_SPARK else base
-		mat.set_shader_parameter("tex", dot_tex if k == P_SPARK else puff_tex)
+		mat.set_shader_parameter("tex", dot_tex if k == P_SPARK else (debris_tex if k == P_DEBRIS else puff_tex))
+		if k == P_FLIP and has_flip:
+			mat.set_shader_parameter("tex", load("res://assets/fx/expl_flip.png"))
+		elif k == P_FLIPS and has_flip_smoke:
+			mat.set_shader_parameter("tex", load("res://assets/fx/smoke_flip.png"))
+		elif k == P_FLIPD and has_flip_dust:
+			mat.set_shader_parameter("tex", load("res://assets/fx/dust_flip.png"))
 		mat.set_shader_parameter("mode", k)
-		mat.set_shader_parameter("intensity", 1.35 if k == P_FIRE else 4.0)
+		if k == P_FLAME:
+			mat.set_shader_parameter("noise_tex", fnt)
+		if k == P_SMOKE and smoke_puff != null:
+			mat.set_shader_parameter("smoke_tex", smoke_puff)
+		# yumuşak parçacık: duman / ateş / flipbook zemine, yapıya değdiği yerde sert kesik bırakmaz
+		mat.set_shader_parameter("soft", {P_SMOKE: 1.6, P_FIRE: 0.6, P_FLIP: 2.0, P_FLIPS: 2.0, P_FLIPD: 2.0, P_FLAME: 0.4}.get(k, 0.0))
+		mat.set_shader_parameter("intensity", {P_FIRE: 1.35, P_FLAME: 1.6}.get(k, 4.0))
 		mat.set_shader_parameter("ground_stop", 1.0 if k == P_DEBRIS or k == P_SPARK or k == P_STREAK else 0.0)
-		mat.render_priority = [1, 3, 4, 0, 2][k]
+		mat.render_priority = [1, 3, 4, 0, 2, 3, 1, 1, 3][k]
 		mi.material_override = mat
+		if k in [P_SMOKE, P_FLIPS, P_FLIPD]:
+			_mover_mats.append(mat)
 		add_child(mi)
 		mms.append(mm)
 	tr_mm = MultiMesh.new()
@@ -67,7 +102,7 @@ func _ready() -> void:
 		tr_mm.set_instance_transform(i, Transform3D(Basis(Vector3(0.01, 0, 0), Vector3(-1000, 0.1, 0.1), Vector3(0, 0, 0.01)), Vector3(0, -50, 0)))
 	var tmi := MultiMeshInstance3D.new()
 	tmi.multimesh = tr_mm
-	tmi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(1300, 400, 1300))
+	tmi.custom_aabb = AABB(Vector3(-500, -100, -500), Vector3(G.MAP + 1000.0, 400, G.MAP + 1000.0))
 	tmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var tmat := ShaderMaterial.new()
 	tmat.shader = load("res://shaders/tracer.gdshader")
@@ -128,14 +163,68 @@ func _make_dot() -> ImageTexture:
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
-func _make_crater() -> ImageTexture:
+# moloz parçası atlası (2x2): her hücrede düzensiz, köşeli bir kırık parça — 5-8 köşeli çokgen, gelişigüzel
+# uzatılmış; yüzeyler (iç noktadan üçgen yelpaze) ayrı ayrı gölgeli → yontulmuş taş/toprak kesiği görünümü.
+# Eskiden yuvarlak, küre gibi ışıklı "puf" dokusu kullanılıyordu: parçalar taş atılmış top gibi görünüyordu.
+func _make_debris() -> ImageTexture:
+	var S := 64
+	var img := Image.create(S * 2, S * 2, true, Image.FORMAT_RGBA8)
+	var r := RandomNumberGenerator.new()
+	r.seed = 4711
+	for v in 4:
+		var n := r.randi_range(5, 8)
+		var stretch := r.randf_range(0.45, 0.95)
+		var rot := r.randf() * TAU
+		var poly: PackedVector2Array = []
+		for k in n:
+			var a := TAU * (k + r.randf_range(-0.3, 0.3)) / n
+			var rad := r.randf_range(0.55, 0.95)
+			var q := Vector2(cos(a) * rad, sin(a) * rad * stretch).rotated(rot)
+			poly.append(q)
+		var c0 := Vector2(r.randf_range(-0.15, 0.15), r.randf_range(-0.15, 0.15))
+		var shade: Array = []
+		for k in n:
+			shade.append(r.randf_range(0.3, 1.0))
+		var ox := (v % 2) * S
+		var oy := (v / 2) * S
+		for y in S:
+			for x in S:
+				var p := Vector2((x + 0.5) / S * 2.0 - 1.0, (y + 0.5) / S * 2.0 - 1.0)
+				if not Geometry2D.is_point_in_polygon(p, poly):
+					img.set_pixel(ox + x, oy + y, Color(0, 0, 0, 0))
+					continue
+				# hangi yüzey (merkezden açıya göre yelpaze dilimi)
+				var ang := fposmod((p - c0).angle() - (poly[0] - c0).angle(), TAU)
+				var f := 0
+				for k in n:
+					var a0 := fposmod((poly[k] - c0).angle() - (poly[0] - c0).angle(), TAU)
+					if ang >= a0:
+						f = k
+				var lum: float = shade[f] * (0.85 + 0.15 * r.randf())
+				img.set_pixel(ox + x, oy + y, Color(lum, lum, lum, 1.0))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+# v: 0 genel, 1 havan (küçük çukur + yoğun ışınsal püskürme), 2 mayın / büyük bomba (geniş çukur + kalın
+# koyu toprak halkası), 3 top mermisi (eğik isabet: püskürme tek yana savrulmuş)
+func _make_crater(v := 0) -> ImageTexture:
 	var S := 128
 	var img := Image.create(S, S, true, Image.FORMAT_RGBA8)
 	var fn := FastNoiseLite.new()
 	fn.frequency = 0.08
+	fn.seed = 11 + v * 7
+	var r0: float = [0.42, 0.3, 0.48, 0.4][v]
+	var r1: float = [0.58, 0.42, 0.72, 0.56][v]
+	var nray: int = [22, 44, 10, 26][v]
 	var rays: Array = []
-	for i in 22:
-		rays.append([rng.randf() * TAU, rng.randf_range(0.6, 1.0)])
+	for i in nray:
+		var ra := rng.randf() * TAU
+		var rl := rng.randf_range(0.6, 1.0)
+		if v == 3:
+			# eğik isabet: ışınların çoğu bir yöne, o yönde daha uzun
+			ra = rng.randf_range(-1.1, 1.1) if i % 3 != 0 else ra
+			rl = rng.randf_range(0.75, 1.0) if absf(wrapf(ra, -PI, PI)) < 1.2 else rng.randf_range(0.6, 0.75)
+		rays.append([ra, rl])
 	for y in S:
 		for x in S:
 			var u := (x + 0.5) / S * 2.0 - 1.0
@@ -145,15 +234,18 @@ func _make_crater() -> ImageTexture:
 			var n := fn.get_noise_2d(x, y)
 			var rr := r * (1.0 + n * 0.18)
 			var col := Color(0, 0, 0, 0)
-			if rr < 0.42:
-				var k := rr / 0.42
+			if rr < r0:
+				var k := rr / r0
 				# çukur: koyu merkez, kenara doğru gölgeli iç yamaç (ışık sağ üstten)
 				var shade := 0.5 + 0.5 * (u * 0.6 - w * 0.6) * k
 				var c := lerpf(0.18, 0.42, k) * (0.75 + 0.5 * (1.0 - shade))
 				col = Color(c * 1.05, c * 0.82, c * 0.6, 0.95)
-			elif rr < 0.58:
-				var k2 := (rr - 0.42) / 0.16
+			elif rr < r1:
+				var k2 := (rr - r0) / (r1 - r0)
 				var b := 0.95 - k2 * 0.25
+				if v == 2:
+					# kalın atılmış toprak halkası: koyu, topak topak
+					b = 0.42 + 0.18 * n
 				col = Color(b, b * 0.86, b * 0.68, 0.85 * (1.0 - k2 * 0.6))
 			else:
 				# ışınsal püskürme
@@ -161,8 +253,8 @@ func _make_crater() -> ImageTexture:
 				for ry in rays:
 					var da := absf(wrapf(ang - ry[0], -PI, PI))
 					if da < 0.07 and r < ry[1]:
-						ray = maxf(ray, (1.0 - da / 0.07) * (1.0 - (r - 0.58) / maxf(ry[1] - 0.58, 0.01)))
-				var e := clampf(1.0 - (rr - 0.58) / 0.4, 0.0, 1.0)
+						ray = maxf(ray, (1.0 - da / 0.07) * (1.0 - (r - r1) / maxf(ry[1] - r1, 0.01)))
+				var e := clampf(1.0 - (rr - r1) / 0.4, 0.0, 1.0)
 				col = Color(0.42, 0.3, 0.2, clampf(e * 0.35 + ray * 0.5, 0.0, 1.0))
 			img.set_pixel(x, y, col)
 	img.generate_mipmaps()
@@ -184,7 +276,13 @@ func _make_scorch() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 # ------------------------------------------------------------ çekirdek emit
+# (154 / 146) parçacık yoğunluğu (Ayarlar > Grafik): büyük çatışmada duman / toz bulutları ekranı kaplayıp GPU'yu
+# boğuyordu (üst üste binen saydam kartlar) — düşük ayarda parçacıkların bir kısmı hiç üretilmez
+static var density := 1.0
+
 func emit(k: int, pos: Vector3, vel: Vector3, life: float, s0: float, s1: float, grav: float, drag: float, col: Color, delay := 0.0, spin := 0.0) -> void:
+	if density < 0.999 and rng.randf() > density:
+		return
 	var mm: MultiMesh = mms[k]
 	var i: int = heads[k]
 	heads[k] = (i + 1) % CAP[k]
@@ -200,6 +298,11 @@ func tracer(a: Vector3, b: Vector3, speed: float, col := Color(1.0, 0.62, 0.25),
 	var life := maxf(a.distance_to(b) / speed, 0.03)
 	tr_mm.set_instance_transform(i, Transform3D(Basis(b - a, Vector3(G.time, life, width), Vector3(tail, 0, 0.001)), a))
 	tr_mm.set_instance_color(i, col)
+
+# kalibreye göre iz: kalınlık ve kuyruk boyu Ammo.tracer_dims'ten
+func tracer_cal(a: Vector3, b: Vector3, speed: float, col: Color, cal: float) -> void:
+	var d := Ammo.tracer_dims(cal)
+	tracer(a, b, speed, col, d.x, d.y)
 
 func flash(p: Vector3, energy: float, rng_m: float, dur: float, col := Color(1.0, 0.62, 0.28)) -> void:
 	var L: Array = lights[_light_i]
@@ -230,6 +333,137 @@ func _process(dt: float) -> void:
 		else:
 			_run_emitter(e, dt)
 		i -= 1
+	if not gibs.is_empty():
+		_gib_tick(dt)
+	_movers_tick(dt)
+
+# ------------------------------------------------------------ dumanın içinden geçen birlikler (131)
+# Parçacıklar GPU'da durumsuz hesaplanır; kameranın çevresindeki hareketli araç / askerler (en çok 16) duman
+# gölgelendiricisine verilir: gövde dumanı yanlara iter, arkasında sürüklenen, kıvrılan iz bırakır. Sis
+# perdesinin içinden geçen araç ayrıca arkasında çalkalanan duman bulutları bırakır.
+var _mover_mats: Array = []
+var _trail_t := 0.0
+const MOVER_CAP := 16
+
+func _movers_tick(dt: float) -> void:
+	if _mover_mats.is_empty() or G.cam == null:
+		return
+	var f: Vector3 = G.cam.focus
+	var reach: float = maxf(G.cam.size * 1.6, 50.0)
+	var cands: Array = []
+	for u in G.near(f, reach):
+		if not u.alive or not u.visible:
+			continue
+		if u is Vehicle:
+			if u.is_air() or absf(u.cur_speed) < 0.25:
+				continue
+			cands.append([2.0 + absf(u.cur_speed), u])
+		elif u is Soldier:
+			if u.vehicle_in != null or u.vel.length() < 0.3:
+				continue
+			cands.append([u.vel.length() * 0.3, u])
+	if cands.size() > MOVER_CAP:
+		cands.sort_custom(func(a, b): return a[0] > b[0])
+		cands.resize(MOVER_CAP)
+	var pos := PackedVector4Array()
+	var vel := PackedVector4Array()
+	pos.resize(MOVER_CAP)
+	vel.resize(MOVER_CAP)
+	_trail_t -= dt
+	var trail := _trail_t <= 0.0
+	if trail:
+		_trail_t = 0.12
+	for i in cands.size():
+		var u = cands[i][1]
+		if u is Vehicle:
+			var v: Vehicle = u
+			var fw := v.forward() * v.cur_speed
+			pos[i] = Vector4(v.position.x, v.position.y, v.position.z, maxf(v.ext.x, v.ext.y) + 0.8)
+			vel[i] = Vector4(fw.x, 0.0, fw.z, v.top_h)
+			if trail and not G.smokes.is_empty():
+				for s in G.smokes:
+					var sc: Vector3 = s[0]
+					if Vector2(sc.x - v.position.x, sc.z - v.position.z).length() < float(s[1]):
+						# sis perdesinden geçen araç: arkasında çalkalanan, hız yönünde sürüklenen bulut
+						var back := v.position - v.forward() * signf(v.cur_speed) * (v.ext.y + 0.5)
+						var sd := v.right() * rng.randf_range(-v.ext.x, v.ext.x)
+						emit(P_SMOKE, back + sd + Vector3(0, rng.randf_range(0.4, 1.4), 0), fw * 0.45 + sd * 0.6 + Vector3(0, rng.randf_range(0.2, 0.6), 0), rng.randf_range(2.5, 4.0), 1.2, rng.randf_range(3.0, 4.5), -0.04, 0.9, Color(0.86, 0.88, 0.9, 0.3))
+						break
+		else:
+			var sv: Vector3 = u.vel
+			pos[i] = Vector4(u.position.x, u.position.y, u.position.z, 0.8)
+			vel[i] = Vector4(sv.x, 0.0, sv.z, 1.8)
+	for mat in _mover_mats:
+		(mat as ShaderMaterial).set_shader_parameter("mover_n", cands.size())
+		(mat as ShaderMaterial).set_shader_parameter("movers", pos)
+		(mat as ShaderMaterial).set_shader_parameter("mover_vel", vel)
+
+# ------------------------------------------------------------ kopan uzuv (patlamada)
+# [düğüm, hız, dönme ekseni, dönme hızı, yaş, yerde mi]; yere düşünce yatar, kan lekesi bırakır, 2 dk sonra kalkar
+var gibs: Array = []
+static var _gib_mesh := {}
+const GIB_CAP := 40
+
+func gib(p: Vector3, basis: Basis, v: Vector3, team: int, leg: bool) -> void:
+	var key := "%d%s|%s" % [team, "l" if leg else "a", G.map_kind]
+	if not _gib_mesh.has(key):
+		var mb := MB.new()
+		var winter_k: bool = G.map_kind == "winter"
+		var uni := Color(0.55, 0.5, 0.38) if team == 0 else Color(0.32, 0.36, 0.24)
+		if winter_k:
+			uni = Color(0.8, 0.8, 0.78)
+		var L := 0.4 if leg else 0.27
+		mb.cyl(Vector3(0, -L * 0.5, 0), 0.058 if leg else 0.045, 0.048 if leg else 0.036, L, 8, uni)
+		mb.cyl(Vector3(0, 0.0, 0), 0.05 if leg else 0.04, 0.05 if leg else 0.04, 0.025, 8, Color(0.42, 0.04, 0.03))   # yara ucu
+		if leg:
+			var boot := Color(0.5, 0.4, 0.28) if team == 0 else Color(0.08, 0.08, 0.07)
+			mb.cyl(Vector3(0, -L - 0.06, 0), 0.06, 0.06, 0.14, 8, boot)
+			mb.box(Vector3(0, -L - 0.12, -0.06), Vector3(0.1, 0.07, 0.25), boot)
+		else:
+			var glove := Color(0.55, 0.47, 0.35) if team == 0 else Color(0.15, 0.15, 0.14)
+			mb.box(Vector3(0, -L - 0.05, 0), Vector3(0.06, 0.1, 0.085), glove)
+		_gib_mesh[key] = mb.commit(Mats.vcs())
+	if gibs.size() >= GIB_CAP:
+		var old: Array = gibs.pop_front()
+		if is_instance_valid(old[0]):
+			old[0].queue_free()
+	var mi := MeshInstance3D.new()
+	mi.mesh = _gib_mesh[key]
+	add_child(mi)
+	mi.global_transform = Transform3D(basis.orthonormalized(), p)
+	gibs.append([mi, v, Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized(), rng.randf_range(6.0, 14.0), 0.0, false])
+
+func _gib_tick(dt: float) -> void:
+	var i := gibs.size() - 1
+	while i >= 0:
+		var g: Array = gibs[i]
+		var n: MeshInstance3D = g[0]
+		if not is_instance_valid(n):
+			gibs.remove_at(i)
+			i -= 1
+			continue
+		g[4] += dt
+		if not g[5]:
+			var v: Vector3 = g[1]
+			v.y -= 9.8 * dt
+			n.global_position += v * dt
+			n.rotate(g[2], g[3] * dt)
+			var gh: float = G.terrain.ground_h(n.global_position) if G.terrain else 0.0
+			if n.global_position.y < gh + 0.06:
+				n.global_position.y = gh + 0.06
+				if absf(v.y) < 2.5 or g[4] > 4.0:
+					g[5] = true
+					n.rotation = Vector3(PI * 0.5, rng.randf() * TAU, 0.0)
+					n.global_position.y = gh + 0.05
+					blood_pool(n.global_position)
+				else:
+					v = Vector3(v.x * 0.45, -v.y * 0.3, v.z * 0.45)
+					g[3] *= 0.5
+			g[1] = v
+		elif g[4] > 120.0:
+			n.queue_free()
+			gibs.remove_at(i)
+		i -= 1
 
 func _run_emitter(e: Array, dt: float) -> void:
 	var p: Vector3 = e[0]
@@ -243,15 +477,30 @@ func _run_emitter(e: Array, dt: float) -> void:
 			while e[4] > 0.07:
 				e[4] -= 0.07
 				if rng.randf() < fade:
-					emit(P_FIRE, p + _rv(0.5 * pw, 0.2), Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(1.0, 2.2), rng.randf_range(-0.3, 0.3)), rng.randf_range(0.5, 0.9), 0.7 * pw, 1.3 * pw, -0.6, 0.8, Color(1, 1, 1, 0.9))
+					# hacimli alev: tabanda dağılmış, üst üste binen alev dilleri + az sayıda parlak ateş pufu
+					emit(P_FLAME, p + Vector3(rng.randf_range(-0.6, 0.6) * pw, rng.randf_range(-0.2, 0.1), rng.randf_range(-0.6, 0.6) * pw), Vector3(rng.randf_range(-0.15, 0.15), rng.randf_range(0.3, 0.8), rng.randf_range(-0.15, 0.15)), rng.randf_range(0.6, 1.0), rng.randf_range(0.9, 1.4) * pw, rng.randf_range(1.5, 2.3) * pw * fade, -0.4, 0.8, Color(1, 1, 1, 0.95))
+					if rng.randf() < 0.35:
+						emit(P_FIRE, p + _rv(0.5 * pw, 0.2), Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(1.0, 2.2), rng.randf_range(-0.3, 0.3)), rng.randf_range(0.5, 0.9), 0.7 * pw, 1.3 * pw, -0.6, 0.8, Color(1, 1, 1, 0.8))
 				var g := rng.randf_range(0.08, 0.16)
-				emit(P_SMOKE, p + _rv(0.4 * pw, 0.3) + Vector3(0, 0.6, 0), Vector3(rng.randf_range(0.3, 0.9), rng.randf_range(1.8, 3.0), rng.randf_range(-0.4, 0.2)), rng.randf_range(4.0, 6.5), 1.0 * pw, 4.5 * pw, -0.25, 0.35, Color(g, g, g, 0.8))
+				emit(P_SMOKE, p + _rv(0.4 * pw, 0.3) + Vector3(0, 0.6, 0), Vector3(rng.randf_range(0.3, 0.9), rng.randf_range(1.8, 3.0), rng.randf_range(-0.4, 0.2)), rng.randf_range(4.0, 6.5), 1.0 * pw, 4.5 * pw, -0.25, 0.35, Color(g, g, g, 0.55))
 		"smoke":
-			# sis bombası: yoğun beyaz-gri
-			while e[4] > 0.12:
-				e[4] -= 0.12
-				var c := rng.randf_range(0.72, 0.86)
-				emit(P_SMOKE, p + _rv(1.2, 0.2), Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(0.2, 0.9), rng.randf_range(-1.2, 1.2)), rng.randf_range(4.0, 7.0), 1.5, 5.5 * pw, -0.05, 0.6, Color(c, c, c * 0.98, 0.75))
+			# sis bombası (roadmap 115): tek katman opak "pamuk" topak yerine katmanlı, yarı saydam perde —
+			# yere yapışık yayvan alt katman, seyrek yükselen üst katman, kıvrılan flipbook kütleler; rüzgârla sürüklenir
+			var drift := Vector3(0.35, 0.0, 0.12)
+			while e[4] > 0.09:
+				e[4] -= 0.09
+				var c := rng.randf_range(0.68, 0.86)
+				emit(P_SMOKE, p + _rv(2.4, 0.12), drift + Vector3(rng.randf_range(-2.0, 2.0), rng.randf_range(0.05, 0.4), rng.randf_range(-2.0, 2.0)), rng.randf_range(6.0, 10.0), rng.randf_range(0.9, 1.6), rng.randf_range(6.0, 9.0) * pw, -0.02, 0.5, Color(c, c, c * 0.97, 0.36))
+				if rng.randf() < 0.35:
+					var c2 := rng.randf_range(0.74, 0.9)
+					emit(P_SMOKE, p + _rv(1.2, 0.3) + Vector3(0, 1.2, 0), drift + Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(0.5, 1.2), rng.randf_range(-0.6, 0.6)), rng.randf_range(5.0, 8.0), 1.6, rng.randf_range(6.0, 9.0) * pw, -0.06, 0.4, Color(c2, c2, c2, 0.24))
+			if e.size() < 6:
+				e.append(0.0)
+			e[5] += dt
+			if has_flip_smoke and e[5] > 0.55:
+				e[5] = 0.0
+				var cf := rng.randf_range(0.7, 0.85)
+				emit(P_FLIPS, p + _rv(1.4, 0.0) + Vector3(0, 0.8, 0), drift + Vector3(rng.randf_range(-0.5, 0.5), 0.35, rng.randf_range(-0.5, 0.5)), rng.randf_range(6.0, 8.5), 4.0 * pw, 8.0 * pw, -0.02, 0.3, Color(cf, cf, cf, 0.3), 0.0, rng.randf_range(-0.15, 0.15))
 		"mist":
 			while e[4] > 1.6:
 				e[4] -= 1.6
@@ -262,9 +511,19 @@ func _run_emitter(e: Array, dt: float) -> void:
 			while e[4] > 0.05:
 				e[4] -= 0.05
 				if rng.randf() < fade2:
-					emit(P_FIRE, p + _rv(0.6 * pw, 0.2), Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(2.0, 4.0), rng.randf_range(-0.4, 0.4)), rng.randf_range(0.5, 1.0), 0.9 * pw, 1.8 * pw, -1.0, 1.0, Color(1, 1, 1, 0.95))
+					emit(P_FLAME, p + Vector3(rng.randf_range(-0.8, 0.8) * pw, rng.randf_range(-0.3, 0.2), rng.randf_range(-0.8, 0.8) * pw), Vector3(rng.randf_range(-0.2, 0.2), rng.randf_range(0.5, 1.2), rng.randf_range(-0.2, 0.2)), rng.randf_range(0.7, 1.1), rng.randf_range(1.2, 1.8) * pw, rng.randf_range(2.2, 3.4) * pw * fade2, -0.5, 0.8, Color(1, 1, 1, 0.95))
+					if rng.randf() < 0.3:
+						emit(P_FIRE, p + _rv(0.6 * pw, 0.2), Vector3(rng.randf_range(-0.4, 0.4), rng.randf_range(2.0, 4.0), rng.randf_range(-0.4, 0.4)), rng.randf_range(0.5, 1.0), 0.9 * pw, 1.8 * pw, -1.0, 1.0, Color(1, 1, 1, 0.85))
 				var g := rng.randf_range(0.03, 0.09)
-				emit(P_SMOKE, p + _rv(0.5 * pw, 0.3) + Vector3(0, 1.0, 0), Vector3(rng.randf_range(0.2, 1.0), rng.randf_range(4.0, 7.0), rng.randf_range(-0.5, 0.3)), rng.randf_range(6.0, 9.0), 1.4 * pw, 6.5 * pw, -0.1, 0.25, Color(g, g, g, 0.92))
+				emit(P_SMOKE, p + _rv(0.5 * pw, 0.3) + Vector3(0, 1.0, 0), Vector3(rng.randf_range(0.2, 1.0), rng.randf_range(4.0, 7.0), rng.randf_range(-0.5, 0.3)), rng.randf_range(6.0, 9.0), 1.4 * pw, 6.5 * pw, -0.1, 0.25, Color(g, g, g, 0.62))
+			# simüle edilmiş kalın duman (flipbook): seyrek, büyük, kıvrılarak yükselen
+			if e.size() < 6:
+				e.append(0.0)
+			e[5] += dt
+			if has_flip_smoke and e[5] > 1.1:
+				e[5] = 0.0
+				var dk := Color(0.32, 0.31, 0.3, 0.6) if rng.randf() < 0.7 else Color(0.5, 0.48, 0.46, 0.48)
+				emit(P_FLIPS, p + Vector3(rng.randf_range(-0.6, 0.6), 4.0 * pw, rng.randf_range(-0.6, 0.6)), Vector3(rng.randf_range(0.3, 0.9), 2.2, rng.randf_range(-0.3, 0.3)), rng.randf_range(5.5, 7.5), 6.0 * pw, 10.0 * pw, -0.15, 0.25, dk, 0.0, rng.randf_range(-0.2, 0.2))
 		"jet":
 			var fade3 := clampf(left / 6.0, 0.0, 1.0)
 			var pulse := 0.6 + 0.4 * sin(G.time * 7.0 + p.x)
@@ -275,12 +534,47 @@ func _run_emitter(e: Array, dt: float) -> void:
 					if rng.randf() < 0.3:
 						emit(P_SPARK, p, Vector3(rng.randf_range(-4, 4), rng.randf_range(6, 14), rng.randf_range(-4, 4)), rng.randf_range(0.6, 1.2), 0.06, 0.04, 9.8, 0.2, Color(1, 0.8, 0.4, 1))
 				var c := rng.randf_range(0.62, 0.8)
-				emit(P_SMOKE, p + Vector3(0, 4.5 * pw * pulse, 0) + _rv(0.6 * pw, 0.4), Vector3(rng.randf_range(0.1, 0.8), rng.randf_range(3.0, 5.0), rng.randf_range(-0.4, 0.3)), rng.randf_range(4.0, 6.5), 1.2 * pw, 5.0 * pw, -0.15, 0.3, Color(c, c, c * 0.97, 0.7))
+				emit(P_SMOKE, p + Vector3(0, 4.5 * pw * pulse, 0) + _rv(0.6 * pw, 0.4), Vector3(rng.randf_range(0.1, 0.8), rng.randf_range(3.0, 5.0), rng.randf_range(-0.4, 0.3)), rng.randf_range(4.0, 6.5), 1.2 * pw, 5.0 * pw, -0.15, 0.3, Color(c, c, c * 0.97, 0.5))
+		"grassfire":
+			var t0: float = e[5]
+			var mr: float = e[6]
+			var r := minf(mr, 1.5 + (G.time - t0) * 0.3)
+			var dying := G.time > float(e[1]) - 6.0
+			while e[4] > 0.028:
+				e[4] -= 0.028
+				if dying and rng.randf() < 0.7:
+					continue
+				# cephe: halkada rastgele noktada alçak alev dili (ot yangını yere yakın, 0,4–0,9 m)
+				var a := rng.randf() * TAU
+				var rr := r + rng.randf_range(-0.6, 0.3)
+				var q := p + Vector3(cos(a) * rr, 0.0, sin(a) * rr)
+				if G.grid.is_water(q):
+					continue
+				q.y = G.terrain.ground_h(q) if G.terrain else 0.0
+				emit(P_FLAME, q, Vector3(rng.randf_range(-0.1, 0.1), rng.randf_range(0.2, 0.5), rng.randf_range(-0.1, 0.1)), rng.randf_range(0.6, 1.1), 0.7, 1.35, -0.3, 0.8, Color(1, 1, 1, 0.95))
+				if rng.randf() < 0.3:
+					var g := rng.randf_range(0.3, 0.42)
+					emit(P_SMOKE, q + Vector3(0, 0.4, 0), Vector3(rng.randf_range(0.1, 0.5), rng.randf_range(0.8, 1.5), 0), rng.randf_range(3.0, 5.0), 0.6, 2.4, -0.15, 0.3, Color(g, g, g * 0.95, 0.4))
+			# cephedeki askerler (yarım saniyede bir)
+			e[7] = float(e[7]) + dt
+			if e[7] > 0.5 and not dying:
+				e[7] = 0.0
+				for u in G.near(p, r + 1.0):
+					if u is Soldier and u.alive and u.state != "aboard":
+						var du := Vector2(u.position.x - p.x, u.position.z - p.z).length()
+						if absf(du - r) < 1.2:
+							u.take_damage(4.0, null, "fire")
+							u.add_stress(6.0)
+			if left <= 1.0 and e.size() == 8:
+				e.append(true)          # bir kez
+				scorch(p, mr * 2.2)
+				if G.props:
+					G.props.burn_grass(p, mr)
 		"smolder":
 			while e[4] > 0.25:
 				e[4] -= 0.25
 				var g := rng.randf_range(0.18, 0.28)
-				emit(P_SMOKE, p + _rv(0.6, 0.2), Vector3(rng.randf_range(0.2, 0.6), rng.randf_range(1.0, 1.8), 0), rng.randf_range(4.0, 6.0), 0.8 * pw, 3.0 * pw, -0.15, 0.3, Color(g, g, g, 0.55))
+				emit(P_SMOKE, p + _rv(0.6, 0.2), Vector3(rng.randf_range(0.2, 0.6), rng.randf_range(1.0, 1.8), 0), rng.randf_range(4.0, 6.0), 0.8 * pw, 3.0 * pw, -0.15, 0.3, Color(g, g, g, 0.4))
 
 func _rv(r: float, ry := -1.0) -> Vector3:
 	return Vector3(rng.randf_range(-r, r), rng.randf_range(-(ry if ry >= 0 else r), ry if ry >= 0 else r), rng.randf_range(-r, r))
@@ -292,8 +586,11 @@ func _sand() -> Color:
 func explosion(p: Vector3, size: float, kind := "") -> void:
 	var s := size
 	var ground := p.y < 1.0
+	# köprü döşemesinde toprak değil beton tozu
+	var deck := ground and G.grid != null and G.grid.on_bridge(p)
+	var dust := Color(0.6, 0.59, 0.56) if deck else _sand()
 	if ground and kind != "auto":
-		dirt_crown(Vector3(p.x, 0.15, p.z), s)
+		dirt_crown(Vector3(p.x, 0.15, p.z), s, dust if deck else Color(-1, 0, 0))
 	if kind == "big" and s >= 1.4:
 		fireball(p + Vector3(0, 0.5, 0), s * 0.7)
 		if s >= 2.0:
@@ -305,48 +602,63 @@ func explosion(p: Vector3, size: float, kind := "") -> void:
 	var nfire := int((4 if shell else 9) * s)
 	for i in nfire:
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.3, 1.2), rng.randf_range(-1, 1)).normalized()
-		emit(P_FIRE, p + d * 0.3 * s, d * rng.randf_range(2.0, 5.0) * s, rng.randf_range(0.3, 0.7) if shell else rng.randf_range(0.45, 0.9), 0.8 * s, rng.randf_range(1.6, 2.6) * s, -1.5, 3.0, Color(0.85, 0.7, 0.55, 1), rng.randf_range(0.0, 0.06))
+		emit(P_FIRE, p + d * 0.3 * s, d * rng.randf_range(2.0, 5.0) * s, rng.randf_range(0.12, 0.3) if shell else rng.randf_range(0.45, 0.9), (0.5 if shell else 0.8) * s, (rng.randf_range(1.0, 1.6) if shell else rng.randf_range(1.6, 2.6)) * s, -1.5, 3.0, Color(0.85, 0.7, 0.55, 1), rng.randf_range(0.0, 0.06))
 	# kara duman sütunu
 	var nsm := int(12 * s)
 	for i in nsm:
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1.4), rng.randf_range(-1, 1))
 		var g := rng.randf_range(0.07, 0.17)
-		var tint := Color(g * 1.1, g, g * 0.95, 0.9)
+		var tint := Color(g * 1.1, g, g * 0.95, 0.62)
 		emit(P_SMOKE, p + d * 0.5 * s, d * rng.randf_range(1.2, 3.0) * s + Vector3(0, 1.0 * s, 0), rng.randf_range(2.8, 5.0) * (0.7 + 0.3 * s), 1.4 * s, rng.randf_range(3.5, 5.5) * s, -0.35, 1.1, tint, rng.randf_range(0.05, 0.25))
 	# yer tozu halkası
 	if ground:
-		var sand := _sand()
+		var sand := dust
 		for i in int(10 * s):
 			var a := TAU * i / int(10 * s)
 			var d := Vector3(cos(a), 0.08, sin(a))
 			var dsc := sand.darkened(0.3)
-			emit(P_SMOKE, p + d * 0.5 * s, d * rng.randf_range(4.0, 7.0) * s, rng.randf_range(1.3, 2.4), 1.0 * s, 3.2 * s, 0.0, 2.5, Color(dsc.r, dsc.g, dsc.b, 0.75), 0.02)
+			emit(P_SMOKE, p + d * 0.5 * s, d * rng.randf_range(4.0, 7.0) * s, rng.randf_range(1.3, 2.4), 1.0 * s, 3.2 * s, 0.0, 2.5, Color(dsc.r, dsc.g, dsc.b, 0.5), 0.02)
 	# kıvılcımlar
 	for i in int(22 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1.5), rng.randf_range(-1, 1)).normalized()
 		emit(P_SPARK, p + Vector3(0, 0.3, 0), d * rng.randf_range(8.0, 22.0) * sqrt(s), rng.randf_range(0.4, 1.1), 0.09, 0.07, 9.8, 1.2, Color(1.0, 0.7, 0.35, 1))
-	# moloz parçaları
-	var dc := _sand().darkened(0.25)
+	# moloz parçaları: köşeli kırık parçalar (debris_tex), çoğu küçük, azı iri; dönerek uçar
+	var dc := dust.darkened(0.25)
 	for i in int(14 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.6, 1.8), rng.randf_range(-1, 1)).normalized()
 		var c := dc if rng.randf() < 0.6 else Color(0.15, 0.13, 0.12)
-		emit(P_DEBRIS, p + Vector3(0, 0.2, 0), d * rng.randf_range(4.0, 13.0) * sqrt(s), rng.randf_range(1.8, 3.2), rng.randf_range(0.1, 0.24) * sqrt(s), rng.randf_range(0.1, 0.24) * sqrt(s), 13.0, 0.25, c, 0.0, rng.randf_range(-6, 6))
+		var sz := (rng.randf_range(0.14, 0.24) if rng.randf() < 0.12 else rng.randf_range(0.04, 0.11)) * sqrt(s)
+		emit(P_DEBRIS, p + Vector3(0, 0.2, 0), d * rng.randf_range(4.0, 13.0) * sqrt(s), rng.randf_range(1.6, 2.8), sz, sz, 13.0, 0.25, c, 0.0, rng.randf_range(-9, 9))
 
 # toprak tacı: patlamadan yukarı/dışa fırlayan dikenli toprak çizgileri (mermi/top isabeti, havan)
-func dirt_crown(p: Vector3, s: float) -> void:
-	var sand := _sand().darkened(0.35)
+func dirt_crown(p: Vector3, s: float, col := Color(-1, 0, 0)) -> void:
+	var base := _sand() if col.r < 0.0 else col
+	# toprak sütunu: tek düz flipbook yerine üst üste binen, derinlikte dağılmış pufler (hacim; arkası seçilir)
+	var colc := base.darkened(0.12)
+	for i in int(8 * s) + 5:
+		var h := rng.randf()
+		var off := Vector3(rng.randf_range(-0.8, 0.8) * s, h * 2.2 * s, rng.randf_range(-0.8, 0.8) * s)
+		var vel := Vector3(rng.randf_range(-1.4, 1.4), rng.randf_range(5.0, 10.0) * (0.45 + h), rng.randf_range(-1.4, 1.4)) * sqrt(s)
+		var cc := colc.lerp(Color(0.2, 0.17, 0.13), rng.randf() * 0.45)
+		emit(P_SMOKE, p + off, vel, rng.randf_range(2.6, 4.2), rng.randf_range(1.1, 1.8) * s, rng.randf_range(3.2, 5.2) * s, 0.4, 1.3, Color(cc.r, cc.g, cc.b, 0.6), rng.randf_range(0.0, 0.08))
+	var sand := base.darkened(0.35)
 	for i in int(18 * s) + 6:
 		var d := Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(0.9, 1.6), rng.randf_range(-0.6, 0.6)).normalized()
 		var c := sand.lerp(Color(0.12, 0.1, 0.08), rng.randf() * 0.6)
 		emit(P_STREAK, p, d * rng.randf_range(7.0, 16.0) * sqrt(s), rng.randf_range(0.7, 1.3), rng.randf_range(0.06, 0.14) * sqrt(s), rng.randf_range(0.04, 0.09), 14.0, 0.6, Color(c.r, c.g, c.b, 0.95))
 	# toprak bulutu kolonu
 	for i in int(6 * s) + 3:
-		var g := _sand().darkened(rng.randf_range(0.1, 0.4))
-		emit(P_SMOKE, p + _rv(0.4 * s, 0.1), Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(2.5, 6.0) * s, rng.randf_range(-0.6, 0.6)), rng.randf_range(1.6, 3.0), 0.6 * s, rng.randf_range(2.0, 3.4) * s, 1.4, 1.6, Color(g.r, g.g, g.b, 0.85), rng.randf_range(0.0, 0.1))
+		var g := base.darkened(rng.randf_range(0.1, 0.4))
+		emit(P_SMOKE, p + _rv(0.4 * s, 0.1), Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(2.5, 6.0) * s, rng.randf_range(-0.6, 0.6)), rng.randf_range(1.6, 3.0), 0.6 * s, rng.randf_range(2.0, 3.4) * s, 1.4, 1.6, Color(g.r, g.g, g.b, 0.6), rng.randf_range(0.0, 0.1))
 
 # büyük ateş topu: türbülanslı turuncu-sarı alev kütlesi, içinden kara duman çıkar
 func fireball(p: Vector3, s: float) -> void:
 	flash(p, 4.5 * s, 9.0 + 8.0 * s, 0.4 + 0.15 * s, Color(1.0, 0.6, 0.28))
+	if has_flip:
+		# simüle edilmiş ateş topu (flipbook): gerçek girdaplı alev + kara duman
+		emit(P_FLIP, p + Vector3(0, 1.3 * s, 0), Vector3(0, 0.8, 0), rng.randf_range(1.2, 1.5), 5.0 * s, 6.8 * s, 0.0, 1.0, Color(1, 1, 1, 0.85), 0.0, rng.randf_range(-0.2, 0.2))
+		if s > 1.2:
+			emit(P_FLIP, p + Vector3(rng.randf_range(-1, 1), 1.0 * s, rng.randf_range(-1, 1)), Vector3(0, 0.9, 0), rng.randf_range(1.3, 1.6), 4.0 * s, 5.6 * s, 0.0, 1.0, Color(1, 1, 1, 0.72), 0.12, rng.randf_range(-0.3, 0.3))
 	emit(P_FIRE, p + Vector3(0, 0.6 * s, 0), Vector3(0, 1.0, 0), 0.16, 2.0 * s, 3.8 * s, 0.0, 1.0, Color(1.1, 0.9, 0.65, 1))
 	for i in int(34 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.2, 1.4), rng.randf_range(-1, 1)).normalized()
@@ -357,7 +669,7 @@ func fireball(p: Vector3, s: float) -> void:
 	for i in int(22 * s):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.6, 1.8), rng.randf_range(-1, 1)).normalized()
 		var g := rng.randf_range(0.04, 0.12)
-		emit(P_SMOKE, p + d * 0.6 * s, d * rng.randf_range(1.5, 4.0) * s + Vector3(0, 2.2 * s, 0), rng.randf_range(4.0, 7.0), 1.6 * s, rng.randf_range(4.5, 7.5) * s, -0.6, 0.9, Color(g, g * 0.95, g * 0.9, 0.95), rng.randf_range(0.25, 0.7))
+		emit(P_SMOKE, p + d * 0.6 * s, d * rng.randf_range(1.5, 4.0) * s + Vector3(0, 2.2 * s, 0), rng.randf_range(4.0, 7.0), 1.6 * s, rng.randf_range(4.5, 7.5) * s, -0.6, 0.9, Color(g, g * 0.95, g * 0.9, 0.7), rng.randf_range(0.25, 0.7))
 	# alev dilleri: yukarı fırlayan ince ateş jetleri
 	for i in int(6 * s):
 		var d := Vector3(rng.randf_range(-0.35, 0.35), 1.0, rng.randf_range(-0.35, 0.35)).normalized()
@@ -368,11 +680,11 @@ func fireball(p: Vector3, s: float) -> void:
 func mushroom(p: Vector3, s: float) -> void:
 	for i in int(16 * s):
 		var g := rng.randf_range(0.05, 0.13)
-		emit(P_SMOKE, p + _rv(0.5 * s, 0.2), Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(9.0, 14.0) * s, rng.randf_range(-0.5, 0.5)), rng.randf_range(5.0, 8.0), 1.2 * s, rng.randf_range(3.0, 4.5) * s, 0.0, 1.0, Color(g, g, g, 0.9), rng.randf_range(0.1, 0.5))
+		emit(P_SMOKE, p + _rv(0.5 * s, 0.2), Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(9.0, 14.0) * s, rng.randf_range(-0.5, 0.5)), rng.randf_range(5.0, 8.0), 1.2 * s, rng.randf_range(3.0, 4.5) * s, 0.0, 1.0, Color(g, g, g, 0.66), rng.randf_range(0.1, 0.5))
 	for i in int(14 * s):
 		var a := rng.randf() * TAU
 		var g := rng.randf_range(0.06, 0.15)
-		emit(P_SMOKE, p + Vector3(0, 9.0 * s, 0), Vector3(cos(a) * rng.randf_range(2.0, 4.0), rng.randf_range(1.0, 2.5), sin(a) * rng.randf_range(2.0, 4.0)) * s, rng.randf_range(6.0, 9.0), 2.5 * s, rng.randf_range(6.0, 9.0) * s, -0.15, 0.8, Color(g, g, g, 0.9), rng.randf_range(0.6, 1.2))
+		emit(P_SMOKE, p + Vector3(0, 9.0 * s, 0), Vector3(cos(a) * rng.randf_range(2.0, 4.0), rng.randf_range(1.0, 2.5), sin(a) * rng.randf_range(2.0, 4.0)) * s, rng.randf_range(6.0, 9.0), 2.5 * s, rng.randf_range(6.0, 9.0) * s, -0.15, 0.8, Color(g, g, g, 0.62), rng.randf_range(0.6, 1.2))
 
 # uzun süren yangın + kara duman sütunu (yanan araç)
 func cookoff(p: Vector3, dur: float, pw := 1.0) -> void:
@@ -382,15 +694,58 @@ func fire_column(p: Vector3, dur: float, pw := 1.0) -> void:
 	emitters.append([p, G.time + dur, "column", pw, 0.0])
 
 # suya düşen mermi/patlama: beyaz su sütunu + halka + serpinti
-func water_splash(p: Vector3, s: float) -> void:
-	for i in int(14 * s) + 4:
-		var d := Vector3(rng.randf_range(-0.25, 0.25), 1.0, rng.randf_range(-0.25, 0.25)).normalized()
-		emit(P_STREAK, Vector3(p.x, 0.0, p.z), d * rng.randf_range(6.0, 13.0) * sqrt(s), rng.randf_range(0.7, 1.2), 0.12 * s, 0.08, 9.8, 0.8, Color(0.85, 0.92, 0.95, 0.9))
-	for i in int(10 * s) + 3:
-		emit(P_SMOKE, Vector3(p.x, 0.2, p.z) + _rv(0.4 * s, 0.1), Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(2.0, 5.0) * s, rng.randf_range(-0.6, 0.6)), rng.randf_range(1.2, 2.2), 0.6 * s, rng.randf_range(2.0, 3.2) * s, 3.0, 1.6, Color(0.88, 0.93, 0.96, 0.75), rng.randf_range(0.0, 0.1))
-	for i in 16:
-		var a := TAU * i / 16.0
-		emit(P_SMOKE, Vector3(p.x, 0.1, p.z), Vector3(cos(a), 0.05, sin(a)) * rng.randf_range(2.0, 4.0) * s, rng.randf_range(0.8, 1.4), 0.5 * s, 1.6 * s, 0.0, 2.5, Color(0.92, 0.96, 0.98, 0.6))
+# suya düşüş (roadmap 115): büyüklük mühimmata göre (el bombası ~0,5 … büyük patlama ~2,6). Dar ve yüksek su
+# sütunu, açılı taç sıçraması, geri düşen damlalar, yarı saydam yayılan çisinti, silik köpük halkası — eski opak
+# "pamuk" topaklar yerine. deep: su altında patlama (batan el bombası) — önce yüzey kabarır, sütun gecikir
+func water_splash(p: Vector3, s: float, deep := false) -> void:
+	if G.terrain != null:
+		G.terrain.add_ripple(p, s)
+	var base := Vector3(p.x, 0.02, p.z)
+	var dl := 0.12 if deep else 0.0
+	var h := sqrt(s)
+	# kabarma (su altı patlaması): beyaz kubbe
+	if deep:
+		for i in int(8 * s) + 4:
+			emit(P_SMOKE, base + _rv(0.5 * s, 0.05), Vector3(rng.randf_range(-0.8, 0.8), rng.randf_range(1.0, 2.0) * h, rng.randf_range(-0.8, 0.8)), rng.randf_range(0.5, 0.8), 0.6 * s, 1.4 * s, 6.0, 2.0, Color(0.9, 0.95, 0.97, 0.55))
+	# sütun: dar, yüksek, çok sayıda ince iz
+	for i in int(26 * s) + 6:
+		var d := Vector3(rng.randf_range(-0.1, 0.1), 1.0, rng.randf_range(-0.1, 0.1)).normalized()
+		emit(P_STREAK, base + _rv(0.25 * s, 0.0), d * rng.randf_range(8.0, 16.0) * h, rng.randf_range(0.9, 1.5), 0.09 * s + 0.04, 0.05, 9.8, 0.6, Color(0.9, 0.95, 0.98, 0.85), dl + rng.randf_range(0.0, 0.06))
+	# taç: dışa açılan sıçrama
+	for i in int(18 * s) + 6:
+		var a := rng.randf() * TAU
+		var d2 := Vector3(cos(a) * 0.7, 1.0, sin(a) * 0.7).normalized()
+		emit(P_STREAK, base, d2 * rng.randf_range(4.0, 8.0) * h, rng.randf_range(0.7, 1.1), 0.06 * s + 0.03, 0.04, 9.8, 0.5, Color(0.85, 0.92, 0.95, 0.8), dl)
+	# çisinti: sütunun tepesinden yayılıp düşen, yarı saydam
+	for i in int(7 * s) + 2:
+		emit(P_SMOKE, base + Vector3(0, rng.randf_range(1.5, 4.0) * h, 0) + _rv(0.5 * s, 0.4), Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-0.3, 0.6), rng.randf_range(-1.0, 1.0)), rng.randf_range(1.6, 2.8), 0.5 * s, 2.6 * s, 1.2, 1.4, Color(0.9, 0.94, 0.97, 0.32), dl + rng.randf_range(0.15, 0.4))
+	# köpük halkası: suyun üstünde yayılan, silik
+	for i in 18:
+		var a2 := TAU * i / 18.0
+		emit(P_SMOKE, base + Vector3(0, 0.05, 0), Vector3(cos(a2), 0.02, sin(a2)) * rng.randf_range(1.5, 3.0) * h, rng.randf_range(1.0, 1.8), 0.4 * s, 1.4 * s, 0.0, 2.2, Color(0.94, 0.97, 0.99, 0.32), dl)
+
+# (144) suda ilerleyen birim izi: önde kabaran köpük, yanlara açılan küçük sıçrama, arkada yayılan dalga halkası.
+# s: birim boyu (asker 0,4, cip 1, tank 2); dir: gidiş yönü (yatay)
+var _wake_rip := 0.0
+
+func wake(p: Vector3, dir: Vector3, s: float, fast: bool) -> void:
+	var base := Vector3(p.x, Terrain.WATER_Y + 0.03, p.z)
+	var d := Vector3(dir.x, 0, dir.z)
+	d = d.normalized() if d.length() > 0.01 else Vector3.FORWARD
+	var side := Vector3(-d.z, 0, d.x)
+	# önde kabarma köpüğü (yassı, su yüzünde)
+	for i in int(3 * s) + 2:
+		emit(P_SMOKE, base + d * s * 0.6 + side * rng.randf_range(-0.5, 0.5) * s, d * 0.6 + side * rng.randf_range(-0.8, 0.8), rng.randf_range(0.8, 1.4), 0.25 * s + 0.1, 0.9 * s + 0.3, 0.0, 2.0, Color(0.92, 0.95, 0.96, 0.4))
+	# yanlara sıçrama (hızlıyken)
+	if fast:
+		for sg in [-1.0, 1.0]:
+			for i in int(4 * s) + 1:
+				var v: Vector3 = (side * sg * rng.randf_range(1.2, 2.4) + Vector3(0, rng.randf_range(1.5, 3.0), 0) + d * rng.randf_range(0.0, 1.0)) * sqrt(s)
+				emit(P_STREAK, base + d * s * 0.4 + side * sg * s * 0.4, v, rng.randf_range(0.4, 0.7), 0.04 * s + 0.02, 0.03, 9.8, 0.4, Color(0.88, 0.93, 0.96, 0.75))
+	# dalga halkası (gölgelendiricideki halkalar paylaşımlı: sık birimde seyreltilir)
+	if G.terrain != null and G.time - _wake_rip > 0.25:
+		_wake_rip = G.time
+		G.terrain.add_ripple(p - d * s * 0.3, 0.25 * s + 0.1)
 
 # zırhı delen isabet: içe doğru metal parçacık + kıvılcım duşu + kapaklardan sızan duman
 func penetration(p: Vector3, dir: Vector3, heat: bool) -> void:
@@ -411,6 +766,11 @@ func ricochet(p: Vector3, dir: Vector3, nrm: Vector3) -> void:
 		emit(P_SPARK, p, (r + _rv(0.35)).normalized() * rng.randf_range(10.0, 22.0), rng.randf_range(0.15, 0.35), 0.05, 0.035, 6.0, 1.0, Color(1.0, 0.9, 0.6))
 	flash(p, 2.0, 4.0, 0.06, Color(1.0, 0.9, 0.7))
 
+# onarım kıvılcımı (çekiç / taşlama): az, kısa ömürlü, aşağı düşen kıvılcımlar
+func sparks(p: Vector3, s := 1.0) -> void:
+	for i in int(6 * s) + 2:
+		emit(P_SPARK, p, Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(0.3, 1.6), rng.randf_range(-1.0, 1.0)) * rng.randf_range(2.0, 4.5), rng.randf_range(0.12, 0.3), 0.03, 0.02, 9.0, 1.0, Color(1.0, 0.82, 0.45))
+
 # yüzeye göre el bombası/küçük patlama ek efekti
 func surface_burst(p: Vector3, s: float) -> void:
 	var c: Color
@@ -428,7 +788,7 @@ func surface_burst(p: Vector3, s: float) -> void:
 		var d := Vector3(cos(a), rng.randf_range(0.3, 1.2), sin(a)).normalized()
 		emit(P_STREAK, p, d * rng.randf_range(5.0, 10.0) * sqrt(s), rng.randf_range(0.4, 0.8), 0.06 * s, 0.04, 12.0, 0.8, Color(c.r, c.g, c.b, 0.95))
 	for i in int(6 * s) + 2:
-		emit(P_SMOKE, p + _rv(0.5 * s, 0.1), Vector3(rng.randf_range(-1, 1), rng.randf_range(0.5, 2.0), rng.randf_range(-1, 1)) * s, rng.randf_range(1.5, 2.6), 0.6 * s, 2.4 * s, 0.3, 1.5, Color(c.r, c.g, c.b, 0.7))
+		emit(P_SMOKE, p + _rv(0.5 * s, 0.1), Vector3(rng.randf_range(-1, 1), rng.randf_range(0.5, 2.0), rng.randf_range(-1, 1)) * s, rng.randf_range(1.5, 2.6), 0.6 * s, 2.4 * s, 0.3, 1.5, Color(c.r, c.g, c.b, 0.55))
 
 # yere yakın sabit sis kümesi (ormanlık / nehir kıyısı)
 func ground_mist(p: Vector3, r: float) -> void:
@@ -438,7 +798,7 @@ func dust_burst(p: Vector3, r: float) -> void:
 	var sand := _sand().lightened(0.1)
 	for i in int(14 + r * 4):
 		var d := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.0, 0.6), rng.randf_range(-1, 1))
-		emit(P_SMOKE, p + d * r * 0.6, d * rng.randf_range(1.0, 3.0), rng.randf_range(2.5, 4.5), 1.5, 4.0 + r, -0.1, 1.2, Color(sand.r, sand.g, sand.b, 0.8), rng.randf_range(0.0, 0.3))
+		emit(P_SMOKE, p + d * r * 0.6, d * rng.randf_range(1.0, 3.0), rng.randf_range(2.5, 4.5), 1.5, 4.0 + r, -0.1, 1.2, Color(sand.r, sand.g, sand.b, 0.5), rng.randf_range(0.0, 0.3))
 
 func muzzle(p: Vector3, dir: Vector3, big := false) -> void:
 	var s := 0.55 if big else 0.32
@@ -448,6 +808,25 @@ func muzzle(p: Vector3, dir: Vector3, big := false) -> void:
 		var g := 0.7
 		for i in 3:
 			emit(P_SMOKE, p + dir * 0.6, dir * rng.randf_range(2.0, 5.0) + _rv(0.6), rng.randf_range(0.8, 1.4), 0.4, 1.4, -0.2, 2.5, Color(g, g, g, 0.35))
+
+# roketatar tüpten çıkış: tüp ağzında kısa parlak alev dili ve parlama, podun arkasına fışkıran egzoz,
+# yere çarpıp yayılan beyaz-gri bulut (salvonun ilk roketinde daha büyük); duman hacimli puflarla
+func pod_launch(p: Vector3, dir: Vector3, first := false) -> void:
+	flash(p, 5.0, 12.0, 0.1, Color(1.0, 0.75, 0.4))
+	emit(P_FIRE, p + dir * 0.7, dir * 10.0, 0.1, 0.5, 1.5, 0.0, 4.0, Color(1.6, 1.3, 0.9, 1))
+	emit(P_FLAME, p - dir * 0.2, -dir * 3.0, 0.18, 0.6, 1.2, 0.0, 3.0, Color(1, 1, 1, 1))
+	for i in 4:
+		emit(P_FIRE, p - dir * 0.3, -dir * rng.randf_range(6.0, 12.0) + _rv(1.5), rng.randf_range(0.1, 0.22), 0.45, 1.3, 0.0, 4.0, Color(1.2, 0.9, 0.6, 1))
+	for i in 4:
+		var d := (-dir + _rv(0.35)).normalized()
+		var c := rng.randf_range(0.74, 0.88)
+		emit(P_SMOKE, p - dir * 0.8, d * rng.randf_range(4.0, 10.0), rng.randf_range(2.5, 4.5), 0.9, rng.randf_range(3.0, 4.6), -0.15, 1.3, Color(c, c, c * 0.97, 0.5), rng.randf_range(0.0, 0.05))
+	var g := Vector3(p.x, 0.3, p.z) - Vector3(dir.x, 0, dir.z).normalized() * 3.0
+	var sand := _sand().lightened(0.15)
+	for i in (10 if first else 3):
+		var a := rng.randf() * TAU
+		var dd := Vector3(cos(a), 0.06, sin(a))
+		emit(P_SMOKE, g + dd * rng.randf_range(0.0, 1.5), dd * rng.randf_range(3.0, 8.0), rng.randf_range(2.5, 4.5), 1.2, rng.randf_range(3.2, 4.8), 0.0, 1.5, Color(sand.r, sand.g, sand.b, 0.4), 0.02)
 
 func cannon_blast(p: Vector3, dir: Vector3) -> void:
 	flash(p, 3.5, 9.0, 0.18, Color(1.0, 0.75, 0.4))
@@ -517,16 +896,32 @@ func burn(p: Vector3, dur: float, pw := 1.0) -> void:
 	emitters.append([p, G.time + dur, "burn", pw, 0.0])
 	emitters.append([p, G.time + dur + 40.0, "smolder", pw, 0.0])
 
+# (127) araç patlayınca çevredeki ot tutuşur: alçak alev halkası dışa yayılır (~0,3 m/sn, en çok max_r m), arkada
+# kül dumanı; bitince kararmış iz ve yanmış ot. Alev cephesindeki askerler yanar (hafif hasar + stres)
+func grass_fire(p: Vector3, max_r: float) -> void:
+	emitters.append([p, G.time + max_r / 0.3 + 6.0, "grassfire", 1.0, 0.0, G.time, max_r, 0.0])
+
 func smoke_screen(p: Vector3, dur := 16.0) -> void:
 	emitters.append([p, G.time + dur, "smoke", 1.0, 0.0])
 
-func crater(p: Vector3, size: float) -> void:
-	_decal(p, size, crater_tex, Color(1, 1, 1, 1))
+# krater izi (138): mühimmata göre doku (havan: geniş ışınsal püskürme, mayın / büyük bomba: kalın koyu toprak
+# halkası, top mermisi: tek yöne savrulmuş), derin kraterde çıkartma çukurun dibine kadar uzanır
+var crater_vars: Array = []
+
+func crater(p: Vector3, size: float, depth := 0.0, kind := "") -> void:
+	if crater_vars.is_empty():
+		for i in 4:
+			crater_vars.append(_make_crater(i))
+	var vi: int = {"mortar": 1, "mine": 2, "big": 2, "shell": 3}.get(kind, 0)
+	var tint := Color(1, 1, 1, 1)
+	if kind in ["grenade", "auto"]:
+		tint = Color(0.85, 0.85, 0.85, 0.75)
+	_decal(p, size, crater_vars[vi], tint, depth)
 
 func scorch(p: Vector3, size: float) -> void:
 	_decal(p, size, scorch_tex, Color(1, 1, 1, 0.85))
 
-func _decal(p: Vector3, size: float, tex: Texture2D, mod: Color) -> void:
+func _decal(p: Vector3, size: float, tex: Texture2D, mod: Color, depth := 0.0) -> void:
 	var d: Decal
 	if decals.size() < DECAL_CAP:
 		d = Decal.new()
@@ -540,6 +935,6 @@ func _decal(p: Vector3, size: float, tex: Texture2D, mod: Color) -> void:
 		_decal_i = (_decal_i + 1) % DECAL_CAP
 	d.texture_albedo = tex
 	d.modulate = mod
-	d.size = Vector3(size, 1.2, size)
-	d.position = Vector3(p.x, 0.0, p.z)
+	d.size = Vector3(size, maxf(1.2, depth * 2.0 + 1.0), size)
+	d.position = Vector3(p.x, -depth * 0.5, p.z)
 	d.rotation.y = rng.randf() * TAU

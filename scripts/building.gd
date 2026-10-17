@@ -6,7 +6,7 @@ const BDEF := {
 	"fob": {"title": "İleri Üs", "hp": 1800.0, "size": Vector2(10, 10), "cost": 300, "time": 40.0, "cap": 12, "sight": 40.0, "prod": ["rifle_squad", "medic_team"], "desc": "Birlik sınırını artırır, mühimmat verir, yol ve ikmal kamyonu getirir. Ele geçirilebilir."},
 	"barracks": {"title": "Kışla", "hp": 1200.0, "size": Vector2(9, 6), "cost": 250, "time": 30.0, "cap": 0, "sight": 30.0, "prod": ["rifle_squad", "mg_team", "at_squad", "medic_team", "sniper_team", "engineer_squad", "mortar_team", "drone_team", "atgm_team"], "desc": "Tüm piyade timlerini eğitir."},
 	"factory": {"title": "Araç Fabrikası", "hp": 1600.0, "size": Vector2(12, 9), "cost": 400, "time": 45.0, "cap": 0, "sight": 30.0, "prod": ["technical", "apc", "ifv", "aa", "tank", "arty", "fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun", "mlrs"], "desc": "Zırhlı araçlar ve topçu üretir."},
-	"helipad": {"title": "Helikopter Pisti", "hp": 900.0, "size": Vector2(11, 11), "cost": 450, "time": 40.0, "cap": 0, "sight": 32.0, "prod": ["heli", "transport"], "desc": "Saldırı helikopteri üretir."},
+	"helipad": {"title": "Helikopter Pisti", "hp": 900.0, "size": Vector2(11, 11), "cost": 450, "time": 40.0, "cap": 0, "sight": 32.0, "prod": ["heli", "transport", "para_squad"], "desc": "Saldırı helikopteri üretir."},
 	"hospital": {"title": "Sahra Hastanesi", "hp": 700.0, "size": Vector2(7, 6), "cost": 180, "time": 22.0, "cap": 0, "sight": 28.0, "prod": [], "desc": "Sedyeciler 45 m içindeki yaralıları toplar; yakındakiler iyileşir."},
 	"mgnest": {"title": "MG Yuvası", "hp": 600.0, "size": Vector2(4, 4), "cost": 120, "time": 18.0, "cap": 0, "sight": 46.0, "prod": [], "desc": "Kum torbalı sabit makineli tüfek."},
 	"tower": {"title": "Gözetleme Kulesi", "hp": 400.0, "size": Vector2(3, 3), "cost": 90, "time": 15.0, "cap": 0, "sight": 85.0, "prod": [], "desc": "Geniş görüş alanı."},
@@ -27,6 +27,7 @@ static var PDEF := {
 	"sniper_team": {"title": "Keskin Nişancı", "cost": 200, "time": 14.0, "cap": 2, "units": ["sniper", "sniper"], "icon": "inf"},
 	"engineer_squad": {"title": "İstihkâm Timi", "cost": 160, "time": 12.0, "cap": 4, "units": ["engineer", "engineer", "engineer", "engineer"], "icon": "inf"},
 	"mortar_team": {"title": "Havan Timi", "cost": 210, "time": 15.0, "cap": 3, "units": ["mortar", "mortar", "rifle"], "icon": "inf"},
+	"para_squad": {"title": "Paraşütçü Timi", "cost": 300, "time": 20.0, "cap": 8, "units": ["leader", "rifle", "rifle", "mg", "rifle", "at", "medic", "rifle"], "icon": "inf", "para": true},
 	"atgm_team": {"title": "Güdümlü Tanksavar Timi", "cost": 260, "time": 16.0, "cap": 3, "units": ["atgm", "atgm", "rifle"], "icon": "at"},
 	"drone_team": {"title": "Drone Ekibi", "cost": 190, "time": 14.0, "cap": 2, "units": ["drone", "drone"], "icon": "inf"},
 	"ifv": {"title": "Piyade Savaş Aracı", "cost": 480, "time": 24.0, "cap": 3, "vehicle": "ifv", "icon": "apc"},
@@ -86,7 +87,9 @@ func setup(t: int, bt: String, r := 0.0) -> void:
 	hp = max_hp * 0.15
 	size = B["size"]
 	rot = r
-	sight = B["sight"]
+	# gözcü (roadmap 50): karargâh / ileri üs nöbetçileri dürbünlü, MG yuvası, kule yüksekten optikli
+	opt_k = float({"hq": 1.3, "fob": 1.3, "mgnest": 1.3, "tower": 2.2}.get(bt, 0.9))
+	sight = Combat.detect_range(opt_k, 0.32) if not B.get("line", false) else 8.0
 	cap_cost = 0
 	icon = "bld"
 	radius = maxf(size.x, size.y) * 0.5
@@ -232,6 +235,8 @@ func _build_model() -> void:
 	if btype == "hq":
 		model.scale = Vector3(1.35, 1.25, 1.35)
 	add_child(model)
+	if _glb_model():
+		return
 	var mb := MB.new()
 	var tc: Color = G.TEAM_COL[team] if team >= 0 else Color(0.8, 0.8, 0.8)
 	var winter := G.map_kind == "winter"
@@ -332,12 +337,9 @@ func _build_model() -> void:
 				mb.box(Vector3(-2.5 + i * 2.0, 0.25, 3.4), Vector3(0.6, 0.12, 1.9), Color(0.4, 0.42, 0.3))
 			_flag(mb, Vector3(3.6, 0, 3.0), tc, 3.0)
 		"mgnest":
-			for i in 10:
-				var ang := TAU * i / 10.0
-				if i == 7:
-					continue
-				for rr in 2:
-					mb.box(Vector3(cos(ang) * 1.7, 0.18 + rr * 0.3, sin(ang) * 1.7), Vector3(0.95, 0.3, 0.5), Color(0.74, 0.65, 0.45).darkened(0.05 * ((i + rr) % 2)), Basis(Vector3.UP, -ang + PI * 0.5))
+			# gerçek kum torbası çemberi (roadmap 36): hat siperiyle aynı torba modeli / malzemesi, dört sıra, sıra
+			# başına yarım torba kaydırmalı; giriş açıklığı (eski 7. dilim)
+			model.add_child(_bag_ring(1.7, 4, TAU * 6.5 / 10.0, TAU * 7.5 / 10.0))
 		"tower":
 			for sx in [-1.0, 1.0]:
 				for sz in [-1.0, 1.0]:
@@ -383,14 +385,34 @@ func _build_model() -> void:
 		gun_pivot = Node3D.new()
 		gun_pivot.position = Vector3(0, 0, 0.3)
 		add_child(gun_pivot)
+		# ağır makineli tüfek (M2 / NSV tipi) üç ayaklı sehpada: sehpa ayakları, kafa, gövde (mekanizma), delikli namlu
+		# ceketi, namlu, alev gizleyici, gez, çift tutamak, sol yanda mühimmat kutusu ve şerit
 		var gm := MB.new()
-		gm.cyl(Vector3(0, 0, -0.2), 0.03, 0.03, 0.75, 4, Color(0.2, 0.2, 0.2))
-		gm.box(Vector3(0, 0.78, -0.6), Vector3(0.1, 0.12, 0.9), Color(0.12, 0.12, 0.12))
+		var steel := Color(0.13, 0.13, 0.13)
+		var park := Color(0.2, 0.21, 0.19)
+		var od := Color(0.27, 0.3, 0.2)
+		# kafa torba siperinin (4 sıra, 0,64 m) üstünden ateş edecek yükseklikte; ayakta nişan alan nişancının elleri hizası
+		var head := Vector3(0, 1.0, -0.25)
+		for lp in [Vector3(0, 0, -1.05), Vector3(-0.55, 0, 0.35), Vector3(0.55, 0, 0.35)]:
+			gm.cyl_between(head, lp, 0.022, 0.018, 5, park)
+		gm.cyl(head + Vector3(0, -0.04, 0), 0.05, 0.05, 0.1, 8, park)
+		gm.box(head + Vector3(0, 0.12, 0.02), Vector3(0.12, 0.13, 0.46), steel)                       # mekanizma
+		gm.box(head + Vector3(0, 0.2, 0.0), Vector3(0.11, 0.03, 0.3), steel.lightened(0.08))          # kapak
+		gm.cyl_between(head + Vector3(0, 0.12, -0.22), head + Vector3(0, 0.12, -0.7), 0.034, 0.034, 8, steel)   # namlu ceketi
+		for k in 4:
+			gm.box(head + Vector3(0, 0.155, -0.3 - k * 0.1), Vector3(0.05, 0.012, 0.03), Color(0.05, 0.05, 0.05))
+		gm.cyl_between(head + Vector3(0, 0.12, -0.7), head + Vector3(0, 0.12, -1.25), 0.016, 0.016, 6, steel)  # namlu
+		gm.cyl_between(head + Vector3(0, 0.12, -1.25), head + Vector3(0, 0.12, -1.33), 0.026, 0.022, 6, steel) # alev gizleyici
+		gm.box(head + Vector3(0, 0.24, -0.05), Vector3(0.02, 0.06, 0.02), steel)                      # gez
+		for sx in [-0.06, 0.06]:
+			gm.cyl_between(head + Vector3(sx, 0.12, 0.25), head + Vector3(sx, 0.05, 0.36), 0.014, 0.014, 5, Color(0.08, 0.08, 0.08))
+		gm.box(head + Vector3(-0.16, 0.06, 0.02), Vector3(0.1, 0.17, 0.28), od)                     # mühimmat kutusu
+		gm.box(head + Vector3(-0.08, 0.16, 0.0), Vector3(0.07, 0.015, 0.09), Color(0.55, 0.45, 0.2))  # şerit
 		var gmi := MeshInstance3D.new()
-		gmi.mesh = gm.commit(Mats.vc())
+		gmi.mesh = gm.commit(Mats.vcs())
 		gun_pivot.add_child(gmi)
 		gunner = SoldierBody.new()
-		gunner.position = Vector3(0, 0, 0.2)
+		gunner.position = Vector3(0, 0, 0.55)
 		gun_pivot.add_child(gunner)
 		gunner.build(team, "mg", winter)
 		gunner.weapon.visible = false
@@ -400,6 +422,206 @@ func _flag(mb: MB, p: Vector3, col: Color, h: float) -> void:
 	mb.cyl(p, 0.05, 0.04, h, 5, Color(0.6, 0.6, 0.6))
 	mb.quad(p + Vector3(0, h - 0.05, 0), p + Vector3(1.2, h - 0.12, 0.1), p + Vector3(1.2, h - 0.85, 0.1), p + Vector3(0, h - 0.8, 0), col, Vector3(0, 0, 1))
 	mb.quad(p + Vector3(0, h - 0.05, 0), p + Vector3(1.2, h - 0.12, 0.1), p + Vector3(1.2, h - 0.85, 0.1), p + Vector3(0, h - 0.8, 0), col.darkened(0.2), Vector3(0, 0, -1))
+
+# ------------------------------------------------------------ Blender modelleri
+# assets/models/struct_<tip>_<usa|rus>.glb (tools/blender/structures.py): tek ağ, yüzey başına malzeme adı
+# (vc, metal, glass, lamp*, cloth, flag), renk + pişmiş ortam kapanması tepe renginde. Yoksa yordamsal model.
+static var _sglb := {}
+static var _smat := {}
+var glb_model := false
+var glb_h := 0.0
+
+# yapı üslubu: NATO (usa) ya da Doğu (rus) — ulustan, yoksa takımdan
+static func struct_side(t: int) -> String:
+	var nat: String = G.nation[t] if t >= 0 and t < G.nation.size() else ""
+	if nat in ["rus", "chn"]:
+		return "rus"
+	if nat in ["usa", "gbr"]:
+		return "usa"
+	return "rus" if t == 1 else "usa"
+
+static func struct_model(bt: String, side: String) -> Dictionary:
+	var key := bt + "_" + side
+	if _sglb.has(key):
+		return _sglb[key]
+	var out := {"meshes": [], "h": 0.0}
+	var p := "res://assets/models/struct_%s.glb" % key
+	if ResourceLoader.exists(p):
+		var root: Node = (load(p) as PackedScene).instantiate()
+		_struct_collect(root, Transform3D(), out["meshes"])
+		root.free()
+		var f := FileAccess.open("res://assets/models/struct_%s.json" % key, FileAccess.READ)
+		var d = JSON.parse_string(f.get_as_text()) if f else null
+		if d is Dictionary:
+			out["h"] = float(d.get("h", 0.0))
+	_sglb[key] = out
+	return out
+
+static func _struct_collect(n: Node, xf: Transform3D, out: Array) -> void:
+	var t := xf
+	if n is Node3D:
+		t = xf * (n as Node3D).transform
+	if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+		var m: Mesh = (n as MeshInstance3D).mesh
+		var flag := -1
+		for i in m.get_surface_count():
+			var sm := m.surface_get_material(i)
+			var nm: String = sm.resource_name if sm else "vc"
+			if nm == "flag":
+				flag = i
+			m.surface_set_material(i, _struct_mat(nm))
+		if flag >= 0:
+			m = _flag_uv(m, flag)
+		out.append([m, t, flag])
+	for c in n.get_children():
+		_struct_collect(c, t, out)
+
+# tepe rengi doğrusal (glTF COLOR_0); vc/metal/cloth hafif dünya üç düzlemli gren dokusu
+static func _struct_mat(nm: String) -> Material:
+	if _smat.has(nm):
+		return _smat[nm]
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.86
+	match nm:
+		"metal":
+			m.roughness = 0.5
+			m.metallic = 0.35
+			m.metallic_specular = 0.6
+		"glass":
+			m.roughness = 0.1
+			m.metallic = 0.5
+			m.metallic_specular = 0.9
+		"lamp", "lamp_r", "lamp_g", "lamp_b":
+			m.emission_enabled = true
+			m.emission = {"lamp": Color(1.0, 0.86, 0.6), "lamp_r": Color(1.0, 0.12, 0.08), "lamp_g": Color(0.2, 1.0, 0.3), "lamp_b": Color(0.25, 0.45, 1.0)}[nm]
+			m.emission_energy_multiplier = 0.8
+		"cloth", "flag":
+			m.roughness = 0.95
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			var nt := Art.mat_tex("hessian_230", "normal")
+			if nt and nm == "cloth":
+				m.normal_enabled = true
+				m.normal_texture = nt
+				m.normal_scale = 0.6
+				m.uv1_triplanar = true
+				m.uv1_world_triplanar = true
+				m.uv1_scale = Vector3(1.2, 1.2, 1.2)
+	if nm in ["vc", "metal"]:
+		var nt2 := NoiseTexture2D.new()
+		nt2.width = 256
+		nt2.height = 256
+		nt2.seamless = true
+		var fn := FastNoiseLite.new()
+		fn.frequency = 0.05
+		fn.fractal_octaves = 4
+		nt2.noise = fn
+		var gr := Gradient.new()
+		gr.set_color(0, Color(0.82, 0.82, 0.82))
+		gr.set_color(1, Color(1.0, 1.0, 1.0))
+		nt2.color_ramp = gr
+		m.albedo_texture = nt2
+		m.uv1_triplanar = true
+		m.uv1_world_triplanar = true
+		m.uv1_scale = Vector3(0.7, 0.7, 0.7)
+	_smat[nm] = m
+	return m
+
+static func _flag_mat(col: Color) -> Material:
+	var key := "flag_" + col.to_html()
+	if not _smat.has(key):
+		# (33) dalgalanan bayrak: shaders/flag.gdshader (UV.x = direkten uzaklık, _flag_uv'de hesaplanır)
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/flag.gdshader")
+		m.set_shader_parameter("col", col)
+		_smat[key] = m
+	return _smat[key]
+
+# yapı modelindeki bayrak yüzeyine UV: x = direkten serbest uca 0..1 (bayrak model X ekseni boyunca uzanır), y = üstten
+# alta 0..1. Diğer yüzeyler olduğu gibi kopyalanır (Blender dışa aktarımı bayrağa UV yazmıyor)
+static func _flag_uv(m: Mesh, fi: int) -> Mesh:
+	if not (m is ArrayMesh):
+		return m
+	var am := ArrayMesh.new()
+	for i in m.get_surface_count():
+		var arr: Array = m.surface_get_arrays(i)
+		if i == fi:
+			var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var mn := Vector3(INF, INF, INF)
+			var mx := -mn
+			for v in vs:
+				mn = mn.min(v)
+				mx = mx.max(v)
+			var uv := PackedVector2Array()
+			uv.resize(vs.size())
+			for k in vs.size():
+				uv[k] = Vector2((vs[k].x - mn.x) / maxf(mx.x - mn.x, 0.01), (mx.y - vs[k].y) / maxf(mx.y - mn.y, 0.01))
+			arr[Mesh.ARRAY_TEX_UV] = uv
+		am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		am.surface_set_material(i, m.surface_get_material(i))
+	return am
+
+static var _bag_mesh: ArrayMesh = null
+
+# kum torbası çemberi: r yarıçap, rows sıra; [gap0, gap1] açı aralığı boş (giriş)
+func _bag_ring(r: float, rows: int, gap0: float, gap1: float) -> MultiMeshInstance3D:
+	if _bag_mesh == null:
+		_bag_mesh = Blocks.sandbag_mesh()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(position.x * 13.0 + position.z * 7.0)
+	var BL := 0.62
+	var BH := 0.16
+	var BT := 0.4
+	var n := maxi(6, int(round(TAU * r / BL)))
+	var xs: Array = []
+	var cs: Array = []
+	for row in rows:
+		var off := 0.5 if row % 2 == 1 else 0.0
+		for i in n:
+			var ang := TAU * (i + off) / n
+			if ang >= gap0 and ang <= gap1:
+				continue
+			var p := Vector3(cos(ang) * r, BH * (row + 0.5), sin(ang) * r)
+			p += Vector3(cos(ang), 0, sin(ang)) * rng.randf_range(-0.03, 0.03)
+			var b := Basis(Vector3.UP, -ang + PI * 0.5 + rng.randf_range(-0.08, 0.08))
+			b = b.scaled(Vector3(BL * rng.randf_range(0.95, 1.05), BH * rng.randf_range(0.92, 1.06), BT * rng.randf_range(0.95, 1.05)))
+			xs.append(Transform3D(b, p))
+			cs.append(Mats.bag_color(rng, row, rows))
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = _bag_mesh
+	mm.instance_count = xs.size()
+	for k in xs.size():
+		mm.set_instance_transform(k, xs[k])
+		mm.set_instance_color(k, cs[k])
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.material_override = Mats.sandbag()
+	return mi
+
+func _glb_model() -> bool:
+	glb_model = false
+	var S := struct_model(btype, struct_side(team))
+	if S["meshes"].is_empty():
+		return false
+	glb_model = true
+	glb_h = S["h"]
+	model.scale = Vector3.ONE
+	var tc: Color = G.TEAM_COL[team] if team >= 0 else Color(0.8, 0.8, 0.8)
+	for e in S["meshes"]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = e[0]
+		mi.transform = e[1]
+		if e[2] >= 0:
+			mi.set_surface_override_material(e[2], _flag_mat(tc))
+		model.add_child(mi)
+	set_layer(model, 1)
+	return true
+
+# eski yordamsal karargâh modeli 1.35 kat büyütülür; Blender modeli gerçek ölçekte
+func _hq_k() -> float:
+	return 1.35 if btype == "hq" and not glb_model else 1.0
 
 # inşaat: duvarlar alttan yukarı örülür (kesme shader'ı), çevrede iskele, yanda malzeme yığını;
 # işçiler çevrede farklı yerlere dağılır (diz çökerek çakan, ayakta yukarı çakan, malzeme taşıyan).
@@ -418,7 +640,7 @@ func _model_meshes(n: Node, out: Array) -> void:
 func _apply_construct_look() -> void:
 	if model == null:
 		return
-	var bs := Vector3(1.35, 1.25, 1.35) if btype == "hq" else Vector3.ONE
+	var bs := Vector3(1.35, 1.25, 1.35) if btype == "hq" and not glb_model else Vector3.ONE
 	model.scale = bs
 	var ms: Array = []
 	_model_meshes(model, ms)
@@ -448,7 +670,8 @@ func _apply_construct_look() -> void:
 				xf = (n as Node3D).transform * xf
 				n = n.get_parent()
 			top = maxf(top, (xf * c.mesh.get_aabb()).end.y * bs.y)
-		model_h = top
+		# Blender modeli: gövde yüksekliği (direk/anten tepeleri bitişte tamamlanır)
+		model_h = minf(top, glb_h) if glb_model and glb_h > 0.0 else top
 		var lin := Mats.reveal(false)
 		var srg := Mats.reveal(true)
 		_reveal = [lin, srg]
@@ -474,8 +697,8 @@ func _build_scaffold() -> void:
 	var steel := Color(0.55, 0.56, 0.56)
 	var wood := Color(0.6, 0.47, 0.3)
 	var H := model_h + 0.9
-	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0)
-	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0)
+	var hx := size.x * 0.5 * _hq_k()
+	var hz := size.y * 0.5 * _hq_k()
 	for ring in 2:
 		var m := 0.45 + ring * 0.85
 		var ax := hx + m
@@ -534,10 +757,34 @@ func _build_pile() -> void:
 	mi.mesh = mb.commit(Mats.vcs())
 	pile.add_child(mi)
 
+var _pile_at := Vector3.INF
+
+# malzeme yığını: yapının dört yanından ilk açık olanında (ağaç / kaya / duvar üstüne düşen yığına taşıyıcı
+# yaklaşamıyor, yığın ile çevresi arasında sonsuza dek gidip geliyordu); bir kez seçilir
 func pile_pos() -> Vector3:
-	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0)
-	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0)
-	return position + Vector3(hx + 3.2, 0, hz * 0.4).rotated(Vector3.UP, rot)
+	if _pile_at != Vector3.INF:
+		return _pile_at
+	var hx := size.x * 0.5 * _hq_k()
+	var hz := size.y * 0.5 * _hq_k()
+	var cands := [Vector3(hx + 3.2, 0, hz * 0.4), Vector3(-hx - 3.2, 0, -hz * 0.4), Vector3(hx * 0.4, 0, hz + 3.2), Vector3(-hx * 0.4, 0, -hz - 3.2)]
+	_pile_at = position + (cands[0] as Vector3).rotated(Vector3.UP, rot)
+	if G.grid == null:
+		return _pile_at
+	for lp in cands:
+		var p: Vector3 = position + (lp as Vector3).rotated(Vector3.UP, rot)
+		var ok := true
+		for o in [Vector3.ZERO, Vector3(1.2, 0, 0), Vector3(-1.2, 0, 0), Vector3(0, 0, 1.2), Vector3(0, 0, -1.2)]:
+			if not G.grid.free_at(p + o, Grid.M_INF):
+				ok = false
+				break
+		if ok:
+			_pile_at = p
+			break
+	return _pile_at
+
+# taşıyıcının yığında duracağı yürünebilir nokta (yığının kendisi katı hücreye denk gelebilir)
+func pile_reach() -> Vector3:
+	return G.grid.nearest_free(pile_pos(), Grid.M_INF, 4)
 
 # çevrede en çok 6 işçi yeri: dikdörtgen çevresine eşit aralıklı, iskelenin hemen dışında
 func claim_slot(s: Node) -> int:
@@ -563,8 +810,8 @@ func active_workers() -> int:
 	return n
 
 func slot_pos(k: int) -> Vector3:
-	var hx := size.x * 0.5 * (1.35 if btype == "hq" else 1.0) + 0.95
-	var hz := size.y * 0.5 * (1.35 if btype == "hq" else 1.0) + 0.95
+	var hx := size.x * 0.5 * _hq_k() + 0.95
+	var hz := size.y * 0.5 * _hq_k() + 0.95
 	if is_line():
 		return position
 	# öncelik sırası: ön, arka, sağ, sol, ön-sağ, arka-sol ... (farklı yönler)
@@ -668,7 +915,10 @@ func complete() -> void:
 		queue_free()
 		return
 	hp = max_hp
-	cap_bonus = B["cap"]
+	if btype == "fob":
+		supplied_t = G.time
+	# büyük haritada (BA/CoH3 ölçeği, roadmap 53) birlik sınırı daha yüksek: 2 km'de ×1, 8 km'de ×3
+	cap_bonus = int(round(float(B["cap"]) * clampf(G.MAP / 2048.0, 1.0, 3.0)))
 	_apply_construct_look()
 	if is_base() and G.logi:
 		G.logi.register_base(self)
@@ -697,7 +947,7 @@ func _make_line() -> void:
 	match btype:
 		"sandbags":
 			var from := G.blocks.bpos.size()
-			G.blocks.wall_line(a, b, 3, Color(0.73, 0.64, 0.44), Grid.K_WALL, {"len": 0.62, "h": 0.27, "t": 0.42, "type": Blocks.T_SANDBAG, "jit": 0.06})
+			G.blocks.wall_line(a, b, 5, Color(0.93, 0.87, 0.72), Grid.K_WALL, {"len": 0.62, "h": 0.17, "t": 0.4, "type": Blocks.T_SANDBAG, "jit": 0.07})
 			G.blocks.commit_runtime(from)
 		"concrete":
 			var from := G.blocks.bpos.size()
@@ -786,6 +1036,7 @@ func _process(dt: float) -> void:
 	if think_t <= 0.0:
 		think_t = 0.5
 		_think()
+		_cut_tick()
 	_production(dt)
 	if btype == "mgnest":
 		_mg(dt)
@@ -835,6 +1086,14 @@ func _flip(t: int) -> void:
 	team = t
 	capture_t = 0.0
 	queue.clear()
+	# ele geçirilen hastane: eski takımın sedye görevi bırakılır, sedyeciler sıradan sıhhiyeye döner
+	if job != null:
+		job._drop()
+		job = null
+	for b in bearers:
+		if is_instance_valid(b):
+			b.bearer = false
+	bearers.clear()
 	_build_model()
 	_apply_construct_look()
 	if G.logi:
@@ -917,11 +1176,53 @@ func _bearers() -> void:
 		if b.state == "idle" and b.dist2(self) > 14.0 and b.patient == null and b.job == null:
 			b.cmd_move(position + Vector3(randf_range(-4, 4), 0, size.y * 0.5 + 3.0).rotated(Vector3.UP, rot))
 
+# (120) ikmal hattı kesilen ileri üs kararır: 150 sn kamyon gelmezse üretim durur, görüş daralır, yapı kararır;
+# ilk teslimatta yeniden canlanır
+const CUT_T := 150.0
+var dark := false
+var _sight0 := -1.0
+var _dark_mat: StandardMaterial3D = null
+
+func cut_off() -> bool:
+	# büyük haritada kamyon seferi uzun: süre harita boyuyla (en çok 4 kat)
+	return btype == "fob" and done and alive and G.time - supplied_t > CUT_T * clampf(G.MAP / 512.0, 1.0, 4.0)
+
+func _cut_tick() -> void:
+	if btype != "fob" or not done:
+		return
+	var c := cut_off()
+	if c == dark:
+		return
+	dark = c
+	if _sight0 < 0.0:
+		_sight0 = sight
+	sight = _sight0 * (0.45 if dark else 1.0)
+	if _dark_mat == null:
+		_dark_mat = StandardMaterial3D.new()
+		_dark_mat.albedo_color = Color(0, 0, 0, 0.5)
+		_dark_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_dark_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for mi in _all_meshes(self):
+		(mi as GeometryInstance3D).material_overlay = _dark_mat if dark else null
+	if team == G.player_team and not G.spectate:
+		G.say("İLERİ ÜS: İKMAL HATTI KESİK — KARARDI" if dark else "İLERİ ÜS: İKMAL HATTI KURULDU", position, team)
+
+func _all_meshes(n: Node) -> Array:
+	var out: Array = []
+	for ch in n.get_children():
+		if ch is MeshInstance3D:
+			out.append(ch)
+		out.append_array(_all_meshes(ch))
+	return out
+
 func _production(dt: float) -> void:
 	if queue.is_empty():
 		return
 	var item: Dictionary = queue[0]
 	var P: Dictionary = PDEF[item["id"]]
+	if dark:
+		item["blocked"] = true
+		return
 	if G.cap_used[team] + P["cap"] > G.cap_max[team]:
 		item["blocked"] = true
 		return
@@ -958,6 +1259,13 @@ func _spawn(id: String) -> void:
 		v.cmd_move(rally)
 		if team == G.player_team and not G.spectate:
 			G.say(I18n.s("%s hazır") % I18n.s(P["title"]), door, team)
+	elif P.get("para", false):
+		# hava indirme: uçak toplanma noktasının üstünden geçerken atlarlar
+		var sqp := Squad.new(team, P["title"])
+		G.squads.append(sqp)
+		Paradrop.launch(team, rally, P["units"], sqp, float(P["cost"]) / P["units"].size())
+		if team == G.player_team and not G.spectate:
+			G.say(I18n.s("%s hazır") % I18n.s(P["title"]), door, team)
 	else:
 		var sq := Squad.new(team, P["title"])
 		G.squads.append(sq)
@@ -972,16 +1280,28 @@ func _spawn(id: String) -> void:
 	if team == G.player_team and not G.spectate:
 		Sfx.play2d("ui_done", -6.0)
 
+# büyük ve durağan: açıkta uzaktan seçilir; kule yüksekten bakar (alçak engeller görüşü kesmez)
+func spot_sig() -> float:
+	return 1.5 if alive else 0.0
+
+func eye_point() -> Vector3:
+	return position + Vector3(0, 9.0 if btype == "tower" else 3.0, 0)
+
+func los_skip() -> float:
+	return radius + 0.5
+
 func _coastal(dt: float) -> void:
 	gun_cd -= dt
 	if gun_target == null or not is_instance_valid(gun_target) or not gun_target.alive or randf() < 0.01:
 		gun_target = null
 		var best := 1e9
-		for e in G.enemies_near(position, 190.0, team):
-			if not G.is_seen(e, team) or (e is Vehicle and e.is_air()):
+		# kıyı topu: gerçek menzil (~20 km, harita köşegeniyle sınırlı), takımın gördüğü hedefler
+		var cr := minf(20000.0 * Combat.K_RANGE, G.MAP * 1.42)
+		for e in G.visible_enemies(team):
+			if not is_instance_valid(e) or not e.alive or (e is Vehicle and e.is_air()):
 				continue
 			var d := dist2(e)
-			if d < 25.0:
+			if d < 25.0 or d > cr:
 				continue
 			var sc := d - (60.0 if e is Vehicle else 0.0) - G.enemies_near(e.position, 8.0, team).size() * 6.0
 			if sc < best:
@@ -1009,8 +1329,10 @@ func _mg(dt: float) -> void:
 	if gun_target == null or not is_instance_valid(gun_target) or not gun_target.alive or randf() < 0.02:
 		gun_target = null
 		var best := 1e9
-		for e in G.enemies_near(position, 46.0, team):
-			if e is Soldier and e.can_fight() and G.is_seen(e, team):
+		# makineli yuvası: 12,7 mm etkili ~1200 m (oyun ölçeğiyle)
+		var mr := 1200.0 * Combat.K_RANGE
+		for e in G.visible_enemies(team):
+			if is_instance_valid(e) and e is Soldier and e.can_fight() and dist2(e) <= mr:
 				var d := dist2(e)
 				if d < best and G.grid.los(position + Vector3(0, 1.4, 0), e.aim_point(), 2.2, 0.3):
 					best = d
@@ -1025,7 +1347,7 @@ func _mg(dt: float) -> void:
 		gun_burst = randi_range(6, 12)
 	gun_burst -= 1
 	gun_cd = 0.09 if gun_burst > 0 else randf_range(0.6, 1.3)
-	var mp := gun_pivot.global_transform * Vector3(0, 0.8, -1.05)
+	var mp := gun_pivot.global_transform * Vector3(0, 1.12, -1.58)      # alev gizleyici ucu
 	var tp := gun_target.aim_point()
 	var dir := (tp - mp).normalized()
 	G.fx.muzzle(mp, dir, true)
@@ -1045,7 +1367,7 @@ func _mg(dt: float) -> void:
 			if o is Soldier and o.team != team and o.alive:
 				o.add_suppression(11.0, position)
 	if randi() % 2 == 0:
-		G.fx.tracer(mp, impact, 250.0)
+		G.fx.tracer_cal(mp, impact, 250.0, Ammo.team_tracer(team), 7.62)
 
 # ------------------------------------------------------------ hasar
 func take_damage(amount: float, src, k := "bullet") -> void:
@@ -1075,6 +1397,11 @@ func destroy(src) -> void:
 		if is_instance_valid(e[0]):
 			e[0].vanish()
 	inside.clear()
+	# sedye görevi: yıkılan hastanenin _process'i durur, Stretcher.update bir daha çağrılmaz — sedyeciler
+	# ve yaralı "stretcher/stretchered" durumunda sonsuza dek kalırdı
+	if job != null:
+		job._drop()
+		job = null
 	if not alive:
 		return
 	alive = false

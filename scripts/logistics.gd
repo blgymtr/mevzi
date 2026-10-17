@@ -26,18 +26,24 @@ func register_base(b: Building) -> void:
 		if d < best:
 			best = d
 			parent = o
-	var route := PackedVector3Array()
+	var node := {"b": b, "parent": parent, "route": PackedVector3Array()}
+	nodes[t].append(node)
 	if parent != null:
 		var a := _door(parent)
 		var z := _door(b)
-		route = G.grid.find_path(a, z, Grid.M_LIGHT)
-		route.insert(0, a)
-		var pts := PackedVector3Array()
-		for p in route:
-			pts.append(p)
-		G.terrain.road_polyline(pts, 4.2, G.rng)
-	nodes[t].append({"b": b, "parent": parent, "route": route})
+		# büyük haritada üsler arası yol (1–2 km) işçi iş parçacığında aranır; gelince yol boyanır
+		_route_async(a, z, func(rt: PackedVector3Array):
+			var r2 := rt.duplicate()
+			r2.insert(0, a)
+			node["route"] = r2
+			G.terrain.road_polyline(r2, 4.2, G.rng))
 	_ensure_trucks(t)
+
+func _route_async(a: Vector3, z: Vector3, cb: Callable) -> void:
+	if G.grid.wants_async(a, z) and not G.grid.direct(a, z, Grid.M_LIGHT):
+		G.grid.request_path(a, z, Grid.M_LIGHT, cb)
+	else:
+		cb.call(G.grid.find_path(a, z, Grid.M_LIGHT))
 
 func _door(b: Building) -> Vector3:
 	return G.grid.nearest_free(b.position + Vector3(0, 0, b.size.y * 0.5 + 3.5).rotated(Vector3.UP, b.rot), Grid.M_LIGHT)
@@ -69,11 +75,14 @@ func base_lost(b: Building) -> void:
 					best = d
 					np = ob
 			c["parent"] = np
+			c["route"] = PackedVector3Array()
 			if np != null:
-				c["route"] = G.grid.find_path(_door(np), _door(cb), Grid.M_LIGHT)
-				c["route"].insert(0, _door(np))
-			else:
-				c["route"] = PackedVector3Array()
+				var a := _door(np)
+				var cc: Dictionary = c
+				_route_async(a, _door(cb), func(rt: PackedVector3Array):
+					var r2 := rt.duplicate()
+					r2.insert(0, a)
+					cc["route"] = r2)
 
 func _hq(t: int) -> Building:
 	for n in nodes[t]:
@@ -93,7 +102,45 @@ func route_to(b: Building) -> PackedVector3Array:
 	var out := PackedVector3Array()
 	for r in chain:
 		out.append_array(r)
+	# rota üs kurulunca bir kez hesaplanır; sonradan üstüne yapı dikildiyse kamyon binanın içinden geçerdi
+	# (roadmap 96) → kapanmış rota yeniden aranır, o sırada çağıran doğrudan yol bulur
+	if not route_clear(out):
+		var n := _node_of(b)
+		while not n.is_empty() and n["parent"] != null:
+			if not route_clear(n["route"]):
+				_reroute(n)
+			n = _node_of(n["parent"])
+		return PackedVector3Array()
 	return out
+
+static func route_clear(r: PackedVector3Array, from := 0) -> bool:
+	for q in range(maxi(from, 1), r.size()):
+		if not G.grid.walkable_line(r[q - 1], r[q], Grid.M_LIGHT):
+			return false
+	return true
+
+func _reroute(n: Dictionary) -> void:
+	if n.get("rerouting", false) or not is_instance_valid(n["parent"]):
+		return
+	n["rerouting"] = true
+	var a := _door(n["parent"])
+	var z := _door(n["b"])
+	_route_async(a, z, func(rt: PackedVector3Array):
+		var r2 := rt.duplicate()
+		r2.insert(0, a)
+		n["route"] = r2
+		n["rerouting"] = false)
+
+# yapı yerleşti (main.place_building): yoldaki kamyonların kalan yolu kapandıysa yeniden aranır
+func static_changed() -> void:
+	for t in trucks.size():
+		for tr in trucks[t]:
+			if is_instance_valid(tr) and tr.alive and tr.order == "route" and tr.path_i < tr.path.size():
+				if not route_clear(tr.path, tr.path_i) or not G.grid.walkable_line(tr.position, tr.path[tr.path_i], Grid.M_LIGHT):
+					var goal: Vector3 = tr.path[tr.path.size() - 1]
+					_route_async(tr.position, goal, func(p: PackedVector3Array):
+						if is_instance_valid(tr) and tr.alive and p.size() > 0:
+							tr.follow_route(p))
 
 func _fobs(t: int) -> Array:
 	var out: Array = []
@@ -147,7 +194,13 @@ func truck_arrived(tr: Vehicle) -> void:
 		var hq := _hq(tr.team)
 		if hq != null:
 			r.append(_door(hq))
-		tr.follow_route(G.grid.find_path(tr.position, _door(hq), Grid.M_LIGHT) if r.size() < 2 else r)
+		if r.size() >= 2:
+			tr.follow_route(r)
+		else:
+			var trk := tr
+			_route_async(tr.position, _door(hq), func(p: PackedVector3Array):
+				if is_instance_valid(trk) and trk.alive and trk.job.get("state", "") == "back":
+					trk.follow_route(p))
 	elif j["state"] == "back":
 		j["state"] = "load"
 		j["t"] = 4.0
@@ -230,6 +283,9 @@ func _porters(tr: Vehicle, dt: float, j: Dictionary) -> void:
 		sb.animate(dt, "carry" if carrying else "walk", 1.3 if carrying else 1.8, 1.0)
 
 func truck_lost(tr: Vehicle) -> void:
+	# boşaltırken vurulan kamyonun hamalları (süs gövdesi) yerinde donup kalıyordu: listeden çıkan kamyon
+	# _process'te bir daha görülmediği için temizlenmiyorlardı (roadmap 103)
+	_porters(tr, 0.0, {})
 	trucks[tr.team].erase(tr)
 	respawn[tr.team].append(G.time + 30.0)
 	if tr.team == G.player_team and not G.spectate:
@@ -272,6 +328,10 @@ func _process(dt: float) -> void:
 					_rr[t] = (_rr[t] + 1) % fobs.size()
 					var b: Building = fobs[_rr[t]]
 					var r := route_to(b)
+					if r.size() < 2 and G.grid.wants_async(tr.position, _door(b)):
+						# yol daha hesaplanıyor (işçi iş parçacığı): kısa süre sonra yeniden dene
+						j["t"] = 2.0
+						continue
 					if r.size() < 2:
 						r = G.grid.find_path(tr.position, _door(b), Grid.M_LIGHT)
 					else:

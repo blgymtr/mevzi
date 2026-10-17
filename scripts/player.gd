@@ -82,53 +82,68 @@ func _unhandled_input(e: InputEvent) -> void:
 			box_now = (e as InputEventMouseMotion).position
 	elif e is InputEventKey and e.pressed and not e.echo:
 		var k := e as InputEventKey
-		var code := k.keycode
-		if code >= KEY_0 and code <= KEY_9:
-			var n := code - KEY_0
-			if k.ctrl_pressed:
-				groups[n] = selected.duplicate()
-				G.say("Grup %d atandı" % n, Vector3.ZERO, team)
-			elif groups.has(n):
-				var g: Array = groups[n].filter(func(u): return is_instance_valid(u) and u.alive)
-				if not g.is_empty():
-					var same := selected.size() == g.size() and selected.all(func(u): return g.has(u))
-					clear_sel()
-					for u in g:
-						select(u)
-					if same:
-						G.cam.jump_to(_centroid(g))
-			return
-		if Hud.ORDER_KEYS.has(code) and not k.ctrl_pressed and not (code == KEY_R and place_type != ""):
-			order_button(Hud.ORDER_KEYS[code])
-			return
-		match code:
-			KEY_ESCAPE:
-				if pending_order != "":
-					pending_order = ""
-				elif place_type != "":
-					cancel_place()
-				elif not selected.is_empty():
-					clear_sel()
-				else:
-					G.hud.toggle_pause()
-			KEY_ENTER, KEY_KP_ENTER:
-				if G.deploy_t > 0.0:
-					G.deploy_t = 0.01
-			KEY_HOME, KEY_BACKSPACE:
-				for u in G.units:
-					if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
-						G.cam.jump_to(u.position)
-			KEY_R:
-				# 45° adımla döndür (Shift: ters yön)
-				place_rot = wrapf(place_rot + PI * 0.25 * (-1.0 if k.shift_pressed else 1.0), 0.0, TAU)
-			KEY_F1, KEY_F2, KEY_F3:
-				Engine.time_scale = [1.0, 2.0, 3.0][code - KEY_F1]
-			KEY_PAUSE, KEY_P:
+		if k.keycode == KEY_ESCAPE:     # sabit tuş (atanamaz)
+			if pending_order != "":
+				pending_order = ""
+			elif place_type != "":
+				cancel_place()
+			elif not selected.is_empty():
+				clear_sel()
+			else:
 				G.hud.toggle_pause()
-			KEY_Q:
-				_select_type_on_screen("inf")
-			KEY_E:
-				_select_type_on_screen("veh")
+			return
+		# diğer tüm kısayollar tuş atama tablosundan (Ayarlar > Klavye Ayarları)
+		hotkey(Keybinds.action_for(k, place_type != ""), k.shift_pressed)
+
+# tuş eylemini uygula (Keybinds eylem kimliği)
+func hotkey(act: String, shift := false) -> void:
+	if act == "":
+		return
+	if act.begins_with("o."):
+		order_button(act.substr(2))
+		return
+	if act.begins_with("grp."):
+		var n := int(act.get_slice(".", 2))
+		if act.begins_with("grp.set."):
+			groups[n] = selected.duplicate()
+			G.say("Grup %d atandı" % n, Vector3.ZERO, team)
+		elif groups.has(n):
+			var g: Array = groups[n].filter(func(u): return is_instance_valid(u) and u.alive)
+			if not g.is_empty():
+				var same := selected.size() == g.size() and selected.all(func(u): return g.has(u))
+				clear_sel()
+				for u in g:
+					select(u)
+				if same:
+					G.cam.jump_to(_centroid(g))
+		return
+	match act:
+		"deploy":
+			if G.deploy_t > 0.0:
+				G.deploy_t = 0.01
+		"hq":
+			for u in G.units:
+				if is_instance_valid(u) and u is Building and u.team == team and u.btype == "hq":
+					G.cam.jump_to(u.position)
+		"place.rot":
+			# 45° adımla döndür (Shift: ters yön)
+			place_rot = wrapf(place_rot + PI * 0.25 * (-1.0 if shift else 1.0), 0.0, TAU)
+		"speed.1", "speed.2", "speed.3":
+			Engine.time_scale = [1.0, 2.0, 3.0][int(act.substr(6)) - 1]
+		"pause":
+			G.hud.toggle_pause()
+		"sel.inf":
+			_select_type_on_screen("inf")
+		"sel.veh":
+			_select_type_on_screen("veh")
+		"cam.rot_l":
+			G.cam.rotate_step(-1.0)
+		"cam.rot_r":
+			G.cam.rotate_step(1.0)
+		"cam.reset":
+			G.cam.reset_view()
+		"cam.follow":
+			G.cam.toggle_follow(selected[0] if not selected.is_empty() and G.cam.follow_unit == null else null)
 
 func _process(_dt: float) -> void:
 	if place_type != "":
@@ -139,6 +154,11 @@ func _process(_dt: float) -> void:
 
 # ------------------------------------------------------------ seçim
 func unit_at(sp: Vector2, only_own := false) -> Unit:
+	# stratejik görüşte simgeye tıklama (tim simgesi timin bir askerini verir)
+	if G.hud != null and G.hud.icons != null and G.hud.icons.active():
+		var iu := G.hud.icons.pick(sp)
+		if iu != null and is_instance_valid(iu) and (not only_own or iu.team == team):
+			return iu
 	var best: Unit = null
 	var bd := 1e9
 	var px_per_m: float = get_viewport().get_visible_rect().size.y / G.cam.size
@@ -233,6 +253,91 @@ func exec_order(id: String, gp: Vector3) -> void:
 			markers.append([gp, G.time, Color(1.0, 0.45, 0.3) if id == "amove" else Color(0.4, 1.0, 0.5)])
 			Sfx.play2d("ui_attack" if id == "amove" else "ui_move", -9.0)
 			_voice(mobile, ["Saldırıyoruz!", "İlerliyoruz!"] if id == "amove" else (["Koş!", "Hareket!"] if id == "fast" else ["Anlaşıldı!", "Tamam!"]))
+		"attack":
+			var tu := unit_at(get_viewport().get_mouse_position())
+			if (tu == null or tu.team == team or tu.team < 0) and gp != Vector3.INF:
+				tu = _near_unit(gp, 4.0, func(x): return x.team != team and x.team >= 0 and x.visible)
+			if tu != null and tu.team != team and tu.team >= 0 and tu.alive:
+				for u in mobile:
+					u.cmd_attack(tu)
+				markers.append([tu.position, G.time, Color(1.0, 0.3, 0.2)])
+				Sfx.play2d("ui_attack", -8.0)
+				_voice(mobile, ["Hedef alındı!", "Ateş!"])
+			else:
+				G.say("Hedef yok: bir düşman birliğe tıklayın", gp, team)
+				Sfx.play2d("ui_error", -6.0)
+		"garrison":
+			var hid := G.blocks.house_at(gp) if G.blocks and gp != Vector3.INF else -1
+			var n := 0
+			if hid >= 0:
+				for u in sol:
+					if u.can_fight() and u.cmd_garrison(hid):
+						n += 1
+			if n > 0:
+				markers.append([G.blocks.houses[hid]["center"], G.time, Color(0.4, 0.9, 0.5)])
+				_voice(sol, ["Binaya giriyoruz!"])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("Girilecek bina yok ya da dolu" if hid < 0 else "Bina dolu", gp, team)
+				Sfx.play2d("ui_error", -6.0)
+		"exitbldg":
+			for u in sol:
+				if u.house_id >= 0:
+					var hs: Dictionary = G.blocks.houses[u.house_id]
+					var c: Vector3 = hs["center"]
+					var door: Vector3 = hs.get("door", Vector3.INF)
+					var sz: Vector2 = hs["size"]
+					var out := c + Vector3(0, 0, sz.y * 0.5 + 4.0)
+					if door != Vector3.INF and door.distance_to(c) > 0.5:
+						out = door + (door - c).normalized() * 4.0
+					u.cmd_move(G.grid.nearest_free(out, Grid.M_INF, 6))
+			_voice(sol, ["Dışarı!"])
+			Sfx.play2d("ui_move", -8.0)
+		"board":
+			var tv := unit_at(get_viewport().get_mouse_position())
+			if (tv == null or not (tv is Vehicle) or tv.team != team) and gp != Vector3.INF:
+				tv = _near_unit(gp, 5.0, func(x): return x is Vehicle and x.team == team and x.capacity() > 0)
+			if tv != null and tv is Vehicle and tv.team == team and tv.capacity() > 0:
+				for u in sol:
+					if u.can_fight():
+						u.cmd_board(tv)
+				markers.append([tv.position, G.time, Color(0.4, 0.8, 1.0)])
+				_voice(sol, ["Biniyoruz!", "Araca!"])
+			else:
+				G.say("Binilecek dost araç yok: bir araca tıklayın", gp, team)
+				Sfx.play2d("ui_error", -6.0)
+		"rebuild":
+			var bit: Dictionary = G.props.broken_bridge_at(gp, 30.0) if G.props and gp != Vector3.INF else {}
+			var ok := false
+			if not bit.is_empty():
+				for v in veh:
+					if v.can_clear() and v.cmd_bridge(bit):
+						ok = true
+						break
+			if ok:
+				markers.append([bit["gap"]["gc"], G.time, Color(1.0, 0.8, 0.3)])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("Yakında yıkık köprü yok", gp, team)
+				Sfx.play2d("ui_error", -6.0)
+		"dronerecall":
+			var nr := 0
+			for u in sol:
+				if u.role == "drone" and u.cmd_recall_drone():
+					nr += 1
+			if nr == 0:
+				Sfx.play2d("ui_error", -6.0)
+		"hulldown":
+			var nh := 0
+			for v in veh:
+				if v.cmd_hulldown(gp):
+					nh += 1
+			if nh > 0:
+				markers.append([gp, G.time, Color(1.0, 0.45, 0.3)])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				G.say("Yakında uygun örtü yok", gp, team)
+				Sfx.play2d("ui_error", -6.0)
 		"reverse":
 			move_group(veh.filter(func(v): return not v.is_air()), gp, false, "reverse")
 			markers.append([gp, G.time, Color(0.4, 0.8, 1.0)])
@@ -310,6 +415,42 @@ func exec_order(id: String, gp: Vector3) -> void:
 			if best == null and not popped:
 				G.say("Sis atar boş" if sm and not veh.is_empty() else ("Sis bombası yok" if sm else "El bombası yok"), Vector3.ZERO, team)
 				Sfx.play2d("ui_error", -6.0)
+		"fastrope", "ropepick":
+			var hs: Array = veh.filter(func(v): return v.vtype == "transport")
+			var n := 0
+			for i in hs.size():
+				var off := Vector3((i % 3 - 1) * 14.0, 0, (i / 3) * 14.0)
+				if id == "fastrope" and not hs[i].cargo.is_empty():
+					hs[i].cmd_fastrope(gp + off)
+					n += 1
+				elif id == "ropepick":
+					hs[i].cmd_rope_pick(gp + off)
+					n += 1
+			if n > 0:
+				markers.append([gp, G.time, Color(0.4, 0.9, 1.0)])
+				Sfx.play2d("ui_move", -8.0)
+			else:
+				Sfx.play2d("ui_error", -6.0)
+		"minidrone", "dronestation":
+			var ops: Array = sol.filter(func(u): return u.role == "drone" and u.can_fight())
+			if ops.is_empty() or gp == Vector3.INF:
+				Sfx.play2d("ui_error", -6.0)
+				return
+			if id == "minidrone":
+				var tu := unit_at(get_viewport().get_mouse_position())
+				if tu != null and not tu.is_enemy(ops[0]):
+					tu = null
+				# en uygun operatör: drone'u olan, en yakın
+				ops.sort_custom(func(a, b): return a.dist2_p(gp) < b.dist2_p(gp))
+				for o in ops:
+					if o.fpv_left > 0 and o.drone_cd <= 0.0:
+						o.cmd_minidrone(gp, tu)
+						break
+				markers.append([gp, G.time, Color(1.0, 0.45, 0.3)])
+			else:
+				ops[0].cmd_station(gp)
+				markers.append([gp, G.time, Color(0.4, 0.9, 1.0)])
+			Sfx.play2d("ui_move", -8.0)
 		"suppress":
 			for u in mobile:
 				u.cmd_suppress(gp)
@@ -319,6 +460,17 @@ func exec_order(id: String, gp: Vector3) -> void:
 		"abandon":
 			for v in veh:
 				v.cmd_abandon()
+		"merge":
+			var into := Squad.merge_selected(selected)
+			if into != null:
+				_voice(sol, ["Manga toplandı!", "Birleştik!"])
+				Sfx.play2d("ui_move", -8.0)
+		"dismount":
+			for v in veh:
+				v.cmd_dismount_crew()
+		"mount":
+			for v in veh:
+				v.cmd_mount_crew()
 		"refund":
 			for u in mobile:
 				u.cmd_refund()
@@ -361,6 +513,21 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 				markers.append([u.rally, G.time, Color(0.4, 0.9, 1.0)])
 		return
 	var tu := unit_at(sp)
+	# enkaza sağ tık: seçili dozer / kurtarma aracı enkazı yoldan kaldırır (bıçakla iter ya da halatla çeker)
+	var clearers := mobile.filter(func(u): return u is Vehicle and u.can_clear())
+	if not clearers.is_empty():
+		# (135) yıkık köprüye sağ tık: panel köprü kurar
+		var bit: Dictionary = G.props.broken_bridge_at(gp, 14.0) if G.props else {}
+		if not bit.is_empty() and clearers[0].cmd_bridge(bit):
+			markers.append([bit["gap"]["gc"], G.time, Color(1.0, 0.8, 0.3)])
+			Sfx.play2d("ui_move", -8.0)
+			return
+		var wr: Vehicle = Vehicle.wreck_at(gp)
+		if wr != null:
+			clearers[0].cmd_clear(wr)
+			markers.append([wr.position, G.time, Color(1.0, 0.8, 0.3)])
+			Sfx.play2d("ui_move", -8.0)
+			return
 	if tu != null and tu.team != team and tu.team >= 0:
 		for u in mobile:
 			u.cmd_attack(tu)
@@ -377,6 +544,15 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 				i3 += 1
 			markers.append([tu.position, G.time, Color(0.5, 1.0, 0.6)])
 			_voice(inf3, ["Tankın arkasına!", "Aracı takip!"])
+			return
+	# (76) seçili araç dost nakliye helikopterine sağ tık: helikopter aracı alır (Chinook'ta ZPT rampadan içeri,
+	# diğerleri askıya) — eskiden araç helikoptere "binemiyordu"
+	if tu != null and tu is Vehicle and tu.team == team and tu.is_air() and tu.is_cargo():
+		var riders := mobile.filter(func(u): return u is Vehicle and u != tu and tu.can_sling(u))
+		if not riders.is_empty():
+			tu.cmd_sling(riders[0])
+			markers.append([riders[0].position, G.time, Color(0.4, 0.8, 1.0)])
+			Sfx.play2d("ui_move", -8.0)
 			return
 	if tu != null and tu is Vehicle and tu.team == team:
 		var lifters := mobile.filter(func(u): return u is Vehicle and u.can_sling(tu))
@@ -431,6 +607,19 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 	markers.append([gp, G.time, Color(0.4, 1.0, 0.5)])
 	Sfx.play2d("ui_move", -9.0)
 	_voice(mobile, ["Anlaşıldı!", "İlerliyoruz!", "Tamam!", "Hareket!"])
+
+# hedefli emirde tıklama birimi tam tutturamadıysa: tıklanan zemin noktasına r m içindeki en yakın uygun birim
+func _near_unit(p: Vector3, r: float, ok: Callable) -> Unit:
+	var best: Unit = null
+	var bd := r
+	for u in G.units:
+		if not is_instance_valid(u) or not u.alive or not ok.call(u):
+			continue
+		var d := Vector2(u.position.x - p.x, u.position.z - p.z).length()
+		if d < bd:
+			bd = d
+			best = u
+	return best
 
 func _voice(units: Array, lines: Array) -> void:
 	for u in units:
@@ -635,6 +824,9 @@ static func _near_base(p: Vector3, r: float, t: int) -> bool:
 			return true
 	return false
 
+static func fob_reach() -> float:
+	return maxf(95.0, G.MAP * 0.25)
+
 static func can_place(bt: String, p: Vector3, rot: float, t: int) -> String:
 	var B: Dictionary = Building.BDEF[bt]
 	var s: Vector2 = B["size"]
@@ -645,8 +837,10 @@ static func can_place(bt: String, p: Vector3, rot: float, t: int) -> String:
 		for u in G.units:
 			if is_instance_valid(u) and u is Building and u.alive and u.is_base() and u.position.distance_to(p) < 38.0:
 				return "Başka bir üsse çok yakın"
-		if not _near_base(p, 95.0, t):
-			return "Mevcut üsse çok uzak (95 m)"
+		# büyük haritada ileri üs noktaları 1–2 km arayla: menzil haritayla büyür (8 km'de ~1,3 km)
+		var reach := fob_reach()
+		if not _near_base(p, reach, t):
+			return I18n.s("Mevcut üsse çok uzak") + " (%d m)" % int(reach)
 	elif not _near_base(p, 42.0, t):
 		return "Bir üssün 42 m yakınına kurulmalı"
 	var c := cos(rot)

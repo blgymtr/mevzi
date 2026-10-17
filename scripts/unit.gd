@@ -11,6 +11,11 @@ var alive := true
 var selected := false
 var sight := 40.0
 var seen := [true, true]
+# tespit (roadmap 50): hafıza (bu zamana kadar görülmüş sayılır), son gören gözcü, optik, son atış zamanı
+var spot_mem := [0.0, 0.0]
+var spot_by: Array = [null, null]
+var opt_k := 1.0
+var fired_t := -99.0
 var cap_cost := 1
 var last_hit := -99.0
 var attacker: Unit = null
@@ -34,6 +39,24 @@ func hostile() -> bool:
 
 func is_enemy(u) -> bool:
 	return u != null and is_instance_valid(u) and u.team != team and u.team >= 0 and team >= 0
+
+# hedef izi: tespit menzilinin hedefe bağlı çarpanı (boyut × hareket × ateş × örtü); 0 görünmez
+func spot_sig() -> float:
+	return 1.0
+
+# gözcünün göz noktası, görüş hattında kendi çevresinde atlanacak mesafe, termal nişangâh
+func eye_point() -> Vector3:
+	return position + Vector3(0, 1.6, 0)
+
+func los_skip() -> float:
+	return 0.75
+
+func thermal() -> bool:
+	return false
+
+# hedefin anlık hareket hızı (öndeleme için)
+func move_vel() -> Vector3:
+	return Vector3.ZERO
 
 func aim_point() -> Vector3:
 	return position + Vector3(0, 1.0, 0)

@@ -1,0 +1,56 @@
+MEVZİ — iskeletli asker animasyonu (assets/anim/soldier_anim.glb) kaynakları ve lisansları
+=============================================================================================
+Üretim betiği: tools/anim/build_anims.py (kaynakları aşağıdaki sabit işlemelerden indirir).
+Bu dosyadaki tüm kaynaklar ticari kullanıma (Steam'de satış dahil) izin verir.
+
+1) İnsan taban örgüsü, iskelet eklem tanımları, deri ağırlıkları, makro hedefler
+   Kaynak : MakeHuman 1.x (makehumancommunity/makehuman)
+            https://github.com/makehumancommunity/makehuman
+            işleme a8bc2d54ff0ac92e78ff71431b1023eda42bf482
+   Dosyalar: makehuman/data/3dobjs/base.obj (taban örgü, hm08)
+            makehuman/data/rigs/default.mhskel (eklem konumları için köşe grupları)
+            makehuman/data/rigs/default_weights.mhw (deri ağırlıkları; 35 kemiğe birleştirildi)
+            makehuman/data/targets/macrodetails/*.target (erkek / genç / kas / boy / oran hedefleri)
+   Lisans : CC0 1.0 Universal (kamu malı). Depodaki LICENSE.md, "C. The license for the bundled
+            assets" bölümü: taban örgü, hedefler, iskelet/ağırlık dosyaları dahil tüm paketli
+            varlıklar CC0'dır; ayrıca "D. Concerning the output from MakeHuman": çıktılar
+            (dışa aktarımlar, betikle üretilen grafik veriler) üzerinde hak iddia edilmez.
+            Tam metin: LICENSE.ASSETS.md (Creative Commons CC0 1.0). Kaynak kodu (AGPL)
+            KULLANILMADI — yalnız veri dosyaları okunuyor; okuyucu kod bizim (tools/anim/mh.py).
+   Not    : Miğfer, malzeme bölgeleri ve basit karabina modeli betikte üretiliyor (bizim).
+
+2) Hareket yakalama (mocap) verisi
+   Kaynak : CMU Graphics Lab Motion Capture Database — http://mocap.cs.cmu.edu
+            BVH dönüşümü: Bruce Hahne (cgspeed.com, "Motionbuilder-friendly BVH conversion", 2010)
+            GitHub yansısı: https://github.com/una-dinosauria/cmu-mocap
+            işleme 09a07f54f3bbb58797325f009282d0b2048a2871 (READMEFIRST.txt ile birlikte)
+   Lisans : CMU: "This data is free for use in research and commercial projects worldwide."
+            ("Use this data! ... free for use in research and commercial projects worldwide")
+            Tek kısıt: verinin kendisi (dönüştürülmüş hâli dahil) doğrudan yeniden satılamaz;
+            ürün içinde (oyunda) kullanılması serbesttir. B. Hahne dönüşüme ek kısıt koymaz
+            (READMEFIRST.txt, "USAGE RIGHTS").
+   Teşekkür (CMU'nun rica ettiği metin, oyun künyesine konmalı):
+            "The data used in this project was obtained from mocap.cs.cmu.edu.
+             The database was created with funding from NSF EIA-0196217."
+   Kullanılan denemeler (deneme: 120 fps kare aralığı → klip):
+            77_02  60–930   → idle          (ayakta bekleme)
+            35_01  10–358   → walk          (yürüyüş)
+            35_17  5–167    → run           (koşu)
+            127_07 25–son   → sprint        (depar)
+            141_31 40–250   → walk_back     (geri geri yürüme)
+            141_33 100–525 / 565–965 → strafe_right / strafe_left (yana adımlama)
+            77_29  890–1145 → crouch_walk   ("creeping walk"; IK ile +10 cm alçaltıldı)
+            111_03 560–1240 → crawl         (el-diz sürünme)
+            140_01 1–175    → prone_idle    (yüzüstü yatış)
+            77_16  170–560  → getup         (yüzüstü yatıştan kalkma)
+            23_03  35–235 / 230–490 / 485–615 → kneel_down / kneel_idle / kneel_up
+            13_11  150–395  → jump          (ileri atlama)
+            22_12  1–130    → hit_stagger   (sendeleme)
+            77_09  170–560  → duck          (çömelip başı kapatma)
+            90_18  70–185   → fall_back     (sırt üstü düşme)
+            69_16  175–410  → turn_left     (yerinde dönüş)
+            69_18  125–345  → turn_right
+
+3) Kullanılmayan / bilerek dışarıda bırakılan veri kümeleri (ticari kullanıma kapalı)
+   Bandai Namco Research Motion Dataset (CC BY-NC 4.0), Ubisoft LaFAN1 (CC BY-NC-ND 4.0),
+   AI4Animation verileri (CC BY-NC), Mixamo (Adobe hesabı / ayrı lisans) — HİÇBİRİ KULLANILMADI.

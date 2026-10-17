@@ -1,1 +1,1 @@
-{"pivots": {"body": [0, 0, 0], "rotor": [0, 2.2, -0.0], "trotor": [0, 3.1, -0.0]}, "meta": {"muzzle": [0.75, 1.0, -2.8], "radius": 3.6, "trotor_y": true}}
+{"pivots": {"body": [0, 0, 0], "rotor": [0, 3.2, -0.2], "trotor": [0, 4.05, -0.2]}, "meta": {"muzzle": [0.8, 1.0, -2.6], "radius": 3.0, "trotor_y": true, "nb": 3}}

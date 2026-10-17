@@ -80,6 +80,77 @@ static func vest_tex(team: int) -> String:
 	return "fab_coyote" if team == 0 else ("fab_emr_desert" if G.map_kind == "desert" else "fab_ratnik")
 
 static var _armor_shader: Shader
+static var _soldier_shader: Shader
+
+# derili asker (tools/anim/build_soldier.py): tek yüzey, malzeme kimliği UV2.x'te → kimliğe göre renk/doku
+# sıra build_soldier.MAT_ID ile aynı: uniform vest pack helmet boot glove skin dark gun team lens red rubber canvas eye strap
+static func soldier_material(model: String, team: int) -> Material:
+	var key := "soldier|%s|%d|%s" % [model, team, G.map_kind]
+	if _mat.has(key):
+		return _mat[key]
+	if _soldier_shader == null:
+		_soldier_shader = load("res://shaders/soldier.gdshader")
+	var sm := ShaderMaterial.new()
+	sm.shader = _soldier_shader
+	sm.set_shader_parameter("camo_a", tex(uniform_tex(team)))
+	sm.set_shader_parameter("camo_b", tex(vest_tex(team)))
+	sm.set_shader_parameter("leather", tex("leather"))
+	sm.set_shader_parameter("fab_nrm", mat_tex("hessian_230", "normal"))
+	sm.set_shader_parameter("grime_tex", mat_tex("rust_coarse_01", "albedo"))
+	var fp := "res://assets/models/%s_fold_n.png" % model.trim_suffix("_rig")
+	sm.set_shader_parameter("has_fold", ResourceLoader.exists(fp))
+	if ResourceLoader.exists(fp):
+		sm.set_shader_parameter("fold_nrm", load(fp))
+	var k := 3.2
+	var jf := FileAccess.open("res://assets/models/%s.json" % model, FileAccess.READ)
+	if jf:
+		var js = JSON.parse_string(jf.get_as_text())
+		if js is Dictionary and js.has("camo_k"):
+			k = float(js["camo_k"])
+	sm.set_shader_parameter("camo_k", k)
+	var winter: bool = G.map_kind == "winter"
+	var us := team == 0
+	var boot := Color(0.62, 0.5, 0.36) if us else Color(0.09, 0.08, 0.07)
+	var glove := Color(0.55, 0.47, 0.35) if us else Color(0.16, 0.16, 0.15)
+	var strap := Color(0.47, 0.4, 0.29) if us else Color(0.26, 0.28, 0.19)
+	if winter:
+		glove = Color(0.75, 0.75, 0.72)
+		strap = Color(0.8, 0.8, 0.78)
+	var team_c: Color = Color(0.12, 0.45, 0.95) if us else Color(0.85, 0.12, 0.08)
+	# [renk (sRGB), pürüzlülük, metal, doku, ışıma]
+	var spec := [
+		[Color(1, 1, 1), 0.95, 0.0, 1, 0.0],            # 0 üniforma
+		[Color(1, 1, 1), 0.95, 0.0, 2, 0.0],            # 1 yelek
+		[Color(0.9, 0.9, 0.88), 0.95, 0.0, 2, 0.0],     # 2 çanta / cep
+		[Color(0.92, 0.92, 0.9), 0.8, 0.0, 2, 0.0],     # 3 kask
+		[boot, 0.75, 0.0, 3, 0.0],                      # 4 bot
+		[glove, 0.9, 0.0, 0, 0.0],                      # 5 eldiven
+		[Color(0.72, 0.55, 0.42), 0.6, 0.0, 0, 0.0],    # 6 ten
+		[Color(0.07, 0.07, 0.07), 0.55, 0.0, 0, 0.0],   # 7 koyu plastik
+		[Color(0.13, 0.13, 0.13), 0.45, 0.5, 0, 0.0],   # 8 metal / şarjör
+		[team_c, 0.6, 0.0, 0, 0.25],                    # 9 takım rengi
+		[Color(0.95, 0.5, 0.08), 0.15, 0.3, 0, 0.25],   # 10 mercek
+		[Color(0.8, 0.08, 0.08), 0.7, 0.0, 0, 0.0],     # 11 kırmızı (turnike)
+		[Color(0.06, 0.06, 0.06), 0.95, 0.0, 0, 0.0],   # 12 kauçuk
+		[Color(0.6, 0.56, 0.42), 0.95, 0.0, 0, 0.0],    # 13 branda
+		[Color(0.85, 0.85, 0.83), 0.3, 0.0, 0, 0.0],    # 14 göz
+		[strap, 0.9, 0.0, 0, 0.0],                      # 15 kayış (dokuma)
+	]
+	# Vector4 dizileri: Color dizisi verilirse motor sRGB→doğrusal çevirir (doku seçicisi bozulur)
+	var tints := PackedVector4Array()
+	var props := PackedVector4Array()
+	for s in spec:
+		var c: Color = (s[0] as Color).srgb_to_linear()
+		tints.append(Vector4(c.r, c.g, c.b, 1.0))
+		props.append(Vector4(s[1], s[2], float(s[3]), s[4]))
+	sm.set_shader_parameter("tints", tints)
+	sm.set_shader_parameter("props", props)
+	var dd := _dirt()
+	sm.set_shader_parameter("dirt_col", dd["dirt"])
+	sm.set_shader_parameter("dust_col", dd["dust"])
+	sm.set_shader_parameter("dust_amount", dd["dust_a"])
+	_mat[key] = sm
+	return sm
 
 static func mat_tex(id: String, map: String) -> Texture2D:
 	var p := "res://assets/materials/%s/%s.jpg" % [id, map]
@@ -179,6 +250,19 @@ static func material(name: String, team: int) -> Material:
 		"wood":
 			tint = Color(0.42, 0.26, 0.14)
 			lay = [0.2, 0.0, 0.3, 0.3]
+		"airgray":
+			# hava aracı boyası (İHA): kamuflajsız açık gri (FS 36375 benzeri), hafif yağ akıntısı, çamur yok
+			tint = Color(0.6, 0.62, 0.63) if team != 1 else Color(0.66, 0.67, 0.66)
+			rough = 0.5
+			metal = 0.08
+			lay = [0.3, 0.0, 0.55, 0.0]
+		"airtrans":
+			# (122) nakliye uçağı: ABD "Gunship Gray" (FS 36118, koyu gri), Rusya VVS açık gri; yağ / egzoz izi
+			var nt2: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+			tint = Color(0.31, 0.33, 0.35) if nt2 != "rus" else Color(0.55, 0.57, 0.59)
+			rough = 0.55
+			metal = 0.1
+			lay = [0.45, 0.0, 0.6, 0.0]
 		_:
 			shaded = false
 	if shaded:
@@ -338,11 +422,62 @@ static func _civil_mat(nm: String, col: Color) -> Material:
 static func clear_cache() -> void:
 	_mat.clear()
 	_skin.clear()
+	_burnt.clear()
+
+# yanmış enkaz (94): örgünün her yüzeyine aynı malzemenin yanmış çeşidi (armor gölgelendiricisinde burnt = 1:
+# is / pas / kül, doku + AO ayrıntısı korunur); başka malzemeler (cam, işaret, ışık) düz yanık
+static var _burnt := {}
+static func burnt_of(m: Material) -> Material:
+	if m == null:
+		return Mats.burnt()
+	var k := m.get_instance_id()
+	if _burnt.has(k):
+		return _burnt[k]
+	var out: Material = Mats.burnt()
+	if m is ShaderMaterial and _armor_shader != null and (m as ShaderMaterial).shader == _armor_shader:
+		var d := (m as ShaderMaterial).duplicate() as ShaderMaterial
+		d.set_shader_parameter("burnt", 1.0)
+		out = d
+	elif m is StandardMaterial3D and (m as StandardMaterial3D).vertex_color_use_as_albedo:
+		# (142) köşe renkli düz malzeme (çoğu araç gövdesi, teker, ayrıntı): zırh gölgelendiricisinin yanık kipine
+		# aktarılır — özgün renk (köşe rengi × ton) korunur, üstüne is / pas / kül / kabarmış boya lekeleri
+		# (eskiden hepsi tek düz koyu kahve: hurda tek renk siluet gibiydi)
+		var base_m = material("paint", 0)
+		if base_m is ShaderMaterial:
+			var d2 := (base_m as ShaderMaterial).duplicate() as ShaderMaterial
+			var c: Color = (m as StandardMaterial3D).albedo_color
+			d2.set_shader_parameter("tint", c)
+			d2.set_shader_parameter("has_albedo", false)
+			d2.set_shader_parameter("has_normal", false)
+			d2.set_shader_parameter("burnt", 1.0)
+			out = d2
+	_burnt[k] = out
+	return out
+
+static func burn(mi: MeshInstance3D) -> void:
+	if mi.mesh == null:
+		return
+	mi.material_override = null
+	for s in mi.mesh.get_surface_count():
+		var src: Material = mi.get_surface_override_material(s)
+		if src == null:
+			src = mi.mesh.surface_get_material(s)
+		mi.set_surface_override_material(s, burnt_of(src))
 
 # ------------------------------------------------------------ araç
 static func vehicle(vtype: String, team: int) -> Dictionary:
+	# taban tip: ulusun ayrıntılı modeli (data/catalog/base_models.json → <tip>_<ulus>.glb), yoksa eski mavi/kırmızı
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else ""
+	if nat != "" and _has_model("%s_%s" % [vtype, nat]):
+		return vehicle_model("%s_%s" % [vtype, nat], team)
 	var model := "%s_%s" % [vtype, "blue" if team == 0 else "red"]
 	return vehicle_model(model, team)
+
+static var _model_ok := {}
+static func _has_model(name: String) -> bool:
+	if not _model_ok.has(name):
+		_model_ok[name] = ResourceLoader.exists("res://assets/models/%s.glb" % name)
+	return _model_ok[name]
 
 static func vehicle_model(model: String, team: int) -> Dictionary:
 	if not has(model):
@@ -368,7 +503,12 @@ static func vehicle_model(model: String, team: int) -> Dictionary:
 			var wm := skinned(model, key, team)
 			var r := wm.get_aabb().size.y * 0.5
 			out["wheels"].append([nd[key]["pos"], r, 0.4, wm])
-		elif key == "rotor" or key == "trotor" or key == "ramp":
+		elif key.begins_with("prop"):
+			# İHA pervanesi: [örgü, konum, eksen ('y' ileri → Godot Z, 'z' dikey → Godot Y)]
+			if not out.has("props"):
+				out["props"] = []
+			out["props"].append([skinned(model, key, team), nd[key]["pos"], key.substr(4, 1)])
+		elif key == "rotor" or key == "trotor" or key == "ramp" or key == "door":
 			out[key] = skinned(model, key, team)
 			out[key + "_pos"] = nd[key]["pos"]
 		else:
@@ -377,5 +517,8 @@ static func vehicle_model(model: String, team: int) -> Dictionary:
 		out["muzzle"] = v3(md["muzzle"]) - bp
 	if md.has("gunner"):
 		out["gunner"] = v3(md["gunner"])
+	if md.has("breech"):
+		# çekili top: kama arkası (doldurucunun durduğu yer), namlu düğümüne göre
+		out["breech"] = v3(md["breech"]) - bp
 	out["meta"] = md
 	return out

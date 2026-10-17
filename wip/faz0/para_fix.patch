@@ -1,0 +1,482 @@
+diff -ru a/scripts/grid.gd b/scripts/grid.gd
+--- a/scripts/grid.gd	2026-10-15 14:40:30.105813135 +0000
++++ b/scripts/grid.gd	2026-10-15 14:40:30.112294905 +0000
+@@ -293,6 +293,12 @@
+ 		return true
+ 	return mode == M_INF and vault[c.y * NN + c.x] == 1
+ 
++# p'nin hücresinde durulabilir mi (harita içi, katı/su/atlanacak engel değil)
++func free_at(p: Vector3, mode: int) -> bool:
++	if p.x < 0.0 or p.z < 0.0:
++		return false
++	return not _occupied(Vector2i(int(p.x / NAV), int(p.z / NAV)), mode)
++
+ func nearest_free(p: Vector3, mode: int, maxr := 8) -> Vector3:
+ 	var c := cell_of(p)
+ 	if not _occupied(c, mode):
+diff -ru a/scripts/main.gd b/scripts/main.gd
+--- a/scripts/main.gd	2026-10-15 14:40:30.133825535 +0000
++++ b/scripts/main.gd	2026-10-15 14:40:30.140139472 +0000
+@@ -34,7 +34,7 @@
+ 		elif a.begins_with("--autoplay="):
+ 			autoplay = float(a.substr(11))
+ 	apply_video()
+-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "tactest", "largetest", "hugetest", "rocktest"]:
++	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "tactest", "largetest", "hugetest", "rocktest"]:
+ 		_t07 = Tests07.new(self)
+ 		_t07.run(shot_scene)
+ 	elif shot_dir != "" and shot_scene == "scentest":
+diff -ru a/scripts/paradrop.gd b/scripts/paradrop.gd
+--- a/scripts/paradrop.gd	2026-10-15 14:40:30.091192053 +0000
++++ b/scripts/paradrop.gd	2026-10-15 14:40:30.097129549 +0000
+@@ -1,10 +1,12 @@
+ class_name Paradrop extends Node3D
+ # Hava indirme: nakliye uçağı (ABD: C-130 tipi pervaneli, Rusya: Il-76 tipi jet) haritanın
+-# kenarından girer, atlama bölgesinin üstünden geçerken askerler arka rampadan sırayla atlar
++# kenarından girer, atlama bölgesinin üstünden geçerken askerler arka rampadan iki sıra hâlinde atlar
+ # (statik hat → kubbe paraşüt açılır → süzülme → iniş yuvarlanması), uçak öbür kenardan çıkar.
+ 
+ const ALT := 42.0
+ const SPEED := 46.0
++const GAP := 0.21 * SPEED      # ardışık iki atlayış arası uçuş mesafesi (m): rampadan iki sıra, her sıra 0,42 sn arayla
++const DRIFT := 12.0            # statik hat serbest düşüşünde ileri savrulma (m): çıkış noktaları bu kadar geri alınır
+ 
+ var team := 0
+ var target := Vector3.ZERO
+@@ -15,7 +17,6 @@
+ var plane: Node3D
+ var props: Array = []
+ var jumped := 0
+-var _jt := 0.0
+ static var _plane_m := {}
+ 
+ static func launch(t: int, tgt: Vector3, unit_roles: Array, sq: Squad, share: float) -> void:
+@@ -119,20 +120,27 @@
+ 	position += dir * SPEED * dt
+ 	for pr in props:
+ 		pr.rotation.y += dt * 40.0
+-	# atlama bölgesi: hedefin ±(n*0.5*aralık) kadarında, 0.42 sn arayla
++	# atlama bölgesi: çıkış noktaları uçuş hattı boyunca hedefe ortalanmış, sabit aralıklı.
++	# Kare süresinden bağımsız: yavaş bir karede birden çok nokta geçildiyse o askerler de
++	# atlar, kapı konumu geçilen mesafe kadar geri alınır (eskiden aralık kare süresine
++	# yuvarlanıyor, sıra hedefin çok ötesine — düşman mevzisinin üstüne — uzuyordu)
+ 	var along := (position - target).dot(dir)
+-	var spread := roles.size() * 0.42 * SPEED * 0.5
+-	if jumped < roles.size() and along > -spread - 6.0:
+-		_jt -= dt
+-		if _jt <= 0.0:
+-			_jt = 0.42
+-			_jump(jumped)
+-			jumped += 1
++	while jumped < roles.size():
++		var at := _exit_along(jumped)
++		if along < at:
++			break
++		_jump(jumped, along - at)
++		jumped += 1
+ 	if along > minf(G.MAP * 0.9 + 80.0, 700.0):
+ 		queue_free()
+ 
+-func _jump(i: int) -> void:
+-	var door := plane.global_transform * Vector3(0, -1.6, (30.0 if team == 0 else 44.0) * 0.36)
++# i. askerin çıkış noktası (hedefe göre uçuş hattı üzerindeki mesafe)
++func _exit_along(i: int) -> float:
++	return (i - (roles.size() - 1) * 0.5) * GAP - DRIFT
++
++func _jump(i: int, back := 0.0) -> void:
++	var file := 0.7 if i % 2 == 0 else -0.7
++	var door := plane.global_transform * Vector3(file, -1.6, (30.0 if team == 0 else 44.0) * 0.36) - dir * back
+ 	var s: Soldier = G.main.spawn_soldier(team, roles[i], Vector3(door.x, 0, door.z), squad)
+ 	s.cost_share = cost_share
+ 	s.start_para(door, dir * SPEED * 0.35, target + Vector3((i % 3 - 1) * 2.5, 0, (i / 3) * 2.5))
+diff -ru a/scripts/soldier.gd b/scripts/soldier.gd
+--- a/scripts/soldier.gd	2026-10-15 14:40:30.079242827 +0000
++++ b/scripts/soldier.gd	2026-10-15 14:40:30.083652107 +0000
+@@ -248,6 +248,11 @@
+ func cmd_move(p: Vector3, force := false) -> void:
+ 	if not alive or incapacitated() or state == "fly":
+ 		return
++	if state == "para":
++		# paraşütle inerken: emir toplanma noktasını değiştirir (yere değince oraya yürür);
++		# durumu burada "move" yapmak askeri havadan yere ışınlardı
++		para_goal = _free_ground(p, para_goal)
++		return
+ 	_leave_house()
+ 	_release_patient()
+ 	build_site = null
+@@ -265,7 +270,7 @@
+ 	state = "move"
+ 
+ func cmd_attack(u: Unit) -> void:
+-	if not alive or incapacitated():
++	if not alive or incapacitated() or state == "para":
+ 		return
+ 	_release_patient()
+ 	forced_target = u
+@@ -358,6 +363,8 @@
+ 
+ # araç eskortu: aracın düşmana göre arkasında yan yana siper alıp onunla ilerler
+ func cmd_follow_vehicle(v: Vehicle, slot: int, n: int) -> void:
++	if state == "para":
++		return
+ 	_leave_house()
+ 	cover_veh = v
+ 	cover_type = 3
+@@ -457,7 +464,7 @@
+ 	return best
+ 
+ func cmd_board(v: Vehicle) -> void:
+-	if not alive or incapacitated() or vehicle_in != null:
++	if not alive or incapacitated() or vehicle_in != null or state == "para":
+ 		return
+ 	_release_patient()
+ 	build_site = null
+@@ -604,10 +611,17 @@
+ 
+ # ------------------------------------------------------------ paraşüt (hava indirme)
+ # statik hat 0.9 sn serbest düşüş → kubbe açılır (0.7 sn) → 5 m/sn süzülme, hedefe doğru
+-# yönlendirme → yere değince yuvarlanma (PLF) → kubbe çöker → tüfeği alıp toplanma noktasına
++# yönlendirme → yere değince yuvarlanma (PLF) → kubbe çöker → tüfeği alıp toplanma noktasına.
++# Ne olursa olsun asker sınırlı sürede harita içinde boş bir zemin hücresine iner: altı dolu
++# (bina, su, ağaç) ise son metrelerde boş hücreye yönelir, yine de doluysa oraya kayar;
++# PARA_MAX_T aşılırsa zorunlu iniş; havada vurulursa kubbe altında yaralı süzülür, yerde yatar.
++const PARA_MAX_T := 30.0
+ var para_vel := Vector3.ZERO
+ var para_goal := Vector3.ZERO
+ var para_phase := 0
++var para_t := 0.0
++var para_hurt := false
++var para_spot := Vector3.INF
+ var canopy: Node3D = null
+ static var _canopy_m: Mesh = null
+ 
+@@ -615,11 +629,29 @@
+ 	state = "para"
+ 	state_t = 0.0
+ 	para_phase = 0
++	para_t = 0.0
++	para_hurt = false
++	para_spot = Vector3.INF
+ 	position = p
+ 	para_vel = v0
+-	para_goal = G.grid.nearest_free(G.on_ground(goal), Grid.M_INF)
++	para_goal = _free_ground(goal)
+ 	path = PackedVector3Array()
+ 
++# p'ye en yakın, piyadenin durabileceği boş zemin hücresi (harita içi; su/bina/ağaç/duvar değil);
++# yakında yoksa arama genişler, hiç yoksa yedek nokta
++func _free_ground(p: Vector3, fallback := Vector3.INF) -> Vector3:
++	var c := G.on_ground(p)
++	if G.grid.free_at(c, Grid.M_INF):
++		return c
++	var q := G.grid.nearest_free(c, Grid.M_INF, 96)
++	if G.grid.free_at(q, Grid.M_INF):
++		return q
++	return fallback if fallback != Vector3.INF else c
++
++func _para_clamp() -> void:
++	position.x = clampf(position.x, 2.0, G.MAP - 2.0)
++	position.z = clampf(position.z, 2.0, G.MAP - 2.0)
++
+ func _canopy_mesh() -> Mesh:
+ 	if _canopy_m != null:
+ 		return _canopy_m
+@@ -646,16 +678,21 @@
+ 	return _canopy_m
+ 
+ func _para_process(dt: float) -> void:
++	para_t += dt
+ 	var gh := G.terrain.ground_h(position) if G.terrain else 0.0
+ 	match para_phase:
+ 		0:
+-			# serbest düşüş (statik hat çekiyor)
++			# serbest düşüş (statik hat çekiyor); sönümler kare süresinden bağımsız (üstel)
+ 			para_vel.y -= 9.8 * dt
+-			para_vel.x *= 1.0 - dt * 0.8
+-			para_vel.z *= 1.0 - dt * 0.8
++			var dmp := exp(-dt * 0.8)
++			para_vel.x *= dmp
++			para_vel.z *= dmp
+ 			position += para_vel * dt
++			_para_clamp()
+ 			body.animate(dt, "fly", 0.0, 0.4)
+-			if state_t > 0.9:
++			if position.y <= gh + 0.02 or para_t > PARA_MAX_T:
++				_para_touchdown()
++			elif state_t > 0.9:
+ 				para_phase = 1
+ 				state_t = 0.0
+ 				canopy = MeshInstance3D.new()
+@@ -664,30 +701,38 @@
+ 				canopy.position = Vector3(0, 6.6, 0)
+ 				canopy.scale = Vector3(0.1, 0.6, 0.1)
+ 		1, 2:
++			var cv := canopy != null and is_instance_valid(canopy)
+ 			if para_phase == 1:
+ 				var k := clampf(state_t / 0.7, 0.0, 1.0)
+-				canopy.scale = Vector3(lerpf(0.1, 1.0, k * k), lerpf(0.6, 1.0, k), lerpf(0.1, 1.0, k * k))
++				if cv:
++					canopy.scale = Vector3(lerpf(0.1, 1.0, k * k), lerpf(0.6, 1.0, k), lerpf(0.1, 1.0, k * k))
+ 				if k >= 1.0:
+ 					para_phase = 2
+-			# süzülme: dikey 5 m/sn, hedefe yatay yönlenme + rüzgâr salınımı
+-			var to := para_goal - position
++			# son 12 m: altı dolu (bina, su, ağaç) ise en yakın boş hücreye yönel
++			if para_spot == Vector3.INF and position.y - gh < 12.0 and not G.grid.free_at(G.on_ground(position), Grid.M_INF):
++				para_spot = _free_ground(position, para_goal)
++			# süzülme: dikey 5 m/sn, hedefe yatay yönlenme + rüzgâr salınımı. Yumuşatma ağırlıkları
++			# üstel: düşük kare hızında (büyük dt) lerp ağırlığı 1'i aşıp hızı salındırmasın
++			var aim := para_goal if para_spot == Vector3.INF else para_spot
++			var to := aim - position
+ 			to.y = 0.0
+-			var hv := to.normalized() * minf(to.length() * 0.35, 3.2) if to.length() > 0.3 else Vector3.ZERO
+-			para_vel.x = lerpf(para_vel.x, hv.x + sin(G.time * 0.7 + position.x) * 0.5, dt * 1.5)
+-			para_vel.z = lerpf(para_vel.z, hv.z, dt * 1.5)
+-			para_vel.y = lerpf(para_vel.y, -5.0, dt * 3.0)
++			var vmax := 3.2 if para_spot == Vector3.INF else 4.5
++			var hv := to.normalized() * minf(to.length() * (0.35 if para_spot == Vector3.INF else 1.2), vmax) if to.length() > 0.3 else Vector3.ZERO
++			var kh := 1.0 - exp(-dt * 1.5)
++			var sway := sin(G.time * 0.7 + position.x) * 0.5 if para_spot == Vector3.INF else 0.0
++			para_vel.x = lerpf(para_vel.x, hv.x + sway, kh)
++			para_vel.z = lerpf(para_vel.z, hv.z, kh)
++			para_vel.y = lerpf(para_vel.y, -5.0, 1.0 - exp(-dt * 3.0))
+ 			position += para_vel * dt
++			_para_clamp()
+ 			if hv.length() > 0.2:
+-				rotation.y = lerp_angle(rotation.y, _yaw_of(hv), dt * 1.5)
+-			canopy.rotation.z = sin(G.time * 1.3 + position.z) * 0.08
+-			canopy.rotation.x = cos(G.time * 1.1) * 0.06
++				rotation.y = lerp_angle(rotation.y, _yaw_of(hv), clampf(dt * 1.5, 0.0, 1.0))
++			if cv:
++				canopy.rotation.z = sin(G.time * 1.3 + position.z) * 0.08
++				canopy.rotation.x = cos(G.time * 1.1) * 0.06
+ 			body.animate(dt, "para", 0.0, 0.0)
+-			if position.y <= gh + 0.02:
+-				position.y = gh
+-				para_phase = 3
+-				state_t = 0.0
+-				G.fx.dust_burst(position, 0.8)
+-				_drop_canopy()
++			if position.y <= gh + 0.02 or para_t > PARA_MAX_T:
++				_para_touchdown()
+ 		3:
+ 			# iniş yuvarlanması: yan yatıp kalkar
+ 			body.animate(dt, "prone" if state_t < 0.7 else "crouch", 0.0)
+@@ -703,6 +748,25 @@
+ 				cmd_move(para_goal)
+ 	body.position = Vector3.ZERO
+ 
++# yere değiş: iniş noktası her durumda harita içinde boş bir zemin hücresi (dolu hücreye
++# düşen en yakın boş hücreye kayar); kubbe çöker. Havada vurulmuşsa yuvarlanmaz, yaralı yatar.
++func _para_touchdown() -> void:
++	var lp := _free_ground(position, para_goal)
++	position = Vector3(lp.x, G.terrain.ground_h(lp) if G.terrain else 0.0, lp.z)
++	para_vel = Vector3.ZERO
++	para_phase = 3
++	state_t = 0.0
++	G.fx.dust_burst(position, 0.8)
++	_drop_canopy()
++	if para_hurt:
++		para_hurt = false
++		state = "wounded"
++		stance = PRONE
++		target = null
++		vel = Vector3.ZERO
++		G.fx.blood_pool(position)
++		say(["SIHHİYE!", "SIHHİYE! VURULDUM!", "YARDIM EDİN!"][randi() % 3], 3.0)
++
+ func _drop_canopy() -> void:
+ 	if canopy == null:
+ 		return
+@@ -789,7 +853,7 @@
+ 			say("ARAÇ DOLU!")
+ 
+ func cmd_build(site: Node3D) -> void:
+-	if not alive or incapacitated():
++	if not alive or incapacitated() or state == "para":
+ 		return
+ 	_release_patient()
+ 	build_site = site
+@@ -2157,6 +2221,11 @@
+ 	if src != null and is_instance_valid(src):
+ 		threat_pos = src.position
+ 		threat_time = G.time
++	if state == "para" and para_phase < 3:
++		# kubbe altında savrulmaz ("fly" yere ışınlardı); hasar işlenir, düşerse süzülerek iner
++		if hp <= 0.0 and alive:
++			_down(src, true)
++		return
+ 	if not blocked and k > 0.2 and alive and state != "fly" and G.time - fly_end > 3.0:
+ 		_release_patient()
+ 		state = "fly"
+@@ -2184,10 +2253,17 @@
+ 	hp = 1.0
+ 	_release_patient()
+ 	_injure(explosive)
++	bleed = randf_range(38.0, 55.0)
++	if state == "para" and para_phase < 3:
++		# kubbe altında: durum burada değişirse asker havada kalır ya da yere ışınlanır;
++		# yaralı süzülmeye devam eder, yere değince (_para_touchdown) yatar
++		para_hurt = true
++		say("VURULDUM!", 2.0)
++		return
++	_drop_canopy()
+ 	state = "wounded"
+ 	state_t = 0.0
+ 	stance = PRONE
+-	bleed = randf_range(38.0, 55.0)
+ 	target = null
+ 	path = PackedVector3Array()
+ 	vel = Vector3.ZERO
+@@ -2257,9 +2333,14 @@
+ 	rescuer = null
+ 	var rv := Vector3(randf_range(-0.6, 0.6), 0.4, randf_range(-0.6, 0.6))
+ 	var spin := 0.0
++	var airborne := state == "para" and para_phase < 3
++	_drop_canopy()
+ 	if state == "fly":
+ 		rv = fly_vel
+ 		spin = fly_spin * 0.3
++	elif airborne:
++		# kubbe altında ölen: beden süzülme hızıyla düşer (ragdoll zemine indirir)
++		rv = para_vel
+ 	elif src != null and is_instance_valid(src):
+ 		var away: Vector3 = position - src.position
+ 		away.y = 0
+@@ -2287,7 +2368,8 @@
+ 	loot = mini(ammo, 90)
+ 	lean = Vector3.ZERO
+ 	G.credit_kill(src, self)
+-	G.fx.blood_pool(position)
++	if not airborne:
++		G.fx.blood_pool(position)
+ 	if selected and G.player:
+ 		G.player.deselect(self)
+ 	if squad:
+@@ -2607,7 +2689,9 @@
+ 	if rag == null:
+ 		return
+ 	var c := rag.center()
+-	position = Vector3(c.x, position.y, c.z)
++	# havada ölen (paraşüt, halat, savrulma): düğüm de cesedin yattığı zemine iner
++	var gy := G.terrain.ground_h(c) if G.terrain else 0.0
++	position = Vector3(c.x, gy if position.y > gy + 0.5 else position.y, c.z)
+ 	rag._apply()
+ 
+ # ------------------------------------------------------------ yaralıyken tabanca
+diff -ru a/scripts/tests07.gd b/scripts/tests07.gd
+--- a/scripts/tests07.gd	2026-10-15 14:40:30.122789957 +0000
++++ b/scripts/tests07.gd	2026-10-15 14:40:30.128040416 +0000
+@@ -24,6 +24,8 @@
+ 			await fow_test()
+ 		"paratest":
+ 			await para_test()
++		"para2test":
++			await para2_test()
+ 		"tactest":
+ 			await tac_test()
+ 		"largetest":
+@@ -432,6 +434,103 @@
+ 		fails += 1
+ 	print("PARATEST RESULT fails=%d" % fails)
+ 
++# paraşüt sağlamlığı: nehre / binaya / harita köşesine düşen, havada yaralanan / ölen / patlamada
++# kalan, havada emir alan ve dev kare süresiyle işlenen paraşütçülerin hepsi sınırlı sürede
++# harita içinde boş bir zemin hücresine iner (ölüler: ceset zemine)
++func para2_test() -> void:
++	m.get_window().size = Vector2i(480, 270)
++	Sfx.muted = true
++	var fails := 0
++	m.start_game("green_valley", {}, true)
++	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_INF)
++	# haritanın ortasına en yakın nehir hücresi
++	var wp := Vector3.INF
++	for z in range(2, int(G.MAP) - 2, 2):
++		for x in range(2, int(G.MAP) - 2, 2):
++			var p := Vector3(x + 0.5, 0, z + 0.5)
++			if G.grid.is_water(p) and (wp == Vector3.INF or p.distance_to(c) < wp.distance_to(c)):
++				wp = p
++	var hq: Vector3 = G.hq_pos[0]
++	var sq := Squad.new(G.player_team, "P2")
++	G.squads.append(sq)
++	# "hurt": vurulup düşer (yüzde 30 havada ölür, yoksa kubbe altında yaralı iner) — üç kez
++	var cases := ["water", "hq", "corner", "hurt", "kill", "blast", "order", "bigdt", "hurt", "hurt"]
++	var ss: Array = []
++	for i in cases.size():
++		var k: String = cases[i]
++		var at := c + Vector3((i % 4) * 6.0 - 9.0, 0, (i / 4) * 6.0)
++		var goal := at
++		if k == "water" and wp != Vector3.INF:
++			at = wp
++			goal = wp
++		elif k == "hq":
++			at = hq
++			goal = hq
++		elif k == "corner":
++			at = Vector3(-15, 0, -15)
++			goal = Vector3(-40, 0, -40)
++		var s: Soldier = m.spawn_soldier(G.player_team, "rifle", at, sq)
++		s.start_para(at + Vector3(0, 40, 0), Vector3.ZERO, goal)
++		# rüzgâr hedefi dolu hücreye itmiş gibi: yön noktası da dolu hücre
++		if k in ["water", "hq", "corner"]:
++			s.para_goal = goal
++		ss.append(s)
++	print("P2 water=%s hq=%s c=%s" % [wp, hq, c])
++	var t0 := G.time
++	var seen_w := {}
++	var hurt_done := false
++	var shot := false
++	while G.time - t0 < 40.0:
++		await m._wait(0.1)
++		var el := G.time - t0
++		if not hurt_done and el > 3.0:
++			hurt_done = true
++			for i in cases.size():
++				if cases[i] == "hurt":
++					ss[i].take_damage(110.0, null)
++			ss[4].die(null)
++			ss[5].on_blast(ss[5].position + Vector3(1.5, 0, 0), 6.0, 300.0, 1.5, null)
++			ss[6].cmd_move(c + Vector3(10, 0, -10))
++			for st in 4:
++				if ss[7].state == "para":
++					ss[7]._para_process(2.5)
++			print("P2 mid: hurt=%s/%s,%s/%s,%s/%s kill=%s blast=%s/%s/y=%.1f order=%s bigdt=%s/ph=%d/y=%.1f" % [ss[3].state, ss[3].para_hurt, ss[8].state, ss[8].para_hurt, ss[9].state, ss[9].para_hurt, ss[4].alive, ss[5].state, ss[5].alive, ss[5].position.y, ss[6].state, ss[7].state, ss[7].para_phase, ss[7].position.y])
++		if not shot and el > 4.0:
++			shot = true
++			_cam(ss[0].position, 30.0)
++			await m._wait(0.1)
++			await m._shot("para2_00")
++		for i in ss.size():
++			if is_instance_valid(ss[i]) and ss[i].state == "wounded":
++				seen_w[i] = true
++		var air := ss.filter(func(x): return is_instance_valid(x) and x.alive and x.state == "para")
++		if air.is_empty() and el > 14.0:
++			break
++	await m._wait(8.0)
++	var el := G.time - t0
++	for i in ss.size():
++		var s: Soldier = ss[i]
++		if not is_instance_valid(s):
++			print("P2 %s freed" % cases[i])
++			fails += 1
++			continue
++		var ok := false
++		if s.alive:
++			ok = s.state != "para" and G.grid.free_at(s.position, Grid.M_INF) and s.position.y < 0.3
++		else:
++			ok = s.position.y < 0.6 and s.canopy == null
++		print("P2 %s ok=%s alive=%s st=%s wounded_seen=%s p=%s free=%s h=%.2f" % [cases[i], ok, s.alive, s.state, seen_w.has(i), s.position, G.grid.free_at(s.position, Grid.M_INF), G.grid.height_at(s.position)])
++		if not ok:
++			fails += 1
++	if ss[6].alive and Vector2(ss[6].dest.x - c.x - 10.0, ss[6].dest.z - c.z + 10.0).length() > 3.0:
++		print("P2 order lost: dest=%s" % ss[6].dest)
++		fails += 1
++	_cam(c, 30.0)
++	await m._wait(0.1)
++	await m._shot("para2_10")
++	print("P2 elapsed=%.1f" % el)
++	print("PARA2TEST RESULT fails=%d" % fails)
++
+ # tim beyni: YZ timi uzun çatışmada kanattan dolanır, taban kolu baskı ateşi açar
+ func tac_test() -> void:
+ 	m.get_window().size = Vector2i(1280, 720)

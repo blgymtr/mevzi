@@ -1,0 +1,647 @@
+{
+ "model": "soldier_anim.glb",
+ "height_m": 1.8,
+ "fps": 30,
+ "forward": "-Z (Godot), sağ el +X",
+ "tris": 10900,
+ "bones": [
+  {
+   "name": "Root",
+   "parent": null
+  },
+  {
+   "name": "Hips",
+   "parent": "Root"
+  },
+  {
+   "name": "Spine",
+   "parent": "Hips"
+  },
+  {
+   "name": "Chest",
+   "parent": "Spine"
+  },
+  {
+   "name": "UpperChest",
+   "parent": "Chest"
+  },
+  {
+   "name": "Neck",
+   "parent": "UpperChest"
+  },
+  {
+   "name": "Head",
+   "parent": "Neck"
+  },
+  {
+   "name": "LeftShoulder",
+   "parent": "UpperChest"
+  },
+  {
+   "name": "LeftUpperArm",
+   "parent": "LeftShoulder"
+  },
+  {
+   "name": "LeftLowerArm",
+   "parent": "LeftUpperArm"
+  },
+  {
+   "name": "LeftHand",
+   "parent": "LeftLowerArm"
+  },
+  {
+   "name": "LeftThumbMetacarpal",
+   "parent": "LeftHand"
+  },
+  {
+   "name": "LeftThumbProximal",
+   "parent": "LeftThumbMetacarpal"
+  },
+  {
+   "name": "LeftIndexProximal",
+   "parent": "LeftHand"
+  },
+  {
+   "name": "LeftIndexIntermediate",
+   "parent": "LeftIndexProximal"
+  },
+  {
+   "name": "LeftMiddleProximal",
+   "parent": "LeftHand"
+  },
+  {
+   "name": "LeftMiddleIntermediate",
+   "parent": "LeftMiddleProximal"
+  },
+  {
+   "name": "LeftUpperLeg",
+   "parent": "Hips"
+  },
+  {
+   "name": "LeftLowerLeg",
+   "parent": "LeftUpperLeg"
+  },
+  {
+   "name": "LeftFoot",
+   "parent": "LeftLowerLeg"
+  },
+  {
+   "name": "LeftToes",
+   "parent": "LeftFoot"
+  },
+  {
+   "name": "RightShoulder",
+   "parent": "UpperChest"
+  },
+  {
+   "name": "RightUpperArm",
+   "parent": "RightShoulder"
+  },
+  {
+   "name": "RightLowerArm",
+   "parent": "RightUpperArm"
+  },
+  {
+   "name": "RightHand",
+   "parent": "RightLowerArm"
+  },
+  {
+   "name": "RightThumbMetacarpal",
+   "parent": "RightHand"
+  },
+  {
+   "name": "RightThumbProximal",
+   "parent": "RightThumbMetacarpal"
+  },
+  {
+   "name": "RightIndexProximal",
+   "parent": "RightHand"
+  },
+  {
+   "name": "RightIndexIntermediate",
+   "parent": "RightIndexProximal"
+  },
+  {
+   "name": "RightMiddleProximal",
+   "parent": "RightHand"
+  },
+  {
+   "name": "RightMiddleIntermediate",
+   "parent": "RightMiddleProximal"
+  },
+  {
+   "name": "RightUpperLeg",
+   "parent": "Hips"
+  },
+  {
+   "name": "RightLowerLeg",
+   "parent": "RightUpperLeg"
+  },
+  {
+   "name": "RightFoot",
+   "parent": "RightLowerLeg"
+  },
+  {
+   "name": "RightToes",
+   "parent": "RightFoot"
+  }
+ ],
+ "arm_layer_bones": [
+  "LeftShoulder",
+  "LeftUpperArm",
+  "LeftLowerArm",
+  "LeftHand",
+  "LeftThumbMetacarpal",
+  "LeftThumbProximal",
+  "LeftIndexProximal",
+  "LeftIndexIntermediate",
+  "LeftMiddleProximal",
+  "LeftMiddleIntermediate",
+  "RightShoulder",
+  "RightUpperArm",
+  "RightLowerArm",
+  "RightHand",
+  "RightThumbMetacarpal",
+  "RightThumbProximal",
+  "RightIndexProximal",
+  "RightIndexIntermediate",
+  "RightMiddleProximal",
+  "RightMiddleIntermediate"
+ ],
+ "rifle_node": "Rifle",
+ "rifle_hand_bone": "RightHand",
+ "clips": {
+  "idle": {
+   "loop": true,
+   "frames": 103,
+   "length": 3.433333333333333,
+   "speed": 0.003,
+   "velocity": [
+    -0.0,
+    0.0,
+    -0.003
+   ],
+   "src_frames": [
+    452,
+    864
+   ],
+   "cost": 0.0011,
+   "foot_slide": {},
+   "source": "CMU 77_02",
+   "desc": "ayakta bekleme (hafif ağırlık aktarma)",
+   "scale": 1.1
+  },
+  "walk": {
+   "loop": true,
+   "frames": 34,
+   "length": 1.1333333333333333,
+   "speed": 1.294,
+   "velocity": [
+    0.016,
+    0.0,
+    -1.294
+   ],
+   "src_frames": [
+    190,
+    326
+   ],
+   "cost": 0.0037,
+   "foot_slide": {
+    "Left": [
+     0.166,
+     0.021
+    ],
+    "Right": [
+     0.145,
+     0.02
+    ]
+   },
+   "source": "CMU 35_01",
+   "desc": "yürüyüş",
+   "scale": 0.997
+  },
+  "run": {
+   "loop": true,
+   "frames": 22,
+   "length": 0.7333333333333333,
+   "speed": 3.152,
+   "velocity": [
+    0.039,
+    0.0,
+    -3.152
+   ],
+   "src_frames": [
+    29,
+    117
+   ],
+   "cost": 0.0183,
+   "foot_slide": {
+    "Left": [
+     0.197,
+     0.016
+    ],
+    "Right": [
+     0.492,
+     0.062
+    ]
+   },
+   "source": "CMU 35_17",
+   "desc": "koşu",
+   "scale": 0.997
+  },
+  "sprint": {
+   "loop": true,
+   "frames": 20,
+   "length": 0.6666666666666666,
+   "speed": 4.559,
+   "velocity": [
+    -0.039,
+    0.0,
+    -4.558
+   ],
+   "src_frames": [
+    61,
+    141
+   ],
+   "cost": 0.168,
+   "foot_slide": {
+    "Left": [
+     0.424,
+     0.027
+    ],
+    "Right": [
+     0.45,
+     0.038
+    ]
+   },
+   "source": "CMU 127_07",
+   "desc": "depar",
+   "scale": 1.001
+  },
+  "walk_back": {
+   "loop": true,
+   "frames": 30,
+   "length": 1.0,
+   "speed": 2.59,
+   "velocity": [
+    -0.233,
+    0.0,
+    2.579
+   ],
+   "src_frames": [
+    64,
+    184
+   ],
+   "cost": 0.0429,
+   "foot_slide": {
+    "Left": [
+     0.128,
+     0.008
+    ],
+    "Right": [
+     0.195,
+     0.031
+    ]
+   },
+   "source": "CMU 141_31",
+   "desc": "geri geri yürüme",
+   "scale": 1.155
+  },
+  "strafe_right": {
+   "loop": true,
+   "frames": 39,
+   "length": 1.3,
+   "speed": 1.329,
+   "velocity": [
+    1.328,
+    0.0,
+    0.054
+   ],
+   "src_frames": [
+    152,
+    308
+   ],
+   "cost": 0.0078,
+   "foot_slide": {
+    "Left": [
+     0.233,
+     0.018
+    ],
+    "Right": [
+     0.271,
+     0.027
+    ]
+   },
+   "source": "CMU 141_33",
+   "desc": "yana (sağa) adımlama",
+   "scale": 1.155
+  },
+  "strafe_left": {
+   "loop": true,
+   "frames": 35,
+   "length": 1.1666666666666667,
+   "speed": 1.405,
+   "velocity": [
+    -1.405,
+    0.0,
+    -0.006
+   ],
+   "src_frames": [
+    765,
+    905
+   ],
+   "cost": 0.0069,
+   "foot_slide": {
+    "Left": [
+     0.187,
+     0.012
+    ],
+    "Right": [
+     0.329,
+     0.029
+    ]
+   },
+   "source": "CMU 141_33",
+   "desc": "yana (sola) adımlama",
+   "scale": 1.155
+  },
+  "crouch_walk": {
+   "loop": true,
+   "frames": 45,
+   "length": 1.5,
+   "speed": 0.631,
+   "velocity": [
+    0.14,
+    0.0,
+    -0.616
+   ],
+   "src_frames": [
+    914,
+    1094
+   ],
+   "cost": 0.0611,
+   "foot_slide": {
+    "Left": [
+     0.136,
+     0.007
+    ],
+    "Right": [
+     0.151,
+     0.021
+    ]
+   },
+   "source": "CMU 77_29",
+   "desc": "çömelerek / sinsice yürüme (+10 cm IK ile alçaltılmış)",
+   "scale": 1.1
+  },
+  "crawl": {
+   "loop": true,
+   "frames": 41,
+   "length": 1.3666666666666667,
+   "speed": 0.147,
+   "velocity": [
+    -0.031,
+    0.0,
+    -0.144
+   ],
+   "src_frames": [
+    936,
+    1100
+   ],
+   "cost": 0.1301,
+   "foot_slide": {},
+   "source": "CMU 111_03",
+   "desc": "dört ayak (el-diz) sürünme",
+   "scale": 1.154
+  },
+  "prone_idle": {
+   "loop": true,
+   "frames": 30,
+   "length": 1.0,
+   "speed": 0.013,
+   "velocity": [
+    0.009,
+    0.0,
+    -0.01
+   ],
+   "src_frames": [
+    25,
+    145
+   ],
+   "cost": 0.0907,
+   "foot_slide": {},
+   "source": "CMU 140_01",
+   "desc": "yüzüstü yatış (bekleme)",
+   "scale": 1.119
+  },
+  "kneel_idle": {
+   "loop": true,
+   "frames": 36,
+   "length": 1.2,
+   "speed": 0.052,
+   "velocity": [
+    0.032,
+    0.0,
+    0.041
+   ],
+   "src_frames": [
+    310,
+    454
+   ],
+   "cost": 0.0396,
+   "foot_slide": {},
+   "source": "CMU 23_03",
+   "desc": "tek diz çökmüş bekleme",
+   "scale": 0.98
+  },
+  "jump": {
+   "loop": false,
+   "frames": 61,
+   "length": 2.033333333333333,
+   "root_motion": [
+    -0.074,
+    1.324,
+    0.0
+   ],
+   "src_frames": [
+    150,
+    394
+   ],
+   "source": "CMU 13_11",
+   "desc": "ileri atlama",
+   "scale": 0.972
+  },
+  "hit_stagger": {
+   "loop": false,
+   "frames": 32,
+   "length": 1.0666666666666667,
+   "root_motion": [
+    -0.033,
+    0.572,
+    0.0
+   ],
+   "src_frames": [
+    1,
+    129
+   ],
+   "source": "CMU 22_12",
+   "desc": "darbe / sendeleme ve toparlanma",
+   "scale": 1.01
+  },
+  "duck": {
+   "loop": false,
+   "frames": 97,
+   "length": 3.2333333333333334,
+   "root_motion": [
+    -0.009,
+    0.132,
+    0.0
+   ],
+   "src_frames": [
+    170,
+    558
+   ],
+   "source": "CMU 77_09",
+   "desc": "patlamadan korunma: çömelip başı kollarla kapatma",
+   "scale": 1.1
+  },
+  "fall_back": {
+   "loop": false,
+   "frames": 28,
+   "length": 0.9333333333333333,
+   "root_motion": [
+    -0.01,
+    0.033,
+    0.0
+   ],
+   "src_frames": [
+    70,
+    182
+   ],
+   "source": "CMU 90_18",
+   "desc": "sırt üstü düşme (ölüm / devrilme)",
+   "scale": 1.0
+  },
+  "getup": {
+   "loop": false,
+   "frames": 97,
+   "length": 3.2333333333333334,
+   "root_motion": [
+    -0.053,
+    -0.523,
+    0.0
+   ],
+   "src_frames": [
+    170,
+    558
+   ],
+   "source": "CMU 77_16",
+   "desc": "yüzüstü yatıştan kalkıp tetikte duruşa geçme",
+   "scale": 1.1
+  },
+  "turn_left": {
+   "loop": false,
+   "frames": 58,
+   "length": 1.9333333333333333,
+   "root_motion": [
+    0.0,
+    0.0,
+    92.7
+   ],
+   "src_frames": [
+    175,
+    407
+   ],
+   "source": "CMU 69_16",
+   "desc": "yerinde 90° sola dönüş",
+   "scale": 1.014
+  },
+  "turn_right": {
+   "loop": false,
+   "frames": 55,
+   "length": 1.8333333333333333,
+   "root_motion": [
+    0.0,
+    0.0,
+    -91.3
+   ],
+   "src_frames": [
+    125,
+    345
+   ],
+   "source": "CMU 69_18",
+   "desc": "yerinde 90° sağa dönüş",
+   "scale": 1.014
+  },
+  "kneel_down": {
+   "loop": false,
+   "frames": 50,
+   "length": 1.6666666666666667,
+   "root_motion": [
+    -0.032,
+    0.067,
+    0.0
+   ],
+   "src_frames": [
+    35,
+    235
+   ],
+   "source": "CMU 23_03",
+   "desc": "tek dize çökme",
+   "scale": 0.98
+  },
+  "kneel_up": {
+   "loop": false,
+   "frames": 32,
+   "length": 1.0666666666666667,
+   "root_motion": [
+    -0.103,
+    0.108,
+    0.0
+   ],
+   "src_frames": [
+    485,
+    613
+   ],
+   "source": "CMU 23_03",
+   "desc": "dizden kalkma",
+   "scale": 0.98
+  },
+  "rifle_ready": {
+   "loop": false,
+   "frames": 1,
+   "length": 0.03333333333333333,
+   "layer": true,
+   "source": "anahtar poz (IK)",
+   "desc": "tüfek alçak hazır üst gövde katmanı",
+   "reach": {
+    "Left": 0.484,
+    "Right": 0.263
+   }
+  },
+  "rifle_aim": {
+   "loop": false,
+   "frames": 1,
+   "length": 0.03333333333333333,
+   "layer": true,
+   "source": "anahtar poz (IK)",
+   "desc": "tüfek nişan üst gövde katmanı",
+   "reach": {
+    "Left": 0.5,
+    "Right": 0.238
+   }
+  }
+ },
+ "sources": {
+  "makehuman": {
+   "repo": "makehumancommunity/makehuman",
+   "commit": "a8bc2d54ff0ac92e78ff71431b1023eda42bf482",
+   "license": "CC0 1.0 (varlıklar)"
+  },
+  "cmu": {
+   "repo": "una-dinosauria/cmu-mocap",
+   "commit": "09a07f54f3bbb58797325f009282d0b2048a2871",
+   "license": "CMU Graphics Lab Motion Capture Database — araştırma ve ticari kullanım serbest"
+  }
+ }
+}

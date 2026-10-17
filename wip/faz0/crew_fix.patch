@@ -1,0 +1,133 @@
+--- a/scripts/vehicle.gd
++++ b/scripts/vehicle.gd
+@@ -1444,6 +1444,35 @@
+ 	coax_target = null
+ 	if vtype == "tank" and best_inf != null and G.grid.los(eye, best_inf.aim_point(), 3.0, 1.6 if best_inf.house_id >= 0 else 0.5):
+ 		coax_target = best_inf
++	if order == "attack" and forced_target != null and best != forced_target:
++		_close_on_forced()
++
++# saldırı emri verilen hedef vurulamıyor (görülmüyor / menzil dışı / görüş hattı kapalı): doğrudan atışlı kara
++# aracı (çekili top dahil) piyadedeki gibi hedefe yaklaşır — yoksa emir sessizce askıda kalır. Dolaylı atışlı
++# topçu yaklaşmaz (asgari menzil); gözcü gerektiğini söyler.
++var _chase_t := 0.0
++
++func _close_on_forced() -> void:
++	var ft: Unit = forced_target
++	if not is_instance_valid(ft) or not ft.hostile() or is_air() or immobile() or (ft is Vehicle and ft.is_air()):
++		return
++	if G.time < _chase_t:
++		return
++	if vtype in INDIRECT:
++		if not G.is_seen(ft, team):
++			_chase_t = G.time + 8.0
++			say("HEDEF GÖRÜLMÜYOR, GÖZCÜ GEREK", 2.5)
++		return
++	var d := dist2(ft)
++	if d < 8.0:
++		return
++	var stand := minf(minf(sight, _range()) * 0.7, d * 0.6)
++	var goal: Vector3 = G.grid.nearest_free(ft.position + (position - ft.position).normalized() * stand, nav_mode)
++	if path_i < path.size() and goal.distance_to(dest) < 4.0:
++		return
++	_chase_t = G.time + 1.5
++	dest = goal
++	_repath(dest)
+ 
+ func _aim_fire(dt: float) -> void:
+ 	if turret == null or G.deploy_t > 0.0:
+--- a/scripts/i18n.gd
++++ b/scripts/i18n.gd
+@@ -266,6 +266,7 @@
+ 	"KURULUYOR": "DEPLOYING",
+ 	"TOPLANDI, YÜRÜYÜŞE HAZIR": "PACKED, READY TO MOVE",
+ 	"TOP KURULDU, ATEŞE HAZIR": "GUN SET, READY TO FIRE",
++	"HEDEF GÖRÜLMÜYOR, GÖZCÜ GEREK": "TARGET NOT VISIBLE, NEED A SPOTTER",
+ 	"HAVANI KURUYORUM": "SETTING UP MORTAR",
+ 	"BİNAYA GİR!": "INTO THE BUILDING!",
+ 	"Binaya giriyoruz!": "Entering the building!",
+--- a/scripts/tests07.gd
++++ b/scripts/tests07.gd
+@@ -315,7 +315,9 @@
+ 	G.reveal = [999.0, 999.0]
+ 	var gun: Vehicle = m.spawn_vehicle(G.player_team, "usa_tow_m119", c, 0.0)
+ 	gun.cmd_hold()
+-	var tk: Vehicle = m.spawn_vehicle(1 - G.player_team, "rus_mbt_72b3", G.grid.nearest_free(c + Vector3(0, 0, -45), Grid.M_HEAVY), 0.0)
++	# hedef topun kendi görüşü içinde olmalı (sahra topu: görüş 40 m, menzil 64 m); G.reveal yalnız yapıları
++	# açar — 45 m'deki tank hiç görülmüyordu, top hedef almıyor, döngü hiç başlamıyordu
++	var tk: Vehicle = m.spawn_vehicle(1 - G.player_team, "rus_mbt_72b3", G.grid.nearest_free(c + Vector3(0, 0, -32), Grid.M_HEAVY), 0.0)
+ 	tk.cmd_hold()
+ 	tk.fire_mode = 2
+ 	tk.hp = 99999.0
+@@ -325,21 +327,27 @@
+ 	var mi := 0
+ 	var cycles := 0
+ 	var last_cd := 0.0
+-	for i in 900:
++	var t0 := G.time
++	var dbg_t := -9.0
++	# kare sayısıyla değil oyun süresiyle sınırlı (yazılım çiziminde kare başına 0.13 sn oyun zamanı geçer)
++	while G.time - t0 < 45.0 and mi < marks.size():
+ 		await m._wait(0.03)
+-		if i % 50 == 0:
+-			print("CREW dbg i=%d ms=%d fps=%d cycle=%.1f cd=%.2f emit=%d tgt=%s" % [i, Time.get_ticks_msec(), Engine.get_frames_per_second(), gun.crew_cycle, gun.main_cd, G.fx.emitters.size(), gun.target != null])
++		if G.time - dbg_t > 3.0:
++			dbg_t = G.time
++			print("CREW dbg t=%.1f ms=%d fps=%d cycle=%.1f cd=%.2f cycles=%d tgt=%s seen=%s" % [G.time - t0, Time.get_ticks_msec(), Engine.get_frames_per_second(), gun.crew_cycle, gun.main_cd, cycles, gun.target != null, G.is_seen(tk, gun.team)])
+ 		if gun.crew_cycle > 0.0 and gun.main_cd > last_cd + 0.5:
+ 			cycles += 1
+ 		last_cd = gun.main_cd
+-		if cycles >= 2 and mi < marks.size():
++		# hızlı başarısızlık: 15 sn'de ilk atış yoksa nedenini yaz, boşuna bekleme
++		if cycles == 0 and G.time - t0 > 15.0:
++			print("CREW no fire: seen=%s dist=%.1f sight=%.1f range=%.1f tgt=%s order=%s deployed=%.2f" % [G.is_seen(tk, gun.team), gun.dist2(tk), gun.sight, gun._range(), gun.target != null, gun.order, gun.deployed])
++			break
++		if cycles >= 2:
+ 			var p := 1.0 - gun.main_cd / gun.crew_cycle
+ 			if p >= marks[mi] and p < marks[mi] + 0.08:
+ 				await m._shot("crew_%02d" % mi)
+ 				mi += 1
+-		if mi >= marks.size():
+-			break
+-	print("CREW cycles=%d shots=%d" % [cycles, mi])
++	print("CREW cycles=%d shots=%d t=%.1f" % [cycles, mi, G.time - t0])
+ 	if cycles < 2 or mi < 4:
+ 		fails += 1
+ 	# araca kapıdan binme / inme
+@@ -352,25 +360,29 @@
+ 		ss.append(s)
+ 	_cam(apc.position, 13.0)
+ 	var shot_in := false
+-	for i in 400:
++	var t1 := G.time
++	while G.time - t1 < 40.0 and apc.cargo.size() < 6:
+ 		await m._wait(0.05)
+ 		if not shot_in and ss.any(func(x): return x.state == "entering"):
+ 			shot_in = true
+ 			await m._shot("crew_10_board")
+-		if apc.cargo.size() >= 6:
+-			break
+-	print("CREW boarded=%d" % apc.cargo.size())
++	print("CREW boarded=%d t=%.1f" % [apc.cargo.size(), G.time - t1])
+ 	if apc.cargo.size() < 6:
+ 		fails += 1
+ 	apc.unload()
+ 	var shot_out := 0
+-	for i in 200:
++	var t2 := G.time
++	var n := 0
++	while G.time - t2 < 20.0:
+ 		await m._wait(0.05)
+-		if shot_out < 2 and ss.filter(func(x): return x.state == "exiting" and x.visible).size() > 0 and i % 6 == 0:
++		n += 1
++		if shot_out < 2 and ss.filter(func(x): return x.state == "exiting" and x.visible).size() > 0 and n % 3 == 0:
+ 			await m._shot("crew_%02d_exit" % (11 + shot_out))
+ 			shot_out += 1
++		if G.time - t2 > 4.0 and ss.all(func(x): return x.vehicle_in == null and x.state != "exiting"):
++			break
+ 	var out := ss.filter(func(x): return x.vehicle_in == null and x.state != "exiting").size()
+-	print("CREW unloaded=%d" % out)
++	print("CREW unloaded=%d exit_shots=%d t=%.1f" % [out, shot_out, G.time - t2])
+ 	if out < 6:
+ 		fails += 1
+ 	print("CREWTEST RESULT fails=%d" % fails)

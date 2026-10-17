@@ -2,7 +2,7 @@ class_name Blocks extends Node3D
 # Yıkılabilir blok duvar sistemi: parça (chunk) başına MultiMesh, destek zinciri,
 # fizik enkazı ve kalıcı moloz.
 
-const CH := 32.0
+var CH := 32.0          # MultiMesh parçası (m); büyük haritada 64 m (çizim çağrısı ¼)
 const BH := 2.0
 enum { T_BOX, T_SANDBAG, T_FENCE, T_CONCRETE }
 const MAX_DEBRIS := 110
@@ -31,24 +31,34 @@ var bhash := {}
 var _pending := {}
 var finalized := false
 var debris: Array = []
-var rubble: MultiMesh
+var rubble: MultiMesh               # (geriye uyum) ilk bölgenin ilk çeşidi
+var rub_mm := {}                     # Vector3i(bölge x, bölge z, çeşit) → [MultiMesh, sayaç]; görüş dışı kırpılır
+const RUB_REGION := 128.0
+const RUB_PER_REGION := 1200
 var rubble_n := 0
+var chunks: Array = []               # kırık parça örgüleri (uçan enkaz ve moloz)
+var bscar := PackedByteArray()       # delik kenarında yerinden oynamış / kararmış blok
+var collapsing: Array = []           # kat kat çöken binalar
+
 var _mat_cache := {}
 var rng := RandomNumberGenerator.new()
+# uzak görüş: pahlı blok (108 üçgen) yerine düz kutu (12); 8 km haritada 600 bin blok 65 M üçgen ediyordu
+var meshes_far: Array = []
+var _mmis: Array = []      # [MultiMeshInstance3D, tip]
+var far_lod := false
 
 func _ready() -> void:
 	rng.seed = 777
-	meshes = [bevel_box(0.07), bevel_box(0.42), fence_panel(), bevel_box(0.006)]
-	rubble = MultiMesh.new()
-	rubble.transform_format = MultiMesh.TRANSFORM_3D
-	rubble.use_colors = true
-	rubble.mesh = meshes[T_BOX]
-	rubble.instance_count = RUBBLE_CAP
-	rubble.visible_instance_count = 0
-	var rmi := MultiMeshInstance3D.new()
-	rmi.multimesh = rubble
-	rmi.material_override = Mats.masonry()
-	add_child(rmi)
+	CH = 32.0 if G.MAP <= 2048.0 else 64.0
+	meshes = [bevel_box(0.07), sandbag_mesh(), fence_panel(), bevel_box(0.006)]
+	var bx := MB.new()
+	bx.box(Vector3.ZERO, Vector3.ONE, Color(1, 1, 1))
+	var plain := bx.commit()
+	var fb := MB.new()
+	fb.box(Vector3.ZERO, Vector3(1.0, 1.0, 0.06), Color(1, 1, 1))
+	meshes_far = [plain, plain, fb.commit(), plain]
+	for k in 3:
+		chunks.append(chunk_mesh(k))
 
 # ------------------------------------------------------------ meshler
 static func bevel_box(r: float) -> ArrayMesh:
@@ -79,6 +89,105 @@ static func bevel_box(r: float) -> ArrayMesh:
 					mb.tri_s(P[0], P[2], P[3], Nn[0], Nn[2], Nn[3], fc)
 	return mb.commit()
 
+# dolu kum torbası (Roadmap 36): üstü-altı yassı yastık, kenarları yuvarlak, ortası hafif çökük; bir ucu katlanıp
+# bağlanmış kulak, uzun kenar boyunca dikiş. Birim kutuya sığar (x boy, y kalınlık, z en); UV çuval dokusu için.
+static func sandbag_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_color(Color(1, 1, 1))
+	var NU := 14
+	var NV := 8
+	var pts := []
+	for side in 2:
+		var sg := 1.0 if side == 0 else -1.0
+		var rows := []
+		for i in NU + 1:
+			var u := -1.0 + 2.0 * i / NU
+			var row := []
+			for k in NV + 1:
+				var v := -1.0 + 2.0 * k / NV
+				# kesit: yastık profili (kenara doğru incelir); bağlı uçta (u>0.7) daha da yassı
+				# kenarlar yuvarlak (dolgun torba; keskin kenarlı tuğla gibi durmasın)
+				var fu := pow(maxf(0.0, 1.0 - pow(absf(u), 4.0)), 0.5)
+				var fv := pow(maxf(0.0, 1.0 - pow(absf(v), 3.0)), 0.5)
+				var tie := 1.0 - 0.45 * smoothstep(0.55, 1.0, u)
+				var hgt := 0.5 * fu * fv * tie
+				if side == 0:
+					hgt -= 0.06 * (1.0 - u * u) * (1.0 - v * v)       # üstte hafif çökme (dolgu yatışır)
+				var x := u * 0.5 * (1.0 - 0.05 * absf(v))
+				var z := v * 0.5 * (1.0 - 0.08 * smoothstep(0.5, 1.0, u))
+				row.append(Vector3(x, sg * maxf(hgt, 0.0), z))
+			rows.append(row)
+		pts.append(rows)
+	for side in 2:
+		var R: Array = pts[side]
+		for i in NU:
+			for k in NV:
+				var a: Vector3 = R[i][k]
+				var b: Vector3 = R[i + 1][k]
+				var c: Vector3 = R[i + 1][k + 1]
+				var d: Vector3 = R[i][k + 1]
+				# Godot: Plane(p1, p2, p3) normali (p1-p3)×(p1-p2) → üst yüz a,b,c; alt yüz ters sıra
+				var quad := [a, b, c, a, c, d] if side == 0 else [a, c, b, a, d, c]
+				for q in quad:
+					st.set_uv(Vector2(q.x * 0.66, q.z * 0.36))
+					st.add_vertex(q)
+	# bağlı uç kulağı: katlanmış çuval kenarı (ince, yukarı kıvrık)
+	for sgn in [-1.0, 1.0]:
+		var p0 := Vector3(0.48, 0.0, sgn * 0.0)
+		var p1 := Vector3(0.6, 0.06, sgn * 0.12)
+		var p2 := Vector3(0.6, 0.06, -sgn * 0.12)
+		# iki yüzlü (ince kulak her yönden görünsün)
+		for tri in [[p0, p1, p2], [p0, p2, p1]]:
+			for q in tri:
+				st.set_uv(Vector2(q.x * 0.66, q.z * 0.36))
+				st.add_vertex(q)
+	st.generate_normals()
+	st.generate_tangents()
+	return st.commit()
+
+# kırık duvar parçası: köşeleri yontulmuş, yüzeyleri eğri düzensiz parça (düz gölgeleme = kırık yüz);
+# aynı konuma aynı sapma → su geçirmez örgü
+static func chunk_mesh(seed: int) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(-1)
+	st.set_color(Color(1, 1, 1))
+	var sc := Vector3(1.0, 0.8 + 0.15 * seed, 1.0 - 0.1 * seed)
+	var warp := func(p: Vector3) -> Vector3:
+		# köşe ve kenarlar içeri (pah), her köşe noktası konumuna bağlı rastgele (komşu yüzlerle aynı)
+		var nE := int(absf(p.x) > 0.49) + int(absf(p.y) > 0.49) + int(absf(p.z) > 0.49)
+		var k: float = [1.0, 1.0, 0.86, 0.7][nE]
+		var q := (p * 100.0).round()
+		var h := fposmod(sin(q.x * 0.317 + q.y * 0.173 + q.z * 0.231 + seed * 5.1) * 43758.5453, 1.0)
+		var h2 := fposmod(sin(q.x * 0.113 + q.y * 0.419 + q.z * 0.077 + seed * 2.3) * 24634.6345, 1.0)
+		return p * sc * k * (0.8 + 0.32 * h) + Vector3((h2 - 0.5) * 0.12, (h - 0.5) * 0.1, (h2 - 0.5) * 0.08)
+	for axis in 3:
+		for sgn in [-1.0, 1.0]:
+			var g := []
+			for i in 3:
+				var row := []
+				for j in 3:
+					var p := Vector3.ZERO
+					p[axis] = 0.5 * sgn
+					p[(axis + 1) % 3] = -0.5 + 0.5 * i
+					p[(axis + 2) % 3] = -0.5 + 0.5 * j
+					row.append(warp.call(p))
+				g.append(row)
+			for i in 2:
+				for j in 2:
+					var a: Vector3 = g[i][j]
+					var b: Vector3 = g[i + 1][j]
+					var c: Vector3 = g[i + 1][j + 1]
+					var d: Vector3 = g[i][j + 1]
+					# dışa bakan yüz (Godot: Plane(p1,p2,p3) normali (p1-p3)×(p1-p2))
+					# yüz çerçevesi u×v = eksen yönü; (a,c,b) dışa bakar
+					var tris := [a, c, b, a, d, c] if sgn > 0.0 else [a, b, c, a, c, d]
+					for t in tris:
+						st.add_vertex(t)
+	st.generate_normals()
+	return st.commit()
+
 static func fence_panel() -> ArrayMesh:
 	var mb := MB.new()
 	var c := Color(1, 1, 1)
@@ -95,6 +204,8 @@ func _type_mat(t: int) -> Material:
 			return Mats.masonry()
 		T_FENCE:
 			return Mats.vc2()
+		T_SANDBAG:
+			return Mats.sandbag()
 	return Mats.vc()
 
 func _color_mat(col: Color, t: int) -> Material:
@@ -140,7 +251,8 @@ func house_free_slot(hid: int) -> int:
 	return -1
 
 func house_team(hid: int) -> int:
-	for o in houses[hid]["occ"].values():
+	# pencere yuvası olmayan yapı (silo, tank, sera) kimse tarafından tutulmaz
+	for o in houses[hid].get("occ", {}).values():
 		if o != null and is_instance_valid(o) and o.alive and o.house_id == hid:
 			return o.team
 	return -1
@@ -186,6 +298,7 @@ func add_block(pos: Vector3, size: Vector3, rot: float, col: Color, t: int, wall
 	bsup.append(PackedInt32Array())
 	bdep.append(PackedInt32Array())
 	bcells.append(PackedInt32Array())
+	bscar.append(0)
 	if wall >= 0:
 		walls[wall]["blocks"].append(id)
 		var hh: int = walls[wall]["house"]
@@ -204,9 +317,15 @@ func add_block(pos: Vector3, size: Vector3, rot: float, col: Color, t: int, wall
 		_pending[ck] = [id]
 	return id
 
+# kurulumda blok rengini değiştir (kaide, köşe taşı); dışarıdan dizi yazmak her seferinde kopyalar
+func set_col(id: int, c: Color) -> void:
+	bcol[id] = c
+
 func _xform(id: int) -> Transform3D:
 	var k := 0.997 if bkind[id] == Grid.K_HOUSE else 0.965
-	return Transform3D(Basis(Vector3.UP, brot[id]).scaled(bsize[id] * k), bpos[id])
+	# ölçek blok yerel eksenlerinde (Basis.scaled() dünya eksenlerinde ölçekler: 90° dönük duvarda boy ile kalınlık yer
+	# değiştiriyor, yan duvarlar 0,42 m'lik aralıklı bloklardan "kafes / lego" gibi görünüyordu)
+	return Transform3D(Basis(Vector3.UP, brot[id]) * Basis.from_scale(bsize[id] * k), bpos[id])
 
 # a→b arası blok duvar. gaps: [[s0, s1, r0, r1, frame], ...] (duvar boyunca metre, sıra aralığı)
 func wall_line(a: Vector3, b: Vector3, rows: int, col: Color, k: int, opt := {}) -> int:
@@ -269,6 +388,13 @@ func wall_line(a: Vector3, b: Vector3, rows: int, col: Color, k: int, opt := {})
 			if rng.randf() < 0.06:
 				c = c.darkened(0.12)
 			var pos := a + dir * sc + Vector3(0, y0 + bh * (r + 0.5), 0)
+			if t == T_SANDBAG:
+				# elle dizilmiş torbalar: birkaç derece dönük, öne-arkaya kaymış, biraz farklı boyda; renk torba başına
+				# gerçek torba renklerinden (alt sıra çamurlu, üst sıra solgun)
+				c = Mats.bag_color(rng, r, rows)
+				var nrm := Vector3(-dir.z, 0, dir.x)
+				add_block(pos + nrm * rng.randf_range(-0.025, 0.025) + dir * rng.randf_range(-0.02, 0.02), Vector3((s1 - s0) * rng.randf_range(0.94, 1.04), bh * rng.randf_range(0.92, 1.06), bt * rng.randf_range(0.95, 1.05)), rot + rng.randf_range(-0.07, 0.07), c, t, w, r, k, solid)
+				continue
 			add_block(pos, Vector3(s1 - s0, bh, bt), rot, c, t, w, r, k, solid)
 	# pencere çerçeveleri (siyah, görüşü kesmeyen)
 	for gp in gaps:
@@ -299,6 +425,7 @@ func finalize() -> void:
 		mi.multimesh = mm
 		mi.material_override = _type_mat(ck.z)
 		add_child(mi)
+		_mmis.append([mi, ck.z])
 	_pending.clear()
 	var cells: Array = []
 	for id in bpos.size():
@@ -306,11 +433,20 @@ func finalize() -> void:
 	G.grid.refresh(cells)
 	finalized = true
 
+func set_far(on: bool) -> void:
+	if on == far_lod:
+		return
+	far_lod = on
+	for e in _mmis:
+		var mi: MultiMeshInstance3D = e[0]
+		if is_instance_valid(mi) and mi.multimesh != null:
+			mi.multimesh.mesh = meshes_far[e[1]] if on else meshes[e[1]]
+
 func _make_mm(ids: Array, t: int) -> MultiMesh:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
-	mm.mesh = meshes[t]
+	mm.mesh = meshes_far[t] if far_lod else meshes[t]
 	mm.instance_count = ids.size()
 	for i in ids.size():
 		var id: int = ids[i]
@@ -335,6 +471,7 @@ func commit_runtime(from_id: int) -> MultiMeshInstance3D:
 		mi.multimesh = _make_mm(by_t[t], t)
 		mi.material_override = _type_mat(t)
 		add_child(mi)
+		_mmis.append([mi, t])
 		last = mi
 	_pending.clear()
 	_build_support(from_id)
@@ -369,8 +506,8 @@ func _register_cells(id: int, cells: Array) -> void:
 		else:
 			cell_blocks[ci] = PackedInt32Array([id])
 		# lento / pencere üstü: tabanı insan boyundan yüksek blok yerdeki geçişi kapatmaz (kapı, pencere)
-		if top > G.grid.hb[ci] and p.y - s.y * 0.5 < LINTEL:
-			G.grid.hb[ci] = top
+		if top > G.grid.hb[ci] / Grid.HQ and p.y - s.y * 0.5 < LINTEL:
+			G.grid.hb[ci] = Grid.hq(top)
 		if G.grid.kind[ci] < bkind[id] or G.grid.kind[ci] == Grid.K_NONE:
 			G.grid.kind[ci] = bkind[id]
 		cells.append(ci)
@@ -484,6 +621,20 @@ func _destroy_many(ids: Array, center: Vector3, power: float) -> void:
 			if not ok:
 				_kill(dep, bpos[dep] + Vector3(rng.randf_range(-1, 1), 2.0, rng.randf_range(-1, 1)), power * 0.25, cells)
 				queue.append(dep)
+	# delik kenarı: kalan komşu bloklar hafifçe yerinden oynar, kırık yüz kararır (basamaklı "lego" deliği olmaz)
+	var scar_n := 0
+	for id in ids:
+		for nb in blocks_near(bpos[id], 0.8):
+			if bscar[nb] == 0 and balive[nb] == 1 and scar_n < 60:
+				_scar(nb, bpos[id])
+				scar_n += 1
+	# toz bulutu (yıkılan blok sayısıyla büyür)
+	if ids.size() > 0 and G.fx:
+		var cm := Vector3.ZERO
+		for id in ids:
+			cm += bpos[id]
+		cm /= ids.size()
+		G.fx.dust_burst(cm + Vector3(0, 0.6, 0), clampf(sqrt(float(ids.size())) * 0.45, 0.6, 4.5))
 	var changed: Array = []
 	for ci in cells:
 		var mx := 0.0
@@ -491,7 +642,7 @@ func _destroy_many(ids: Array, center: Vector3, power: float) -> void:
 			for o in cell_blocks[ci]:
 				if balive[o] == 1 and bpos[o].y - bsize[o].y * 0.5 < LINTEL:
 					mx = maxf(mx, bpos[o].y + bsize[o].y * 0.5)
-		G.grid.hb[ci] = mx
+		G.grid.hb[ci] = Grid.hq(mx)
 		changed.append(ci)
 	G.grid.refresh(changed)
 	if ids.size() > 0:
@@ -509,6 +660,8 @@ func _kill(id: int, center: Vector3, power: float, cells: Dictionary) -> void:
 		var hh: int = walls[w]["house"]
 		if hh >= 0:
 			houses[hh]["alive"] -= 1
+			# (143) son vuruşun yeri: çökmede duvar bunun tersine devrilir
+			houses[hh]["hit"] = center
 			_check_house(hh)
 		var ow = walls[w]["owner"]
 		if ow != null and is_instance_valid(ow) and ow.has_method("on_block_lost"):
@@ -518,12 +671,244 @@ func _kill(id: int, center: Vector3, power: float, cells: Dictionary) -> void:
 		return
 	_spawn_debris(id, center, power)
 
+# delik kenarındaki blok: 2–4° eğilir, 1–3 cm dışa kayar, kırık yüz ve isle kararır
+func _scar(id: int, from: Vector3) -> void:
+	bscar[id] = 1
+	var mm: MultiMesh = bmm[id]
+	if mm == null:
+		return
+	var out := bpos[id] - from
+	out.y = 0
+	out = out.normalized() * rng.randf_range(0.01, 0.03) if out.length() > 0.01 else Vector3.ZERO
+	var b := Basis(Vector3.UP, brot[id] + rng.randf_range(-0.05, 0.05)) * Basis(Vector3(rng.randf_range(-1, 1), 0.001, rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.03, 0.07))
+	var k := 0.997 if bkind[id] == Grid.K_HOUSE else 0.965
+	mm.set_instance_transform(bidx[id], Transform3D(b * Basis.from_scale(bsize[id] * k * rng.randf_range(0.9, 0.98)), bpos[id] + out))
+	var c := bcol[id]
+	var d := c.darkened(rng.randf_range(0.12, 0.3))
+	d.a = c.a
+	mm.set_instance_color(bidx[id], d)
+
 func _spawn_debris(id: int, center: Vector3, power: float) -> void:
 	var p := bpos[id]
 	var s := bsize[id]
-	if debris.size() >= MAX_DEBRIS or s.length() < 0.15:
-		_add_rubble(p + Vector3(rng.randf_range(-1.2, 1.2), 0, rng.randf_range(-1.2, 1.2)), s * rng.randf_range(0.7, 0.95), bcol[id])
+	if btype[id] == T_FENCE:
+		_fence_debris(id, center, power)
 		return
+	if btype[id] == T_SANDBAG:
+		_bag_burst(id, center, power)
+		return
+	# (67) malzemeye göre kırılma: tuğla tuğla tuğla, sıva kabuk + altındaki tuğla, beton levha + donatı, ahşap
+	# kalas / kıymık, sac bükük levha, kerpiç ufalanır; taş düzensiz parça (aşağıda)
+	var mat := mat_of(bcol[id])
+	if mat != "stone" and _mat_debris(id, mat, center, power):
+		return
+	# blok tek parça uçmaz: 2–3 düzensiz parçaya ayrılır; biri fizikle savrulur (sınır dolmadıysa), kalanı dibe
+	# moloz olur; ince kırıntılar parçacık
+	var col := bcol[id]
+	if G.fx:
+		for i in 3:
+			var cc := col.darkened(rng.randf_range(0.0, 0.25))
+			G.fx.emit(Fx.P_DEBRIS, p + Vector3(rng.randf_range(-0.2, 0.2), rng.randf_range(-0.15, 0.15), rng.randf_range(-0.2, 0.2)),
+				Vector3(rng.randf_range(-3, 3), rng.randf_range(1.5, 5.0), rng.randf_range(-3, 3)) * clampf(power, 0.3, 1.5), rng.randf_range(0.6, 1.1), 0.05, 0.05, 11.0, 0.4, Color(cc.r, cc.g, cc.b, 1.0))
+	var parts := 2 if s.length() < 0.6 else 3
+	for i in parts:
+		var ps := Vector3(s.x * rng.randf_range(0.35, 0.6), s.y * rng.randf_range(0.5, 0.9), s.z * rng.randf_range(0.6, 1.0))
+		var pp := p + Basis(Vector3.UP, brot[id]) * Vector3((float(i) - (parts - 1) * 0.5) * s.x * 0.45, rng.randf_range(-0.1, 0.1), 0.0)
+		if i == 0 and debris.size() < MAX_DEBRIS and s.length() >= 0.15:
+			_debris_body(pp, ps, col, brot[id], center, power)
+		elif i == 0 or rng.randf() < 0.55:
+			var dd := pp - center
+			dd.y = 0
+			var fall := Vector3(rng.randf_range(-0.9, 0.9), 0, rng.randf_range(-0.9, 0.9)) + (dd.normalized() if dd.length() > 0.01 else Vector3.ZERO) * rng.randf_range(0.2, 1.4) * clampf(power, 0.2, 1.2)
+			_add_rubble(Vector3(pp.x + fall.x, 0.0, pp.z + fall.z), ps, col)
+
+# blok malzemesi: renk alfasındaki Arch.FAC_A kodu; kod yoksa (alfa 1) renkten (kırmızımsı → tuğla, gri → beton, diğer sıva)
+static func mat_of(c: Color) -> String:
+	var mid := int(round((1.0 - c.a) * 10.0))
+	match mid:
+		1:
+			return "stone"
+		2, 9:
+			return "wood"
+		3, 8:
+			return "metal"
+		4, 10:
+			return "concrete"
+		5:
+			return "adobe"
+		6:
+			return "brick"
+		7:
+			return "plaster"
+	var mx := maxf(c.r, maxf(c.g, c.b))
+	var mn := minf(c.r, minf(c.g, c.b))
+	var sat := (mx - mn) / maxf(mx, 0.001)
+	if c.r - c.b > 0.12 and sat > 0.3 and c.g <= c.r:
+		return "brick"
+	if sat < 0.1 and mx < 0.6:
+		return "concrete"
+	return "plaster"
+
+const BRICK_COL := Color(0.62, 0.32, 0.24, 0.6)   # tuğla (FAC_A brick = 0.4 → alfa kodu; sıvanın altındaki)
+
+func _dust(p: Vector3, col: Color, n: int, power: float, big := false) -> void:
+	if G.fx == null:
+		return
+	for i in n:
+		G.fx.emit(Fx.P_SMOKE, p + Vector3(rng.randf_range(-0.3, 0.3), rng.randf_range(-0.1, 0.3), rng.randf_range(-0.3, 0.3)),
+			Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(0.4, 1.6), rng.randf_range(-1.2, 1.2)) * clampf(power, 0.4, 1.4),
+			rng.randf_range(1.5, 3.0) * (1.5 if big else 1.0), 0.3, (1.6 if big else 1.0) * rng.randf_range(0.8, 1.4), -0.1, 1.0, Color(col.r, col.g, col.b, 0.45))
+
+# parçayı dibe moloz bırak (patlamadan uzağa kayar)
+func _drop(p: Vector3, s: Vector3, col: Color, center: Vector3, power: float) -> void:
+	var dd := p - center
+	dd.y = 0
+	var fall := Vector3(rng.randf_range(-0.9, 0.9), 0, rng.randf_range(-0.9, 0.9)) + (dd.normalized() if dd.length() > 0.01 else Vector3.ZERO) * rng.randf_range(0.2, 1.6) * clampf(power, 0.2, 1.3)
+	_add_rubble(Vector3(p.x + fall.x, 0.0, p.z + fall.z), s, col)
+
+func _mat_debris(id: int, mat: String, center: Vector3, power: float) -> bool:
+	var p := bpos[id]
+	var s := bsize[id]
+	var col := bcol[id]
+	var b := Basis(Vector3.UP, brot[id])
+	var fly := debris.size() < MAX_DEBRIS and s.length() >= 0.15
+	match mat:
+		"brick":
+			# tuğla tuğla: 0,22 × 0,07 × 0,1 m'lik parçalar, kırmızımsı toz
+			var n := clampi(int(s.x * s.y / 0.03), 4, 9)
+			for i in n:
+				var q := p + b * Vector3(rng.randf_range(-0.45, 0.45) * s.x, rng.randf_range(-0.4, 0.4) * s.y, 0)
+				var bs := Vector3(0.22, 0.07, 0.1) * rng.randf_range(0.7, 1.05)
+				if i == 0 and fly:
+					_debris_body(q, bs * 1.6, col, brot[id], center, power)
+				else:
+					_drop(q, bs, col.darkened(rng.randf_range(0.0, 0.2)), center, power)
+			_dust(p, Color(0.62, 0.42, 0.34), 2, power)
+		"plaster":
+			# sıva kabuğu (ince, açık renk) dökülür, içinden tuğla çıkar
+			for i in 2:
+				var q := p + b * Vector3((i - 0.5) * s.x * 0.45, 0, 0)
+				_drop(q, Vector3(s.x * 0.45, s.y * 0.6, 0.03), col, center, power)
+			for i in 3:
+				var q2 := p + b * Vector3(rng.randf_range(-0.4, 0.4) * s.x, rng.randf_range(-0.3, 0.3) * s.y, 0)
+				var bs2 := Vector3(0.22, 0.07, 0.1) * rng.randf_range(0.8, 1.1)
+				if i == 0 and fly:
+					_debris_body(q2, Vector3(s.x * 0.5, s.y * 0.7, s.z * 0.8), BRICK_COL, brot[id], center, power)
+				else:
+					_drop(q2, bs2, BRICK_COL.darkened(rng.randf_range(0.0, 0.2)), center, power)
+			_dust(p, Color(0.88, 0.86, 0.82), 3, power)
+		"concrete":
+			# beton: bir-iki iri levha + bükük donatı çubukları
+			var parts := 2
+			for i in parts:
+				var q3 := p + b * Vector3((i - 0.5) * s.x * 0.5, 0, 0)
+				var ps := Vector3(s.x * rng.randf_range(0.45, 0.6), s.y * rng.randf_range(0.6, 0.95), s.z * rng.randf_range(0.7, 1.0))
+				if i == 0 and fly:
+					_debris_body(q3, ps, col, brot[id], center, power)
+				else:
+					_drop(q3, ps, col, center, power)
+			for i in rng.randi_range(1, 3):
+				var rq := p + b * Vector3(rng.randf_range(-0.4, 0.4) * s.x, 0, 0)
+				var gy := G.terrain.ground_h(rq) if G.terrain else 0.0
+				var rb := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.9, 0.9))
+				_add_rubble(rq, Vector3(0.025, 0.025, rng.randf_range(0.6, 1.2)), Color(0.24, 0.2, 0.17, 0.8), Transform3D(rb * Basis.from_scale(Vector3(0.025, 0.025, rng.randf_range(0.6, 1.2))), Vector3(rq.x, gy + 0.12, rq.z)))
+			_dust(p, Color(0.7, 0.7, 0.68), 3, power)
+		"wood":
+			# ahşap: boyuna kalaslar (savrulur) ve kıymıklar
+			for i in 3:
+				var q4 := p + b * Vector3(0, (i - 1) * s.y * 0.3, 0)
+				var ps4 := Vector3(s.x * rng.randf_range(0.7, 1.0), maxf(s.y * 0.28, 0.04), maxf(s.z * 0.4, 0.04))
+				if i == 0 and fly:
+					_debris_body(q4, ps4, col, brot[id] + rng.randf_range(-0.3, 0.3), center, power * 1.2)
+				else:
+					_drop(q4, ps4, col.darkened(rng.randf_range(0.0, 0.15)), center, power)
+			if G.fx:
+				for i in 6:
+					G.fx.emit(Fx.P_STREAK, p, Vector3(rng.randf_range(-4, 4), rng.randf_range(2, 6), rng.randf_range(-4, 4)) * clampf(power, 0.3, 1.3), rng.randf_range(0.5, 0.9), 0.03, 0.02, 11.0, 0.4, Color(col.r * 0.8, col.g * 0.7, col.b * 0.6, 1.0))
+		"metal":
+			# sac: ince geniş levha, bükük
+			var ps5 := Vector3(s.x * rng.randf_range(0.7, 1.0), s.y * rng.randf_range(0.7, 1.0), 0.02)
+			if fly:
+				_debris_body(p, Vector3(ps5.x, ps5.y, 0.06), col, brot[id], center, power * 1.3)
+			else:
+				var gy5 := G.terrain.ground_h(p) if G.terrain else 0.0
+				var bb := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, PI * 0.5 + rng.randf_range(-0.3, 0.3)) * Basis(Vector3.FORWARD, rng.randf_range(-0.4, 0.4))
+				_add_rubble(p, ps5, col, Transform3D(bb * Basis.from_scale(ps5), Vector3(p.x, gy5 + 0.05, p.z)))
+			if G.fx:
+				for i in 4:
+					G.fx.emit(Fx.P_SPARK, p, Vector3(rng.randf_range(-3, 3), rng.randf_range(1, 4), rng.randf_range(-3, 3)), rng.randf_range(0.2, 0.4), 0.04, 0.03, 9.0, 1.0, Color(1.0, 0.85, 0.55))
+		"adobe":
+			# kerpiç ufalanır: çok sayıda küçük topak + kalın kahverengi toz
+			for i in 5:
+				var q6 := p + b * Vector3(rng.randf_range(-0.45, 0.45) * s.x, rng.randf_range(-0.3, 0.3) * s.y, 0)
+				_drop(q6, s * rng.randf_range(0.18, 0.32), col.darkened(rng.randf_range(0.0, 0.2)), center, power)
+			_dust(p, Color(0.66, 0.55, 0.4), 5, power, true)
+		_:
+			return false
+	return true
+
+# kum torbası parçalanmaz: yırtılır, kum fışkırır, sönmüş torba dibe düşer
+var bag_rubble: MultiMesh = null
+var bag_n := 0
+func _bag_burst(id: int, center: Vector3, power: float) -> void:
+	var p := bpos[id]
+	var s := bsize[id]
+	if G.fx:
+		var sand := G.fx.sand_col.darkened(0.15)
+		for i in 5:
+			G.fx.emit(Fx.P_DEBRIS, p, Vector3(rng.randf_range(-2.5, 2.5), rng.randf_range(1.0, 3.5), rng.randf_range(-2.5, 2.5)) * clampf(power, 0.4, 1.4), rng.randf_range(0.5, 0.9), 0.04, 0.04, 10.0, 0.5, Color(sand.r, sand.g, sand.b, 1.0))
+	if bag_rubble == null:
+		bag_rubble = MultiMesh.new()
+		bag_rubble.transform_format = MultiMesh.TRANSFORM_3D
+		bag_rubble.use_colors = true
+		bag_rubble.mesh = meshes[T_SANDBAG]
+		bag_rubble.instance_count = 2000
+		bag_rubble.visible_instance_count = 0
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = bag_rubble
+		mi.material_override = Mats.sandbag()
+		add_child(mi)
+	var away := p - center
+	away.y = 0
+	var off := (away.normalized() if away.length() > 0.01 else Vector3.ZERO) * rng.randf_range(0.1, 0.8) + Vector3(rng.randf_range(-0.3, 0.3), 0, rng.randf_range(-0.3, 0.3))
+	var gy: float = G.terrain.ground_h(p) if G.terrain else 0.0
+	var sc := Vector3(s.x * rng.randf_range(0.9, 1.05), s.y * 0.4, s.z * rng.randf_range(0.95, 1.15))
+	var b := Basis(Vector3.UP, brot[id] + rng.randf_range(-0.6, 0.6)) * Basis(Vector3.RIGHT, rng.randf_range(-0.15, 0.15))
+	var i := bag_n % 2000
+	bag_rubble.set_instance_transform(i, Transform3D(b.scaled(sc), Vector3(p.x + off.x, gy + sc.y * 0.3, p.z + off.z)))
+	bag_rubble.set_instance_color(i, bcol[id].darkened(0.12))
+	bag_n += 1
+	bag_rubble.visible_instance_count = mini(bag_n, 2000)
+
+func _fence_debris(id: int, center: Vector3, power: float) -> void:
+	var p := bpos[id]
+	var s := bsize[id]
+	if debris.size() >= MAX_DEBRIS:
+		return
+	var rb := RigidBody3D.new()
+	rb.collision_layer = 2
+	rb.collision_mask = 1 | 2
+	rb.mass = 8.0
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = s * 0.9
+	cs.shape = bs
+	rb.add_child(cs)
+	var m := MeshInstance3D.new()
+	m.mesh = meshes[T_FENCE]
+	m.scale = s * 0.97
+	m.material_override = _color_mat(bcol[id], T_FENCE)
+	rb.add_child(m)
+	add_child(rb)
+	rb.global_transform = Transform3D(Basis(Vector3.UP, brot[id]), p)
+	var away := p - center
+	away.y = 0
+	var dir := away.normalized() if away.length() > 0.01 else Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+	rb.linear_velocity = dir * rng.randf_range(1.5, 5.0) * power + Vector3(0, rng.randf_range(1.0, 4.0) * power, 0)
+	rb.angular_velocity = Vector3(rng.randf_range(-6, 6), rng.randf_range(-6, 6), rng.randf_range(-6, 6))
+	debris.append([rb, G.time + rng.randf_range(3.0, 5.0), bcol[id], s, T_FENCE])
+
+func _debris_body(p: Vector3, s: Vector3, col: Color, rot: float, center: Vector3, power: float) -> void:
 	var rb := RigidBody3D.new()
 	rb.collision_layer = 2
 	rb.collision_mask = 1 | 2
@@ -534,12 +919,12 @@ func _spawn_debris(id: int, center: Vector3, power: float) -> void:
 	cs.shape = bs
 	rb.add_child(cs)
 	var m := MeshInstance3D.new()
-	m.mesh = meshes[btype[id]]
+	m.mesh = chunks[rng.randi() % chunks.size()]
 	m.scale = s * 0.97
-	m.material_override = _color_mat(bcol[id], btype[id])
+	m.material_override = _color_mat(col, T_BOX)
 	rb.add_child(m)
 	add_child(rb)
-	rb.global_transform = Transform3D(Basis(Vector3.UP, brot[id]), p)
+	rb.global_transform = Transform3D(Basis(Vector3.UP, rot), p)
 	var away := p - center
 	away.y = 0
 	var dl := away.length()
@@ -547,20 +932,47 @@ func _spawn_debris(id: int, center: Vector3, power: float) -> void:
 	var k := clampf(1.0 - dl / 6.0, 0.25, 1.0)
 	rb.linear_velocity = dir * rng.randf_range(2.0, 7.5) * power * k + Vector3(0, rng.randf_range(1.5, 6.0) * power * k, 0)
 	rb.angular_velocity = Vector3(rng.randf_range(-8, 8), rng.randf_range(-8, 8), rng.randf_range(-8, 8)) * minf(power, 1.5)
-	debris.append([rb, G.time + rng.randf_range(3.0, 5.0), bcol[id], s, btype[id]])
+	debris.append([rb, G.time + rng.randf_range(3.0, 5.0), col, s, T_BOX])
+
+func _rub_mm(p: Vector3, v: int) -> Array:
+	var k := Vector3i(int(floor(p.x / RUB_REGION)), int(floor(p.z / RUB_REGION)), v)
+	if not rub_mm.has(k):
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = chunks[v]
+		mm.instance_count = RUB_PER_REGION
+		mm.visible_instance_count = 0
+		var rmi := MultiMeshInstance3D.new()
+		rmi.multimesh = mm
+		rmi.material_override = Mats.masonry()
+		add_child(rmi)
+		rub_mm[k] = [mm, 0]
+		if rubble == null:
+			rubble = mm
+	return rub_mm[k]
 
 func _add_rubble(p: Vector3, s: Vector3, col: Color, xf := Transform3D()) -> void:
-	var i := rubble_n % RUBBLE_CAP
+	var v := rng.randi() % chunks.size()
+	var e: Array = _rub_mm(xf.origin if xf != Transform3D() else p, v)
+	var mm: MultiMesh = e[0]
+	var i: int = int(e[1]) % RUB_PER_REGION
 	if xf == Transform3D():
-		var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.4, 0.4))
-		xf = Transform3D(b.scaled(s), Vector3(p.x, s.y * 0.35, p.z))
-	rubble.set_instance_transform(i, xf)
-	rubble.set_instance_color(i, col.darkened(0.08))
+		var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.5, 0.5)) * Basis(Vector3.FORWARD, rng.randf_range(-0.4, 0.4))
+		var gy: float = G.terrain.ground_h(p) if G.terrain else 0.0
+		xf = Transform3D(b * Basis.from_scale(s), Vector3(p.x, maxf(p.y, gy) + s.y * 0.22, p.z))
+	mm.set_instance_transform(i, xf)
+	var c := col.darkened(rng.randf_range(0.04, 0.2))
+	c.a = col.a
+	mm.set_instance_color(i, c)
+	e[1] = int(e[1]) + 1
 	rubble_n += 1
-	rubble.visible_instance_count = mini(rubble_n, RUBBLE_CAP)
+	mm.visible_instance_count = mini(int(e[1]), RUB_PER_REGION)
 
 func _process(_dt: float) -> void:
 	_roof_cut(_dt)
+	if not collapsing.is_empty():
+		_collapse_tick(_dt)
 	var i := debris.size() - 1
 	while i >= 0:
 		var d: Array = debris[i]
@@ -571,10 +983,285 @@ func _process(_dt: float) -> void:
 			var xf := rb.global_transform
 			var s: Vector3 = d[3]
 			if d[4] != T_FENCE and xf.origin.y > -1.0:
-				_add_rubble(xf.origin, s, d[2], Transform3D(xf.basis.orthonormalized().scaled(s * 0.97), Vector3(xf.origin.x, maxf(xf.origin.y, s.y * 0.2), xf.origin.z)))
+				_add_rubble(xf.origin, s, d[2], Transform3D(xf.basis.orthonormalized() * Basis.from_scale(s * 0.97), Vector3(xf.origin.x, maxf(xf.origin.y, s.y * 0.2), xf.origin.z)))
 			rb.queue_free()
 			debris.remove_at(i)
 		i -= 1
+
+func _collapse_tick(dt: float) -> void:
+	var i := collapsing.size() - 1
+	while i >= 0:
+		var e: Dictionary = collapsing[i]
+		e["t"] = float(e["t"]) + dt
+		var t: float = e["t"]
+		var h: Dictionary = houses[e["h"]]
+		var c: Vector3 = h["center"]
+		var sz: Vector2 = h["size"]
+		var top: float = h["top"]
+		var roof: Node3D = e["roof"]
+		# çatı 1,3 sn'de eğilerek çöker; yere değince kırık levhalara ayrılır
+		if roof != null and is_instance_valid(roof) and roof.visible:
+			var k := clampf(t / 1.3, 0.0, 1.0)
+			roof.position.y = float(e["y0"]) - maxf(top - 0.9, 0.5) * k * k
+			roof.basis = Basis(e["ax"], 0.3 * k * k) * (e["b0"] as Basis)
+			if k >= 1.0:
+				roof.visible = false
+				for j in 8:
+					var p := c + Vector3(rng.randf_range(-sz.x, sz.x) * 0.38, 1.0, rng.randf_range(-sz.y, sz.y) * 0.38)
+					if debris.size() < MAX_DEBRIS:
+						_debris_body(p, Vector3(rng.randf_range(0.7, 1.5), 0.2, rng.randf_range(0.6, 1.3)), Color(0.55, 0.36, 0.28, 0.9), rng.randf() * TAU, p + Vector3(0, 2, 0), 0.25)
+					else:
+						_add_rubble(Vector3(p.x, 0.0, p.z), Vector3(rng.randf_range(0.7, 1.4), 0.2, rng.randf_range(0.6, 1.2)), Color(0.55, 0.36, 0.28, 0.9))
+		# duvarlar tepeden aşağı: kesme yüksekliği 2,2 sn'de tepeden 1 m'ye iner; üstündekiler (kalıntı payı hariç) yıkılır
+		var cut := lerpf(top, 1.0, clampf(t / 2.2, 0.0, 1.0))
+		var kill: Array = []
+		var keep: Dictionary = e["keep"]
+		for id in e["ids"]:
+			if balive[id] == 1 and bpos[id].y > cut and not keep.has(id):
+				kill.append(id)
+				if kill.size() >= 45:
+					break
+		if not kill.is_empty():
+			_destroy_many(kill, Vector3(c.x, top + 1.0, c.z), 0.22)
+		# toz: çöküş boyunca üç dalga
+		var dw: int = e["dust"]
+		if dw < 3 and t > dw * 0.8:
+			e["dust"] = dw + 1
+			if G.fx:
+				G.fx.dust_burst(c + Vector3(0, maxf(cut, 1.0), 0), maxf(sz.x, sz.y) * (0.5 + dw * 0.25))
+		if t > 2.6:
+			_rubble_heap(c, sz, e["ids"])
+			collapsing.remove_at(i)
+		i -= 1
+
+# çöken binanın taban izinde moloz tepesi (ortası yüksek, kenarlara yayılan kırık parça yığını)
+func _rubble_heap(c: Vector3, sz: Vector2, ids: Array) -> void:
+	var col := Color(0.7, 0.68, 0.64)
+	if not ids.is_empty():
+		col = bcol[ids[rng.randi() % ids.size()]]
+	# (67) evin baskın malzemesi: moloz tepesi ve üstündeki parçalar ona göre
+	var mc := {}
+	for k in mini(ids.size(), 60):
+		var mt := mat_of(bcol[ids[(k * 7) % ids.size()]])
+		mc[mt] = int(mc.get(mt, 0)) + 1
+	var mat := "plaster"
+	var best := -1
+	for k in mc:
+		if int(mc[k]) > best:
+			best = int(mc[k])
+			mat = k
+	var R := Vector2(sz.x * 0.55 + 0.6, sz.y * 0.55 + 0.6)
+	var n := clampi(int(sz.x * sz.y * 1.6), 30, 160)
+	var gy: float = G.terrain.ground_h(c) if G.terrain else 0.0
+	# taban: yumuşak moloz tepesi (ortası yüksek, kenarda toprağa gömülü); toz rengi malzemeden
+	var mound_h := clampf(minf(sz.x, sz.y) * 0.14, 0.45, 1.3)
+	var dust_col: Color = {"brick": Color(0.56, 0.38, 0.3, 0.6), "plaster": Color(0.72, 0.68, 0.62, 0.7), "concrete": Color(0.62, 0.62, 0.6, 0.0),
+		"wood": Color(0.42, 0.34, 0.26, 0.8), "adobe": Color(0.66, 0.54, 0.4, 0.5), "stone": Color(0.62, 0.58, 0.52, 0.9), "metal": Color(0.5, 0.5, 0.5, 0.0)}.get(mat, Color(0.62, 0.58, 0.52, 0.7))
+	var mi := MeshInstance3D.new()
+	mi.mesh = _heap_mesh(R * 1.02, mound_h, dust_col)
+	mi.material_override = Mats.masonry()
+	add_child(mi)
+	mi.position = Vector3(c.x, gy - 0.02, c.z)
+	for j in n:
+		var a := rng.randf() * TAU
+		var r := sqrt(rng.randf())
+		var off := Vector3(cos(a) * R.x * r, 0, sin(a) * R.y * r)
+		var hgt := (1.0 - r * r) * clampf(minf(sz.x, sz.y) * 0.16, 0.4, 1.3)
+		var cc := col
+		var sc: Vector3
+		var big := rng.randf() < 0.18
+		match mat:
+			"brick":
+				cc = BRICK_COL if rng.randf() < 0.85 else Color(0.8, 0.78, 0.74, 0.3)
+				sc = Vector3(0.22, 0.07, 0.1) * rng.randf_range(0.8, 1.1) if not big else Vector3(rng.randf_range(0.5, 1.0), 0.2, rng.randf_range(0.3, 0.6))
+			"plaster":
+				# sıva levhası + altındaki tuğla
+				if rng.randf() < 0.5:
+					cc = BRICK_COL
+					sc = Vector3(0.22, 0.07, 0.1) * rng.randf_range(0.8, 1.1)
+				else:
+					sc = Vector3(rng.randf_range(0.3, 0.8), 0.03, rng.randf_range(0.2, 0.6))
+			"wood":
+				sc = Vector3(rng.randf_range(0.8, 2.2), 0.05, rng.randf_range(0.12, 0.22))
+			"concrete", "metal":
+				sc = Vector3(rng.randf_range(0.5, 1.3), rng.randf_range(0.12, 0.2), rng.randf_range(0.4, 1.0)) if big else Vector3(rng.randf_range(0.18, 0.5), rng.randf_range(0.12, 0.25), rng.randf_range(0.16, 0.45))
+			_:
+				sc = Vector3(rng.randf_range(0.6, 1.3), rng.randf_range(0.18, 0.4), rng.randf_range(0.5, 1.1)) if big else Vector3(rng.randf_range(0.18, 0.5), rng.randf_range(0.12, 0.3), rng.randf_range(0.16, 0.45))
+		if rng.randf() < 0.12:
+			cc = cc.darkened(0.3)
+		var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.6, 0.6))
+		_add_rubble(c + off, sc, cc, Transform3D(b * Basis.from_scale(sc), Vector3(c.x + off.x, gy + hgt * rng.randf_range(0.6, 1.0), c.z + off.z)))
+	# beton yapı: tepeden çıkan bükük donatı demirleri
+	if mat == "concrete":
+		for j in clampi(int(sz.x * sz.y * 0.15), 4, 24):
+			var a2 := rng.randf() * TAU
+			var r2 := sqrt(rng.randf()) * 0.8
+			var q := Vector3(c.x + cos(a2) * R.x * r2, 0, c.z + sin(a2) * R.y * r2)
+			var L := rng.randf_range(0.8, 1.8)
+			var rb := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(0.6, 1.3))
+			_add_rubble(q, Vector3(0.03, 0.03, L), Color(0.22, 0.18, 0.15, 0.8), Transform3D(rb * Basis.from_scale(Vector3(0.03, 0.03, L)), Vector3(q.x, gy + mound_h * (1.0 - r2 * r2) + 0.2, q.z)))
+
+# moloz tepesi: kutupsal ızgara, yükseklik (1-r²)·h + yumuşak gürültü; kenarlar toprağa gömülü. Yumuşak gölgeli, tek
+# renkli (eskiden köşe başına rastgele yükseklik + renk + düz gölgeleme: iri faset "alçak poligon" tepe görünümü)
+func _heap_mesh(R: Vector2, h: float, col: Color) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(0)
+	var NA := 40
+	var NR := 10
+	var P := []
+	var seed := rng.randf() * 100.0
+	for ir in NR + 1:
+		var r := (float(ir) + 0.5) / (float(NR) + 0.5)
+		var ring := []
+		for ia in NA:
+			var a := TAU * ia / NA
+			var n := sin(a * 3.0 + seed) * 0.12 + sin(a * 7.0 + seed * 1.7) * 0.06
+			var rr := r * (1.0 + n * 0.5)
+			var bump := 0.85 + 0.15 * sin(a * 5.0 + r * 9.0 + seed) * cos(a * 2.0 - r * 6.0)
+			var y := h * (1.0 - r * r) * bump - 0.06 * r
+			if ir == NR:
+				y = -0.05
+			ring.append(Vector3(cos(a) * R.x * rr, maxf(y, -0.05), sin(a) * R.y * rr))
+		P.append(ring)
+	var c0 := Vector3(0, h * 0.98, 0)
+	st.set_color(col)
+	for ia in NA:
+		var a: Vector3 = P[0][ia]
+		var b: Vector3 = P[0][(ia + 1) % NA]
+		for q in [c0, a, b]:
+			st.add_vertex(q)
+	for ir in NR:
+		for ia in NA:
+			var a: Vector3 = P[ir][ia]
+			var b: Vector3 = P[ir][(ia + 1) % NA]
+			var cc: Vector3 = P[ir + 1][(ia + 1) % NA]
+			var d: Vector3 = P[ir + 1][ia]
+			for q in [a, cc, b, a, d, cc]:
+				st.add_vertex(q)
+	st.generate_normals()
+	return st.commit()
+# (143) duvar devrilmesi: evin vuruşa göre uzak yanındaki duvar, diz hizasının üstü tek levha olarak dış kenarı
+# çevresinde 90° dışa devrilir (yerçekimiyle hızlanarak, yere vurup hafifçe seker), yerde moloz şeridi ve uzun toz
+# bırakır; altında kalan askerler yaralanır. Döndürdüğü: levhaya dönüşen (gizlenen) bloklar
+func _topple_wall(hh: int) -> Dictionary:
+	var h: Dictionary = houses[hh]
+	var hc: Vector3 = h["center"]
+	var hit: Vector3 = h.get("hit", hc + Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)))
+	var away := Vector3(hc.x - hit.x, 0, hc.z - hit.z)
+	away = away.normalized() if away.length() > 0.2 else Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized()
+	# en uzak duvar: ağırlık merkezi vuruştan en uzakta (yönü "away" ile en hizalı)
+	var best := -1
+	var bs := -1e9
+	var info := {}
+	for wi in walls.size():
+		var w: Dictionary = walls[wi]
+		if w["house"] != hh:
+			continue
+		var cen := Vector3.ZERO
+		var n := 0
+		for id in w["blocks"]:
+			if balive[id] == 1:
+				cen += bpos[id]
+				n += 1
+		if n < 6:
+			continue
+		cen /= n
+		var out := Vector3(cen.x - hc.x, 0, cen.z - hc.z)
+		if out.length() < 0.3:
+			continue
+		var sc := out.normalized().dot(away)
+		if sc > bs:
+			bs = sc
+			best = wi
+			info = {"cen": cen, "out": out.normalized()}
+	var hidden := {}
+	if best < 0:
+		return hidden
+	var nrm: Vector3 = info["out"]
+	var tan := Vector3(-nrm.z, 0, nrm.x)
+	var base_y := 0.6
+	var lo := 1e9
+	var hi := -1e9
+	var top := 0.0
+	var col := Color(0.7, 0.68, 0.64)
+	var cells := {}
+	for id in walls[best]["blocks"]:
+		if balive[id] == 0 or bpos[id].y < base_y:
+			continue
+		var cw: Vector3 = info["cen"]
+		var along: float = (bpos[id] - cw).dot(tan)
+		lo = minf(lo, along - bsize[id].x * 0.5)
+		hi = maxf(hi, along + bsize[id].x * 0.5)
+		top = maxf(top, bpos[id].y + bsize[id].y * 0.5)
+		col = bcol[id]
+		balive[id] = 0
+		var mm: MultiMesh = bmm[id]
+		if mm != null:
+			mm.set_instance_transform(bidx[id], Transform3D(Basis().scaled(Vector3(0.001, 0.001, 0.001)), Vector3(bpos[id].x, -5, bpos[id].z)))
+		for ci in bcells[id]:
+			cells[ci] = true
+		hidden[id] = true
+		h["alive"] -= 1
+	if hidden.size() < 4 or hi <= lo:
+		return hidden
+	# geçiş ızgarası: devrilen duvarın yeri açılır
+	var changed: Array = []
+	for ci in cells:
+		var mx := 0.0
+		if cell_blocks.has(ci):
+			for o in cell_blocks[ci]:
+				if balive[o] == 1 and bpos[o].y - bsize[o].y * 0.5 < LINTEL:
+					mx = maxf(mx, bpos[o].y + bsize[o].y * 0.5)
+		G.grid.hb[ci] = Grid.hq(mx)
+		changed.append(ci)
+	G.grid.refresh(changed)
+	var L := hi - lo
+	var H := maxf(top - base_y, 0.8)
+	var cen0: Vector3 = info["cen"]
+	var mid: Vector3 = cen0 + tan * ((lo + hi) * 0.5)
+	# levha: dış yüzü tabanda menteşe
+	var pivot := Node3D.new()
+	add_child(pivot)
+	pivot.position = Vector3(mid.x, base_y, mid.z) + nrm * 0.15
+	# yerel x = duvar boyu, y = yukarı, z = içeri (sağ elli: tan × up = -nrm); x çevresinde eksi dönüş tepeyi dışa yatırır
+	pivot.basis = Basis(tan, Vector3.UP, -nrm)
+	var slab := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(L, H, 0.3)
+	slab.mesh = bm
+	var sm := StandardMaterial3D.new()
+	sm.albedo_color = col
+	sm.roughness = 0.95
+	slab.material_override = sm
+	slab.position = Vector3(0, H * 0.5, 0.15)
+	pivot.add_child(slab)
+	# dışa devril: X ekseni (tan) çevresinde, -Z (dış) yönüne
+	var tw := pivot.create_tween()
+	tw.tween_property(pivot, "rotation:x", pivot.rotation.x - PI * 0.5, 1.15).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+	tw.tween_property(pivot, "rotation:x", pivot.rotation.x - PI * 0.5 + 0.06, 0.12).set_ease(Tween.EASE_OUT)
+	tw.tween_property(pivot, "rotation:x", pivot.rotation.x - PI * 0.5, 0.1).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func():
+		var land: Vector3 = Vector3(mid.x, 0, mid.z) + nrm * (H * 0.5 + 0.3)
+		if G.fx:
+			G.fx.dust_burst(land + Vector3(0, 0.4, 0), clampf(L * 0.35, 1.2, 4.0))
+		Sfx.play3d("crumble", land, 2.0)
+		# altında kalanlar
+		for u in G.near(land, maxf(L, H) * 0.6):
+			if u is Soldier and u.alive:
+				var rel: Vector3 = u.position - land
+				if absf(rel.dot(tan)) < L * 0.5 and absf(rel.dot(nrm)) < H * 0.5 + 0.3:
+					u.take_damage(randf_range(60.0, 120.0), null, "blast")
+		# levha kırılır: moloz şeridi
+		var nr := clampi(int(L * H * 1.2), 8, 70)
+		for j in nr:
+			var a := rng.randf_range(-0.5, 0.5) * L
+			var b := rng.randf_range(0.0, 1.0) * H
+			var p := Vector3(mid.x, 0, mid.z) + tan * a + nrm * (b + 0.3)
+			var sc := Vector3(rng.randf_range(0.25, 0.8), rng.randf_range(0.12, 0.3), rng.randf_range(0.2, 0.6))
+			_add_rubble(p, sc, col.darkened(rng.randf_range(0.0, 0.25)), Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(sc), Vector3(p.x, sc.y * 0.4, p.z)))
+		pivot.queue_free())
+	return hidden
 
 func _check_house(hh: int) -> void:
 	var h: Dictionary = houses[hh]
@@ -583,17 +1270,29 @@ func _check_house(hh: int) -> void:
 	if float(h["alive"]) / float(h["total"]) < 0.74:
 		h["collapsed"] = true
 		var roof: Node3D = h["roof"]
-		if roof and is_instance_valid(roof):
-			roof.visible = false
-		# çatı parçaları
+		# kat kat çökme: çatı eğilerek iner, duvarlar tepeden aşağı yıkılır (bir kısmı kırık kalıntı olarak durur),
+		# en sonda taban izinde moloz tepesi kalır (bkz. _collapse_tick)
+		var ids: Array = []
+		var keep := {}
+		for w in walls:
+			if w["house"] == hh:
+				for id in w["blocks"]:
+					if balive[id] == 1:
+						ids.append(id)
+						if rng.randf() < 0.18:
+							keep[id] = true
+		# (143) vuruşun öbür yanındaki duvar tek parça dışa devrilir (diğerleri tepeden aşağı çöker)
+		var toppled := _topple_wall(hh)
+		ids = ids.filter(func(x): return balive[x] == 1 and not toppled.has(x))
+		collapsing.append({"h": hh, "t": 0.0, "roof": roof, "y0": roof.position.y if roof and is_instance_valid(roof) else 0.0,
+			"b0": roof.basis if roof and is_instance_valid(roof) else Basis(), "ax": Vector3(rng.randf_range(-1, 1), 0, rng.randf_range(-1, 1)).normalized(),
+			"ids": ids, "keep": keep, "dust": 0})
+		# cephe süsü (balkon, pencere, tabela): yalnız çökünce gizlenir
+		var deco = h.get("deco", null)
+		if deco != null and is_instance_valid(deco):
+			deco.visible = false
 		var c: Vector3 = h["center"]
 		var sz: Vector2 = h["size"]
-		for i in 10:
-			var p := c + Vector3(rng.randf_range(-sz.x, sz.x) * 0.4, h["top"], rng.randf_range(-sz.y, sz.y) * 0.4)
-			var id := add_block(p, Vector3(rng.randf_range(0.8, 1.8), 0.22, rng.randf_range(0.8, 1.6)), rng.randf() * TAU, Color(0.78, 0.76, 0.72), T_BOX, -1, 0, Grid.K_NONE, false)
-			balive[id] = 0
-			_pending.clear()
-			_spawn_debris(id, p + Vector3(0, 2, 0), 0.4)
 		G.fx.dust_burst(c + Vector3(0, 1.5, 0), maxf(sz.x, sz.y) * 0.5)
 		Sfx.play3d("collapse", c, 2.0)
 		# içerideki askerler enkaz altında kalır

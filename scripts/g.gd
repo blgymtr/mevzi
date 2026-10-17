@@ -22,7 +22,8 @@ var bal: Ballistics
 var hud: Hud
 var player: PlayerCtl
 var logi: Logistics
-var mode := "bases"        # bases | conquest | wargoals
+var mode := "bases"        # Modes.MODE_NAME anahtarları (bases | conquest | wargoals | defend | assault | ctf | annihilation | vp | historical)
+var op_id := "easting73"   # tarihsel operasyon (Modes.OPS)
 var modes: Modes = null
 var weather: Weather = null
 var weather_pref := "dynamic"
@@ -53,21 +54,75 @@ var supply := [600.0, 600.0]
 var cap_max := [0, 0]
 var cap_used := [0, 0]
 var game_over := false
+var vis_freeze := false       # ölçüm (perf8k): tespit güncellemesi kapalı
 var winner := -1
 var rng := RandomNumberGenerator.new()
 var smokes: Array = []      # [Vector3 merkez, yarıçap, bitiş zamanı]
 var stats := {"kills": [0, 0], "lost": [0, 0], "built": [0, 0], "pows": [0, 0]}
 var reveal := [0.0, 0.0]      # istihbarat: bu zamana kadar düşman yapıları görünür
 var fob_sites: Array = []   # harita üzerindeki ileri üs noktaları
+var zone_sites: Array = []  # haritada tanımlı hedef bölgeleri ({p, name}); boşsa Modes kendisi yerleştirir
+var grass_stream := false   # büyük harita: ot yalnız kameranın çevresinde üretilir
 var hq_pos := [Vector3.ZERO, Vector3.ZERO]
 
 var _hash := {}
 var _vis_t := 0.0
 
+# yükleme ölçümü (mapprof testi): aşama süresi ve bellek
+var prof_on := false
+var _prof_t := 0
+func prof(label: String) -> void:
+	if main != null and main.has_method("load_step"):
+		main.load_step(label)
+	if not prof_on:
+		return
+	var now := Time.get_ticks_msec()
+	print("PROF %-16s +%6d ms  static=%5d MB  vram=%5d MB" % [label, now - _prof_t, OS.get_static_memory_usage() / 1048576, int(Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED)) / 1048576])
+	_prof_t = now
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	rng.randomize()
 	RenderingServer.global_shader_parameter_add("game_time", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	# görsel savaş sisi (FogOfWar dokuları atanana kadar kapalı)
+	RenderingServer.global_shader_parameter_add("fow_on", RenderingServer.GLOBAL_VAR_TYPE_FLOAT, 0.0)
+	RenderingServer.global_shader_parameter_add("fow_vis", RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, null)
+	RenderingServer.global_shader_parameter_add("fow_exp", RenderingServer.GLOBAL_VAR_TYPE_SAMPLER2D, null)
+	# ağaç/çalı şok dalgası için son 4 büyük patlama: (x, z, başlangıç, güç)
+	for i in 4:
+		RenderingServer.global_shader_parameter_add("blast%d" % i, RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, -100, 0))
+	# rotor rüzgârı (roadmap 22): alçaktaki 4 helikopter (x, z, güç 0..1, yarıçap m) — ağaç ve ot savrulur
+	for i in 4:
+		RenderingServer.global_shader_parameter_add("rotor%d" % i, RenderingServer.GLOBAL_VAR_TYPE_VEC4, Vector4(0, 0, 0, 1))
+
+var _rotor_t := 0.0
+var rotor_wash: Array = [Vector4(0, 0, 0, 1), Vector4(0, 0, 0, 1), Vector4(0, 0, 0, 1), Vector4(0, 0, 0, 1)]
+# kameraya en yakın, alçakta uçan / inen 4 helikopterin rotor rüzgârı
+func _update_rotor_wash() -> void:
+	var cands: Array = []
+	var cp: Vector3 = cam.position if cam != null else Vector3.ZERO
+	for u in units:
+		if not is_instance_valid(u) or not u.alive or not (u is Vehicle) or not (u.vtype in ["heli", "transport"]):
+			continue
+		var alt: float = u.hull.position.y
+		var k: float = u.rotor_rpm * clampf(1.0 - alt / 26.0, 0.0, 1.0)
+		if k <= 0.02:
+			continue
+		cands.append([Vector2(u.position.x - cp.x, u.position.z - cp.z).length(), u, k, alt])
+	cands.sort_custom(func(a, b): return a[0] < b[0])
+	for i in 4:
+		if i < cands.size():
+			var u: Vehicle = cands[i][1]
+			var rr: float = u.ext.y * 2.2 + cands[i][3] * 0.6
+			rotor_wash[i] = Vector4(u.position.x, u.position.z, cands[i][2], rr)
+		else:
+			rotor_wash[i] = Vector4(0, 0, 0, 1)
+		RenderingServer.global_shader_parameter_set("rotor%d" % i, rotor_wash[i])
+
+var _blast_i := 0
+func push_blast(p: Vector3, power: float) -> void:
+	RenderingServer.global_shader_parameter_set("blast%d" % _blast_i, Vector4(p.x, p.z, time, power))
+	_blast_i = (_blast_i + 1) % 4
 
 func reset() -> void:
 	units.clear()
@@ -75,6 +130,8 @@ func reset() -> void:
 	smokes.clear()
 	ais.clear()
 	time = 0.0
+	for i in 4:
+		RenderingServer.global_shader_parameter_set("blast%d" % i, Vector4(0, 0, -100, 0))
 	supply = [600.0, 600.0]
 	cap_max = [0, 0]
 	cap_used = [0, 0]
@@ -85,6 +142,8 @@ func reset() -> void:
 	reveal = [0.0, 0.0]
 	zone_t = [0.0, 0.0]
 	fob_sites.clear()
+	zone_sites.clear()
+	grass_stream = false
 	_hash.clear()
 	Squad._count = [0, 0]
 
@@ -103,10 +162,15 @@ func step(dt: float) -> void:
 		if smokes[i][2] < time:
 			smokes.remove_at(i)
 		i -= 1
+	_rotor_t -= dt
+	if _rotor_t <= 0.0:
+		_rotor_t = 0.1
+		_update_rotor_wash()
 	_vis_t -= dt
 	if _vis_t <= 0.0:
 		_vis_t = 0.25
-		_update_visibility()
+		if not vis_freeze:
+			_update_visibility()
 		_update_cap()
 
 # ------------------------------------------------------------ uzamsal karma
@@ -156,28 +220,188 @@ func friends_near(p: Vector3, r: float, team: int) -> Array:
 			out.append(u)
 	return out
 
-# ------------------------------------------------------------ görüş (sis)
+# ------------------------------------------------------------ görüş / tespit (roadmap 50)
+# Takım görüşü: düşman, takımdan bir gözcünün tespit menzili içinde ve görüş hattındaysa görülür.
+# Tespit menzili = det_base × gözcü optiği (çıplak göz 1, dürbün 1,3, gündüz nişangâhı 1,4, termal 2-2,4,
+# İHA 2,6) × hedef izi (boyut, duruş, hareket, ateş, bina/siper/bitki örtüsü) × hava/gece (termal az
+# etkilenir). Hava hedefini radar uzaktan görür. Hedefler dört dilimde sırayla değerlendirilir (her biri
+# ~1 sn); son gören gözcü önce denenir; görülen 2 sn hafızada kalır (titreme olmaz).
+var _vis_list := [[], []]
+var _spot_slice := 0
+
+func visible_enemies(t: int) -> Array:
+	return _vis_list[t] if t >= 0 and t < 2 else []
+
 func _update_visibility() -> void:
+	var obs := [[], []]
 	for u in units:
+		if not is_instance_valid(u) or not u.alive or u.team < 0 or u.team > 1:
+			continue
+		if u is Soldier and (u.state in ["aboard", "hospital", "prisoner", "surrender"] or u.incapacitated()):
+			continue
+		obs[u.team].append(u)
+	var wm: float = weather.sight_mult() if weather != null and is_instance_valid(weather) else 1.0
+	var night: bool = weather != null and is_instance_valid(weather) and weather.night
+	for t in 2:
+		_build_obs(t, obs[t], wm, night)
+	_spot_slice = (_spot_slice + 1) % 4
+	var i := 0
+	for u in units:
+		i += 1
 		if not is_instance_valid(u):
 			continue
 		for t in 2:
 			if u.team == t or u.team < 0:
 				u.seen[t] = true
 				continue
+			if (i & 3) != _spot_slice:
+				if u.seen[t] and u.spot_mem[t] <= time and not (u is Building and time < reveal[t]):
+					u.seen[t] = false
+				continue
 			var s: bool = u is Building and time < reveal[t]
-			var wm: float = weather.sight_mult() if weather != null and is_instance_valid(weather) else 1.0
-			# gece/kötü havada ateş eden birim yine de görünür
-			if wm < 1.0 and u is Soldier and time - u.fired_t < 1.5:
-				wm = maxf(wm, 1.0)
-			for f in near(u.position, 85.0):
-				if s:
-					break
-				if f.team == t and f.alive and f.position.distance_to(u.position) <= f.sight * (wm if not (f is Building) else maxf(wm, 0.75)):
-					s = true
-					break
-			u.seen[t] = s
+			if not s and u.alive and not (u is Vehicle and u.carried_in != null):
+				s = _spotted(u, t)
+			if s:
+				u.spot_mem[t] = time + 2.0
+			u.seen[t] = s or u.spot_mem[t] > time
 		u.apply_visibility()
+	_vis_list = [[], []]
+	for u in units:
+		if is_instance_valid(u) and u.alive and u.team >= 0 and u.team < 2:
+			var e: int = 1 - u.team
+			if u.seen[e]:
+				_vis_list[e].append(u)
+
+# gözcü verisi (tespit taraması başına bir kez): konum, iz=1 için tespit menzili (optik × hava/gece, termal
+# az etkilenir), radar, havada mı + uzamsal kovalar. Her hedef yalnız erişebilecek kovalardaki gözcülerle
+# sınanır (600 birimde tespit kare süresinin en büyük payıydı: her hedef × her gözcü yöntem çağrısı)
+var _ob: Array = [{}, {}]
+
+func _build_obs(t: int, list: Array, wm: float, night: bool) -> void:
+	var n := list.size()
+	var ox := PackedFloat32Array()
+	var oz := PackedFloat32Array()
+	var r1 := PackedFloat32Array()
+	var rad := PackedFloat32Array()
+	var oair := PackedByteArray()
+	ox.resize(n)
+	oz.resize(n)
+	r1.resize(n)
+	rad.resize(n)
+	oair.resize(n)
+	var cs := clampf(MAP / 32.0, 32.0, 256.0)
+	var cells := {}
+	var idx := {}
+	var maxr := 0.0
+	var maxrad := 0.0
+	for j in n:
+		var o = list[j]
+		var th: bool = o.thermal()
+		var w := wm if not th else lerpf(wm, 1.0, 0.7)
+		if night and not th:
+			w *= 0.45
+		r1[j] = Combat.detect_range(o.opt_k, 1.0) * w
+		maxr = maxf(maxr, r1[j])
+		var isv: bool = o is Vehicle
+		rad[j] = o.radar if isv else 0.0
+		maxrad = maxf(maxrad, rad[j])
+		oair[j] = 1 if (isv and o.is_air()) else 0
+		ox[j] = o.position.x
+		oz[j] = o.position.z
+		idx[o.get_instance_id()] = j
+		var k := Vector2i(int(ox[j] / cs), int(oz[j] / cs))
+		if cells.has(k):
+			cells[k].append(j)
+		else:
+			cells[k] = [j]
+	_ob[t] = {"list": list, "ox": ox, "oz": oz, "r1": r1, "rad": rad, "air": oair, "cells": cells, "cs": cs, "maxr": maxr, "maxrad": maxrad, "idx": idx}
+
+const TRACK_K := 1.6
+
+func _spotted(u, t: int) -> bool:
+	var sig: float = u.spot_sig()
+	if sig <= 0.0:
+		return false
+	var ob: Dictionary = _ob[t]
+	if ob.is_empty():
+		return false
+	var tp: Vector3 = u.aim_point()
+	var air: bool = u is Vehicle and u.is_air()
+	var house: bool = u is Soldier and u.house_id >= 0
+	var list: Array = ob["list"]
+	var ox: PackedFloat32Array = ob["ox"]
+	var oz: PackedFloat32Array = ob["oz"]
+	var r1: PackedFloat32Array = ob["r1"]
+	var rad: PackedFloat32Array = ob["rad"]
+	var oair: PackedByteArray = ob["air"]
+	# son gözcü önce (çoğunlukla hâlâ görür). Takip, ilk tespitten kolaydır: yerini bilen gözcü hedefi
+	# görüş hattı açık kaldıkça 1,6 kat uzağa dek izler (yoksa ateşi kesip çömelen düşman aradaki saniyelerde
+	# kaybolur, piyade "kendiliğinden ateş etmiyor" görünür — kullanıcı, 17 Ekim)
+	var last = u.spot_by[t]
+	var jl := -1
+	if last != null and is_instance_valid(last) and last.alive and u.spot_mem[t] > time - 1.0:
+		jl = int(ob["idx"].get(last.get_instance_id(), -1))
+		if jl >= 0 and _ob_sees(list[jl], ox[jl], oz[jl], r1[jl], rad[jl], oair[jl], tp, sig * TRACK_K, air, house):
+			return true
+	var R: float = float(ob["maxr"]) * sig
+	if air:
+		R = maxf(R, float(ob["maxrad"]))
+	var cs: float = ob["cs"]
+	var cells: Dictionary = ob["cells"]
+	# menzildeki gözcüler (ucuz uzaklık sınaması); görüş hattı yalnız en yakın 6'sı için — gizli hedefte
+	# menzildeki yüzlerce gözcünün hepsi görüş hattı taraması yapıyordu
+	var near_d := PackedFloat32Array()
+	var near_j := PackedInt32Array()
+	for cz in range(int((tp.z - R) / cs), int((tp.z + R) / cs) + 1):
+		for cx in range(int((tp.x - R) / cs), int((tp.x + R) / cs) + 1):
+			var arr = cells.get(Vector2i(cx, cz))
+			if arr == null:
+				continue
+			for j in arr:
+				if j == jl:
+					continue
+				var Rj: float = r1[j] * sig
+				if air:
+					Rj = maxf(Rj, rad[j])
+				var dx: float = tp.x - ox[j]
+				var dz: float = tp.z - oz[j]
+				var d2 := dx * dx + dz * dz
+				if d2 > Rj * Rj:
+					continue
+				if air or oair[j] == 1:
+					u.spot_by[t] = list[j]
+					return true
+				near_d.append(d2)
+				near_j.append(j)
+	var tries := mini(6, near_j.size())
+	for k in tries:
+		var bi := -1
+		var bd := INF
+		for q in near_j.size():
+			if near_d[q] < bd:
+				bd = near_d[q]
+				bi = q
+		if bi < 0:
+			break
+		near_d[bi] = INF
+		var o = list[near_j[bi]]
+		if grid.los(o.eye_point(), tp, o.los_skip(), 1.6 if house else 0.4):
+			u.spot_by[t] = o
+			return true
+	return false
+
+func _ob_sees(o, x: float, z: float, r1: float, rad: float, oair: int, tp: Vector3, sig: float, air: bool, house: bool) -> bool:
+	var R := r1 * sig
+	if air:
+		R = maxf(R, rad)
+	var dx := tp.x - x
+	var dz := tp.z - z
+	if dx * dx + dz * dz > R * R:
+		return false
+	# hava hedefi ya da havadaki gözcü: görüş hattı yukarıdan açık say (orman örtüsü izde)
+	if air or oair == 1:
+		return true
+	return grid.los(o.eye_point(), tp, o.los_skip(), 1.6 if house else 0.4)
 
 func is_seen(u, by_team: int) -> bool:
 	if by_team < 0:
@@ -216,11 +440,26 @@ func on_ground(p: Vector3) -> Vector3:
 
 # ------------------------------------------------------------ patlama hasarı
 # kind: "grenade", "rpg", "shell", "big", "mine", "auto"
-func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src = null) -> void:
+# spare: bu takımın askerleri hasar almaz (yalnız bastırılır) — kendi aracının patlaması/helikopterinin
+# düşüşü kendi askerine zarar vermez (roadmap 27). Bina patlaması ve silah patlamaları herkese işler.
+# krater biçimi (138): [çap / patlama yarıçapı, derinlik / çap, kenar sırtı (derinliğe oran), en çok uzama,
+# kenar pürüzü, iz (çıkartma) boyu katsayısı]. RPG küçük sığ çukur, havan dik inen yuvarlak sığ çanak + geniş
+# püskürme, top mermisi eğik isabetle uzamış derin çukur, mayın geniş derin ve yüksek sırtlı, büyük bomba dev
+const CRATER_K := {
+	"rpg": [0.28, 0.32, 0.25, 1.2, 0.22, 1.0],
+	"mortar": [0.34, 0.36, 0.2, 1.05, 0.3, 1.35],
+	"shell": [0.5, 0.42, 0.3, 1.35, 0.18, 1.2],
+	"mine": [0.62, 0.52, 0.42, 1.0, 0.32, 1.05],
+	"big": [0.6, 0.46, 0.32, 1.12, 0.2, 1.3],
+}
+
+func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src = null, spare := -1) -> void:
 	var size := clampf(radius / 3.0, 0.5, 3.0)
-	if p.y < 1.0 and grid.is_water(p):
-		fx.water_splash(p, size)
-		Sfx.play3d("expl_small", p, -2.0)
+	if p.y < 1.0 and grid.is_water(p) and not grid.on_bridge(p):
+		# suya düşüş büyüklüğü mühimmattan (el bombası ile top mermisi aynı görünüyordu)
+		var ws: float = {"grenade": 0.55, "uw": 0.9, "auto": 0.35, "rpg": 0.8, "mortar": 1.2, "shell": 1.6, "mine": 1.4, "big": 2.6}.get(kind, size)
+		fx.water_splash(p, ws, kind == "uw")
+		Sfx.play3d("expl_small" if ws < 1.5 else "expl_med", p, -2.0)
 		for u in near(p, radius * 1.5):
 			if u is Soldier and u.alive:
 				u.add_suppression(20.0, p)
@@ -229,14 +468,31 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 	if kind in ["grenade", "mortar", "rpg"]:
 		fx.surface_burst(Vector3(p.x, 0.1, p.z), size)
 	Sfx.play3d("expl_big" if size >= 1.6 else ("expl_med" if size >= 1.0 else "expl_small"), p, 4.0 if size >= 1.6 else 1.0)
-	if p.y < 1.5:
-		fx.crater(p, radius * 1.15)
-		# gerçek çukur: top/havan/büyük patlama araziyi oyar (askerler içine girip siper alır)
-		if kind in ["shell", "big", "mine", "rpg"] and radius >= 3.0 and not grid.is_water(p) and grid.height_at(p) < 0.3:
-			var cr := radius * (0.45 if kind != "big" else 0.6)
-			terrain.carve_crater(p, cr, cr * 0.42)
-			grid.set_crater(p, cr * 0.8)
-		terrain.paint_circle(p, radius * 0.9, 2, 0.75)
+	if p.y < 1.5 and grid.on_bridge(p):
+		fx.scorch(p, radius * 0.9)          # köprü döşemesi: toprak çukuru değil is izi
+	elif p.y < 1.5:
+		# gerçek çukur (138): mühimmata göre çap, derinlik, kenar sırtı, uzama ve pürüz (askerler içine girip
+		# siper alır); el bombası ve otomatik top yalnız iz bırakır
+		var ck: Array = CRATER_K.get(kind, [])
+		var cr := 0.0
+		var cd := 0.0
+		if not ck.is_empty() and not grid.is_water(p) and grid.height_at(p) < 0.3:
+			cr = radius * float(ck[0]) * randf_range(0.85, 1.15)
+			if cr >= 0.6:
+				cd = cr * float(ck[1]) * randf_range(0.85, 1.12)
+				var st: float = 1.0 + (float(ck[3]) - 1.0) * randf()
+				terrain.carve_crater(p, cr, cd, float(ck[2]), st, randf() * TAU, float(ck[4]), randi())
+				grid.set_crater(p, cr * 0.8)
+				# (139) nehre yakın derin krater yeraltı suyuyla dolar
+				if terrain.near_river(p, cr + 10.0):
+					terrain.flood_crater(p, cr, cd)
+				# çevredeki dekor yeni zemine oturur / çukura devrilir (yanan arabanın sıçrama tween'i bittikten sonra)
+				get_tree().create_timer(0.45).timeout.connect(props.settle.bind(p, cr))
+			else:
+				cr = 0.0
+		var dsz: float = (cr * 2.0 * float(ck[5]) * 1.25) if cr > 0.0 else radius * {"grenade": 0.42, "auto": 0.35}.get(kind, 1.0)
+		fx.crater(p, dsz, cd, kind)
+		terrain.paint_circle(p, radius * (0.9 if cr > 0.0 or kind not in ["grenade", "auto"] else 0.45), 2, 0.75)
 	blocks.blast(p, radius * (0.55 if kind == "grenade" else 0.75), size)
 	props.blast(p, radius, dmg)
 	cam.shake(size * 0.35, p)
@@ -245,14 +501,25 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 			continue
 		var d: float = u.position.distance_to(p)
 		if u is Soldier:
+			if spare >= 0 and u.team == spare:
+				continue
 			u.on_blast(p, radius, dmg, d, src)
 		else:
 			var r_eff: float = radius + u.radius
 			if d < r_eff:
 				var f := 1.0 - clampf((d - u.radius) / radius, 0.0, 1.0) * 0.7
+				var hit := dmg * f
 				if u is Vehicle:
 					Vehicle.shot_from = p
-				u.take_damage(dmg * f, src, kind)
+					if d > u.radius * 0.6:
+						# yakına düşüş (roadmap 108): parça / basınç hasarı mesafeyle hızla düşer ve tek patlamada
+						# aracın canının %40'ını geçmez — aracı yok etmek doğrudan isabet ya da çok sayıda isabet ister
+						var x := clampf((d - u.radius * 0.6) / radius, 0.0, 1.0)
+						hit = minf(dmg * (1.0 - x) * (1.0 - x) * 0.85, u.max_hp * 0.4)
+				u.take_damage(hit, src, kind)
+	for st in DroneStation.all:
+		if is_instance_valid(st) and st.alive and st.position.distance_to(p) < radius * 1.3:
+			st.take_blast(dmg * (1.0 - clampf(st.position.distance_to(p) / (radius * 1.3), 0.0, 0.8)))
 	for s in near(p, radius * 4.0):
 		if s is Soldier and s.alive:
 			s.add_suppression(30.0 * size * (1.0 - clampf(s.position.distance_to(p) / (radius * 4.0), 0.0, 1.0)), p)

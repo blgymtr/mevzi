@@ -10,10 +10,23 @@ const RED := Color(1.0, 0.42, 0.33)
 const BG := Color(0.045, 0.048, 0.046, 0.88)
 const BG2 := Color(1, 1, 1, 0.035)
 const EDGE := Color(1, 1, 1, 0.1)
-const PH := 200.0       # alt panel yüksekliği
-const PRW := 452.0      # üretim paneli genişliği
-const UPW := 690.0      # seçim paneli genişliği
-const GAP := 14.0
+# oyun içi HUD: eskiz biçemi (roadmap 65/57) — kâğıt üstüne mürekkep, kırmızı / mavi kalem. Yukarıdaki açık
+# renkler yalnız ana menü / düzenleyici ve dünya üstü yazılar için
+const INK := Sketch.INK
+const INK2 := Sketch.INK2
+const ACC := Sketch.RED
+const OK := Sketch.OLIVE
+const BAD := Sketch.RED
+const PAPER := Sketch.PAPER
+const PH := 168.0       # alt panel yüksekliği (kompakt)
+const PRW := 404.0      # üretim paneli genişliği
+# seçim paneli (CoH tarzı alçak levha): solda tam boy portre + bilgi sütunu, sağda 3 satırlık eş kare emir ızgarası
+const UPH := 120.0      # seçim paneli yüksekliği
+const UPAD := 6.0       # seçim paneli iç boşluğu
+const INFO_W := 372.0   # bilgi bölümü genişliği (portre dahil)
+const TILE := 34.0      # emir karesi
+const TGAP := 3.0       # emir kareleri arası
+const GAP := 10.0
 
 # emirler: CoH2 / Sudden Strike / Broken Arrow tarzı
 const ORDERS := {
@@ -30,19 +43,39 @@ const ORDERS := {
 	"airdrop": {"t": "İkmal At", "k": "Y", "tgt": true, "d": "Kargo helikopteri seçilen noktaya mühimmat paleti bırakır; paletler üste/pistte yenilenir. Dost hafif araca sağ tık: askıya al."},
 	"refund": {"t": "Üsse Dön (İade)", "k": "J", "tgt": false, "d": "Birlik en yakın üsse döner ve sahadan çekilir; kalan değerinin %80'i iade edilir."},
 	"abandon": {"t": "Terk Et", "k": "K", "tgt": false, "d": "Mürettebat aracı terk eder; araç 6 sn sonra kendini imha eder."},
+	"dismount": {"t": "Mürettebat İn", "k": "-", "tgt": false, "d": "Mürettebat araçtan iner ve yanında tim olur; araç sağlam kalır ama sürücü ve nişancı olmadan yürüyemez, ateş edemez."},
+	"mount": {"t": "Mürettebat Bin", "k": "-", "tgt": false, "d": "İnmiş mürettebat aracına geri biner. Başka piyade de araca sağ tıklayıp eksik mürettebatın yerine geçebilir."},
 	"grenade": {"t": "El Bombası", "k": "G", "tgt": true, "d": "Seçilen noktaya el bombası at."},
 	"smoke": {"t": "Sis", "k": "Z", "tgt": true, "d": "Sis bombası at / sis atarları ateşle."},
 	"suppress": {"t": "Baskı Ateşi", "k": "B", "tgt": true, "d": "Bir bölgeyi 12 sn boyunca ateş altında tut."},
+	"fastrope": {"t": "Halatla İndir", "k": "I", "tgt": true, "d": "Nakliye helikopteri noktada 8 m'de asılı kalır, iki halat sarkıtır; askerler tüfeği sırta atıp halattan kayarak iner. Bitince halatlar bırakılır."},
+	"ropepick": {"t": "Halatla Al", "k": "-", "tgt": true, "d": "Helikopter noktada asılı kalıp halat sarkıtır; yakındaki (ya da seçili) askerler kancalanır ve hep birlikte yukarı çekilir."},
+	"minidrone": {"t": "Drone Kaldır", "k": "L", "tgt": true, "d": "Operatör sırt çantasından FPV drone çıkarıp elden kaldırır. Düşmana tıkla: saldırır; boş noktaya tıkla: orada asılı kalıp tarar. Havadaki drone'a yeni hedef de bu emirle verilir."},
+	"dronerecall": {"t": "Drone İndir", "k": "-", "tgt": false, "d": "Havadaki FPV drone operatörün yanına döner, alçalır ve elle yakalanır; sırt çantasına geri girer (yeniden kullanılır)."},
+	"attack": {"t": "Saldır", "k": "-", "tgt": true, "d": "Tıklanan düşman birliğe ateş açar; görüş ve menzil için gerekirse yaklaşır. (Düşmana sağ tık da aynı.)"},
+	"garrison": {"t": "Binaya Gir", "k": "-", "tgt": true, "d": "Tıklanan binaya girer, pencerelere dağılır. Bina dolu ya da kapısı kapalıysa girilmez."},
+	"exitbldg": {"t": "Binadan Çık", "k": "-", "tgt": false, "d": "Binadaki askerler kapıdan çıkıp binanın önünde toplanır."},
+	"board": {"t": "Araca Bin", "k": "-", "tgt": true, "d": "Tıklanan dost araca biner (boş yer kadar). Araç inmiş hâldeyse rampadan sırayla."},
+	"rebuild": {"t": "Köprü Kur", "k": "-", "tgt": true, "d": "Mühendislik aracı (dozer / kurtarma) yıkık köprünün yanına gider, açıklığa panel köprü uzatır; bitince araçlar yeniden geçer. Yıkık köprüye sağ tık da aynı."},
+	"hulldown": {"t": "Gövde Gizle", "k": "-", "tgt": true, "d": "Tehdit yönünü göster: araç yakında önünde alçak engel (set, duvar, hurda) olan yere geçer, gövdesi saklı taretiyle ateş eder ve orada kalır."},
+	"dronestation": {"t": "Drone İstasyonu Kur", "k": "O", "tgt": true, "d": "Operatör seçilen yere yer kontrol istasyonu kurar (16 sn). Bitince mancınıktan keşif İHA'sı fırlatılır: yüksek irtifa, geniş görüş, vurulması zor."},
 	"demolish": {"t": "Yık", "k": "DEL", "tgt": false, "d": "İnşaatı iptal et (%75 iade)."},
+	"merge": {"t": "Timleri Birleştir", "k": "-", "tgt": false, "d": "Seçili piyade timleri tek manga olur (en çok 13 kişi); komutu en kalabalık timin lideri alır."},
 }
-const ORDER_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "refund", "abandon", "demolish"]
-const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_DELETE: "demolish"}
+const ORDER_SEQ := ["move", "fast", "amove", "attack", "reverse", "stop", "hold", "retreat", "garrison", "exitbldg", "board", "hulldown", "fire", "stance", "unload", "airdrop", "grenade", "smoke", "suppress", "fastrope", "ropepick", "minidrone", "dronerecall", "dronestation", "rebuild", "refund", "merge", "dismount", "mount", "abandon", "demolish"]
+# seçime göre ayrı emir ızgaraları (5 sütun): piyade — hareket, çatışma, bina / araç, rol (drone); araç — hareket,
+# ateş (hedef, bölge, sis, gövde gizleme), yük / mürettebat. Karışık seçimde ORDER_SEQ.
+const INF_SEQ := ["move", "fast", "amove", "attack", "stop", "hold", "retreat", "stance", "fire", "suppress", "grenade", "smoke", "garrison", "exitbldg", "board", "minidrone", "dronerecall", "dronestation", "merge", "refund"]
+const VEH_SEQ := ["move", "fast", "amove", "reverse", "stop", "hold", "retreat", "attack", "suppress", "smoke", "hulldown", "fire", "unload", "airdrop", "fastrope", "ropepick", "dismount", "mount", "abandon", "rebuild", "refund"]
+# emir kısayollarının VARSAYILANLARI; oyuncu atamaları ve eşleşme Keybinds üzerinden (Ayarlar > Klavye Ayarları)
+const ORDER_KEYS := {KEY_M: "move", KEY_F: "fast", KEY_T: "amove", KEY_N: "reverse", KEY_X: "stop", KEY_H: "hold", KEY_R: "retreat", KEY_V: "fire", KEY_C: "stance", KEY_U: "unload", KEY_Y: "airdrop", KEY_G: "grenade", KEY_Z: "smoke", KEY_B: "suppress", KEY_K: "abandon", KEY_J: "refund", KEY_L: "minidrone", KEY_O: "dronestation", KEY_I: "fastrope", KEY_DELETE: "demolish"}
 const FIRE_TXT := ["SERBEST", "KARŞILIK", "ATEŞ KES"]
 const STANCE_TXT := ["OTO", "AYAKTA", "ÇÖMEL", "YAT"]
 const ROLE_PROD := {"rifle": "rifle_squad", "mg": "mg_team", "at": "at_squad", "atgm": "atgm_team", "medic": "medic_team", "sniper": "sniper_team", "engineer": "engineer_squad", "mortar": "mortar_team", "drone": "drone_team"}
 
 var font: Font
 var font_b: Font
+var icons: TacIcons
 var font_m: Font
 var root: Control
 var overlay: Control
@@ -56,6 +89,7 @@ var radar: Control
 var unit_panel: PanelContainer
 var info_box: Control
 var cmd_grid: GridContainer
+var cmd_sep: ColorRect
 var prod: PanelContainer
 var tabs: HBoxContainer
 var cards: GridContainer
@@ -80,8 +114,9 @@ var _tip_owner: Control = null
 
 func _ready() -> void:
 	layer = 5
-	font = load("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
-	font_b = load("res://assets/fonts/BarlowCondensed-Bold.ttf")
+	# daha ince kalın (kullanıcı): gövde Medium, başlık / sayı SemiBold (eski Bold çok ağırdı)
+	font = load("res://assets/fonts/BarlowCondensed-Medium.ttf")
+	font_b = load("res://assets/fonts/BarlowCondensed-SemiBold.ttf")
 	font_m = load("res://assets/fonts/BarlowCondensed-Medium.ttf")
 	thumbs = Thumbs.new()
 	add_child(thumbs)
@@ -96,6 +131,9 @@ func _ready() -> void:
 	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(overlay)
+	# stratejik görüş simgeleri (uzaklaşınca birlik sembolleri, hedef bölgeleri)
+	icons = TacIcons.new()
+	root.add_child(icons)
 	_build_top()
 	_build_mini()
 	_build_unit_panel()
@@ -120,48 +158,159 @@ func _ready() -> void:
 	tooltip.add_theme_color_override("font_color", TXT)
 	tooltip.add_theme_font_size_override("font_size", 16)
 	tooltip.add_theme_font_override("font", font_m)
-	var tsb := _sb(Color(0.03, 0.032, 0.03, 0.97), Color(1, 1, 1, 0.16))
-	tsb.content_margin_left = 10
-	tsb.content_margin_right = 10
-	tsb.content_margin_top = 6
-	tsb.content_margin_bottom = 7
-	tooltip.add_theme_stylebox_override("normal", tsb)
+	tooltip.add_theme_stylebox_override("normal", Sketch.slip(0.97, 10))
+	tooltip.add_theme_color_override("font_color", INK)
 	tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tooltip.z_index = 50
 	root.add_child(tooltip)
+	_build_hover()
 	G.alert.connect(_on_alert)
+	MainMenu.apply_cfg()      # ayar dosyasındaki ek seçenekler (v-sync, arayüz sesleri)
+
+# ------------------------------------------------------------ üzerine gelme kartı
+# Birimin üstüne gelince imlecin yanında küçük kart (inceleme dersi 151 — netlik): kim, ne durumda, neden.
+# Kendi asker: rütbe + rol, tim · durum, can, mermi / bomba. Düşman: tür, görünen durum (yaralı / bastırılmış),
+# seçili birliklere uzaklık ve menzilde mi (menzil dışıysa silah menzili). Araç: mürettebat / yolcu, arıza, sis.
+var hover_card: PanelContainer
+var hover_u: Unit = null
+var _hv_title: Label
+var _hv_sub: Label
+var _hv_bar: Bar
+var _hv_info: Label
+
+func _build_hover() -> void:
+	hover_card = PanelContainer.new()
+	hover_card.add_theme_stylebox_override("panel", Sketch.slip(0.94, 8))
+	hover_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hover_card.visible = false
+	hover_card.z_index = 40
+	root.add_child(hover_card)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	v.custom_minimum_size = Vector2(190, 0)
+	hover_card.add_child(v)
+	_hv_title = _label(v, "", 15, INK, font_b)
+	_hv_sub = _label(v, "", 12, INK2, font_m)
+	_hv_bar = Bar.new()
+	_hv_bar.custom_minimum_size = Vector2(0, 4)
+	v.add_child(_hv_bar)
+	_hv_info = _label(v, "", 12, INK, font_m)
+
+func _update_hover() -> void:
+	var u: Unit = null
+	var m := root.get_viewport().get_mouse_position()
+	if G.running and G.player and not G.player.boxing and G.player.place_type == "" and not mouse_over_ui() and not (menu and menu.visible):
+		u = G.player.unit_at(m)
+	if u != null and (not is_instance_valid(u) or not u.alive or u is Building and u.team != G.player_team and u.team >= 0 and not u.visible):
+		u = null
+	hover_u = u
+	hover_card.visible = u != null
+	if u == null:
+		return
+	var own: bool = u.team == G.player_team and not G.spectate
+	var enemy: bool = u.team >= 0 and u.team != G.player_team and not G.spectate
+	var title := ""
+	var sub := ""
+	var info := ""
+	var icol := INK
+	if u is Soldier:
+		var role_t := I18n.s(Soldier.ROLE_TITLE.get(u.role, "Piyade"))
+		title = (I18n.s("Düşman") + " " + role_t.to_lower()) if enemy else ("%s %s" % [Sketch.sc(I18n.s(Soldier.RANKS[u.rank])), role_t])
+		sub = soldier_status(u, own)
+		if own:
+			sub = ("%s  ·  %s" % [u.squad.name, sub]) if u.squad else sub
+			info = "%s %d  ·  %s %d" % [I18n.s("Mermi"), u.ammo, I18n.s("Bomba"), u.grenades]
+	elif u is Vehicle:
+		title = (I18n.s("Düşman") + " " + I18n.s(u.title).to_lower()) if enemy else I18n.s(u.title)
+		var parts: Array = []
+		if u.crew_max > 0:
+			parts.append("%s %d/%d" % [I18n.s("Mürettebat"), u.crew_n, u.crew_max])
+		if own and u.capacity() > 0:
+			parts.append("%s %d/%d" % [I18n.s("Yolcu"), u.cargo.size(), u.capacity()])
+		sub = "  ·  ".join(parts)
+		if own:
+			var probs: Array = []
+			if u.tracks_broken > 0.0:
+				probs.append(I18n.s("Palet kopuk"))
+			if u.has_smoke_launchers():
+				probs.append("%s %d" % [I18n.s("Sis"), u.smoke_n])
+			info = "  ·  ".join(probs)
+	elif u is Building:
+		title = I18n.s(u.title)
+		sub = (I18n.s("İnşa") + " %%%d" % int(u.progress * 100)) if not u.done else ""
+	_hv_bar.value = clampf(u.hp / u.max_hp, 0.0, 1.0) if not (u is Building and not u.done) else u.progress
+	_hv_bar.col = OK.lerp(BAD, 1.0 - _hv_bar.value)
+	# düşman: seçili birliklere uzaklık ve menzil
+	if enemy and G.player:
+		var best := 1e9
+		var rng := 0.0
+		for s in G.player.selected:
+			if not is_instance_valid(s) or not s.alive or s is Building:
+				continue
+			var d: float = Vector2(s.position.x - u.position.x, s.position.z - u.position.z).length()
+			if d < best:
+				best = d
+				rng = float(s.weapon()["range"]) if s is Soldier else float(s._range())
+		if best < 1e8:
+			if best <= rng:
+				info = "%d m  ·  %s" % [int(best), I18n.s("menzilde")]
+				icol = OK
+			else:
+				info = "%d m  ·  %s (%d m)" % [int(best), I18n.s("menzil dışı"), int(rng)]
+				icol = BAD
+	_hv_title.text = title
+	_hv_sub.text = sub
+	_hv_sub.visible = sub != ""
+	_hv_info.text = info
+	_hv_info.visible = info != ""
+	_hv_info.add_theme_color_override("font_color", icol)
+	var vs := root.get_viewport_rect().size
+	var sz := hover_card.get_combined_minimum_size()
+	hover_card.size = sz
+	hover_card.position = Vector2(clampf(m.x + 18.0, 4.0, vs.x - sz.x - 4.0), clampf(m.y + 22.0, 4.0, vs.y - sz.y - 4.0))
+
+# askerin durumu (kart ve bilgi paneli): eylem · moral; düşmanda yalnız gözle görülenler
+func soldier_status(u: Soldier, own: bool) -> String:
+	var stt: String = {"idle": "Beklemede", "move": "İlerliyor", "wounded": "Yaralı", "dragged": "Sürükleniyor", "healing": "Tedavide", "rescue": "Yaralıya koşuyor", "drag": "Yaralı taşıyor", "heal": "Tedavi ediyor", "build": "İnşa ediyor", "throw": "El bombası", "dazed": "Sersem", "fly": "Savruldu", "dive": "Siper alıyor", "surrender": "Teslim oldu", "prisoner": "Esir", "aboard": "Araçta"}.get(u.state, "Beklemede")
+	if u.state == "idle" and u.cover_type > 0:
+		stt = "Siperde"
+	if u.house_id >= 0:
+		stt = "Binada"
+	if u.retreating:
+		stt = "Geri çekiliyor"
+	var tm := ""
+	if u.suppression >= 70:
+		tm = "Bastırıldı"
+	elif own:
+		tm = "Sakin" if u.suppression < 30 else "Gergin"
+		if u.stress_lv > 0:
+			tm = "Panik" if u.stress_lv == 2 else "Sarsılmış"
+	if not own and stt in ["Beklemede", "İlerliyor"]:
+		stt = ""
+	var out: Array = []
+	for s in [stt, tm]:
+		if s != "":
+			out.append(I18n.s(s))
+	return "  ·  ".join(out)
 
 func _theme() -> Theme:
 	var th := Theme.new()
 	th.default_font = font
 	th.default_font_size = 17
-	var bn := _sb(Color(1, 1, 1, 0.045), Color(1, 1, 1, 0.08))
-	var bh := _sb(Color(1, 0.74, 0.3, 0.12), Color(1, 0.74, 0.3, 0.7))
-	var bp := _sb(Color(1, 0.74, 0.3, 0.26), AMBER)
-	var bd := _sb(Color(1, 1, 1, 0.02), Color(1, 1, 1, 0.04))
-	for s in [bn, bh, bp, bd]:
-		s.content_margin_left = 8
-		s.content_margin_right = 8
-		s.content_margin_top = 4
-		s.content_margin_bottom = 4
-	th.set_stylebox("normal", "Button", bn)
-	th.set_stylebox("hover", "Button", bh)
-	th.set_stylebox("pressed", "Button", bp)
-	th.set_stylebox("hover_pressed", "Button", bp)
-	th.set_stylebox("disabled", "Button", bd)
+	# düğmeler: kâğıt + ince mürekkep çerçeve; üzerinde kırmızı kalem alt çizgi; basılı / seçili mürekkep dolgu
+	th.set_stylebox("normal", "Button", Sketch.button("normal"))
+	th.set_stylebox("hover", "Button", Sketch.button("hover"))
+	th.set_stylebox("pressed", "Button", Sketch.button("pressed"))
+	th.set_stylebox("hover_pressed", "Button", Sketch.button("pressed"))
+	th.set_stylebox("disabled", "Button", Sketch.button("disabled"))
 	th.set_stylebox("focus", "Button", StyleBoxEmpty.new())
-	th.set_color("font_color", "Button", TXT)
-	th.set_color("font_hover_color", "Button", AMBER)
-	th.set_color("font_pressed_color", "Button", Color(1, 1, 1))
-	th.set_color("font_hover_pressed_color", "Button", Color(1, 1, 1))
-	th.set_color("font_disabled_color", "Button", Color(0.4, 0.4, 0.38))
-	th.set_color("font_color", "Label", TXT)
-	var pan := _sb(BG, EDGE)
-	pan.content_margin_left = 10
-	pan.content_margin_right = 10
-	pan.content_margin_top = 10
-	pan.content_margin_bottom = 10
-	th.set_stylebox("panel", "PanelContainer", pan)
+	th.set_color("font_color", "Button", INK)
+	th.set_color("font_hover_color", "Button", ACC)
+	th.set_color("font_pressed_color", "Button", PAPER)
+	th.set_color("font_hover_pressed_color", "Button", PAPER)
+	th.set_color("font_disabled_color", "Button", Sketch.INK3)
+	th.set_color("font_color", "Label", INK)
+	th.set_stylebox("panel", "PanelContainer", Sketch.panel(0.95, 12))
 	var sbv := StyleBoxFlat.new()
 	sbv.bg_color = Color(1, 1, 1, 0.18)
 	th.set_stylebox("grabber", "VScrollBar", sbv)
@@ -188,9 +337,9 @@ func mouse_over_ui() -> bool:
 		return true
 	return false
 
-func _label(parent: Control, t: String, size := 17, col := TXT, f: Font = null) -> Label:
+func _label(parent: Control, t: String, size := 17, col := INK, f: Font = null) -> Label:
 	var l := Label.new()
-	l.text = I18n.s(t)
+	l.text = Sketch.sc(I18n.s(t))
 	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", col)
@@ -216,35 +365,36 @@ func _tip(c: Control, text_fn: Callable) -> void:
 
 # ------------------------------------------------------------ üst şerit
 func _build_top() -> void:
+	# kaynak satırı sağ üstte, kâğıt şerit üstüne sade yazı (simge / ok / hamburger yok)
 	top = PanelContainer.new()
-	top.anchor_left = 0.5
-	top.anchor_right = 0.5
-	top.offset_top = 10
-	top.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	var sb := _sb(BG, EDGE)
-	sb.content_margin_left = 16
-	sb.content_margin_right = 8
-	sb.content_margin_top = 3
-	sb.content_margin_bottom = 3
-	top.add_theme_stylebox_override("panel", sb)
+	top.anchor_left = 1.0
+	top.anchor_right = 1.0
+	top.offset_top = GAP
+	top.offset_right = -GAP
+	top.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	top.add_theme_stylebox_override("panel", Sketch.slip(0.95, 12))
 	top.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(top)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 14)
 	top.add_child(h)
-	var s1 := _top_item(h, "İKMAL")
-	supply_lbl = _label(s1, "0", 21, TXT, font_b)
-	link_lbl = _label(s1, "", 14, GREEN, font_m)
+	var s1 := _top_item(h, "İkmal")
+	supply_lbl = _label(s1, "0", 17, INK, font_b)
+	link_lbl = _label(s1, "", 14, INK2, font_m)
 	_top_sep(h)
-	var s2 := _top_item(h, "BİRLİK")
-	cap_lbl = _label(s2, "0/0", 21, TXT, font_b)
+	var s2 := _top_item(h, "Birlik")
+	cap_lbl = _label(s2, "0/0", 17, INK, font_b)
 	_top_sep(h)
-	time_lbl = _label(h, "00:00", 21, TXT, font_b)
-	time_lbl.custom_minimum_size = Vector2(58, 0)
+	time_lbl = _label(h, "00:00", 17, INK, font_b)
+	time_lbl.custom_minimum_size = Vector2(54, 0)
+	_top_sep(h)
 	var mb := Button.new()
-	mb.text = "≡"
-	mb.custom_minimum_size = Vector2(34, 30)
-	mb.add_theme_font_size_override("font_size", 20)
+	mb.text = I18n.s("Menü")
+	mb.flat = true
+	mb.add_theme_font_size_override("font_size", 16)
+	mb.add_theme_font_override("font", font_m)
+	mb.add_theme_color_override("font_color", INK2)
+	mb.add_theme_color_override("font_hover_color", ACC)
 	mb.focus_mode = Control.FOCUS_NONE
 	mb.pressed.connect(func(): toggle_pause())
 	h.add_child(mb)
@@ -255,14 +405,14 @@ func _top_item(h: HBoxContainer, cap: String) -> HBoxContainer:
 	b.add_theme_constant_override("separation", 7)
 	b.mouse_filter = Control.MOUSE_FILTER_PASS
 	h.add_child(b)
-	var l := _label(b, cap, 13, DIM, font_m)
+	var l := _label(b, cap, 13, INK2, font_m)
 	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return b
 
 func _top_sep(h: HBoxContainer) -> void:
 	var r := ColorRect.new()
-	r.color = Color(1, 1, 1, 0.12)
-	r.custom_minimum_size = Vector2(1, 22)
+	r.color = Color(1, 1, 1, 0.14)
+	r.custom_minimum_size = Vector2(1, 20)
 	r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(r)
@@ -285,14 +435,14 @@ func _build_mini() -> void:
 	mini.offset_right = GAP + PH
 	mini.offset_top = -PH - GAP
 	mini.offset_bottom = -GAP
-	var sb := _sb(BG, EDGE)
-	sb.set_content_margin_all(4)
-	mini.add_theme_stylebox_override("panel", sb)
+	mini.add_theme_stylebox_override("panel", Sketch.panel(0.96, 9))
 	mini.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(mini)
 	radar = Radar.new()
 	radar.hud = self
 	radar.mouse_filter = Control.MOUSE_FILTER_STOP
+	# görüş çerçevesi harita küçükken / uzak yakınlaştırmada mini haritanın dışına taşıp ekranda beyaz çizgi bırakıyordu
+	radar.clip_contents = true
 	mini.add_child(radar)
 	mini_scale = float(G.main.cfg.get("minimap", 1.25)) if G.main and "cfg" in G.main else 1.25
 	apply_mini_size()
@@ -302,34 +452,41 @@ func _build_unit_panel() -> void:
 	unit_panel = PanelContainer.new()
 	unit_panel.anchor_top = 1.0
 	unit_panel.anchor_bottom = 1.0
-	unit_panel.offset_top = -PH - GAP
+	unit_panel.offset_top = -UPH - GAP
 	unit_panel.offset_bottom = -GAP
 	unit_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	var sb := Sketch.panel(0.95, 7)
+	sb.content_margin_top = UPAD
+	sb.content_margin_bottom = UPAD
+	unit_panel.add_theme_stylebox_override("panel", sb)
 	root.add_child(unit_panel)
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 12)
+	h.add_theme_constant_override("separation", 10)
 	unit_panel.add_child(h)
 	info_box = Control.new()
 	info_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info_box.clip_contents = true
 	h.add_child(info_box)
 	var sep := ColorRect.new()
-	sep.color = Color(1, 1, 1, 0.08)
+	sep.color = Color(1, 1, 1, 0.07)
 	sep.custom_minimum_size = Vector2(1, 0)
 	sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(sep)
+	cmd_sep = sep
 	cmd_grid = GridContainer.new()
-	cmd_grid.columns = 5
-	cmd_grid.add_theme_constant_override("h_separation", 5)
-	cmd_grid.add_theme_constant_override("v_separation", 5)
-	cmd_grid.custom_minimum_size = Vector2(5 * 58 + 4 * 5, 0)
+	cmd_grid.columns = 6
+	cmd_grid.add_theme_constant_override("h_separation", int(TGAP))
+	cmd_grid.add_theme_constant_override("v_separation", int(TGAP))
+	cmd_grid.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(cmd_grid)
 
 func _layout() -> void:
 	var w := root.get_viewport_rect().size.x
 	var left := GAP + PH * mini_scale + GAP
 	var right := w - GAP - PRW - GAP
-	var pw := minf(UPW, right - left)
+	var cols := cmd_grid.columns
+	var gw := (21.0 + cols * TILE + (cols - 1) * TGAP) if cmd_grid.visible else 0.0
+	var pw := minf(INFO_W + gw + 14.0, right - left)
 	var x := left + (right - left - pw) * 0.5
 	unit_panel.offset_left = x
 	unit_panel.offset_right = x + pw
@@ -357,6 +514,25 @@ func order_state(id: String, sel: Array) -> int:
 			"stance":
 				if sol:
 					return 1
+			"attack":
+				if sol or veh:
+					return 1
+			"garrison", "board":
+				if sol:
+					return 1
+			"exitbldg":
+				if sol and u.house_id >= 0:
+					return 1
+			"dronerecall":
+				if sol and u.role == "drone":
+					any = true
+					ok = ok or (u.my_drone != null and is_instance_valid(u.my_drone) and u.my_drone.alive and not u.my_drone.recall)
+			"hulldown":
+				if veh and not u.is_air() and u.vtype in ["tank", "ifv", "apc", "aa"]:
+					return 1
+			"rebuild":
+				if veh and u.can_clear():
+					return 1
 			"unload":
 				if veh and u.capacity() > 0:
 					any = true
@@ -376,6 +552,22 @@ func order_state(id: String, sel: Array) -> int:
 				elif veh and u.has_smoke():
 					any = true
 					ok = ok or u.smoke_charges > 0
+			"fastrope":
+				if veh and u.vtype == "transport":
+					any = true
+					ok = ok or not u.cargo.is_empty()
+			"ropepick":
+				if veh and u.vtype == "transport":
+					any = true
+					ok = ok or u.cargo.size() < u.capacity()
+			"minidrone":
+				if sol and u.role == "drone":
+					any = true
+					ok = ok or (u.fpv_left > 0 and u.drone_cd <= 0.0 and u.can_fight())
+			"dronestation":
+				if sol and u.role == "drone":
+					any = true
+					ok = ok or u.can_fight()
 			"suppress":
 				if sol and not (u.role in ["mortar", "drone"]):
 					return 1
@@ -388,58 +580,144 @@ func order_state(id: String, sel: Array) -> int:
 				if veh and u.crew_max > 0 and not u.is_air():
 					any = true
 					ok = ok or (u.crew_n > 0 and u.abandon_t < 0.0)
+			"dismount":
+				if veh and u.crew_max > 0 and not u.is_air():
+					any = true
+					ok = ok or (u.crew_n > 0 and u.abandon_t < 0.0)
+			"merge":
+				if sol and u.squad != null:
+					any = true
+			"mount":
+				if veh and u.crew_max > 0 and not u.is_air():
+					any = true
+					ok = ok or (u.crew_n < u.crew_max and not u.crew_out.is_empty())
 	if not any:
 		return -1
+	if id == "merge":
+		return 1 if Squad.merge_ok(sel) else 0
 	return 1 if ok else 0
 
 func _rebuild_cmds() -> void:
 	_clear(cmd_grid)
 	_cmd_live.clear()
+	cmd_grid.visible = false
+	cmd_sep.visible = false
 	var sel: Array = G.player.selected
 	if sel.is_empty() or sel[0].team != G.player_team:
 		return
-	for id in ORDER_SEQ:
-		if order_state(id, sel) < 0:
-			continue
+	var ids: Array = []
+	for id in order_seq(sel):
+		if order_state(id, sel) >= 0:
+			ids.append(id)
+	# her zaman 3 satır: sütun sayısı emir sayısına göre (en az 6); boş yuvalar soluk kare — ızgara düzenli kalır
+	# emri olmayan seçim (yapı): ızgara ve ayraç gizli, panel daralır
+	cmd_grid.visible = not ids.is_empty()
+	cmd_sep.visible = cmd_grid.visible
+	var cols := maxi(6, ceili(ids.size() / 3.0))
+	cmd_grid.columns = cols
+	for id in ids:
 		cmd_grid.add_child(_cmd_btn(id))
+	for k in cols * 3 - ids.size():
+		var e := Panel.new()
+		e.custom_minimum_size = Vector2(TILE, TILE)
+		e.add_theme_stylebox_override("panel", _tile_sb("empty"))
+		e.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cmd_grid.add_child(e)
+
+# emir karesi biçemi: koyu dolgu, ince çizgi; üzerinde açık çizgi, devre dışı neredeyse saydam
+func _tile_sb(state: String) -> StyleBoxFlat:
+	var bg := Color(1, 1, 1, 0.045)
+	var bd := Color(1, 1, 1, 0.08)
+	match state:
+		"hover", "hover_pressed":
+			bg = Color(1, 1, 1, 0.1)
+			bd = Color(1, 1, 1, 0.3)
+		"pressed":
+			bg = Color(1, 1, 1, 0.16)
+			bd = Color(1, 1, 1, 0.3)
+		"disabled":
+			bg = Color(1, 1, 1, 0.02)
+			bd = Color(1, 1, 1, 0.04)
+		"empty":
+			bg = Color(0, 0, 0, 0.14)
+			bd = Color(1, 1, 1, 0.025)
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.border_color = bd
+	s.set_border_width_all(1)
+	s.set_corner_radius_all(2)
+	return s
+
+# seçim türüne göre emir dizisi: yalnız piyade → INF_SEQ, yalnız araç → VEH_SEQ, karışık → ORDER_SEQ
+func order_seq(sel: Array) -> Array:
+	var ns := 0
+	var nv := 0
+	for u in sel:
+		if not is_instance_valid(u):
+			continue
+		if u is Soldier:
+			ns += 1
+		elif u is Vehicle:
+			nv += 1
+	if ns > 0 and nv == 0:
+		return INF_SEQ
+	if nv > 0 and ns == 0:
+		return VEH_SEQ
+	return ORDER_SEQ
 
 func _cmd_btn(id: String) -> Control:
-	var O: Dictionary = ORDERS[id]
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(58, 50)
+	b.custom_minimum_size = Vector2(TILE, TILE)
 	b.focus_mode = Control.FOCUS_NONE
+	for s in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		b.add_theme_stylebox_override(s, _tile_sb(s))
 	var ic := CmdIcon.new()
 	ic.kind = id
 	ic.hud = self
+	ic.k = 0.74
 	ic.set_anchors_preset(Control.PRESET_FULL_RECT)
 	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(ic)
-	var k := Label.new()
-	k.text = O["k"]
-	k.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	k.add_theme_font_override("font", font_b)
-	k.add_theme_font_size_override("font_size", 11)
-	k.add_theme_color_override("font_color", Color(1, 1, 1, 0.42))
-	k.position = Vector2(4, 1)
-	k.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	b.add_child(k)
-	var st := Label.new()
-	st.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	st.add_theme_font_override("font", font_b)
-	st.add_theme_font_size_override("font_size", 11)
-	st.add_theme_color_override("font_color", AMBER)
-	st.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	st.anchor_left = 1.0
-	st.anchor_right = 1.0
-	st.offset_left = -50
-	st.offset_right = -4
-	st.offset_top = 1
-	st.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	b.add_child(st)
+	# kısayol harfi sağ altta küçük ve soluk; sayaç (bomba, sis, yük) sağ üstte
+	var k := _corner(b, Keybinds.short("o." + id), 11, Color(1, 1, 1, 0.4), false)
+	k.add_theme_font_override("font", font_m)
+	var st := _corner(b, "", 11, INK2, true)
 	b.pressed.connect(func(): G.player.order_button(id))
-	_tip(b, func(): return "%s  [%s]\n%s" % [I18n.s(O["t"]), O["k"], I18n.s(O["d"])])
+	_tip(b, func(): return _cmd_tip(id))
 	_cmd_live.append([b, id, st, ic])
 	return b
+
+func _corner(b: Control, t: String, sz: int, col: Color, top: bool) -> Label:
+	var l := Label.new()
+	l.text = t
+	l.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
+	l.add_theme_font_override("font", font_b)
+	l.add_theme_font_size_override("font_size", sz)
+	l.add_theme_color_override("font_color", col)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	l.vertical_alignment = VERTICAL_ALIGNMENT_TOP if top else VERTICAL_ALIGNMENT_BOTTOM
+	l.anchor_left = 1.0
+	l.anchor_right = 1.0
+	l.anchor_top = 0.0 if top else 1.0
+	l.anchor_bottom = 0.0 if top else 1.0
+	l.offset_left = -24
+	l.offset_right = -3
+	l.offset_top = -1 if top else -15
+	l.offset_bottom = 14 if top else 0
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(l)
+	return l
+
+# ipucu: ad [kısayol], açıklama; ateş serbestliği / duruş için o anki seçim
+func _cmd_tip(id: String) -> String:
+	var O: Dictionary = ORDERS[id]
+	var t := "%s  [%s]\n%s" % [I18n.s(O["t"]), Keybinds.label("o." + id), I18n.s(O["d"])]
+	var sel: Array = G.player.selected
+	if id == "fire":
+		t += "\n» " + Sketch.sc(I18n.s(FIRE_TXT[_first_val(sel, "fire_mode", 0)]))
+	elif id == "stance":
+		t += "\n» " + Sketch.sc(I18n.s(STANCE_TXT[_first_val(sel, "stance_lock", -1) + 1]))
+	return t
 
 func _update_cmds() -> void:
 	var sel: Array = G.player.selected
@@ -453,30 +731,36 @@ func _update_cmds() -> void:
 		var s := order_state(id, sel)
 		b.disabled = s == 0
 		ic.active = G.player.pending_order == id
+		var n := -1
 		match id:
 			"fire":
+				# durum yazısı yok: simge değişir, altta renkli şerit (serbest / karşılık / ateş kes)
 				var fm: int = _first_val(sel, "fire_mode", 0)
-				st.text = I18n.s(FIRE_TXT[fm])
-				st.add_theme_color_override("font_color", [GREEN, AMBER, RED][fm])
 				ic.variant = fm
+				ic.strip = [Color(0, 0, 0, 0), ACC, BAD][fm]
 			"stance":
 				var sl: int = _first_val(sel, "stance_lock", -1)
-				st.text = I18n.s(STANCE_TXT[sl + 1])
 				ic.variant = sl + 1
+				ic.strip = Color(0, 0, 0, 0) if sl < 0 else INK2
 			"grenade":
-				st.text = str(_sum_val(sel, "grenades"))
+				n = _sum_val(sel, "grenades")
 			"smoke":
-				st.text = str(_sum_val(sel, "smoke_nades") + _sum_val(sel, "smoke_charges"))
+				n = _sum_val(sel, "smoke_nades") + _sum_val(sel, "smoke_charges")
 			"unload":
-				var n := 0
+				var nc := 0
 				for u in sel:
 					if is_instance_valid(u) and u is Vehicle:
-						n += u.cargo.size()
-				st.text = str(n) if n > 0 else ""
+						nc += u.cargo.size()
+				st.text = str(nc) if nc > 0 else ""
 			"airdrop":
-				st.text = str(_sum_val(sel, "crates"))
+				n = _sum_val(sel, "crates")
+			"minidrone":
+				n = _sum_val(sel, "fpv_left")
 			"hold":
 				ic.active = ic.active or _first_val(sel, "order", "") == "hold"
+		if n >= 0:
+			st.text = str(n)
+			st.add_theme_color_override("font_color", BAD if n == 0 else INK2)
 
 func _first_val(sel: Array, prop: String, def):
 	for u in sel:
@@ -512,32 +796,56 @@ func _rebuild_info() -> void:
 	else:
 		_info_group(sel)
 
-func _portrait(id: String, team: int, sz := Vector2(104, 104)) -> TextureRect:
+var _sk_mat: ShaderMaterial
+
+# küçük resimler (portre, kart, kuyruk) kâğıt üstüne mürekkep çizimi olarak gösterilir
+func _sketch_mat() -> ShaderMaterial:
+	if _sk_mat == null:
+		_sk_mat = ShaderMaterial.new()
+		_sk_mat.shader = load("res://shaders/sketch_thumb.gdshader")
+	return _sk_mat
+
+# portre: tam boy kare, koyu zeminli model görüntüsü (eskiz gölgelendiricisi yok); asker için rütbe şeritleri ve
+# alt kenarda XP çizgisi (Deco)
+func _portrait(id: String, team: int, u: Unit = null) -> Panel:
+	var ps := UPH - 2.0 * UPAD
 	var fr := Panel.new()
-	fr.custom_minimum_size = sz
-	fr.size = sz
-	var sb := _sb(Color(0, 0, 0, 0.3), Color(1, 1, 1, 0.1))
+	fr.custom_minimum_size = Vector2(ps, ps)
+	fr.size = Vector2(ps, ps)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.13, 0.135, 0.125)
+	sb.border_color = Color(1, 1, 1, 0.1)
+	sb.set_border_width_all(1)
+	sb.set_corner_radius_all(2)
 	fr.add_theme_stylebox_override("panel", sb)
 	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_box.add_child(fr)
 	var tr := TextureRect.new()
-	tr.texture = thumbs.get_thumb(id, team)
+	tr.texture = thumbs.get_thumb(id, team, true)
 	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	tr.set_anchors_preset(Control.PRESET_FULL_RECT)
-	tr.offset_left = 2
-	tr.offset_top = 2
-	tr.offset_right = -2
-	tr.offset_bottom = -2
+	tr.offset_left = 1
+	tr.offset_top = 1
+	tr.offset_right = -1
+	tr.offset_bottom = -1
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.add_child(tr)
-	return tr
+	var d := Deco.new()
+	d.u = u
+	d.set_anchors_preset(Control.PRESET_FULL_RECT)
+	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(d)
+	return fr
 
-func _vbox_at(x: float, y: float, w: float) -> VBoxContainer:
+# bilgi sütunu: portrenin sağında, portreyle aynı yükseklikte (durum satırı en alta yaslanır); bilgi kutusuna
+# çapalı — genişlik kutuyla birlikte değişir (yeniden kurulum yerleşimden önce çalışabilir)
+func _info_col(x := UPH - 2.0 * UPAD + 10.0) -> VBoxContainer:
 	var v := VBoxContainer.new()
-	v.position = Vector2(x, y)
-	v.custom_minimum_size = Vector2(w, 0)
-	v.size = Vector2(w, 0)
+	v.anchor_right = 1.0
+	v.offset_left = x
+	v.offset_right = 0.0
+	v.offset_bottom = UPH - 2.0 * UPAD
 	v.add_theme_constant_override("separation", 0)
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info_box.add_child(v)
@@ -556,64 +864,124 @@ func _spacer(parent: Control, h: float) -> void:
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	parent.add_child(c)
 
+static func _caps(t: String) -> String:
+	if I18n.lang == "tr":
+		t = t.replace("i", "İ").replace("ı", "I")
+	return t.to_upper()
+
+# başlık satırı: büyük harf kalın ad, sağda soluk alt başlık (rütbe · tim / tür)
+func _title_row(v: VBoxContainer, title: String, sub: String) -> void:
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(hb)
+	var t := _label(hb, "", 19, INK, font_b)
+	t.text = _caps(title)
+	var s := _label(hb, "", 12, Sketch.INK3, font_m)
+	s.text = sub
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.size_flags_vertical = Control.SIZE_SHRINK_END
+	s.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	s.clip_text = true
+
+# başlık + ince can çubuğu
+func _head(v: VBoxContainer, title: String, sub: String) -> void:
+	_title_row(v, title, sub)
+	_spacer(v, 3)
+	_info_live["hp"] = _bar(v, 4)
+	_spacer(v, 9)
+
+func _stat_row(parent: Control) -> StatRow:
+	var r := StatRow.new()
+	r.font = font_m
+	r.custom_minimum_size = Vector2(0, 18)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(r)
+	return r
+
+# en altta tek durum satırı: renkli kare + kısa metin
+func _status_line(v: VBoxContainer) -> void:
+	var fill := Control.new()
+	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(fill)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 7)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(hb)
+	var dot := ColorRect.new()
+	dot.custom_minimum_size = Vector2(6, 6)
+	dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(dot)
+	var l := _label(hb, "", 14, INK2, font_m)
+	l.clip_text = true
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_info_live["status"] = l
+	_info_live["dot"] = dot
+
+func _set_status(t: String, col: Color) -> void:
+	var l: Label = _info_live["status"]
+	l.text = t
+	l.add_theme_color_override("font_color", INK2 if col == OK else col)
+	(_info_live["dot"] as ColorRect).color = col
+
 func _info_soldier(s: Soldier) -> void:
-	_portrait("s:" + s.role, s.team)
-	var w := info_box.size.x - 118.0
-	if w < 100:
-		w = 240
-	var v := _vbox_at(118, 0, w)
-	var sq_name: String = s.squad.name if s.squad else "-"
-	_label(v, "%s  ·  %s" % [I18n.s("PİYADE"), sq_name.to_upper()], 13, DIM, font_m)
-	var nm := HBoxContainer.new()
-	nm.add_theme_constant_override("separation", 6)
-	nm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(nm)
-	var l1 := _label(nm, "", 27, Color(0.85, 0.84, 0.8), font_m)
-	l1.text = I18n.s(Soldier.RANKS[s.rank])
-	var l2 := _label(nm, "", 27, Color(1, 1, 1), font_b)
-	l2.text = I18n.s(Soldier.ROLE_TITLE.get(s.role, "Piyade")).to_upper()
-	var rk := RankBar.new()
-	rk.hud = self
-	rk.soldier = s
-	rk.custom_minimum_size = Vector2(0, 30)
-	v.add_child(rk)
-	_spacer(v, 4)
-	_info_live["hp"] = _bar(v, 5)
-	_spacer(v, 6)
-	_info_live["stats"] = _label(v, "", 15, TXT, font_m)
-	_info_live["status"] = _label(v, "", 15, AMBER, font_b)
+	var fr := _portrait("s:" + s.role, s.team, s)
+	fr.mouse_filter = Control.MOUSE_FILTER_STOP
+	_tip(fr, func(): return _xp_tip(s))
+	var v := _info_col()
+	var rk := " ".join(PackedStringArray(Array(I18n.s(Soldier.RANKS[s.rank]).split(" ")).map(func(x): return Sketch.sc(x))))
+	_head(v, I18n.s(Soldier.ROLE_TITLE.get(s.role, "Piyade")), "%s  ·  %s" % [rk, s.squad.name if s.squad else Sketch.sc(I18n.s("PİYADE"))])
+	_info_live["row"] = _stat_row(v)
+	_status_line(v)
 	_info_live["unit"] = s
 
+func _xp_tip(s: Soldier) -> String:
+	if not is_instance_valid(s):
+		return ""
+	var n := Soldier.RANK_S.size()
+	var nx: int = Soldier.RANK_XP[mini(s.rank + 1, n - 1)]
+	return "%s\n%d / %d XP" % [I18n.s(Soldier.RANKS[s.rank]), s.xp, nx]
+
 func _info_vehicle(u: Vehicle) -> void:
-	_portrait("v:" + u.vtype, u.team)
-	var v := _vbox_at(118, 0, maxf(info_box.size.x - 118.0, 240))
-	_label(v, "HAVA UNSURU" if u.is_air() else "ZIRHLI BİRLİK", 13, DIM, font_m)
-	_label(v, I18n.s(u.title).to_upper(), 27, Color(1, 1, 1), font_b)
-	_spacer(v, 6)
-	_info_live["hp"] = _bar(v, 5)
-	_spacer(v, 8)
-	_info_live["stats"] = _label(v, "", 15, TXT, font_m)
-	_info_live["status"] = _label(v, "", 15, AMBER, font_b)
+	_portrait("v:" + u.vtype, u.team, u)
+	var v := _info_col()
+	_head(v, I18n.s(u.title), Sketch.sc(I18n.s("HAVA UNSURU" if u.is_air() else "ZIRHLI BİRLİK")))
+	# solda iki kısa simge satırı (mürettebat · yolcu / sis · menzil), sağda zırh şeması (ön / yan / arka mm)
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 8)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(hb)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 3)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_child(left)
+	_info_live["row"] = _stat_row(left)
+	_info_live["row2"] = _stat_row(left)
+	if not u.armor_tab().is_empty():
+		var ap := ArmorPlate.new()
+		ap.hud = self
+		ap.u = u
+		ap.custom_minimum_size = Vector2(64, 48)
+		hb.add_child(ap)
+	_status_line(v)
 	_info_live["unit"] = u
 
 func _info_building(u: Building) -> void:
-	_portrait(u.btype, u.team)
-	var v := _vbox_at(118, 0, maxf(info_box.size.x - 118.0, 240))
-	_label(v, "YAPI", 13, DIM, font_m)
-	_label(v, I18n.s(u.title).to_upper(), 27, Color(1, 1, 1), font_b)
-	_spacer(v, 6)
-	_info_live["hp"] = _bar(v, 5)
-	_spacer(v, 6)
-	var d := _label(v, u.B["desc"], 14, DIM, font_m)
-	d.autowrap_mode = TextServer.AUTOWRAP_WORD
-	d.custom_minimum_size = Vector2(maxf(info_box.size.x - 120.0, 220), 0)
-	_info_live["status"] = _label(v, "", 15, AMBER, font_b)
+	var fr := _portrait(u.btype, u.team)
+	fr.mouse_filter = Control.MOUSE_FILTER_STOP
+	var desc: String = I18n.s(u.B["desc"])
+	_tip(fr, func(): return desc)
+	var v := _info_col()
+	_head(v, I18n.s(u.title), Sketch.sc(I18n.s("YAPI")))
 	var q := HBoxContainer.new()
-	q.add_theme_constant_override("separation", 4)
-	q.position = Vector2(0, 116)
-	info_box.add_child(q)
+	q.add_theme_constant_override("separation", 3)
+	v.add_child(q)
 	_info_live["queue"] = q
 	_info_live["qsig"] = ""
+	_status_line(v)
 	_info_live["unit"] = u
 
 func _info_group(sel: Array) -> void:
@@ -622,32 +990,33 @@ func _info_group(sel: Array) -> void:
 	if not soldiers.is_empty() and soldiers[0].squad:
 		var same: bool = soldiers.all(func(x): return x.squad == soldiers[0].squad)
 		if same:
-			sqn = soldiers[0].squad.name.to_upper()
-	var hb := HBoxContainer.new()
-	hb.position = Vector2(0, 0)
-	hb.custom_minimum_size = Vector2(maxf(info_box.size.x, 300), 0)
-	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	info_box.add_child(hb)
-	var hl := _label(hb, "", 15, TXT, font_b)
-	hl.text = "%s   ·   %s" % [I18n.s(sqn), I18n.s("%d BİRLİK") % sel.size()]
-	hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_info_live["status"] = _label(hb, "", 14, GREEN, font_m)
+			sqn = soldiers[0].squad.name
+	var iw := INFO_W
+	var v := _info_col(0.0)
+	_title_row(v, I18n.s(sqn), Sketch.sc(I18n.s("%d BİRLİK") % sel.size()))
+	_spacer(v, 5)
+	# tim üyeleri kart dizisi (en çok 2 satır); tek satırsa altında tim özeti (mermi / bomba / sis / baskı)
+	var cols := maxi(6, int((iw + 3.0) / 37.0))
+	var rows := mini(2, ceili(float(sel.size()) / cols))
 	var g := GridContainer.new()
-	g.columns = maxi(4, int((maxf(info_box.size.x, 300) + 4) / 52.0))
-	g.position = Vector2(0, 28)
-	g.add_theme_constant_override("h_separation", 4)
-	g.add_theme_constant_override("v_separation", 4)
-	info_box.add_child(g)
+	g.columns = cols
+	g.add_theme_constant_override("h_separation", 3)
+	g.add_theme_constant_override("v_separation", 3)
+	v.add_child(g)
 	var n := 0
 	for x in sel:
-		n += 1
-		if n > g.columns * 3:
+		if n >= cols * rows:
 			break
+		n += 1
 		var ch := Chip.new()
 		ch.hud = self
 		ch.u = x
-		ch.custom_minimum_size = Vector2(48, 56)
+		ch.custom_minimum_size = Vector2(34, 38 if rows == 1 else 32)
 		g.add_child(ch)
+	if rows == 1:
+		_spacer(v, 7)
+		_info_live["row"] = _stat_row(v)
+	_status_line(v)
 	_info_live["group"] = sel
 
 func _update_info() -> void:
@@ -657,17 +1026,35 @@ func _update_info() -> void:
 		var sel: Array = G.player.selected
 		var fight := false
 		var hurt := 0
+		var am := 0
+		var gr := 0
+		var sk := 0
+		var sup := 0.0
+		var ns := 0
 		for x in sel:
+			if not is_instance_valid(x):
+				continue
 			if x is Soldier:
 				if G.time - x.threat_time < 4.0:
 					fight = true
 				if x.incapacitated():
 					hurt += 1
+				if x.alive:
+					am += x.ammo
+					gr += x.grenades
+					sk += x.smoke_nades
+					sup += x.suppression
+					ns += 1
 			elif x is Vehicle and G.time - x.last_hit < 4.0:
 				fight = true
-		var st: Label = _info_live["status"]
-		st.text = (I18n.s("%d YARALI") % hurt) if hurt > 0 else I18n.s("ÇATIŞMADA" if fight else "HAZIR")
-		st.add_theme_color_override("font_color", RED if hurt > 0 or fight else GREEN)
+		_set_status(Sketch.sc((I18n.s("%d YARALI") % hurt) if hurt > 0 else I18n.s("ÇATIŞMADA" if fight else "HAZIR")), BAD if hurt > 0 else (ACC if fight else OK))
+		var row = _info_live.get("row")
+		if row != null and is_instance_valid(row):
+			if ns > 0:
+				var sp := int(sup / ns)
+				(row as StatRow).set_items([["ammo", str(am), INK2], ["grenade", str(gr), INK2 if gr > 0 else BAD], ["smoke", str(sk), INK2 if sk > 0 else BAD], ["supp", "%d%%" % sp, INK2 if sp < 30 else (ACC if sp < 70 else BAD)]])
+			else:
+				(row as StatRow).set_items([])
 		return
 	var u = _info_live.get("unit")
 	if u == null or not is_instance_valid(u):
@@ -675,12 +1062,10 @@ func _update_info() -> void:
 	var hp: Bar = _info_live["hp"]
 	if u is Building and not u.done:
 		hp.value = u.progress
-		hp.col = AMBER
+		hp.col = ACC
 	else:
 		hp.value = clampf(u.hp / u.max_hp, 0.0, 1.0)
-		hp.col = GREEN.lerp(RED, 1.0 - hp.value)
-	var stats: Label = _info_live.get("stats")
-	var status: Label = _info_live["status"]
+		hp.col = OK.lerp(BAD, 1.0 - hp.value)
 	if u is Soldier:
 		var stt: String = {"idle": "BEKLEMEDE", "move": "İLERLİYOR", "wounded": "YARALI", "dragged": "SÜRÜKLENİYOR", "healing": "TEDAVİDE", "rescue": "YARALIYA KOŞUYOR", "drag": "YARALI TAŞIYOR", "heal": "TEDAVİ EDİYOR", "build": "İNŞA EDİYOR", "throw": "EL BOMBASI", "dazed": "SERSEM", "fly": "SAVRULDU", "dive": "SİPER ALIYOR", "surrender": "TESLİM OLDU", "prisoner": "ESİR", "aboard": "ARAÇTA"}.get(u.state, "BEKLEMEDE")
 		if u.state == "idle" and u.cover_type > 0:
@@ -692,65 +1077,75 @@ func _update_info() -> void:
 		var tm := "SAKİN" if u.suppression < 30 else ("GERGİN" if u.suppression < 70 else "BASTIRILDI")
 		if u.stress_lv > 0:
 			tm = "PANİK" if u.stress_lv == 2 else "SARSILMIŞ"
+		var tx := "%s  ·  %s" % [Sketch.sc(I18n.s(stt)), Sketch.sc(I18n.s(tm))]
 		if u.cold >= 50.0:
-			tm += "  ·  " + I18n.s("DONUYOR" if u.cold >= 90.0 else "ÜŞÜYOR")
-		stats.text = "%s %d   ·   %s %d   ·   %s %d   ·   %s %d" % [I18n.s("MERMİ"), u.ammo, I18n.s("BOMBA"), u.grenades, I18n.s("YARALANMA"), u.downs, I18n.s("STRES"), int(u.stress)]
-		status.text = "%s   ·   %s" % [I18n.s(stt), I18n.s(tm)]
-		status.add_theme_color_override("font_color", RED if u.suppression >= 70 or u.stress_lv == 2 or u.incapacitated() else (AMBER if u.suppression >= 30 or u.stress_lv == 1 else GREEN))
+			tx += "  ·  " + Sketch.sc(I18n.s("DONUYOR" if u.cold >= 90.0 else "ÜŞÜYOR"))
+		_set_status(tx, BAD if u.suppression >= 70 or u.stress_lv == 2 or u.incapacitated() else (ACC if u.suppression >= 30 or u.stress_lv == 1 else OK))
+		var sp := int(u.suppression)
+		var items: Array = [["ammo", str(u.ammo), INK2 if u.ammo > 0 else BAD], ["grenade", str(u.grenades), INK2 if u.grenades > 0 else Sketch.INK3], ["smoke", str(u.smoke_nades), INK2 if u.smoke_nades > 0 else Sketch.INK3], ["supp", "%d%%" % sp, INK2 if sp < 30 else (ACC if sp < 70 else BAD)]]
+		if u.downs > 0:
+			items.append(["wound", str(u.downs), BAD])
+		(_info_live["row"] as StatRow).set_items(items)
 	elif u is Vehicle:
-		var parts: Array = ["%s %d / %d" % [I18n.s("GÖVDE"), int(u.hp), int(u.max_hp)]]
-		if not u.armor_tab().is_empty():
-			var ar: Array = u.armor_tab()[0]
-			parts.append("%s %d·%d·%d·%d" % [I18n.s("ZIRH"), ar[0], ar[1], ar[2], ar[3]])
+		var r1: Array = []
 		if u.crew_max > 0:
-			parts.append("%s %d/%d" % [I18n.s("MÜRETTEBAT"), u.crew_n, u.crew_max])
+			r1.append(["crew", "%d/%d" % [u.crew_n, u.crew_max], INK2 if u.crew_n >= u.crew_max else ACC])
 		if u.capacity() > 0:
-			parts.append(I18n.s("YOLCU %d / %d") % [u.cargo.size(), u.capacity()])
+			r1.append(["cargo", "%d/%d" % [u.cargo.size(), u.capacity()], INK2])
+		var r2: Array = []
 		if u.has_smoke():
-			parts.append("%s %d" % [I18n.s("Sis").to_upper(), u.smoke_charges])
-		stats.text = "  ·  ".join(parts)
-		var s2 := ""
+			r2.append(["smoke", str(u.smoke_charges), INK2 if u.smoke_charges > 0 else BAD])
+		var rg: float = u._range()
+		if rg > 0.0:
+			# en uzun silahın oyundaki menzili (harita ölçeğinde; 8 km haritada gerçek)
+			r2.append(["range", ("%.1f km" % (rg / 1000.0)) if rg >= 1000.0 else ("%d m" % int(rg)), INK2])
+		if r1.is_empty():
+			r1 = r2
+			r2 = []
+		(_info_live["row"] as StatRow).set_items(r1)
+		(_info_live["row2"] as StatRow).set_items(r2)
 		var probs: Array = []
 		if u.tracks_broken > 0.0:
-			probs.append(I18n.s("PALET KOPUK") + " %d" % int(u.tracks_broken))
+			probs.append(Sketch.sc(I18n.s("PALET KOPUK")) + " %d" % int(u.tracks_broken))
 		if u.tires > 0:
-			probs.append(I18n.s("%d TEKER PATLAK") % u.tires)
+			probs.append(Sketch.sc(I18n.s("%d TEKER PATLAK") % u.tires))
 		if not u.driver_ok:
-			probs.append(I18n.s("SÜRÜCÜ YOK"))
+			probs.append(Sketch.sc(I18n.s("SÜRÜCÜ YOK")))
 		if not u.gunner_ok and u.gunner:
-			probs.append(I18n.s("NİŞANCI YOK"))
+			probs.append(Sketch.sc(I18n.s("NİŞANCI YOK")))
 		if u.abandon_t >= 0.0:
-			probs.append(I18n.s("İMHA EDİLİYOR") + " %d" % int(u.abandon_t + 1))
+			probs.append(Sketch.sc(I18n.s("İMHA EDİLİYOR")) + " %d" % int(u.abandon_t + 1))
 		if u.needs_setup() and u.deployed < 1.0:
-			probs.append((I18n.s("TOPLANIYOR") if absf(u.cur_speed) < 0.1 and u.path_i < u.path.size() else I18n.s("KURULUYOR")) + " %%%d" % int(u.deployed * 100))
+			probs.append((Sketch.sc(I18n.s("TOPLANIYOR")) if absf(u.cur_speed) < 0.1 and u.path_i < u.path.size() else Sketch.sc(I18n.s("KURULUYOR"))) + " %%%d" % int(u.deployed * 100))
 		for ck in u.crit:
 			if u.crit[ck] > 0:
-				probs.append(I18n.s(Vehicle.CRIT_NAME[ck]) + (" ●" if u.crit[ck] == 1 else " ●●"))
+				probs.append(Sketch.sc(I18n.s(Vehicle.CRIT_NAME[ck])) + (" ●" if u.crit[ck] == 1 else " ●●"))
 		if u.vstress_lv > 0:
-			probs.append(I18n.s("PANİK" if u.vstress_lv == 2 else "SARSILMIŞ"))
+			probs.append(Sketch.sc(I18n.s("PANİK" if u.vstress_lv == 2 else "SARSILMIŞ")))
 		if not probs.is_empty():
-			s2 = "  ·  ".join(probs)
-		elif u.retreating and s2 == "":
-			s2 = I18n.s("GERİ ÇEKİLİYOR")
+			_set_status("  ·  ".join(probs), BAD)
+		elif u.retreating:
+			_set_status(Sketch.sc(I18n.s("GERİ ÇEKİLİYOR")), ACC)
 		elif G.time - u.last_hit < 4.0 or u.target != null:
-			s2 = I18n.s("ÇATIŞMADA")
+			_set_status(Sketch.sc(I18n.s("ÇATIŞMADA")), ACC)
 		else:
-			s2 = I18n.s("HAZIR")
-		status.text = s2
-		status.add_theme_color_override("font_color", RED if (not probs.is_empty() or u.target != null) else GREEN)
+			_set_status(Sketch.sc(I18n.s("HAZIR")), OK)
 	elif u is Building:
 		var q := ""
+		var qc := OK
 		if not u.done:
-			q = "%s %%%d" % [I18n.s("İNŞA"), int(u.progress * 100)]
+			q = "%s %%%d" % [Sketch.sc(I18n.s("İNŞA")), int(u.progress * 100)]
+			qc = ACC
 		elif not u.queue.is_empty():
 			var it: Dictionary = u.queue[0]
 			var P: Dictionary = Building.PDEF[it["id"]]
-			q = "%s: %s %%%d%s" % [I18n.s("ÜRETİM"), I18n.s(P["title"]).to_upper(), int(it["t"] / P["time"] * 100), ("  ·  " + I18n.s("BİRLİK SINIRI")) if it.get("blocked", false) else ""]
+			q = "%s: %s %%%d%s" % [Sketch.sc(I18n.s("ÜRETİM")), I18n.s(P["title"]), int(it["t"] / P["time"] * 100), ("  ·  " + Sketch.sc(I18n.s("BİRLİK SINIRI"))) if it.get("blocked", false) else ""]
+			qc = BAD if it.get("blocked", false) else OK
 		else:
-			q = "%s %%%d" % [I18n.s("SAĞLAM"), int(u.hp / u.max_hp * 100)]
+			q = "%s %%%d" % [Sketch.sc(I18n.s("SAĞLAM")), int(u.hp / u.max_hp * 100)]
 		if u.btype == "fob" and u.done:
-			q += "  ·  %s %d / %d kg" % [I18n.s("STOK"), int(u.stock), int(Building.STOCK_MAX)]
-		status.text = q
+			q += "  ·  %s %d / %d kg" % [Sketch.sc(I18n.s("STOK")), int(u.stock), int(Building.STOCK_MAX)]
+		_set_status(q, qc)
 		var qsig := ""
 		for it in u.queue:
 			qsig += it["id"] + ","
@@ -758,25 +1153,28 @@ func _update_info() -> void:
 			_info_live["qsig"] = qsig
 			var qb: HBoxContainer = _info_live["queue"]
 			_clear(qb)
-			for k in mini(u.queue.size(), 8):
+			for k in mini(u.queue.size(), 6):
 				var id: String = u.queue[k]["id"]
 				var kk := k
 				var bb := Button.new()
-				bb.custom_minimum_size = Vector2(52, 40)
+				bb.custom_minimum_size = Vector2(38, 38)
 				bb.focus_mode = Control.FOCUS_NONE
+				for s in ["normal", "hover", "pressed", "hover_pressed"]:
+					bb.add_theme_stylebox_override(s, _tile_sb(s))
 				var tr := TextureRect.new()
-				tr.texture = thumbs.get_thumb(id, u.team)
+				tr.texture = thumbs.get_thumb(id, u.team, true)
 				tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 				tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 				tr.set_anchors_preset(Control.PRESET_FULL_RECT)
-				tr.offset_left = 2
-				tr.offset_top = 2
-				tr.offset_right = -2
-				tr.offset_bottom = -2
+				tr.offset_left = 1
+				tr.offset_top = 1
+				tr.offset_right = -1
+				tr.offset_bottom = -1
 				tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				bb.add_child(tr)
 				var bld: Building = u
 				bb.pressed.connect(func(): _cancel_queue(bld, kk))
+				_tip(bb, func(): return "%s\n%s" % [I18n.s(Building.PDEF[id]["title"]), I18n.s("Tıkla: iptal et (ikmal iade)")])
 				qb.add_child(bb)
 
 func _cancel_queue(b: Building, k: int) -> void:
@@ -788,24 +1186,17 @@ func _cancel_queue(b: Building, k: int) -> void:
 	Sfx.play2d("ui_click", -8.0)
 
 func promoted(s: Soldier) -> void:
-	promoted_text("TERFİ", s.display_name().to_upper())
+	promoted_text("TERFİ", s.display_name())
 
 func promoted_text(a: String, b: String) -> void:
 	var pc := PanelContainer.new()
-	var sb := _sb(Color(0.04, 0.042, 0.04, 0.9), Color(1, 1, 1, 0.08))
-	sb.content_margin_left = 10
-	sb.content_margin_right = 14
-	sb.content_margin_top = 3
-	sb.content_margin_bottom = 3
-	sb.border_width_left = 3
-	sb.border_color = AMBER
-	pc.add_theme_stylebox_override("panel", sb)
+	pc.add_theme_stylebox_override("panel", Sketch.slip(0.94, 9, 23))
 	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 10)
 	pc.add_child(hb)
-	_label(hb, a, 13, AMBER, font_m)
-	var bl := _label(hb, "", 15, TXT, font_b)
+	_label(hb, a, 13, ACC, font_m)
+	var bl := _label(hb, "", 15, INK, font_b)
 	bl.text = b
 	promo_box.add_child(pc)
 	_toast.append([pc, 6.0, Vector3.ZERO])
@@ -839,7 +1230,7 @@ func _build_prod() -> void:
 	v.add_child(tabs)
 	for t in [["base", "ÜS"], ["def", "SAVUNMA"], ["inf", "PİYADE"], ["armor", "ZIRH"], ["art", "TOPÇU"], ["air", "HAVA"]]:
 		var b := Button.new()
-		b.text = I18n.s(t[1])
+		b.text = Sketch.sc(I18n.s(t[1]))
 		b.toggle_mode = true
 		b.focus_mode = Control.FOCUS_NONE
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -881,6 +1272,8 @@ func _tab_items() -> Array:
 		if not out.is_empty():
 			if tab == "art":
 				out.append_array(["fieldgun", "hmortar"])
+			if tab == "air":
+				out.append("para_squad")
 			return out
 	match tab:
 		"base":
@@ -894,7 +1287,7 @@ func _tab_items() -> Array:
 		"art":
 			return ["fieldgun", "howitzer", "atgun", "aagun", "hmortar", "mtngun", "arty", "mlrs"]
 		"air":
-			return ["heli", "transport"]
+			return ["heli", "transport", "para_squad"]
 	return []
 
 func _producer(id: String) -> Building:
@@ -924,22 +1317,16 @@ func _card(id: String) -> Control:
 	var is_b: bool = Building.BDEF.has(id)
 	var D: Dictionary = Building.BDEF[id] if is_b else Building.PDEF[id]
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(100, 74)
-	var cs := StyleBoxFlat.new()
-	cs.bg_color = Color(0.09, 0.1, 0.09, 0.95)
-	cs.border_color = Color(1, 1, 1, 0.08)
-	cs.set_border_width_all(1)
-	cs.set_corner_radius_all(3)
-	btn.add_theme_stylebox_override("normal", cs)
-	var ch := cs.duplicate()
-	ch.border_color = Color(0.95, 0.75, 0.3, 0.8)
-	btn.add_theme_stylebox_override("hover", ch)
-	btn.add_theme_stylebox_override("pressed", ch)
+	btn.custom_minimum_size = Vector2(88, 60)
+	btn.add_theme_stylebox_override("normal", Sketch.button("normal", 2))
+	btn.add_theme_stylebox_override("hover", Sketch.button("hover", 2))
+	btn.add_theme_stylebox_override("pressed", Sketch.button("hover", 2))
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	btn.clip_contents = true
 	btn.focus_mode = Control.FOCUS_NONE
 	var tr := TextureRect.new()
 	tr.texture = thumbs.get_thumb(id, G.player_team)
+	tr.material = _sketch_mat()
 	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	tr.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -950,7 +1337,7 @@ func _card(id: String) -> Control:
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(tr)
 	var shade := ColorRect.new()
-	shade.color = Color(0, 0, 0, 0.72)
+	shade.color = Color(PAPER.r, PAPER.g, PAPER.b, 0.9)
 	shade.anchor_top = 1.0
 	shade.anchor_bottom = 1.0
 	shade.anchor_right = 1.0
@@ -962,11 +1349,11 @@ func _card(id: String) -> Control:
 	btn.add_child(shade)
 	var nm := Label.new()
 	nm.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	nm.text = I18n.s(D["title"]).to_upper()
+	nm.text = I18n.s(D["title"])
 	nm.clip_text = true
 	nm.add_theme_font_override("font", font_b)
 	nm.add_theme_font_size_override("font_size", 11)
-	nm.add_theme_color_override("font_color", Color(0.93, 0.92, 0.86))
+	nm.add_theme_color_override("font_color", INK)
 	nm.anchor_top = 1.0
 	nm.anchor_bottom = 1.0
 	nm.anchor_right = 1.0
@@ -981,9 +1368,9 @@ func _card(id: String) -> Control:
 	cost.text = ("%d/m" % D["cost"]) if line else str(D["cost"])
 	cost.add_theme_font_override("font", font_b)
 	cost.add_theme_font_size_override("font_size", 14)
-	cost.add_theme_color_override("font_color", AMBER)
-	cost.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	cost.add_theme_constant_override("shadow_offset_y", 1)
+	cost.add_theme_color_override("font_color", INK)
+	cost.add_theme_color_override("font_outline_color", PAPER)
+	cost.add_theme_constant_override("outline_size", 5)
 	cost.anchor_left = 1.0
 	cost.anchor_right = 1.0
 	cost.offset_left = -60
@@ -993,7 +1380,7 @@ func _card(id: String) -> Control:
 	cost.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(cost)
 	var bar := ColorRect.new()
-	bar.color = AMBER
+	bar.color = ACC
 	bar.anchor_top = 1.0
 	bar.anchor_bottom = 1.0
 	bar.offset_top = -22
@@ -1006,8 +1393,9 @@ func _card(id: String) -> Control:
 	qn.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
 	qn.add_theme_font_override("font", font_b)
 	qn.add_theme_font_size_override("font_size", 19)
-	qn.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	qn.add_theme_constant_override("shadow_offset_y", 1)
+	qn.add_theme_color_override("font_color", ACC)
+	qn.add_theme_color_override("font_outline_color", PAPER)
+	qn.add_theme_constant_override("outline_size", 5)
 	qn.position = Vector2(7, 1)
 	qn.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(qn)
@@ -1057,7 +1445,7 @@ func _update_cards() -> void:
 		var tr: TextureRect = c[5]
 		if c[2]:
 			var cost: int = Building.BDEF[id]["cost"]
-			tr.modulate = Color(1, 1, 1) if G.supply[t] >= cost else Color(0.45, 0.45, 0.45)
+			tr.modulate = Color.WHITE if G.supply[t] >= cost else Color(1, 1, 1, 0.4)
 			bar.offset_right = 2
 			qn.text = ""
 		else:
@@ -1071,7 +1459,7 @@ func _update_cards() -> void:
 							n += 1
 							if k == 0:
 								prog = maxf(prog, u.queue[k]["t"] / Building.PDEF[id]["time"])
-			tr.modulate = Color(1, 1, 1) if (pb != null and G.supply[t] >= Building.PDEF[id]["cost"]) else Color(0.38, 0.38, 0.38)
+			tr.modulate = Color.WHITE if (pb != null and G.supply[t] >= Building.PDEF[id]["cost"]) else Color(1, 1, 1, 0.35)
 			bar.offset_right = 2 + (btn.size.x - 4) * prog
 			qn.text = str(n) if n > 0 else ""
 
@@ -1083,14 +1471,14 @@ func _deploy_banner() -> void:
 			_dep_lbl.visible = false
 		return
 	if _dep_lbl == null:
-		_dep_lbl = _label(root, "", 22, AMBER, font_b)
+		_dep_lbl = _label(root, "", 21, INK, font_b)
 		_dep_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_dep_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-		_dep_lbl.add_theme_constant_override("shadow_offset_y", 2)
+		_dep_lbl.add_theme_color_override("font_outline_color", PAPER)
+		_dep_lbl.add_theme_constant_override("outline_size", 7)
 	_dep_lbl.visible = true
 	_dep_lbl.size = Vector2(900, 30)
 	_dep_lbl.position = Vector2(root.size.x * 0.5 - 450, 128)
-	_dep_lbl.text = "%s  %d   ·   %s" % [I18n.s("KONUŞLANMA"), int(ceil(G.deploy_t)), I18n.s("birlik yerleştir, üretim hızlı · Enter: hazır")]
+	_dep_lbl.text = "%s  %d   ·   %s" % [Sketch.sc(I18n.s("KONUŞLANMA")), int(ceil(G.deploy_t)), I18n.s("birlik yerleştir, üretim hızlı · Enter: hazır").replace("Enter", Keybinds.label("deploy"))]
 
 func _process(dt: float) -> void:
 	_sweep += dt * 1.6
@@ -1110,10 +1498,10 @@ func _process(dt: float) -> void:
 			for tr in G.logi.trucks[t]:
 				if is_instance_valid(tr) and tr.alive:
 					links += 1
-		link_lbl.text = ("▲ %d" % links) if links > 0 else "▼"
-		link_lbl.add_theme_color_override("font_color", GREEN if links > 0 else RED)
+		link_lbl.text = (I18n.s("%d kamyon") % links) if links > 0 else I18n.s("hat kesik")
+		link_lbl.add_theme_color_override("font_color", INK2 if links > 0 else BAD)
 		cap_lbl.text = "%d/%d" % [G.cap_used[t], G.cap_max[t]]
-		cap_lbl.add_theme_color_override("font_color", RED if G.cap_used[t] >= G.cap_max[t] else TXT)
+		cap_lbl.add_theme_color_override("font_color", BAD if G.cap_used[t] >= G.cap_max[t] else INK)
 		var s := int(G.time)
 		time_lbl.text = "%02d:%02d%s" % [s / 60, s % 60, "" if Engine.time_scale <= 1.0 else "  ×%d" % int(Engine.time_scale)]
 		var ts := tab + G.map_kind + I18n.lang
@@ -1131,7 +1519,7 @@ func _process(dt: float) -> void:
 		if sig != _sel_sig:
 			_sel_sig = sig
 			call_deferred("_rebuild_info")
-		var csig := sig
+		var csig := sig + "k%d" % Keybinds.version
 		for id in ORDER_SEQ:
 			csig += str(order_state(id, sel) >= 0)
 		if csig != _cmd_sig:
@@ -1145,6 +1533,7 @@ func _process(dt: float) -> void:
 		tooltip.position = Vector2(clampf(m.x - tooltip.size.x * 0.5, 8, vs.x - tooltip.size.x - 8), m.y - tooltip.size.y - 16)
 		if _tip_owner == null or not is_instance_valid(_tip_owner) or not _tip_owner.is_visible_in_tree():
 			tooltip.visible = false
+	_update_hover()
 	overlay.queue_redraw()
 	radar.queue_redraw()
 	var i := _toast.size() - 1
@@ -1163,16 +1552,10 @@ func _on_alert(text: String, pos: Vector3, team: int) -> void:
 	if G.spectate or team != G.player_team:
 		return
 	var pc := PanelContainer.new()
-	var sb := _sb(Color(0.03, 0.032, 0.03, 0.78), Color(0, 0, 0, 0))
-	sb.border_width_left = 2
-	sb.border_color = AMBER
-	sb.content_margin_left = 9
-	sb.content_margin_right = 12
-	sb.content_margin_top = 2
-	sb.content_margin_bottom = 3
-	pc.add_theme_stylebox_override("panel", sb)
+	# uyarı fişi: kâğıt şerit; tıklayınca kamera olay yerine
+	pc.add_theme_stylebox_override("panel", Sketch.slip(0.93, 8, 31))
 	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var l := _label(pc, "", 16, TXT, font_m)
+	var l := _label(pc, "", 16, INK, font_m)
 	l.text = I18n.s(text)
 	alerts.add_child(pc)
 	_toast.append([pc, 5.0, pos])
@@ -1189,22 +1572,15 @@ func intel(who: String, text: String, pos: Vector3) -> void:
 	if G.spectate:
 		return
 	var pc := PanelContainer.new()
-	var sb := _sb(Color(0.03, 0.04, 0.05, 0.9), Color(0.45, 0.7, 1.0, 0.35))
-	sb.border_width_left = 3
-	sb.border_color = Color(0.45, 0.7, 1.0)
-	sb.content_margin_left = 10
-	sb.content_margin_right = 14
-	sb.content_margin_top = 4
-	sb.content_margin_bottom = 5
-	pc.add_theme_stylebox_override("panel", sb)
+	pc.add_theme_stylebox_override("panel", Sketch.slip(0.95, 10, 37))
 	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 0)
 	pc.add_child(v)
-	var h := _label(v, "", 12, Color(0.55, 0.75, 1.0), font_b)
-	h.text = "%s  ·  %s" % [I18n.s("İSTİHBARAT"), I18n.s("ESİR").to_upper()]
+	var h := _label(v, "", 12, Sketch.BLUE, font_b)
+	h.text = "%s  ·  %s" % [Sketch.sc(I18n.s("İSTİHBARAT")), Sketch.sc(I18n.s("ESİR"))]
 	who = who
-	var l := _label(v, "", 16, TXT, font_m)
+	var l := _label(v, "", 16, INK, font_m)
 	l.text = "“%s”" % text
 	alerts.add_child(pc)
 	_toast.append([pc, 10.0, pos])
@@ -1218,76 +1594,20 @@ func intel(who: String, text: String, pos: Vector3) -> void:
 		f.free()
 
 # ------------------------------------------------------------ menüler
-func show_menu() -> void:
+# ana menü scripts/main_menu.gd'de (Kampanya, Klasik Harita, Sandbox Test, Senaryo
+# Oluşturucu, Ayarlar, Masaüstüne Çık)
+func show_menu() -> MainMenu:
 	if menu:
 		menu.queue_free()
-	menu = Control.new()
-	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu.auto_translate_mode = Node.AUTO_TRANSLATE_MODE_DISABLED
-	root.add_child(menu)
-	var grad := TextureRect.new()
-	var gt := GradientTexture2D.new()
-	var gr := Gradient.new()
-	gr.set_color(0, Color(0, 0, 0, 0.84))
-	gr.set_color(1, Color(0, 0, 0, 0.0))
-	gt.gradient = gr
-	gt.fill_from = Vector2(0, 0)
-	gt.fill_to = Vector2(1, 0)
-	grad.texture = gt
-	grad.set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	grad.offset_right = 760
-	grad.stretch_mode = TextureRect.STRETCH_SCALE
-	grad.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	menu.add_child(grad)
-	var vb := VBoxContainer.new()
-	vb.position = Vector2(90, 130)
-	vb.add_theme_constant_override("separation", 6)
-	menu.add_child(vb)
-	var t := _label(vb, "MEVZİ", 116, Color(0.97, 0.94, 0.86), font_b)
-	t.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	t.add_theme_constant_override("shadow_offset_y", 4)
-	_label(vb, "MODERN SAVAŞ · GERÇEK SİPER · İKMAL HATLARI", 21, AMBER, font_m)
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 34)
-	vb.add_child(spacer)
-	var mb := _menu_btn(vb, "", func(): pass, I18n.s("Klasik: üsleri yok et · Fetih: bölge tut, puan topla · Savaş Hedefleri: 3 aşama, bölge + imha puanı"))
-	mb.text = I18n.s("MOD") + ": " + I18n.s(Modes.MODE_NAME[G.mode])
-	mb.pressed.connect(func():
-		var ks := Modes.MODE_NAME.keys()
-		G.mode = ks[(ks.find(G.mode) + 1) % ks.size()]
-		mb.text = I18n.s("MOD") + ": " + I18n.s(Modes.MODE_NAME[G.mode]))
-	var wb := _menu_btn(vb, "", func(): pass, I18n.s("Değişken: biyoma göre hava 3-4 dakikada bir değişir"))
-	var wk := ["dynamic", "clear", "rain", "storm", "sandstorm", "snowstorm"]
-	var wtxt := func(): return I18n.s("HAVA DURUMU") + ": " + I18n.s(Weather.NAME[G.weather_pref]) + ("  ·  " + I18n.s("GECE") if G.night_pref else "")
-	wb.text = wtxt.call()
-	wb.gui_input.connect(func(ev):
-		if ev is InputEventMouseButton and ev.pressed and ev.button_index == MOUSE_BUTTON_RIGHT:
-			G.night_pref = not G.night_pref
-			wb.text = wtxt.call())
-	wb.pressed.connect(func():
-		G.weather_pref = wk[(wk.find(G.weather_pref) + 1) % wk.size()]
-		wb.text = wtxt.call())
-	wb.tooltip_text = I18n.s("Sol tık: hava · Sağ tık: gece")
-	for id in MapGen.MAPS:
-		var mid: String = id
-		_menu_btn(vb, I18n.s(MapGen.MAPS[id]["title"]).to_upper(), func(): G.main.start_game(mid), I18n.s(MapGen.MAPS[id].get("desc", "")))
-	_menu_btn(vb, "SANDBOX", func(): _sandbox_menu())
-	_menu_btn(vb, "ÖZEL HARİTALAR", func(): _custom_list())
-	_menu_btn(vb, "HARİTA EDİTÖRÜ", func(): _editor_menu())
-	_menu_btn(vb, "AYARLAR", func(): _settings_menu())
-	_menu_btn(vb, "ÇIKIŞ", func(): get_tree().quit())
-	var help := _label(menu, "Sol tık seç · Sağ tık emir ver · Askerler kendi siperlerini bulur, yaralıları kurtarır.\nÜs kur, yolu koru: ikmal kamyonları ileri üslere ulaşmazsa gelir kesilir.", 16, Color(0.85, 0.82, 0.75), font_m)
-	help.position = Vector2(90, 800)
-	var cr := _label(menu, "", 13, DIM, font_m)
-	cr.text = "v0.2"
-	cr.anchor_top = 1.0
-	cr.anchor_bottom = 1.0
-	cr.offset_top = -30
-	cr.offset_left = 24
+	var mm := MainMenu.new()
+	mm.hud = self
+	menu = mm
+	root.add_child(mm)
+	return mm
 
 func _menu_btn(parent: Control, text: String, cb: Callable, tip := "") -> Button:
 	var b := Button.new()
-	b.text = I18n.s(text)
+	b.text = Sketch.sc(I18n.s(text))
 	b.custom_minimum_size = Vector2(360, 50)
 	b.add_theme_font_size_override("font_size", 24)
 	b.add_theme_font_override("font", font_b)
@@ -1301,129 +1621,14 @@ func _menu_btn(parent: Control, text: String, cb: Callable, tip := "") -> Button
 	parent.add_child(b)
 	return b
 
-func _sub_menu(title: String) -> VBoxContainer:
-	if menu.has_meta("sub"):
-		var old = menu.get_meta("sub")
-		if is_instance_valid(old):
-			old.queue_free()
-	var pc := PanelContainer.new()
-	pc.position = Vector2(500, 300)
-	pc.custom_minimum_size = Vector2(380, 0)
-	menu.add_child(pc)
-	menu.set_meta("sub", pc)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 6)
-	pc.add_child(v)
-	_label(v, title, 24, AMBER, font_b)
-	return v
-
-func _sandbox_menu() -> void:
-	var v := _sub_menu("SANDBOX")
-	_label(v, "Sınırsız ikmal, birlik sınırı yok, geliştirici komutları.", 14, DIM, font_m)
-	for id in MapGen.MAPS:
-		var mid: String = id
-		var b := _menu_btn(v, "", func(): G.main.start_game(mid, {}, true))
-		b.text = I18n.s(MapGen.MAPS[id]["title"]).to_upper()
-
-func _custom_list() -> void:
-	var v := _sub_menu("ÖZEL HARİTALAR")
-	var maps := MapEditor.list_maps()
-	if maps.is_empty():
-		_label(v, "Kayıtlı harita yok. Harita editöründen oluşturun.", 15, DIM, font_m)
-	for m in maps:
-		var mn: String = m
-		var b := _menu_btn(v, "", func(): G.main.start_game("", MapEditor.load_map(mn)))
-		b.text = mn.to_upper()
-
-func _editor_menu() -> void:
-	var v := _sub_menu("HARİTA EDİTÖRÜ")
-	_menu_btn(v, "BOŞ ÇÖL HARİTASI", func(): G.main.new_map("desert"))
-	_menu_btn(v, "BOŞ YEŞİL HARİTA", func(): G.main.new_map("green"))
-	_menu_btn(v, "BOŞ KIŞ HARİTASI", func(): G.main.new_map("winter"))
-	for id in MapGen.MAPS:
-		var mid: String = id
-		var b := _menu_btn(v, "", func(): G.main.open_editor_from_builtin(mid))
-		b.text = I18n.s("DÜZENLE: ") + I18n.s(MapGen.MAPS[id]["title"]).to_upper()
-	for m in MapEditor.list_maps():
-		var mn: String = m
-		var b := _menu_btn(v, "", func(): G.main.open_editor(MapEditor.load_map(mn)))
-		b.text = I18n.s("AÇ: ") + mn.to_upper()
-
-func _settings_menu() -> void:
-	var v := _sub_menu("AYARLAR")
-	var names := ["KOLAY", "NORMAL", "ZOR"]
-	var diff := _menu_btn(v, "", func(): pass)
-	diff.text = "%s:  %s" % [I18n.s("ZORLUK"), I18n.s(names[G.difficulty])]
-	diff.pressed.connect(func():
-		G.difficulty = (G.difficulty + 1) % 3
-		diff.text = "%s:  %s" % [I18n.s("ZORLUK"), I18n.s(names[G.difficulty])]
-		G.main.save_cfg())
-	var lang := _menu_btn(v, "", func(): pass)
-	lang.text = "%s:  %s" % [I18n.s("DİL"), "TÜRKÇE" if I18n.lang == "tr" else "ENGLISH"]
-	lang.pressed.connect(func():
-		G.main.set_lang("en" if I18n.lang == "tr" else "tr")
-		show_menu()
-		_settings_menu())
-	var fs := _menu_btn(v, "", func(): pass)
-	var fs_txt := func(): return "%s:  %s" % [I18n.s("Tam ekran").to_upper(), I18n.s("AÇIK" if G.main.cfg.get("fullscreen", true) else "KAPALI")]
-	fs.text = fs_txt.call()
-	fs.pressed.connect(func():
-		G.main.cfg["fullscreen"] = not G.main.cfg.get("fullscreen", true)
-		G.main.apply_video()
-		G.main.save_cfg()
-		fs.text = fs_txt.call())
-	var sh := _menu_btn(v, "", func(): pass)
-	var sh_txt := func(): return "%s:  %s" % [I18n.s("Gölgeler").to_upper(), I18n.s("AÇIK" if G.main.cfg.get("shadows", true) else "KAPALI")]
-	sh.text = sh_txt.call()
-	sh.pressed.connect(func():
-		G.main.cfg["shadows"] = not G.main.cfg.get("shadows", true)
-		G.main.apply_video()
-		G.main.save_cfg()
-		sh.text = sh_txt.call())
-	var es := _menu_btn(v, "", func(): pass)
-	var es_txt := func(): return "%s:  %s" % [I18n.s("Kenar kaydırma").to_upper(), I18n.s("AÇIK" if G.main.cfg.get("edge_scroll", true) else "KAPALI")]
-	es.text = es_txt.call()
-	es.pressed.connect(func():
-		G.main.cfg["edge_scroll"] = not G.main.cfg.get("edge_scroll", true)
-		G.main.apply_video()
-		G.main.save_cfg()
-		es.text = es_txt.call())
-	var vol := HBoxContainer.new()
-	vol.add_theme_constant_override("separation", 12)
-	v.add_child(vol)
-	_label(vol, "SES", 20, DIM, font_b).custom_minimum_size = Vector2(70, 0)
-	var sl := HSlider.new()
-	sl.custom_minimum_size = Vector2(270, 30)
-	sl.min_value = 0.0
-	sl.max_value = 1.0
-	sl.step = 0.05
-	sl.value = Sfx.volume
-	sl.value_changed.connect(func(x):
-		Sfx.set_volume(x)
-		G.main.save_cfg())
-	vol.add_child(sl)
-	var mm := HBoxContainer.new()
-	mm.add_theme_constant_override("separation", 12)
-	v.add_child(mm)
-	_label(mm, "HARİTA", 20, DIM, font_b).custom_minimum_size = Vector2(70, 0)
-	var ms := HSlider.new()
-	ms.custom_minimum_size = Vector2(270, 30)
-	ms.min_value = 0.8
-	ms.max_value = 2.0
-	ms.step = 0.05
-	ms.value = mini_scale
-	ms.value_changed.connect(func(x):
-		mini_scale = x
-		G.main.cfg["minimap"] = x
-		apply_mini_size()
-		radar.tex = null
-		G.main.save_cfg())
-	mm.add_child(ms)
-
 func hide_menu() -> void:
 	if menu:
 		menu.queue_free()
 		menu = null
+	# yeni oyun: önceki maçın zafer / yenilgi kutusu kalmasın
+	if over_menu:
+		over_menu.queue_free()
+		over_menu = null
 	tooltip.visible = false
 
 func toggle_pause() -> void:
@@ -1441,7 +1646,16 @@ func toggle_pause() -> void:
 	_menu_btn(vb, "ANA MENÜ", func():
 		toggle_pause()
 		G.main.to_menu())
-	_menu_btn(vb, "ÇIKIŞ", func(): get_tree().quit())
+	var qb := _menu_btn(vb, "", func(): _confirm_quit(pause_menu))
+	qb.text = Sketch.sc(MainMenu.t("MASAÜSTÜNE ÇIK"))
+
+# duraklatma menüsünden çıkış: onay kutusu (İPTAL kutuyu kapatır)
+func _confirm_quit(parent: Control) -> void:
+	if parent == null:
+		return
+	if parent.has_meta("confirm") and is_instance_valid(parent.get_meta("confirm")):
+		return
+	parent.set_meta("confirm", MainMenu.make_confirm(self, parent, "MASAÜSTÜNE ÇIK", "Oyun kapatılsın mı?", "ÇIK", func(): get_tree().quit(), Callable()))
 
 func _center_box(title: String) -> Control:
 	var c := Control.new()
@@ -1456,14 +1670,12 @@ func _center_box(title: String) -> Control:
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	c.add_child(cc)
 	var pc := PanelContainer.new()
-	var sb := _sb(BG, EDGE)
-	sb.set_content_margin_all(22)
-	pc.add_theme_stylebox_override("panel", sb)
+	pc.add_theme_stylebox_override("panel", Sketch.panel(0.97, 26, 41))
 	cc.add_child(pc)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 8)
 	pc.add_child(vb)
-	_label(vb, title, 40, AMBER, font_b).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_label(vb, title, 40, ACC, font_b).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	c.set_meta("vb", vb)
 	return c
 
@@ -1496,45 +1708,114 @@ class Bar extends Control:
 	func _process(_dt: float) -> void:
 		queue_redraw()
 
+	# düz çubuk: soluk iz + dolu kısım (modern, kompakt)
 	func _draw() -> void:
+		var w := size.x * clampf(value, 0.0, 1.0)
 		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.08))
-		draw_rect(Rect2(Vector2.ZERO, Vector2(size.x * clampf(value, 0.0, 1.0), size.y)), col)
+		draw_rect(Rect2(Vector2.ZERO, Vector2(w, size.y)), col)
 
-# rütbe çubuğu
-class RankBar extends Control:
-	var hud: Hud
-	var soldier: Soldier
+# portre süsü: asker için sol üstte rütbe şeritleri (sarı), alt kenarda bir sonraki rütbeye XP çizgisi
+class Deco extends Control:
+	var u: Unit
 
 	func _process(_dt: float) -> void:
 		queue_redraw()
 
 	func _draw() -> void:
-		if soldier == null or not is_instance_valid(soldier):
+		if u == null or not is_instance_valid(u) or not (u is Soldier):
 			return
-		var w := size.x
-		var y := 7.0
+		var s: Soldier = u
+		for i in s.rank:
+			var y := 6.0 + i * 4.5
+			draw_polyline(PackedVector2Array([Vector2(5, y), Vector2(10, y + 3.5), Vector2(15, y)]), Hud.AMBER, 2.0)
 		var n := Soldier.RANK_S.size()
-		var r := soldier.rank
-		var frac := 0.0
+		var r := s.rank
+		var frac := 1.0
 		if r < n - 1:
-			frac = clampf(float(soldier.xp - Soldier.RANK_XP[r]) / float(Soldier.RANK_XP[r + 1] - Soldier.RANK_XP[r]), 0.0, 1.0)
-		var x0 := 6.0
-		var x1 := w - 70.0
-		draw_line(Vector2(x0, y), Vector2(x1, y), Color(1, 1, 1, 0.14), 2.0)
-		var px := x0 + (x1 - x0) * (float(r) + frac) / float(n - 1)
-		draw_line(Vector2(x0, y), Vector2(px, y), Hud.AMBER, 2.0)
-		for i in n:
-			var x := x0 + (x1 - x0) * float(i) / float(n - 1)
-			var c := Hud.AMBER if i <= r else Color(0.42, 0.42, 0.4)
-			var pts := PackedVector2Array([Vector2(x, y - 5), Vector2(x + 5, y), Vector2(x, y + 5), Vector2(x - 5, y)])
-			if i <= r:
-				draw_colored_polygon(pts, c)
-			else:
-				pts.append(pts[0])
-				draw_polyline(pts, c, 1.2)
-			draw_string(hud.font_m, Vector2(x - 14, y + 20), I18n.s(Soldier.RANK_S[i]), HORIZONTAL_ALIGNMENT_CENTER, 28, 11, c)
-		var nx: int = Soldier.RANK_XP[mini(r + 1, n - 1)]
-		draw_string(hud.font_b, Vector2(x1 + 10, y + 5), "%d/%d XP" % [soldier.xp, nx], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.74, 0.7))
+			frac = clampf(float(s.xp - Soldier.RANK_XP[r]) / float(Soldier.RANK_XP[r + 1] - Soldier.RANK_XP[r]), 0.0, 1.0)
+		draw_rect(Rect2(1, size.y - 4, size.x - 2, 3), Color(0, 0, 0, 0.55))
+		draw_rect(Rect2(1, size.y - 4, (size.x - 2) * frac, 3), Hud.AMBER)
+
+# simge + sayı dizisi (mermi, bomba, sis, baskı, mürettebat, yolcu, menzil); tek renk, eşit aralık
+class StatRow extends Control:
+	var font: Font
+	var items: Array = []
+
+	func set_items(a: Array) -> void:
+		if a != items:
+			items = a
+			queue_redraw()
+
+	func _draw() -> void:
+		var x := 0.0
+		var y := size.y * 0.5
+		for it in items:
+			var col: Color = it[2]
+			glyph(self, it[0], Vector2(x + 6, y), col)
+			var tw := font.get_string_size(it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
+			draw_string(font, Vector2(x + 15, y + 5), it[1], HORIZONTAL_ALIGNMENT_LEFT, -1, 14, col)
+			x += 15.0 + tw + 14.0
+
+	static func glyph(ci: CanvasItem, g: String, c: Vector2, col: Color) -> void:
+		match g:
+			"ammo":
+				for i in 3:
+					var x := c.x - 4.5 + i * 3.6
+					ci.draw_rect(Rect2(x - 1.1, c.y - 2.0, 2.2, 7.0), col)
+					ci.draw_colored_polygon(PackedVector2Array([Vector2(x - 1.1, c.y - 2.0), Vector2(x + 1.1, c.y - 2.0), Vector2(x, c.y - 5.0)]), col)
+			"grenade":
+				ci.draw_circle(c + Vector2(0, 1.5), 4.0, col)
+				ci.draw_rect(Rect2(c + Vector2(-1.5, -5), Vector2(3, 2.5)), col)
+				ci.draw_line(c + Vector2(1.5, -4), c + Vector2(4.5, -6), col, 1.2)
+			"smoke":
+				ci.draw_circle(c + Vector2(-2.5, 1.5), 3.2, col)
+				ci.draw_circle(c + Vector2(2.5, 0.8), 3.5, col)
+				ci.draw_circle(c + Vector2(0, -2.5), 3.0, col)
+			"supp":
+				for i in 3:
+					var yy := -3.5 + i * 3.5
+					ci.draw_line(c + Vector2(-5, yy), c + Vector2(2.5, yy), col, 1.3)
+					ci.draw_circle(c + Vector2(4.5, yy), 1.2, col)
+			"wound":
+				ci.draw_rect(Rect2(c + Vector2(-1.5, -5), Vector2(3, 10)), col)
+				ci.draw_rect(Rect2(c + Vector2(-5, -1.5), Vector2(10, 3)), col)
+			"crew":
+				ci.draw_circle(c + Vector2(0, -3), 2.4, col)
+				ci.draw_rect(Rect2(c + Vector2(-3.5, 0), Vector2(7, 5)), col)
+			"cargo":
+				for sx in [-3.2, 3.2]:
+					ci.draw_circle(c + Vector2(sx, -3), 1.9, col)
+					ci.draw_rect(Rect2(c + Vector2(sx - 2.4, -0.5), Vector2(4.8, 5)), col)
+			"range":
+				ci.draw_arc(c, 4.5, 0, TAU, 14, col, 1.3)
+				ci.draw_line(c + Vector2(0, -6.5), c + Vector2(0, 6.5), col, 1.0)
+				ci.draw_line(c + Vector2(-6.5, 0), c + Vector2(6.5, 0), col, 1.0)
+
+# araç zırh şeması: üstten gövde dikdörtgeni, ön / yan / arka kenar kalınlığı ve rengi zırhla orantılı, değerler mm
+# (roadmap 51: kinetik zırh, RHA eşdeğeri; armor_tab()[0] = [ön, yan, arka, üst] / 20 mm)
+class ArmorPlate extends Control:
+	var hud: Hud
+	var u: Vehicle
+
+	func _draw() -> void:
+		if u == null or not is_instance_valid(u) or u.armor_tab().is_empty():
+			return
+		var ar: Array = u.armor_tab()[0]
+		var mm := [int(ar[0] * 20.0), int(ar[1] * 20.0), int(ar[2] * 20.0)]
+		var r := Rect2(Vector2(size.x * 0.5 - 11, 13), Vector2(22, size.y - 26))
+		draw_rect(r, Color(1, 1, 1, 0.06))
+		var col := func(v: int) -> Color:
+			return Hud.BAD.lerp(Hud.OK, clampf(float(v) / 500.0, 0.0, 1.0))
+		var wt := func(v: int) -> float:
+			return clampf(1.0 + float(v) / 120.0, 1.0, 5.0)
+		draw_line(r.position, Vector2(r.end.x, r.position.y), col.call(mm[0]), wt.call(mm[0]))
+		draw_line(Vector2(r.position.x, r.end.y), r.end, col.call(mm[2]), wt.call(mm[2]))
+		draw_line(r.position, Vector2(r.position.x, r.end.y), col.call(mm[1]), wt.call(mm[1]))
+		draw_line(Vector2(r.end.x, r.position.y), r.end, col.call(mm[1]), wt.call(mm[1]))
+		var f: Font = hud.font_m
+		draw_string(f, Vector2(0, 9), str(mm[0]), HORIZONTAL_ALIGNMENT_CENTER, size.x, 11, Sketch.INK2)
+		draw_string(f, Vector2(0, size.y - 1), str(mm[2]), HORIZONTAL_ALIGNMENT_CENTER, size.x, 11, Sketch.INK2)
+		draw_string(f, Vector2(r.end.x + 6, r.get_center().y + 4), str(mm[1]), HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Sketch.INK2)
 
 # grup seçiminde birim simgesi
 class Chip extends Control:
@@ -1562,21 +1843,21 @@ class Chip extends Control:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.09 if hov else 0.045))
 		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.1), false, 1.0)
 		var c := Vector2(size.x * 0.5, size.y * 0.42)
-		var col := Color(0.9, 0.9, 0.86)
+		var col := INK
 		if not u.alive:
 			col = Color(0.4, 0.4, 0.4)
 		elif u is Soldier and u.incapacitated():
-			col = Hud.RED
+			col = Hud.BAD
 		if u is Soldier:
 			CmdIcon.role_glyph(self, u.role, c, 13.0, col)
 		elif u is Vehicle:
 			CmdIcon.veh_glyph(self, c, 15.0, col)
 		var fr := clampf(u.hp / u.max_hp, 0.0, 1.0) if u.alive else 0.0
 		draw_rect(Rect2(4, size.y - 8, size.x - 8, 3), Color(1, 1, 1, 0.1))
-		draw_rect(Rect2(4, size.y - 8, (size.x - 8) * fr, 3), Hud.GREEN.lerp(Hud.RED, 1.0 - fr))
+		draw_rect(Rect2(4, size.y - 8, (size.x - 8) * fr, 3), Hud.OK.lerp(Hud.BAD, 1.0 - fr))
 		if u is Soldier and u.rank > 0:
 			for k in u.rank:
-				draw_line(Vector2(size.x - 9, 5 + k * 3), Vector2(size.x - 4, 5 + k * 3), Hud.AMBER, 1.5)
+				draw_line(Vector2(size.x - 9, 5 + k * 3), Vector2(size.x - 4, 5 + k * 3), Hud.ACC, 1.5)
 
 # emir simgeleri (vektör çizim)
 class CmdIcon extends Control:
@@ -1584,20 +1865,50 @@ class CmdIcon extends Control:
 	var hud: Hud
 	var active := false
 	var variant := 0
+	var k := 1.0                         # simge ölçeği (emir karesinde küçültülür)
+	var strip := Color(0, 0, 0, 0)       # alt kenarda durum şeridi (ateş serbestliği, duruş kilidi)
 
 	func _process(_dt: float) -> void:
 		queue_redraw()
 
 	func _draw() -> void:
-		var c := size * 0.5 + Vector2(0, 2)
-		var col := Hud.AMBER if active else Color(0.92, 0.91, 0.87)
+		var col := Hud.ACC if active else INK
 		var p: Control = get_parent()
 		if p is Button and (p as Button).disabled:
 			col = Color(0.4, 0.4, 0.38)
 		if active:
-			draw_rect(Rect2(Vector2(1, 1), size - Vector2(2, 2)), Color(1, 0.74, 0.3, 0.9), false, 2.0)
+			draw_rect(Rect2(Vector2(0.5, 0.5), size - Vector2(1, 1)), Color(0.88, 0.4, 0.28, 0.95), false, 1.5)
+		if strip.a > 0.0:
+			draw_rect(Rect2(3, size.y - 3, size.x - 6, 2), strip)
+		# simgeler merkez etrafında ±14 px çizilir; ölçek dönüşümüyle kareye sığar
+		draw_set_transform(size * 0.5 + Vector2(0, 1), 0.0, Vector2(k, k))
+		var c := Vector2.ZERO
 		var w := 2.0
 		match kind:
+			"fastrope", "ropepick":
+				# helikopter gövdesi + sarkan halat + ok
+				draw_line(c + Vector2(-12, -9), c + Vector2(10, -9), col, w)
+				draw_rect(Rect2(c + Vector2(-8, -8), Vector2(12, 5)), col)
+				draw_line(c + Vector2(2, -3), c + Vector2(2, 12), col, 1.5)
+				if kind == "fastrope":
+					_arrow(c + Vector2(9, -2), c + Vector2(9, 11), col, 1.5)
+				else:
+					_arrow(c + Vector2(9, 11), c + Vector2(9, -2), col, 1.5)
+			"minidrone":
+				# quad: X kollar + 4 pervane halkası
+				for sx in [-1.0, 1.0]:
+					for sy in [-1.0, 1.0]:
+						draw_line(c, c + Vector2(sx, sy) * 9.0, col, w)
+						draw_arc(c + Vector2(sx, sy) * 9.0, 4.5, 0, TAU, 12, col, 1.2)
+				draw_rect(Rect2(c - Vector2(3, 3), Vector2(6, 6)), col)
+			"dronestation":
+				# anten direği + yayılan dalgalar + rampa
+				draw_line(c + Vector2(-6, 12), c + Vector2(-6, -8), col, w)
+				draw_line(c + Vector2(-11, 12), c + Vector2(-6, 2), col, 1.2)
+				draw_line(c + Vector2(-1, 12), c + Vector2(-6, 2), col, 1.2)
+				draw_arc(c + Vector2(-6, -8), 5.0, -PI * 0.85, -PI * 0.15, 8, col, 1.2)
+				draw_arc(c + Vector2(-6, -8), 9.0, -PI * 0.85, -PI * 0.15, 10, col, 1.2)
+				draw_line(c + Vector2(2, 11), c + Vector2(13, 4), col, w)
 			"move":
 				_arrow(c + Vector2(-9, 7), c + Vector2(9, -7), col, w)
 			"fast":
@@ -1632,13 +1943,11 @@ class CmdIcon extends Control:
 				draw_line(c + Vector2(-13, 0), c + Vector2(-5, 0), col, 1.5)
 				draw_line(c + Vector2(5, 0), c + Vector2(13, 0), col, 1.5)
 				if variant == 2:
-					draw_line(c + Vector2(-9, -9), c + Vector2(9, 9), Hud.RED, 2.0)
+					draw_line(c + Vector2(-9, -9), c + Vector2(9, 9), Hud.BAD, 2.0)
 				elif variant == 1:
 					draw_circle(c, 2.5, col)
 			"stance":
 				role_body(self, c, variant, col)
-				if variant == 0:
-					draw_string(hud.font_b, c + Vector2(5, 12), "A", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, col)
 			"unload":
 				draw_rect(Rect2(c + Vector2(-12, -8), Vector2(14, 10)), col, false, 1.5)
 				_arrow(c + Vector2(0, 2), c + Vector2(12, 10), col, w)
@@ -1663,6 +1972,65 @@ class CmdIcon extends Control:
 			"demolish":
 				draw_line(c + Vector2(-9, -9), c + Vector2(9, 9), col, 2.5)
 				draw_line(c + Vector2(9, -9), c + Vector2(-9, 9), col, 2.5)
+			"attack":
+				# nişangâh + ortada dolu nokta
+				draw_arc(c, 8.0, 0, TAU, 20, col, 1.6)
+				draw_circle(c, 2.6, col)
+				for d in [Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0)]:
+					draw_line(c + d * 5.0, c + d * 12.0, col, 1.6)
+			"garrison":
+				# ev + içeri giren ok
+				draw_polyline(PackedVector2Array([c + Vector2(-10, -1), c + Vector2(0, -10), c + Vector2(10, -1)]), col, w)
+				draw_rect(Rect2(c + Vector2(-8, -1), Vector2(16, 11)), col, false, w)
+				_arrow(c + Vector2(-14, 5), c + Vector2(1, 5), col, 1.6)
+			"exitbldg":
+				draw_polyline(PackedVector2Array([c + Vector2(-10, -1), c + Vector2(0, -10), c + Vector2(10, -1)]), col, w)
+				draw_rect(Rect2(c + Vector2(-8, -1), Vector2(16, 11)), col, false, w)
+				_arrow(c + Vector2(-1, 5), c + Vector2(14, 5), col, 1.6)
+			"board":
+				# araç gövdesi + üstüne inen ok
+				draw_rect(Rect2(c + Vector2(-12, 2), Vector2(24, 8)), col, false, w)
+				draw_circle(c + Vector2(-7, 12), 2.2, col)
+				draw_circle(c + Vector2(7, 12), 2.2, col)
+				_arrow(c + Vector2(0, -12), c + Vector2(0, 0), col, 1.6)
+			"dronerecall":
+				for sx in [-1.0, 1.0]:
+					for sy in [-1.0, 1.0]:
+						draw_line(c + Vector2(0, -5), c + Vector2(0, -5) + Vector2(sx, sy) * 6.0, col, 1.5)
+						draw_arc(c + Vector2(0, -5) + Vector2(sx, sy) * 6.0, 3.0, 0, TAU, 10, col, 1.0)
+				_arrow(c + Vector2(0, 1), c + Vector2(0, 12), col, 1.6)
+			"rebuild":
+				# iki kıyı + aradaki kafes köprü
+				draw_line(c + Vector2(-14, 8), c + Vector2(-8, 8), col, w)
+				draw_line(c + Vector2(8, 8), c + Vector2(14, 8), col, w)
+				draw_line(c + Vector2(-9, 4), c + Vector2(9, 4), col, w)
+				draw_line(c + Vector2(-9, -4), c + Vector2(9, -4), col, 1.5)
+				for xx in [-9.0, -3.0, 3.0, 9.0]:
+					draw_line(c + Vector2(xx, 4), c + Vector2(xx, -4), col, 1.3)
+				draw_line(c + Vector2(-9, 4), c + Vector2(-3, -4), col, 1.2)
+				draw_line(c + Vector2(3, 4), c + Vector2(9, -4), col, 1.2)
+			"hulldown":
+				# set (yay) arkasında taret ve namlu
+				draw_arc(c + Vector2(-2, 14), 14.0, -PI * 0.92, -PI * 0.08, 14, col, w)
+				draw_rect(Rect2(c + Vector2(-6, -4), Vector2(10, 6)), col)
+				draw_line(c + Vector2(4, -1), c + Vector2(14, -3), col, 2.0)
+			"merge":
+				draw_circle(c + Vector2(-7, -3), 3.0, col)
+				draw_circle(c + Vector2(7, -3), 3.0, col)
+				_arrow(c + Vector2(-9, 6), c + Vector2(-2, 6), col, 1.5)
+				_arrow(c + Vector2(9, 6), c + Vector2(2, 6), col, 1.5)
+			"dismount", "mount":
+				draw_rect(Rect2(c + Vector2(-12, -2), Vector2(14, 9)), col, false, w)
+				draw_circle(c + Vector2(9, -6), 2.6, col)
+				draw_line(c + Vector2(9, -3), c + Vector2(9, 5), col, 2.0)
+				if kind == "dismount":
+					_arrow(c + Vector2(2, 9), c + Vector2(12, 12), col, 1.4)
+				else:
+					_arrow(c + Vector2(12, 12), c + Vector2(3, 9), col, 1.4)
+			"abandon":
+				draw_rect(Rect2(c + Vector2(-12, -2), Vector2(16, 9)), col, false, w)
+				draw_line(c + Vector2(6, -10), c + Vector2(14, 10), Hud.BAD, 2.0)
+				draw_line(c + Vector2(14, -10), c + Vector2(6, 10), Hud.BAD, 2.0)
 
 	func _arrow(a: Vector2, b: Vector2, col: Color, w: float) -> void:
 		draw_line(a, b, col, w)
@@ -1699,8 +2067,8 @@ class CmdIcon extends Control:
 			"at":
 				ci.draw_line(c + Vector2(-r * 0.7, -r * 0.35), c + Vector2(r * 1.0, -r * 0.35), col, 3.5)
 			"medic":
-				ci.draw_rect(Rect2(c + Vector2(-r * 0.12, -r * 0.15), Vector2(r * 0.24, r * 0.6)), Hud.RED)
-				ci.draw_rect(Rect2(c + Vector2(-r * 0.3, r * 0.03), Vector2(r * 0.6, r * 0.24)), Hud.RED)
+				ci.draw_rect(Rect2(c + Vector2(-r * 0.12, -r * 0.15), Vector2(r * 0.24, r * 0.6)), Hud.BAD)
+				ci.draw_rect(Rect2(c + Vector2(-r * 0.3, r * 0.03), Vector2(r * 0.6, r * 0.24)), Hud.BAD)
 			"sniper":
 				ci.draw_line(c + Vector2(-r * 0.5, 0), c + Vector2(r * 1.3, -r * 0.1), col, 1.5)
 			"engineer":
@@ -1745,13 +2113,8 @@ class Overlay extends Control:
 				continue
 			var own: bool = u.team == G.player_team and not G.spectate
 			if u.selected:
-				var col: Color = Color(0.55, 0.95, 0.65, 0.85) if own else Color(1.0, 0.45, 0.35, 0.85)
-				var r: float = 0.38 if u is Soldier else u.radius + 0.3
-				if u is Building:
-					r = u.radius * 0.95
-				_ellipse(p, r, col, 1.0 if u is Soldier else 1.4)
-				if not (u is Soldier):
-					_brackets(p, r, col)
+				var col: Color = Color(0.55, 0.95, 0.65, 0.9) if own else Color(1.0, 0.45, 0.35, 0.9)
+				_sel_mark(u, p, col)
 			# can çubuğu
 			var show_bar: bool = u.selected or (G.time - u.last_hit < 3.0 and u.hp < u.max_hp)
 			if u is Building and not u.done:
@@ -1801,16 +2164,19 @@ class Overlay extends Control:
 						pct = int(u.bleed)
 					"build":
 						st_s = I18n.s("İNŞA")
-					"move":
-						st_s = I18n.s("İLERLİYOR")
 					_:
-						if u.suppression > 5.0:
+						# yalnız önemli durum yazılır (inceleme dersi 147: seçili timin her askerinin üstünde
+						# "İLERLİYOR" yazısı kalabalık yapıyordu); hareket / bekleme yazısız
+						if u.suppression > 30.0:
 							st_s = I18n.s("BASKI")
 							pct = int(u.suppression)
-				var lc := Color(0.45, 0.72, 1.0, 0.95)
-				draw_string(hud.font_b, ls + Vector2(-30, 0), role_s, HORIZONTAL_ALIGNMENT_CENTER, 60, 11, lc)
+				var lc := Color(0.62, 0.8, 1.0, 0.9)
+				draw_string_outline(hud.font_m, ls + Vector2(-30, 0), role_s, HORIZONTAL_ALIGNMENT_CENTER, 60, 10, 3, Color(0, 0, 0, 0.5))
+				draw_string(hud.font_m, ls + Vector2(-30, 0), role_s, HORIZONTAL_ALIGNMENT_CENTER, 60, 10, lc)
 				if st_s != "":
-					draw_string(hud.font_b, ls + Vector2(-50, 13), st_s + (" %d%%" % clampi(pct, 0, 100) if pct >= 0 else ""), HORIZONTAL_ALIGNMENT_CENTER, 100, 15, lc)
+					var stx := Sketch.sc(st_s) + (" %d%%" % clampi(pct, 0, 100) if pct >= 0 else "")
+					draw_string_outline(hud.font_b, ls + Vector2(-50, 12), stx, HORIZONTAL_ALIGNMENT_CENTER, 100, 12, 3, Color(0, 0, 0, 0.55))
+					draw_string(hud.font_b, ls + Vector2(-50, 12), stx, HORIZONTAL_ALIGNMENT_CENTER, 100, 12, Sketch.RED)
 			# durum ikonları (baş üstünde koyu kutucuklar)
 			if u is Soldier and u.alive and cam.size < 60.0 and (own or vt < 0):
 				var icons: Array = []
@@ -1828,33 +2194,24 @@ class Overlay extends Control:
 					var hs := cam.screen(p + Vector3(0, 2.15, 0))
 					for ii in icons.size():
 						_status_icon(Vector2(hs.x + (ii - (icons.size() - 1) * 0.5) * 24.0, hs.y - (34.0 if u.bubble != "" else 0.0)), icons[ii])
-			# konuşma balonu (yuvarlak, kenarlıklı, kuyruklu)
-			if u.bubble != "" and cam.size < 75.0:
+			# konuşma balonu: yalnız kendi birliklerimiz (inceleme dersi 147 — düşman balonları savaş alanını yazıyla
+			# dolduruyordu); kompakt koyu şerit, cümle düzeni; yaralı / bastırılmış vurgu renginde
+			if u.bubble != "" and cam.size < 75.0 and (own or vt < 0):
 				var s4 := cam.screen(p + Vector3(0, 2.3, 0))
-				var fb: Font = hud.font_b
-				var txt: String = u.bubble.to_upper()
-				var tw := fb.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-				var rect := Rect2(s4.x - tw * 0.5 - 9, s4.y - 30, tw + 18, 21)
+				var fb: Font = hud.font_m
+				var txt: String = Sketch.sc(u.bubble)
+				var tw := fb.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x
+				var rect := Rect2(s4.x - tw * 0.5 - 7, s4.y - 26, tw + 14, 18)
 				var a: float = clampf(u.bubble_t * 2.0, 0.0, 1.0)
-				var enemy_side := not own and vt >= 0
-				var bg := Color(0.97, 0.95, 0.9, 0.94 * a)
-				var edge := Color(0.42, 0.36, 0.3, 0.85 * a)
-				var tc := Color(0.62, 0.16, 0.1, a) if (u is Soldier and (u.state == "wounded" or u.suppression > 60.0)) else Color(0.25, 0.22, 0.2, a)
-				if enemy_side:
-					tc = Color(0.55, 0.12, 0.1, a)
-				var sb := StyleBoxFlat.new()
-				sb.bg_color = bg
-				sb.border_color = edge
-				sb.set_border_width_all(1)
-				sb.set_corner_radius_all(10)
-				sb.shadow_color = Color(0, 0, 0, 0.25 * a)
-				sb.shadow_size = 3
-				sb.shadow_offset = Vector2(1, 2)
-				draw_style_box(sb, rect)
-				var tl := PackedVector2Array([Vector2(s4.x - 6, rect.end.y - 1), Vector2(s4.x + 3, rect.end.y - 1), Vector2(s4.x - 4, rect.end.y + 7)])
-				draw_colored_polygon(tl, bg)
-				draw_polyline(PackedVector2Array([tl[0], tl[2], tl[1]]), edge, 1.0)
-				draw_string(fb, Vector2(rect.position.x + 9, rect.position.y + 15), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, tc)
+				var tc := Sketch.RED if (u is Soldier and (u.state == "wounded" or u.suppression > 60.0)) else INK
+				draw_rect(rect, Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.86 * a))
+				draw_rect(Rect2(rect.position.x, rect.end.y - 1, rect.size.x, 1), Color(tc.r, tc.g, tc.b, 0.7 * a))
+				draw_string(fb, Vector2(rect.position.x + 7, rect.position.y + 13), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(tc.r, tc.g, tc.b, a))
+		# üzerine gelinen birim: ince köşe işareti (seçili değilse)
+		var hu = hud.hover_u
+		if hu != null and is_instance_valid(hu) and hu.alive and not hu.selected:
+			var hcol: Color = Color(1, 1, 1, 0.7) if hu.team == G.player_team else Color(Sketch.RED.r, Sketch.RED.g, Sketch.RED.b, 0.85)
+			_brackets(hu.position, hu.radius, hcol)
 		# kutu seçimi
 		if G.player and G.player.boxing:
 			var r := Rect2(G.player.box_start, G.player.box_now - G.player.box_start).abs()
@@ -1869,10 +2226,11 @@ class Overlay extends Control:
 			var rr := 4.0 if G.player.pending_order in ["grenade", "suppress"] else (4.5 if G.player.pending_order == "smoke" else 1.5)
 			_ellipse(gp, rr, Color(1.0, 0.74, 0.3, 0.9), 2.0)
 			var hint := I18n.s("Hedef seç — sol tık: uygula · sağ tık: iptal")
-			var hw := maxf(hud.font_m.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x, 120.0)
-			draw_rect(Rect2(m + Vector2(12, 10), Vector2(hw + 14, 40)), Color(0, 0, 0, 0.6))
-			draw_string(hud.font_b, m + Vector2(18, 26), I18n.s(O["t"]).to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Hud.AMBER)
-			draw_string(hud.font_m, m + Vector2(18, 43), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.85))
+			var hw := maxf(hud.font_m.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x, 120.0)
+			draw_rect(Rect2(m + Vector2(14, 12), Vector2(hw + 14, 36)), Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.9))
+			draw_rect(Rect2(m + Vector2(14, 12), Vector2(2, 36)), Sketch.RED)
+			draw_string(hud.font_b, m + Vector2(22, 27), I18n.s(O["t"]), HORIZONTAL_ALIGNMENT_LEFT, -1, 14, INK)
+			draw_string(hud.font_m, m + Vector2(22, 42), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Sketch.INK2)
 		# yerleştirme ipucu
 		if G.player and G.player.place_type != "":
 			var B: Dictionary = Building.BDEF[G.player.place_type]
@@ -1884,18 +2242,13 @@ class Overlay extends Control:
 					txt += "  — " + I18n.s("%d ikmal") % int(ceil(B["cost"] * minf(30.0, G.player.place_a.distance_to(cam.mouse_ground(m)))))
 			else:
 				var why := PlayerCtl.can_place(G.player.place_type, cam.mouse_ground(m), G.player.place_rot, G.player_team)
-				txt += "  — " + I18n.s("%d ikmal") % B["cost"] + (("  ·  " + I18n.s(why)) if why != "" else "") + "   " + I18n.s("[R] döndür")
+				txt += "  — " + I18n.s("%d ikmal") % B["cost"] + (("  ·  " + I18n.s(why)) if why != "" else "") + "   " + I18n.s("[R] döndür").replace("[R]", "[%s]" % Keybinds.short("place.rot"))
 			draw_string(f, m + Vector2(18, 30), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1, 0.95))
 
 	func _status_icon(c: Vector2, kind: String) -> void:
-		var r := Rect2(c - Vector2(10, 10), Vector2(20, 20))
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0.22, 0.25, 0.28, 0.88)
-		sb.set_corner_radius_all(4)
-		sb.border_color = Color(1, 1, 1, 0.25)
-		sb.set_border_width_all(1)
-		draw_style_box(sb, r)
-		draw_colored_polygon(PackedVector2Array([c + Vector2(-4, 10), c + Vector2(4, 10), c + Vector2(0, 15)]), Color(0.22, 0.25, 0.28, 0.88))
+		var r := Rect2(c - Vector2(9, 9), Vector2(18, 18))
+		draw_rect(r, Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.86))
+		draw_rect(r, Color(1, 1, 1, 0.12), false, 1.0)
 		var w := Color(0.92, 0.94, 0.95)
 		match kind:
 			"medic":
@@ -1922,6 +2275,44 @@ class Overlay extends Control:
 			pts.append(G.cam.screen(p + Vector3(cos(a) * r, 0.05, sin(a) * r)))
 		draw_polyline(pts, col, w, true)
 
+	# seçim işareti (MEVZİ): zemine yatırılmış köşeli parantezler + bakış yönü çentiği. Asker: küçük baklava
+	# (köşe uçları), araç: gövde izine hizalı dikdörtgen köşeleri, yapı: taban izi köşeleri. Kapalı halka yok,
+	# kalabalıkta üst üste binen halka gürültüsü olmaz; çentik birimin baktığı yönü (siper/ateş açısı) gösterir.
+	func _sel_mark(u, p: Vector3, col: Color) -> void:
+		var yaw: float = u.rotation.y
+		var hx := 0.42
+		var hz := 0.42
+		var diamond := u is Soldier
+		if u is Vehicle:
+			hx = u.ext.x + 0.35
+			hz = u.ext.y + 0.35
+		elif u is Building:
+			hx = u.size.x * 0.5 * u._hq_k() + 0.4
+			hz = u.size.y * 0.5 * u._hq_k() + 0.4
+			yaw = u.rot
+		var fw := Vector3(-sin(yaw), 0, -cos(yaw))
+		var rt := Vector3(cos(yaw), 0, -sin(yaw))
+		var y := Vector3(0, 0.06, 0)
+		var w := 1.6 if diamond else 2.0
+		var corners: Array = []
+		if diamond:
+			corners = [p + fw * hz, p + rt * hx, p - fw * hz, p - rt * hx]
+		else:
+			corners = [p + fw * hz + rt * hx, p - fw * hz + rt * hx, p - fw * hz - rt * hx, p + fw * hz - rt * hx]
+		var k := 0.32 if diamond else minf(0.28, 1.6 / maxf(hx, hz))
+		for i in 4:
+			var c0: Vector3 = corners[i]
+			var c1: Vector3 = corners[(i + 1) % 4]
+			var cm: Vector3 = corners[(i + 3) % 4]
+			var a := G.cam.screen(c0 + y)
+			draw_line(a, G.cam.screen(c0 + (c1 - c0) * k + y), col, w, true)
+			draw_line(a, G.cam.screen(c0 + (cm - c0) * k + y), col, w, true)
+		# bakış yönü çentiği: önde küçük dolu üçgen
+		var tip := p + fw * (hz + (0.22 if diamond else 0.45))
+		var bl := p + fw * (hz + 0.04) - rt * (0.1 if diamond else 0.22)
+		var br := p + fw * (hz + 0.04) + rt * (0.1 if diamond else 0.22)
+		draw_colored_polygon(PackedVector2Array([G.cam.screen(tip + y), G.cam.screen(bl + y), G.cam.screen(br + y)]), col)
+
 	func _brackets(p: Vector3, r: float, col: Color) -> void:
 		var c := G.cam.screen(p + Vector3(0, 0.8, 0))
 		var px: float = get_viewport_rect().size.y / G.cam.size
@@ -1939,6 +2330,108 @@ class Radar extends Control:
 	var R := 100.0
 	var tex: ImageTexture = null
 	var tex_for := 0
+	var shot: ImageTexture = null     # kuşbakışı gerçek görüntü (roadmap 65): varsa yordamsal dokunun yerine
+	var shot_for := 0
+	var _shooting := false
+	var _tried_for := 0
+
+	# saha haritası ızgarası: mürekkep çizgiler, üstte harf (A…), solda sayı (1…) kareleri, kuzey oku ve
+	# ölçek çubuğu (kâğıt şerit üstünde)
+	func _field_grid(rr: Rect2) -> void:
+		var ink := Sketch.INK
+		var cells := 8
+		var fs := 9
+		for i in range(1, cells):
+			var t := float(i) / cells
+			var x := rr.position.x + rr.size.x * t
+			var y := rr.position.y + rr.size.y * t
+			draw_line(Vector2(x, rr.position.y), Vector2(x, rr.end.y), Color(ink.r, ink.g, ink.b, 0.28), 1.0)
+			draw_line(Vector2(rr.position.x, y), Vector2(rr.end.x, y), Color(ink.r, ink.g, ink.b, 0.28), 1.0)
+		var letters := "ABCDEFGH"
+		for i in cells:
+			var cx := rr.position.x + rr.size.x * (i + 0.5) / cells
+			var cy := rr.position.y + rr.size.y * (i + 0.5) / cells
+			draw_string_outline(hud.font_m, Vector2(cx - 3, rr.position.y + 10), letters[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 3, Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.85))
+			draw_string(hud.font_m, Vector2(cx - 3, rr.position.y + 10), letters[i], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink)
+			draw_string_outline(hud.font_m, Vector2(rr.position.x + 3, cy + 3), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 3, Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.85))
+			draw_string(hud.font_m, Vector2(rr.position.x + 3, cy + 3), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink)
+		draw_rect(rr, ink, false, 1.2)
+		# kuzey oku (sağ üst)
+		var na := Vector2(rr.end.x - 12, rr.position.y + 30)
+		draw_colored_polygon(PackedVector2Array([na + Vector2(0, -9), na + Vector2(4, 3), na + Vector2(0, 0)]), ink)
+		draw_polyline(PackedVector2Array([na + Vector2(0, -9), na + Vector2(-4, 3), na + Vector2(0, 0), na + Vector2(0, -9)]), ink, 1.0)
+		draw_string_outline(hud.font_b, na + Vector2(-3, 14), "K", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, 3, Sketch.PAPER)
+		draw_string(hud.font_b, na + Vector2(-3, 14), "K", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, ink)
+		# ölçek çubuğu (sol alt): haritanın ~1/4'üne en yakın yuvarlak uzunluk
+		var steps := [50.0, 100.0, 200.0, 250.0, 500.0, 1000.0, 2000.0]
+		var L := 50.0
+		for s in steps:
+			if s <= G.MAP * 0.22:
+				L = s
+		var px := L / G.MAP * rr.size.x
+		var o := Vector2(rr.position.x + 8, rr.end.y - 8)
+		draw_rect(Rect2(o - Vector2(4, 14), Vector2(px + 30, 18)), Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.82))
+		draw_rect(Rect2(o - Vector2(0, 3), Vector2(px * 0.5, 3)), ink)
+		draw_rect(Rect2(o - Vector2(0, 3), Vector2(px, 3)), ink, false, 1.0)
+		draw_string(hud.font_m, o + Vector2(px + 3, 0), ("%d km" % int(L / 1000.0)) if L >= 1000.0 else ("%d m" % int(L)), HORIZONTAL_ALIGNMENT_LEFT, -1, 9, ink)
+
+	# Mini harita, dünyanın kendisinden alınan dik (ortografik) kuşbakışı görüntüdür: arazi boyası, tarlalar,
+	# orman, ağaçlar, yollar, köyler, su, köprüler oyunda nasıl görünüyorsa öyle. Harita kurulunca bir kez
+	# alınır; sis katmanı (ayrı görüntü katmanında) ve birlik görselleri (düşman yeri sızmasın) görüntüye girmez,
+	# derinlik sisi kapalı. Görüntü kâğıda hafifçe çekilir (saha haritası); başarısızsa yordamsal doku kalır.
+	func _capture() -> void:
+		if _shooting or G.terrain == null or G.cam == null or DisplayServer.get_name() == "headless":
+			return
+		var want := G.terrain.get_instance_id()
+		if _tried_for == want:
+			return
+		_tried_for = want
+		_shooting = true
+		var n := 1024 if G.MAP >= 2048.0 else 768
+		var vp := SubViewport.new()
+		vp.size = Vector2i(n, n)
+		vp.world_3d = G.cam.get_world_3d()
+		vp.msaa_3d = Viewport.MSAA_4X
+		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		add_child(vp)
+		var cam := Camera3D.new()
+		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		cam.size = G.MAP
+		cam.near = 1.0
+		cam.far = 6000.0
+		cam.cull_mask = 0xFFFFF & ~FogOfWar.FOW_LAYER
+		cam.position = Vector3(G.MAP * 0.5, 3000.0, G.MAP * 0.5)
+		cam.rotation_degrees = Vector3(-90, 0, 0)
+		if G.main and G.main.env:
+			var env: Environment = G.main.env.duplicate()
+			env.fog_enabled = false
+			env.volumetric_fog_enabled = false
+			env.ssao_enabled = false
+			env.ssr_enabled = false
+			env.glow_enabled = false
+			cam.environment = env
+		vp.add_child(cam)
+		cam.current = true
+		var hidden: Array = []
+		for u in G.units:
+			if is_instance_valid(u) and u.visible:
+				u.visible = false
+				hidden.append(u)
+		for i in 3:
+			await RenderingServer.frame_post_draw
+		for u in hidden:
+			if is_instance_valid(u):
+				u.visible = true
+		var img := vp.get_texture().get_image()
+		vp.queue_free()
+		_shooting = false
+		if img == null or img.is_empty() or G.terrain == null or G.terrain.get_instance_id() != want:
+			return
+		img.convert(Image.FORMAT_RGB8)
+		img.generate_mipmaps()
+		shot = ImageTexture.create_from_image(img)
+		shot_for = want
+		queue_redraw()
 
 	func _rect() -> Rect2:
 		var s := minf(size.x, size.y) - 8.0
@@ -1953,30 +2446,97 @@ class Radar extends Control:
 		var k := (s - r.position) / r.size
 		return Vector3(clampf(k.x, 0, 1) * G.MAP, 0, clampf(k.y, 0, 1) * G.MAP)
 
-	# arazi görüntüsü: zemin tonu + tepe gölgesi, su, ağaçlık, yapılar, yollar
+	# arazi görüntüsü (roadmap 21): arazinin kendi boya / tarla / yükseklik dokularından alan ortalamasıyla
+	# küçültülür (eskiden piksel başına tek nokta: 8 km'de 42 m'lik pikselde yol ve köy kayboluyordu):
+	# tarla deseni ve orman zemini, yollar, tepe gölgesi, su, tek ağaçlar ve sıralar, binalar, köprüler
+	static func _down(src: Image, n: int) -> Image:
+		var im := src.duplicate() as Image
+		if im.is_compressed():
+			im.decompress()
+		# yarıya indirerek küçült (her adım 2×2 kutu ortalaması: ince yol / dere kapsama oranıyla kalır)
+		while im.get_width() >= n * 2:
+			im.resize(im.get_width() / 2, im.get_height() / 2, Image.INTERPOLATE_BILINEAR)
+		if im.get_width() != n:
+			im.resize(n, n, Image.INTERPOLATE_BILINEAR)
+		return im
+
 	func _build_tex() -> void:
-		var n := 192
-		var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+		var n := 512 if G.MAP >= 2048.0 else (384 if G.MAP >= 1024.0 else 256)
 		var base := Color(0.86, 0.72, 0.46) if G.map_kind == "desert" else (Color(0.86, 0.89, 0.92) if G.map_kind == "winter" else Color(0.42, 0.56, 0.26))
+		var crop := [base, Color(0.76, 0.66, 0.36), Color(0.36, 0.52, 0.2), Color(0.44, 0.34, 0.23), Color(0.48, 0.6, 0.28), Color(0.16, 0.3, 0.13)]
+		var road := Color(0.74, 0.7, 0.6) if G.map_kind != "winter" else Color(0.55, 0.55, 0.55)
+		var hi := _down(G.terrain.himg, n)
+		var pi := _down(G.terrain.img, n)
+		var fi := _down(G.terrain.fimg, n) if G.terrain.fimg != null else null
+		hi.convert(Image.FORMAT_RF)
+		pi.convert(Image.FORMAT_RGBA8)
+		var hd := hi.get_data()
+		var pd := pi.get_data()
+		var fd := PackedByteArray()
+		if fi != null:
+			fi.convert(Image.FORMAT_RGBA8)
+			fd = fi.get_data()
+		var out := PackedByteArray()
+		out.resize(n * n * 3)
 		var cs := G.MAP / n
+		var hk := 3.0 / maxf(cs, 0.5) * 8.0     # eğim → gölge (piksel boyundan bağımsız)
 		for z in n:
 			for x in n:
-				var p := Vector3((x + 0.5) * cs, 0, (z + 0.5) * cs)
+				var i := z * n + x
+				var h0 := hd.decode_float(i * 4)
+				var hx := hd.decode_float((z * n + mini(x + 1, n - 1)) * 4)
+				var hz := hd.decode_float((mini(z + 1, n - 1) * n + x) * 4)
 				var col := base
-				var h0 := G.terrain.ground_h(p)
-				var hx := G.terrain.ground_h(p + Vector3(cs, 0, 0))
-				var hz := G.terrain.ground_h(p + Vector3(0, 0, cs))
-				col = col.lightened(clampf((h0 - hx + h0 - hz) * 1.6, -0.3, 0.3)) if (h0 - hx + h0 - hz) > 0 else col.darkened(clampf(-(h0 - hx + h0 - hz) * 1.6, 0.0, 0.3))
+				if not fd.is_empty():
+					var fa := fd[i * 4 + 3] / 255.0
+					if fa > 0.04:
+						col = col.lerp(crop[clampi(int(round(fd[i * 4] / 255.0 * 5.0)), 0, 5)], clampf(fa * 1.15, 0.0, 1.0))
+				var rd := pd[i * 4] / 255.0
+				if rd > 0.05:
+					col = col.lerp(road, clampf(rd * 3.4, 0.0, 0.92))
+				var sl := (h0 - hx + h0 - hz) * hk
+				col = col.lightened(clampf(sl, 0.0, 0.28)) if sl > 0.0 else col.darkened(clampf(-sl, 0.0, 0.32))
+				var p := Vector3((x + 0.5) * cs, 0, (z + 0.5) * cs)
 				var gi := G.grid.idx(p)
 				if G.grid.water[gi] >= 1 and G.grid.bridge[gi] == 0:
-					col = Color(0.16, 0.42, 0.55)
-				elif G.grid.kind[gi] == Grid.K_TREE:
-					col = Color(0.16, 0.34, 0.14)
-				elif G.grid.h[gi] >= 0.3:
-					col = Color(0.78, 0.5, 0.36) if G.grid.kind[gi] == Grid.K_HOUSE else Color(0.6, 0.56, 0.5)
-				elif G.grid.h[gi] > 0.05:
-					col = col.lightened(0.15)
-				img.set_pixel(x, z, col)
+					col = Color(0.15, 0.38, 0.5).lerp(Color(0.2, 0.48, 0.6), clampf(-h0 * 0.3, 0.0, 1.0))
+				out[i * 3] = int(clampf(col.r, 0.0, 1.0) * 255.0)
+				out[i * 3 + 1] = int(clampf(col.g, 0.0, 1.0) * 255.0)
+				out[i * 3 + 2] = int(clampf(col.b, 0.0, 1.0) * 255.0)
+		var img := Image.create_from_data(n, n, false, Image.FORMAT_RGB8, out)
+		# tek ağaçlar, ağaç sıraları, koruluklar (orman zemini zaten boyalı): koyu yeşil nokta
+		var tc := Color(0.13, 0.27, 0.11)
+		if G.props != null:
+			for it in G.props.items:
+				if it["kind"] == "tree" and it["alive"]:
+					var tp: Vector3 = it["pos"]
+					var tx := int(tp.x / cs)
+					var tz := int(tp.z / cs)
+					if tx >= 0 and tz >= 0 and tx < n and tz < n:
+						img.set_pixel(tx, tz, img.get_pixel(tx, tz).lerp(tc, 0.55))
+		# binalar: kiremit / beton tonu, büyük haritada en az bir piksel
+		if G.blocks != null:
+			for hs in G.blocks.houses:
+				var hc: Vector3 = hs["center"]
+				var sz: Vector2 = hs["size"]
+				var r := Rect2i(int((hc.x - sz.x * 0.5) / cs), int((hc.z - sz.y * 0.5) / cs), maxi(1, int(ceil(sz.x / cs))), maxi(1, int(ceil(sz.y / cs))))
+				r = r.intersection(Rect2i(0, 0, n, n))
+				if r.size.x > 0 and r.size.y > 0:
+					img.fill_rect(r, Color(0.66, 0.42, 0.32) if G.map_kind != "winter" else Color(0.5, 0.36, 0.3))
+		# köprüler
+		for b in G.grid.bridges:
+			var c: Vector3 = b["c"]
+			var d: Vector3 = b["d"]
+			var L: float = b["L"]
+			var k := 0.0
+			while k <= L:
+				var q: Vector3 = c + d * (k - L * 0.5)
+				var qx := int(q.x / cs)
+				var qz := int(q.z / cs)
+				if qx >= 0 and qz >= 0 and qx < n and qz < n:
+					img.set_pixel(qx, qz, Color(0.78, 0.76, 0.7))
+				k += cs * 0.5
+		img.generate_mipmaps()
 		tex = ImageTexture.create_from_image(img)
 		tex_for = G.terrain.get_instance_id()
 
@@ -2000,18 +2560,21 @@ class Radar extends Control:
 	func _draw() -> void:
 		if not G.running or G.cam == null:
 			return
+		texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		var f: Font = hud.font
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.035, 0.034, 0.9))
 		if G.terrain and (tex == null or tex_for != G.terrain.get_instance_id()):
 			_build_tex()
+		if G.terrain and shot_for != G.terrain.get_instance_id():
+			_capture()
 		var rr := _rect()
-		if tex:
+		var real := shot != null and shot_for == G.terrain.get_instance_id()
+		if real:
+			draw_texture_rect(shot, rr, false)
+			# saha haritası tonu: görüntü kâğıda doğru hafifçe solar
+			draw_rect(rr, Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.13))
+		elif tex:
 			draw_texture_rect(tex, rr, false, Color(0.92, 0.92, 0.92))
-		for i in range(1, 4):
-			var t := G.MAP * i / 4.0
-			draw_line(w2r(Vector3(t, 0, 0)), w2r(Vector3(t, 0, G.MAP)), Color(0, 0, 0, 0.18), 1.0)
-			draw_line(w2r(Vector3(0, 0, t)), w2r(Vector3(G.MAP, 0, t)), Color(0, 0, 0, 0.18), 1.0)
-		draw_rect(rr, Color(1, 1, 1, 0.25), false, 1.0)
+		_field_grid(rr)
 		# hedef bölgeler
 		if G.modes != null and is_instance_valid(G.modes):
 			for z in G.modes.zones:
@@ -2043,20 +2606,20 @@ class Radar extends Control:
 				if u.is_air():
 					draw_colored_polygon(PackedVector2Array([p + Vector2(0, -4), p + Vector2(3.5, 3), p + Vector2(-3.5, 3)]), col.lightened(0.2))
 				else:
-					draw_rect(Rect2(p - Vector2(2.6, 2.6), Vector2(5.2, 5.2)), Color(0, 0, 0, 0.7))
+					draw_rect(Rect2(p - Vector2(2.7, 2.7), Vector2(5.4, 5.4)), Sketch.INK)
 					draw_rect(Rect2(p - Vector2(2, 2), Vector2(4, 4)), col.lightened(0.15))
 			else:
+				draw_circle(p, 2.3, Sketch.INK)
 				draw_circle(p, 1.6, col.lightened(0.1))
 		# kamera görüş alanı
 		var vp := get_viewport_rect().size
 		var q := PackedVector2Array()
 		for s in [Vector2(0, 0), Vector2(vp.x, 0), Vector2(vp.x, vp.y), Vector2(0, vp.y), Vector2(0, 0)]:
 			q.append(w2r(G.cam.mouse_ground(s)))
-		draw_polyline(q, Color(1, 1, 1, 0.75), 1.0)
-		# uyarı pingleri
+		draw_polyline(q, Color(Sketch.PAPER.r, Sketch.PAPER.g, Sketch.PAPER.b, 0.6), 3.0)
+		draw_polyline(q, Sketch.INK, 1.2)
+		# uyarı pingleri (kırmızı kalem)
 		for e in hud._toast:
 			if e[2] != Vector3.ZERO and e[1] > 3.0:
 				var k: float = fmod(e[1] * 2.0, 1.0)
-				draw_arc(w2r(e[2]), 4.0 + k * 10.0, 0, TAU, 16, Color(1, 0.74, 0.3, k), 1.5)
-		draw_string(hud.font_b, Vector2(8, 16), I18n.s("HARİTA"), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.45))
-		draw_string(f, Vector2(size.x - 8 - 60, 16), "%dM" % int(G.MAP), HORIZONTAL_ALIGNMENT_RIGHT, 60, 11, Color(1, 1, 1, 0.35))
+				draw_arc(w2r(e[2]), 4.0 + k * 10.0, 0, TAU, 16, Color(Sketch.RED.r, Sketch.RED.g, Sketch.RED.b, k), 1.6)

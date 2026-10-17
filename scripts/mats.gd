@@ -42,6 +42,31 @@ static func metal() -> StandardMaterial3D:
 		_c["metal"] = m
 	return _c["metal"]
 
+# kum torbası: çuval (hessian, CC0) dokusunun yalnız örgüsü; renk torba başına (shaders/sandbag.gdshader)
+static func sandbag() -> Material:
+	if not _c.has("sandbag"):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/sandbag.gdshader")
+		m.set_shader_parameter("alb", _mt("hessian_230", "albedo"))
+		m.set_shader_parameter("nrm", _mt("hessian_230", "normal"))
+		_c["sandbag"] = m
+	return _c["sandbag"]
+
+# kum torbası renkleri (sRGB): solgun haki polipropilen, zeytin yeşili, gri-ten, kirli kahve; torba başına seçilir
+const BAG_TONES := [Color(0.66, 0.6, 0.47), Color(0.47, 0.46, 0.35), Color(0.6, 0.57, 0.5), Color(0.53, 0.46, 0.36), Color(0.63, 0.58, 0.45)]
+
+static func bag_color(rng: RandomNumberGenerator, row: int, rows: int) -> Color:
+	var c: Color = BAG_TONES[rng.randi() % BAG_TONES.size()]
+	c = c.lerp(BAG_TONES[rng.randi() % BAG_TONES.size()], rng.randf() * 0.5)
+	var k := rng.randf_range(-0.05, 0.05)
+	c = Color(c.r + k, c.g + k, c.b + k * 0.8)
+	# alt sıra toprakla kirlenmiş, üst sıra güneşte solmuş
+	if row == 0:
+		c = c.lerp(Color(0.38, 0.32, 0.25), 0.4)
+	elif row == rows - 1:
+		c = c.lightened(0.05)
+	return c.srgb_to_linear()
+
 static func _mt(id: String, map: String) -> Texture2D:
 	var p := "res://assets/materials/%s/%s.jpg" % [id, map]
 	return load(p) if ResourceLoader.exists(p) else null
@@ -59,6 +84,11 @@ static func masonry() -> Material:
 		m.set_shader_parameter("concrete_nrm", _mt("concrete_wall_005", "normal"))
 		m.set_shader_parameter("streak_tex", _mt("rusty_painted_metal", "albedo"))
 		m.set_shader_parameter("chip_alb", _mt("rough_plaster_brick", "albedo"))
+		m.set_shader_parameter("wood_alb", _mt("brown_planks_05", "albedo"))
+		m.set_shader_parameter("metal_alb", _mt("corrugated_iron_02", "albedo"))
+		m.set_shader_parameter("panel_alb", _mt("precast_concrete_wall", "albedo"))
+		m.set_shader_parameter("rough_alb", _mt("white_plaster_rough_02", "albedo"))
+		m.set_shader_parameter("steel_alb", _mt("metal_plate_02", "albedo"))
 		var nt := NoiseTexture2D.new()
 		nt.width = 256
 		nt.height = 256
@@ -70,6 +100,16 @@ static func masonry() -> Material:
 		m.set_shader_parameter("noise_tex", nt)
 		_c["masonry"] = m
 	return _c["masonry"]
+
+# köprü: aynı dokular, biraz daha sık; kir/nem izi su çizgisinde (yol yüzünde değil)
+static func bridge() -> Material:
+	if not _c.has("bridge"):
+		var m: ShaderMaterial = (masonry() as ShaderMaterial).duplicate()
+		m.set_shader_parameter("grime_y0", -0.8)
+		m.set_shader_parameter("grime_h", 0.6)
+		m.set_shader_parameter("scale", 0.7)
+		_c["bridge"] = m
+	return _c["bridge"]
 
 # çatı: kiremit dokusu eğime hizalı, kışta yumuşak kar
 static func roof(snow: bool) -> Material:
@@ -91,6 +131,50 @@ static func roof(snow: bool) -> Material:
 		m.set_shader_parameter("snow", 1.0 if snow else 0.0)
 		_c[key] = m
 	return _c[key]
+
+# çatı (doku seçmeli): kil / arduvaz / kiremit / sac / paslı sac / beton / kurşun / bakır / kerpiç / ahşap
+# ölçek: dokunun bir tekrarı ~1/scale m. Kiremit dokuları ~2,5 m (eskiden 0,85: kiremit 5 cm, RTS uzaklığında kumlu kırmızı gürültü)
+const ROOF_TEX := {"clay": ["clay_roof_tiles_02", 0.0, 0.4, 1.0], "slate": ["grey_roof_tiles", 0.0, 0.42, 1.1], "tile": ["roof_tiles_14", 0.0, 0.42, 1.15],
+	"metal": ["corrugated_iron_02", 1.0, 0.45, 1.5], "rust": ["worn_corrugated_iron", 0.0, 0.45, 1.0], "conc": ["concrete_wall_005", 1.0, 0.35, 0.75],
+	"lead": ["metal_plate_02", 1.0, 0.6, 1.6], "copper": ["green_metal_rust", 0.0, 0.5, 1.0], "mud": ["white_plaster_rough_02", 1.0, 0.5, 1.0], "wood": ["brown_planks_05", 0.7, 0.6, 1.0]}
+
+static func roof2(tex: String, snow: bool) -> Material:
+	if not ROOF_TEX.has(tex):
+		return roof(snow)
+	var key := "roof2_%s_%s" % [tex, snow]
+	if not _c.has(key):
+		var m: ShaderMaterial = (roof(snow) as ShaderMaterial).duplicate()
+		var t: Array = ROOF_TEX[tex]
+		m.set_shader_parameter("tile_alb", _mt(t[0], "albedo"))
+		m.set_shader_parameter("tile_nrm", _mt(t[0], "normal"))
+		m.set_shader_parameter("mono", t[1])
+		m.set_shader_parameter("gain", t[3])
+		m.set_shader_parameter("scale", t[2])
+		_c[key] = m
+	return _c[key]
+
+# pencere camı: koyu, hafif yansımalı
+static func glass() -> StandardMaterial3D:
+	if not _c.has("glass"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		m.roughness = 0.12
+		m.metallic = 0.35
+		m.metallic_specular = 0.8
+		_c["glass"] = m
+	return _c["glass"]
+
+# sRGB tepe rengi + hafif metalik (klima, depo, korkuluk)
+static func metal_s() -> StandardMaterial3D:
+	if not _c.has("metal_s"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.vertex_color_is_srgb = true
+		m.roughness = 0.55
+		m.metallic = 0.25
+		_c["metal_s"] = m
+	return _c["metal_s"]
 
 static func stone() -> StandardMaterial3D:
 	# taş/sıva bloklar: dünya üç düzlemli hafif gürültü dokusu
@@ -116,6 +200,20 @@ static func stone() -> StandardMaterial3D:
 		m.uv1_scale = Vector3(0.9, 0.9, 0.9)
 		_c["stone"] = m
 	return _c["stone"]
+
+# doğal kaya: üretilmiş döşenebilir doku (tools/rock_tex.py), dünya üç düzlemli; üstte kar/yosun
+static func rock(snow := false, moss := false) -> ShaderMaterial:
+	var key := "rock_%s_%s" % [snow, moss]
+	if not _c.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/rock.gdshader")
+		m.set_shader_parameter("albedo_tex", load("res://assets/textures/rock_face/albedo.jpg"))
+		m.set_shader_parameter("normal_tex", load("res://assets/textures/rock_face/normal.jpg"))
+		m.set_shader_parameter("rough_tex", load("res://assets/textures/rock_face/rough.jpg"))
+		m.set_shader_parameter("snow", 1.0 if snow else 0.0)
+		m.set_shader_parameter("moss", 1.0 if moss else 0.0)
+		_c[key] = m
+	return _c[key]
 
 static func burnt() -> StandardMaterial3D:
 	if not _c.has("burnt"):
