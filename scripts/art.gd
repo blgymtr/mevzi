@@ -256,6 +256,13 @@ static func material(name: String, team: int) -> Material:
 			rough = 0.5
 			metal = 0.08
 			lay = [0.3, 0.0, 0.55, 0.0]
+		"airtrans":
+			# (122) nakliye uçağı: ABD "Gunship Gray" (FS 36118, koyu gri), Rusya VVS açık gri; yağ / egzoz izi
+			var nt2: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+			tint = Color(0.31, 0.33, 0.35) if nt2 != "rus" else Color(0.55, 0.57, 0.59)
+			rough = 0.55
+			metal = 0.1
+			lay = [0.45, 0.0, 0.6, 0.0]
 		_:
 			shaded = false
 	if shaded:

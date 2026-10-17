@@ -2768,6 +2768,17 @@ func fow_test() -> void:
 	await m._shot("fow_02_squad")
 	print("FOWTEST RESULT fails=%d" % fails)
 
+# havadaki noktayı ekranın ortasına getiren yer noktası (kamera bakış ışını boyunca yere iz düşümü)
+func _ray_ground(p: Vector3) -> Vector3:
+	var cam := m.get_viewport().get_camera_3d()
+	if cam == null:
+		return Vector3(p.x, 0, p.z)
+	var fwd := -cam.global_transform.basis.z
+	if fwd.y > -0.05:
+		return Vector3(p.x, 0, p.z)
+	var q := p + fwd * (p.y / -fwd.y)
+	return Vector3(q.x, 0, q.z)
+
 # hava indirme: uçak geçer, 8 paraşütçü atlar, kubbeler açılır, iner ve toplanır
 func para_test() -> void:
 	m.get_window().size = Vector2i(1280, 720)
@@ -2780,8 +2791,19 @@ func para_test() -> void:
 	var P: Dictionary = Building.PDEF["para_squad"]
 	Paradrop.launch(G.player_team, c, P["units"], sq, 30.0)
 	var shots := 0
+	var plane_shot := false
 	for i in 800:
 		await m._wait(0.05)
+		# (122) uçak yakın görüntü: ilk asker atlarken (rampa açık)
+		if not plane_shot and sq.members.size() >= 1:
+			for n in G.main.world.get_children():
+				if n is Paradrop:
+					plane_shot = true
+					var pp: Vector3 = (n as Paradrop).plane.global_position
+					_cam(_ray_ground(pp), 34.0)
+					await m._wait(0.05)
+					await m._shot("para_plane_%s" % G.nation[G.player_team])
+					print("PARA ramp=%.2f props=%d" % [(n as Paradrop).ramp_k, (n as Paradrop).props.size()])
 		var air := sq.members.filter(func(x): return is_instance_valid(x) and x.state == "para")
 		if air.size() >= 3 and shots < 3 and i % 25 == 0:
 			_cam(air[0].position, 34.0 if shots == 0 else 22.0)
@@ -2801,6 +2823,23 @@ func para_test() -> void:
 	print("PARA jumped=%d landed=%d" % [sq.members.size(), down])
 	if down < 8:
 		fails += 1
+	# Il-76 tipi (Rusya) uçak görüntüsü
+	var keep_nat: String = G.nation[G.player_team]
+	G.nation[G.player_team] = "rus"
+	var sq2 := Squad.new(G.player_team, "Paraşütçü Timi 2")
+	G.squads.append(sq2)
+	Paradrop.launch(G.player_team, c + Vector3(20, 0, 0), P["units"], sq2, 30.0)
+	for i in 400:
+		await m._wait(0.05)
+		if sq2.members.size() >= 1:
+			for n in G.main.world.get_children():
+				if n is Paradrop:
+					var pp2: Vector3 = (n as Paradrop).plane.global_position
+					_cam(_ray_ground(pp2), 40.0)
+					await m._wait(0.05)
+					await m._shot("para_plane_rus")
+			break
+	G.nation[G.player_team] = keep_nat
 	print("PARATEST RESULT fails=%d" % fails)
 
 # paraşüt sağlamlığı: nehre / binaya / harita köşesine düşen, havada yaralanan / ölen / patlamada

@@ -17,6 +17,10 @@ var dir := Vector3.FORWARD
 var plane: Node3D
 var props: Array = []
 var jumped := 0
+var ramp: MeshInstance3D = null
+var ramp_open := 0.4
+var ramp_k := 0.0
+var door_l := Vector3.ZERO      # atlama kapısı (uçak yerel): rampa ağzı
 static var _plane_m := {}
 
 static func launch(t: int, tgt: Vector3, unit_roles: Array, sq: Squad, share: float) -> void:
@@ -38,30 +42,39 @@ func _ready() -> void:
 	position.y = 0.0
 	plane = Node3D.new()
 	add_child(plane)
-	var mi := MeshInstance3D.new()
-	mi.mesh = _plane_mesh(team)
-	plane.add_child(mi)
 	plane.position.y = ALT
 	plane.rotation.y = atan2(-dir.x, -dir.z)
-	# pervane diskleri / jet sesi
-	if team == 0:
-		for x in [-9.5, -4.6, 4.6, 9.5]:
-			var pr := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = 2.0
-			cm.bottom_radius = 2.0
-			cm.height = 0.02
-			cm.radial_segments = 24
-			pr.mesh = cm
-			var pm := StandardMaterial3D.new()
-			pm.albedo_color = Color(0.1, 0.1, 0.1, 0.22)
-			pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-			pr.material_override = pm
-			pr.rotation.x = PI * 0.5
-			pr.position = Vector3(x, 1.45, -6.6)
-			plane.add_child(pr)
-			props.append(pr)
+	# (122) ayrıntılı model: tools/blender/veh/fam_plane.py → plane_<ulus>.glb (C-130 / Il-76 tipi): gövde, açılan
+	# arka rampa, dönen pervaneler. Model yoksa eski yordamsal biçim
+	var nat: String = G.nation[team] if team >= 0 and team < G.nation.size() else "usa"
+	var VM: Dictionary = Art.vehicle_model("plane_%s" % ("rus" if nat == "rus" else "usa"), team)
+	if not VM.is_empty():
+		var md: Dictionary = VM.get("meta", {})
+		door_l = Art.v3(md["door"]) if md.has("door") else Vector3(0, 1.2, 9.0)
+		ramp_open = float(md.get("ramp_open", 0.4))
+		for h in VM["hulls"]:
+			var hm := MeshInstance3D.new()
+			hm.mesh = h[0]
+			hm.position = h[1]
+			plane.add_child(hm)
+		if VM.get("ramp") != null:
+			ramp = MeshInstance3D.new()
+			ramp.mesh = VM["ramp"]
+			ramp.position = VM["ramp_pos"]
+			plane.add_child(ramp)
+		for p in VM.get("props", []):
+			var pm := MeshInstance3D.new()
+			pm.mesh = p[0]
+			pm.position = p[1]
+			plane.add_child(pm)
+			props.append(pm)
+		# model tabanı yerde (z=0): gövde ekseni ~3 m yukarıda; uçuş irtifası gövde eksenine göre
+		plane.position.y = ALT - 3.0
+	else:
+		var mi := MeshInstance3D.new()
+		mi.mesh = _plane_mesh(team)
+		plane.add_child(mi)
+		door_l = Vector3(0, -1.6, (30.0 if team == 0 else 44.0) * 0.36)
 	Sfx.loop3d("heli", plane, 2.0)
 	G.say(I18n.s("HAVA İNDİRME YOLDA"), target, team)
 
@@ -119,7 +132,17 @@ func _process(dt: float) -> void:
 		return
 	position += dir * SPEED * dt
 	for pr in props:
-		pr.rotation.y += dt * 40.0
+		# yeni modelde pervane ekseni Godot -Z (Blender +Y): kendi Z ekseni etrafında; eski disk Y etrafında
+		if ramp != null or door_l.y > 0.0:
+			pr.rotation.z += dt * 40.0
+		else:
+			pr.rotation.y += dt * 40.0
+	# arka rampa: atlama bölgesine ~450 m kala açılır, son asker atlayınca kapanır
+	var along0 := (position - target).dot(dir)
+	var want := 1.0 if (along0 > _exit_along(0) - 450.0 and jumped < roles.size()) else 0.0
+	ramp_k = move_toward(ramp_k, want, dt / 3.0)
+	if ramp:
+		ramp.rotation.x = ramp_k * ramp_open
 	# atlama bölgesi: çıkış noktaları uçuş hattı boyunca hedefe ortalanmış, sabit aralıklı.
 	# Kare süresinden bağımsız: yavaş bir karede birden çok nokta geçildiyse o askerler de
 	# atlar, kapı konumu geçilen mesafe kadar geri alınır (eskiden aralık kare süresine
@@ -140,7 +163,7 @@ func _exit_along(i: int) -> float:
 
 func _jump(i: int, back := 0.0) -> void:
 	var file := 0.7 if i % 2 == 0 else -0.7
-	var door := plane.global_transform * Vector3(file, -1.6, (30.0 if team == 0 else 44.0) * 0.36) - dir * back
+	var door := plane.global_transform * (door_l + Vector3(file, 0, 0)) - dir * back
 	var s: Soldier = G.main.spawn_soldier(team, roles[i], Vector3(door.x, 0, door.z), squad)
 	s.cost_share = cost_share
 	s.start_para(door, dir * SPEED * 0.35, target + Vector3((i % 3 - 1) * 2.5, 0, (i / 3) * 2.5))
