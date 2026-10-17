@@ -75,9 +75,14 @@ void fragment() {
 	float dust = clamp(smoothstep(0.55, 0.95, n.y) * dust_amount * (0.5 + g), 0.0, 1.0);
 	base = mix(base, dust_col.rgb, dust);
 	if (burnt > 0.0) {
-		float ao = clamp(lum(vc) * 1.8, 0.3, 1.0);
-		float gn = lum(tri(grime_tex, p * 0.8 + vec3(5.3, 2.1, 7.7), n).rgb);
-		float gn2 = lum(tri(streak_tex, p * 1.3 + vec3(1.7, 4.2, 0.3), n).rgb);
+		// (142) köşe rengi çoğu modelde boyanın kendisi (koyu zeytin ~0,05–0,1): mutlak parlaklığı AO saymak tüm
+		// hurdayı ×0,3 karartıp lekeleri yok ediyordu → yalnız boyaya göre bağıl karanlık (pişmiş AO) alınır
+		float ao = clamp(lum(vc) / 0.12, 0.55, 1.0);
+		// (142) lekeler büyük ölçekte (araç boyunda birkaç leke, uzaktan okunur) + ince ayrıntı; dokunun
+		// parlaklığı yayılarak kontrast açılır
+		float gn = clamp((lum(tri(grime_tex, p * 0.35 + vec3(5.3, 2.1, 7.7), n).rgb) - 0.5) * 2.2 + 0.5, 0.0, 1.0) * 0.75
+			+ lum(tri(grime_tex, p * 1.4 + vec3(1.1, 3.3, 0.7), n).rgb) * 0.25;
+		float gn2 = clamp((lum(tri(streak_tex, p * 0.6 + vec3(1.7, 4.2, 0.3), n).rgb) - 0.5) * 2.2 + 0.5, 0.0, 1.0);
 		vec3 soot = vec3(0.04, 0.037, 0.034);
 		vec3 rustc = vec3(0.34, 0.155, 0.065) * (0.7 + gn2 * 0.6);
 		vec3 ash = vec3(0.4, 0.39, 0.37) * (0.85 + gn * 0.3);
@@ -85,6 +90,15 @@ void fragment() {
 		float am = smoothstep(0.5, 0.78, gn2 + n.y * 0.2) * 0.8;
 		vec3 bc = mix(soot, rustc, rm * 0.85);
 		bc = mix(bc, ash, am * (1.0 - rm * 0.5));
+		// (142) yanmış ama tamamen kararmamış: alt kısımlarda ve büyük lekelerde özgün boya kalır (kabarmış,
+		// koyulaşmış, kahveye dönmüş); tek renk siyah siluet yerine okunabilir araç biçimi
+		float keep = smoothstep(0.35, 0.65, lum(tri(grime_tex, p * 0.18 + vec3(2.9, 0.4, 6.1), n).rgb)) * (1.0 - smoothstep(-0.3, 0.6, n.y));
+		keep *= clamp(1.0 - (wy - 0.5) * 0.45, 0.25, 1.0);
+		vec3 scorched = mix(base, vec3(0.16, 0.11, 0.07), 0.45) * 0.55;
+		bc = mix(bc, scorched, keep * 0.75);
+		// ısıyla kabaran boya: küçük açık kenarlı pullar
+		float blister = smoothstep(0.78, 0.86, gn2) * (1.0 - rm);
+		bc = mix(bc, ash * 1.15, blister * 0.4);
 		base = mix(base, bc * ao, burnt);
 	}
 	ALBEDO = base;

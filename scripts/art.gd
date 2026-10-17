@@ -431,6 +431,19 @@ static func burnt_of(m: Material) -> Material:
 		var d := (m as ShaderMaterial).duplicate() as ShaderMaterial
 		d.set_shader_parameter("burnt", 1.0)
 		out = d
+	elif m is StandardMaterial3D and (m as StandardMaterial3D).vertex_color_use_as_albedo:
+		# (142) köşe renkli düz malzeme (çoğu araç gövdesi, teker, ayrıntı): zırh gölgelendiricisinin yanık kipine
+		# aktarılır — özgün renk (köşe rengi × ton) korunur, üstüne is / pas / kül / kabarmış boya lekeleri
+		# (eskiden hepsi tek düz koyu kahve: hurda tek renk siluet gibiydi)
+		var base_m = material("paint", 0)
+		if base_m is ShaderMaterial:
+			var d2 := (base_m as ShaderMaterial).duplicate() as ShaderMaterial
+			var c: Color = (m as StandardMaterial3D).albedo_color
+			d2.set_shader_parameter("tint", c)
+			d2.set_shader_parameter("has_albedo", false)
+			d2.set_shader_parameter("has_normal", false)
+			d2.set_shader_parameter("burnt", 1.0)
+			out = d2
 	_burnt[k] = out
 	return out
 

@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"wreckshots":
+			await wreck_shots()
 		"groundshots":
 			await ground_shots()
 		"posegallery":
@@ -789,6 +791,63 @@ func gfx_bench() -> void:
 	m.apply_video()
 	m.save_cfg()
 	print("GFXBENCH RESULT fails=%d" % fails)
+
+# 142: hurda görünümü yakın çekim — tank, ZPT, kamyon "knocked" (uzun alev yok) imha, yangın sönünce
+func wreck_shots() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 31)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	await m._wait(1.0)
+	G.hud.root.visible = false
+	if G.main.sandbox_ui and is_instance_valid(G.main.sandbox_ui):
+		G.main.sandbox_ui.visible = false
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5 + 30.0, 0, G.MAP * 0.5 + 30.0), Grid.M_HEAVY)
+	G.props.clear_area(c, 30.0)
+	var vs: Array = []
+	var kinds := ["rus_mbt_72b3", "apc", "truck"]
+	for i in kinds.size():
+		var v: Vehicle = m.spawn_vehicle(1, kinds[i], G.grid.nearest_open(c + Vector3(-9.0 + i * 9.0, 0, 0), Grid.M_HEAVY), 0.5)
+		v.cmd_hold()
+		v.fire_mode = 2
+		v.force_mode = "knocked"
+		vs.append(v)
+	await m._wait(1.0)
+	for v in vs:
+		v.take_damage(1e6, null, "ap")
+	# alev ve duman (fx) sahnede kalır; görüntüden önce efektleri temizle
+	await m._wait(3.0)
+	if G.fx != null and G.fx.has_method("clear_all"):
+		G.fx.clear_all()
+	for v in vs:
+		var kinds_m := {}
+		for mi in v._meshes(v):
+			var mm: MeshInstance3D = mi
+			if mm.mesh == null:
+				continue
+			for s in mm.mesh.get_surface_count():
+				var mt = mm.get_surface_override_material(s)
+				if mt == null:
+					mt = mm.material_override
+				var key := "null"
+				if mt is ShaderMaterial:
+					key = "SM:" + String((mt as ShaderMaterial).shader.resource_path).get_file() + (" burnt=%s" % (mt as ShaderMaterial).get_shader_parameter("burnt"))
+				elif mt != null:
+					key = mt.get_class() + ":" + String(mt.resource_name)
+				kinds_m[key] = int(kinds_m.get(key, 0)) + 1
+		print("WRECK mats %s %s" % [v.vtype, kinds_m])
+	for i in vs.size():
+		G.cam.size = 11.0
+		G.cam.target_size = 11.0
+		G.cam.jump_to(vs[i].position, true)
+		await m._wait(0.5)
+		G.cam.jump_to(vs[i].position, true)
+		await m._shot("wreck_%d_%s" % [i, kinds[i]])
+	print("WRECKSHOTS RESULT fails=0")
 
 # 145: zemin görüntüleri (arayüz gizli): yeşil / çöl / kış haritası, orta ve geniş yakınlaştırma — zemin dokusu
 # değişikliklerini önce / sonra karşılaştırmak için (gs_<harita>_<boy>)
