@@ -39,6 +39,12 @@ uniform float macro_strength = 0.18;
 uniform float rough = 0.92;
 uniform float road_amt = 1.0;
 uniform float paved = 0.0;   // 1: yollar parke taşı
+// (145) gerçekçilik: soluk doğal renk, büyük ölçekli aşınmış / çıplak toprak lekeleri, toprak yolda tekerlek izi
+uniform float desat = 0.0;        // zemini gri tona doğru çek (doygun sarı-yeşili soldurur)
+uniform float worn_amt = 0.0;     // büyük çıplak toprak lekeleri
+uniform vec3 tint_worn : source_color = vec3(0.62, 0.52, 0.42);
+uniform float rut_amt = 0.0;      // toprak yolda iki tekerlek izi
+uniform float road_desat = 0.0;   // yol dokusunun kırmızılığını al
 
 varying vec3 wpos;
 varying float vh;
@@ -113,13 +119,28 @@ void fragment() {
 		vec3 fcol = cc * (1.0 - rowk * rows) * clamp(lum / 0.13, 0.6, 1.45);
 		base = mix(base, fcol, fmk * amt);
 	}
+	// (145) çıplak / aşınmış toprak: çok düşük frekanslı leke + kenarı orta ölçekle kırılır; tarla ve yol dışı
+	float bank0 = smoothstep(-0.05, -0.7, vh);
+	if (worn_amt > 0.0) {
+		float wn = texture(macro, w / 263.0 + vec2(0.57, 0.19)).r + (mac2 - 0.5) * 0.35 + (texture(macro, w / 9.0).r - 0.5) * 0.18;
+		float worn = smoothstep(0.62, 0.74, wn) * worn_amt * (1.0 - fmk) * (1.0 - bank0);
+		vec3 soil = texture(tex_bank, w / 6.5).rgb * tint_worn;
+		base = mix(base, soil, worn * 0.8);
+	}
 	// kıyı çamuru (yükseklik < 0)
-	float bank = smoothstep(-0.05, -0.7, vh);
+	float bank = bank0;
 	base = mix(base, texture(tex_bank, w / 5.0).rgb * tint_bank, bank);
 	// yol
 	vec2 ur = w / scale_road;
 	float road = smoothstep(0.15, 0.7, m.r) * road_amt * (0.75 + 0.5 * texture(macro, w / 6.0).r);
-	vec3 road_col = texture(tex_road, ur).rgb * tint_road;
+	vec3 road_t = texture(tex_road, ur).rgb;
+	road_t = mix(road_t, vec3(dot(road_t, vec3(0.299, 0.587, 0.114))), road_desat);
+	vec3 road_col = road_t * tint_road;
+	// (145) toprak yolda iki tekerlek izi: yol maskesinin iç kenarına paralel koyu bant
+	if (rut_amt > 0.0 && paved < 0.5) {
+		float rut = exp(-pow((m.r - 0.78) / 0.07, 2.0)) * (0.7 + 0.6 * texture(macro, w / 3.0).r);
+		road_col *= 1.0 - rut * 0.32 * rut_amt;
+	}
 	vec3 road_n = unpack_n(texture(nrm_road, ur));
 	if (paved > 0.5) {
 		// parke taşı: voronoi hücreleri, taş arası koyu derz, taş başına ton farkı
@@ -153,6 +174,8 @@ void fragment() {
 	base = mix(base, texture(tex_burn, w / 4.0).rgb * 0.45, sc * 0.9);
 	// büyük ölçek ton
 	base *= 1.0 + (mac - 0.5) * macro_strength * 2.0;
+	// (145) soluk doğal renk
+	base = mix(base, vec3(dot(base, vec3(0.299, 0.587, 0.114))), desat);
 	// kumullar
 	if (dune_strength > 0.0) {
 		mat2 rot = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));

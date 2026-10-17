@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"groundshots":
+			await ground_shots()
 		"posegallery":
 			await pose_gallery()
 		"ordertest":
@@ -787,6 +789,36 @@ func gfx_bench() -> void:
 	m.apply_video()
 	m.save_cfg()
 	print("GFXBENCH RESULT fails=%d" % fails)
+
+# 145: zemin görüntüleri (arayüz gizli): yeşil / çöl / kış haritası, orta ve geniş yakınlaştırma — zemin dokusu
+# değişikliklerini önce / sonra karşılaştırmak için (gs_<harita>_<boy>)
+func ground_shots() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	for mp in ["green_valley", "desert_canal", "winter_village"]:
+		m.start_game(mp, {}, true, 7)
+		G.fog_off = true
+		G.reveal = [999.0, 999.0]
+		for a in G.ais:
+			a.queue_free()
+		G.ais.clear()
+		await m._wait(4.5)
+		G.hud.root.visible = false
+		if G.main.sandbox_ui and is_instance_valid(G.main.sandbox_ui):
+			G.main.sandbox_ui.visible = false
+		var c := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+		for sz in [45.0, 110.0]:
+			G.cam.size = sz
+			G.cam.target_size = sz
+			G.cam.pitch = CamRig.PITCH
+			G.cam.target_pitch = CamRig.PITCH
+			G.cam.jump_to(c, true)
+			await m._wait(0.8)
+			G.cam.size = sz
+			G.cam.jump_to(c, true)
+			await m._shot("gs_%s_%d" % [mp, int(sz)])
+		G.hud.root.visible = true
+	print("GROUNDSHOTS RESULT fails=0")
 
 # Modelleme aşaması (60/66/74/80/85/124/126): asker pozları yan / alçak açıdan yakın çekim. Düz, kuru, temizlenmiş
 # alan; askerler kameraya yandan (profil) bakar. pg_aim: nişan duruşları (ayakta / çömel / yüzüstü tüfek, MG, AT,

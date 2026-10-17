@@ -150,6 +150,12 @@ func _apply_material(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("normal_strength", b["nstr"])
 	m.set_shader_parameter("macro_strength", b["macro"])
 	m.set_shader_parameter("road_amt", b.get("road_amt", 1.0))
+	# (145) gerçekçilik katmanları (biyomda yoksa kapalı)
+	m.set_shader_parameter("desat", b.get("desat", 0.0))
+	m.set_shader_parameter("worn_amt", b.get("worn", 0.0))
+	m.set_shader_parameter("tint_worn", b.get("tint_worn", Color(0.62, 0.52, 0.42)))
+	m.set_shader_parameter("rut_amt", b.get("rut", 0.0))
+	m.set_shader_parameter("road_desat", b.get("road_desat", 0.0))
 	m.set_shader_parameter("paved", 1.0 if G.map_id in ["big_city", "winter_village", "desert_town"] else 0.0)
 
 func _noise_tex(size: int, freq: float, oct: int, frac: int, normal: bool, bump: float, seed_v: int) -> NoiseTexture2D:
