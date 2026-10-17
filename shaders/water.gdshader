@@ -15,7 +15,7 @@ uniform vec3 shallow : source_color = vec3(0.25, 0.75, 0.78);
 uniform vec3 deep : source_color = vec3(0.05, 0.35, 0.45);
 uniform float depth_scale = 1.4;
 uniform float foam_amt = 1.0;
-uniform float flow_speed = 0.55;   // m/sn (oyun ölçeği)
+uniform float flow_speed = 1.6;    // m/sn: orta akıntı (71: gerçek ova nehri 1–2 m/sn; 0,55'te akış RTS uzaklığında okunmuyordu)
 uniform float clarity = 0.35;
 // (144) gerçekçilik: dalga yüzlerinde gökyüzü yansıması, kıyıda kesik ince köpük
 uniform vec3 sky_col : source_color = vec3(0.6, 0.68, 0.74);
@@ -73,7 +73,8 @@ void fragment() {
 	float lw2 = texture(foam_tex, vec2((v_uv.x - spd * ph0 * 5.5) / 70.0 + 0.17, v_uv.y * 5.0 + 0.6)).r;
 	float lw3 = texture(foam_tex, vec2((v_uv.x - spd * ph1 * 5.5) / 70.0 + 0.63, v_uv.y * 5.0 + 0.1)).r;
 	float lstr = mix(lw0, lw1, bw) * 0.6 + mix(lw2, lw3, bw) * 0.4;
-	float lines = smoothstep(0.72, 0.9, lstr) * (0.25 + 0.75 * smoothstep(0.3, 0.9, abs(v_uv.y)));
+	// (71) akıntı çizgileri ortada da görünür (eskiden yalnız kıyıya yakın): akış yönü her yerde okunur
+	float lines = smoothstep(0.66, 0.88, lstr) * (0.55 + 0.45 * smoothstep(0.3, 0.9, abs(v_uv.y)));
 	// köprü ayakları: burunda kabarma ve köpük, mansapta türbülans izi + dönüşümlü girdaplar
 	vec2 pp = vec2(-fd.y, fd.x);
 	vec2 swirl = vec2(0.0);
@@ -169,8 +170,14 @@ void fragment() {
 	float f = mix(texture(foam_tex, (w - off0 * 1.2) / 3.0).r, texture(foam_tex, (w - off1 * 1.2) / 3.0 + vec2(0.5, 0.25)).r, bw);
 	float shore = (1.0 - smoothstep(0.0, 0.16, thick)) * smoothstep(0.42, 0.78, f);
 	float crest = smoothstep(0.68, 0.92, f * (0.6 + 0.6 * n1.x + 0.3 * n2.y));
-	float foam = clamp(shore * 0.7 + crest * 0.25 + lines * 0.22 + pfoam * 0.7 + rfoam, 0.0, 1.0) * foam_amt;
+	float foam = clamp(shore * 0.7 + crest * 0.25 + lines * 0.38 + pfoam * 0.7 + rfoam, 0.0, 1.0) * foam_amt;
 	col = mix(col, vec3(0.86, 0.88, 0.86), foam);
+	// (71) akıntı izi: akış yönünde uzayan, akıntıyla kayan soluk aydınlık / koyu şeritler (yüzeyde sürüklenen
+	// kırışıklık) — ortada belirgin, kıyıda sönük; tek yönlü sert akış uzaktan okunur
+	float st0 = texture(foam_tex, vec2((v_uv.x - spd * ph0 * 5.5) / 45.0, v_uv.y * 1.6 + 0.2)).r;
+	float st1 = texture(foam_tex, vec2((v_uv.x - spd * ph1 * 5.5) / 45.0 + 0.5, v_uv.y * 1.6 + 0.7)).r;
+	float streak = (mix(st0, st1, bw) - 0.5) * (1.0 - 0.75 * v_across * v_across);
+	col *= 1.0 + streak * 0.22;
 	ALBEDO = col;
 	ROUGHNESS = 0.08;
 	SPECULAR = 0.6;
