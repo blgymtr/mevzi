@@ -311,7 +311,8 @@ const SEATS_FAM := {"lv_isv": 8, "mrap6": 6, "mrap4": 4, "lv_hmmwv": 3, "lv_jltv
 
 func capacity() -> int:
 	if is_cargo():
-		return 20 if heavy_lift() else 16
+		# (76) kullanıcı kuralı: Chinook tipi nakliye en çok 7 asker YA DA 1 ZPT; ağır kaldırıcı (Mi-26) 20
+		return 20 if heavy_lift() else 7
 	if cat.has("seats"):
 		return int(cat["seats"])
 	var fam := String(cat.get("fam", ""))
@@ -336,12 +337,17 @@ func can_sling(v) -> bool:
 		return false
 	if v.vtype in TOWED or v.vtype in ["technical", "truck"]:
 		return true
-	return heavy_lift() and v.vtype in ["apc", "ifv", "aa"]
+	if heavy_lift():
+		return v.vtype in ["apc", "ifv", "aa"]
+	# (76) Chinook tipi: 1 ZPT, ama yalnız içi boşken (asker YA DA ZPT)
+	return v.vtype == "apc" and cargo.is_empty()
 
 func cmd_sling(v: Vehicle) -> void:
 	if sling != null or not can_sling(v):
 		return
 	sling_tgt = v
+	inner_load = inner_mode(v)
+	inner_pt = Vector3.INF
 	drop_pt = Vector3.INF
 	landing = false
 	land_hold = false
@@ -403,6 +409,9 @@ func ramp_slot(s) -> int:
 	return i
 
 func can_load() -> bool:
+	# (76) Chinook tipi ZPT taşırken (askıda ya da almaya gidiyor) asker almaz
+	if is_cargo() and not heavy_lift() and ((sling != null and is_instance_valid(sling)) or (sling_tgt != null and is_instance_valid(sling_tgt))):
+		return false
 	return alive and cargo.size() < capacity() and (not is_air() or hull.position.y < 2.5)
 
 func riders_visible() -> bool:
@@ -521,6 +530,66 @@ func unload() -> void:
 	landing = false
 	say("İNDİR!")
 
+# (76) Chinook tipi + ZPT: askı değil, iç taşıma — helikopter ZPT'nin yanına iner, rampa açılır, ZPT rampadan
+# sürüp içeri girer (gizlenir, görülmez, vurulmaz), helikopter kalkar; bırakmada iner, ZPT rampadan geri
+# çıkar. inner_load: bu yükleme iç taşıma mı
+var inner_load := false
+var inner_pt := Vector3.INF       # iç taşıma iniş yeri (bir kez seçilir)
+var carried_in: Vehicle = null    # bu araç bir helikopterin içinde
+
+func apply_visibility() -> void:
+	if carried_in != null:
+		visible = false
+		return
+	super.apply_visibility()
+
+func inner_mode(v) -> bool:
+	return is_cargo() and not heavy_lift() and v != null and is_instance_valid(v) and v is Vehicle and v.vtype == "apc"
+
+# rampanın ağzı (dünya): gövdenin arkası, yerde
+func ramp_mouth() -> Vector3:
+	return G.on_ground(position - forward() * (ext.y + 1.5))
+
+func _inner_load_tick(dt: float) -> bool:
+	# iniş yerinde: ZPT rampaya gelince içeri alır; true: helikopter yerde beklesin
+	var v := sling_tgt
+	if v == null or not is_instance_valid(v) or not v.alive:
+		return false
+	if hull.position.y > 0.15:
+		return true
+	var mouth := ramp_mouth()
+	# gövde rampanın ağzına yaklaşınca (helikopter gövdesi yolu kestiği için ~5 m'de durur) içeri alınır
+	if Vector2(v.position.x - mouth.x, v.position.z - mouth.z).length() > 6.5:
+		if v.dest.distance_to(mouth) > 1.0 or (v.order != "move" and v.path_i >= v.path.size()):
+			v.cmd_move(mouth, true)
+		return true
+	# içeri gir
+	_attach_sling(v)
+	v.carried_in = self
+	v.visible = false
+	v.cmd_stop()
+	land_hold = false
+	landing = false
+	say("ZPT İÇERİDE")
+	return false
+
+func _inner_release() -> void:
+	var v := sling
+	sling = null
+	sling_drop = false
+	if v == null or not is_instance_valid(v):
+		return
+	v.slung_by = null
+	v.carried_in = null
+	v.visible = true
+	var mouth := ramp_mouth()
+	v.position = G.grid.nearest_free(mouth, v.nav_mode, 6)
+	v.position.y = G.terrain.ground_h(v.position)
+	v.heading = heading + PI
+	v.hull.rotation = Vector3(0, v.heading, 0)
+	v.cmd_move(G.grid.nearest_free(mouth - forward() * 10.0, v.nav_mode, 10), true)
+	say("ZPT İNDİ")
+
 func hook_pos() -> Vector3:
 	var hk = M.get("meta", {}).get("hook", Vector3(0, 0.6, 0))
 	var hv: Vector3 = hk if hk is Vector3 else Art.v3(hk)
@@ -631,6 +700,14 @@ static func _seg(mi: MeshInstance3D, a: Vector3, b: Vector3) -> void:
 func _slung_tick(dt: float) -> void:
 	var h := slung_by
 	if h == null or not is_instance_valid(h) or not h.alive:
+		if carried_in != null:
+			# (76) içinde taşındığı helikopter düştü: ZPT de yok olur
+			slung_by = null
+			carried_in = null
+			visible = true
+			position.y = G.terrain.ground_h(position)
+			take_damage(max_hp * 10.0, null, "big")
+			return
 		# helikopter düştü: yük serbest düşer
 		slung_by = null
 		var gy := G.terrain.ground_h(position)
@@ -640,6 +717,13 @@ func _slung_tick(dt: float) -> void:
 		tw.tween_callback(func():
 			G.fx.vehicle_dust(position)
 			take_damage(max_hp * clampf(fall * 0.06, 0.1, 0.9), null, "blast"))
+		return
+	if carried_in != null:
+		# (76) helikopterin içinde: gövdeyle birlikte taşınır, görünmez
+		position = h.position + Vector3(0, h.hull.position.y, 0)
+		heading = h.heading
+		visible = false
+		cur_speed = 0.0
 		return
 	var want: Vector3 = h.hook_pos() - Vector3(0, SLING_L + top_h + 1.2, 0)
 	var acc := (want - position) * 6.0 - sling_vel * 2.2
@@ -4163,6 +4247,16 @@ func _heli(dt: float) -> void:
 	if sling_tgt != null:
 		if can_sling(sling_tgt) and sling == null:
 			goal = sling_tgt.position
+			if inner_load:
+				# ZPT'nin önüne in (rampa ZPT'ye dönük). İniş yeri BİR KEZ seçilir ve sabit kalır — eskiden her karede
+				# ZPT'nin konumuna göre yeniden hesaplanıyor, ZPT rampaya yaklaştıkça iniş yeri kaçıyor, helikopter
+				# kalkıp geri geri gidiyordu (kullanıcı: "helikopter kaçıyor")
+				if inner_pt == Vector3.INF:
+					var dv := position - sling_tgt.position
+					dv.y = 0.0
+					dv = dv.normalized() if dv.length() > 0.5 else Vector3(1, 0, 0)
+					inner_pt = G.grid.nearest_free(sling_tgt.position + dv * (ext.y + sling_tgt.ext.y + 6.0), Grid.M_HEAVY, 12)
+				goal = inner_pt
 		else:
 			sling_tgt = null
 	if drop_pt != Vector3.INF:
@@ -4210,7 +4304,22 @@ func _heli(dt: float) -> void:
 			unload()
 	if is_cargo():
 		var hook_dy := hook_pos().y - hull.global_position.y
-		if sling_tgt != null and L < 2.5:
+		if inner_load and sling_tgt != null and L < 3.0:
+			# iç taşıma: in, rampa ZPT'ye dönük (helikopter ZPT'ye sırtını verir), bekle
+			tgt_alt = 0.02
+			hover = true
+			hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt)
+			var to_v := sling_tgt.position - position
+			heading = rotate_toward(heading, Soldier._yaw_of(-to_v), D["turn"] * dt)
+			land_hold = _inner_load_tick(dt)
+		elif inner_load and sling != null and sling_drop:
+			tgt_alt = 0.02
+			hover = true
+			hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt)
+			if hull.position.y < 0.15:
+				_inner_release()
+				inner_load = false
+		elif sling_tgt != null and L < 2.5:
 			# yükün üstünde dur, kancayı indir
 			tgt_alt = SLING_L + sling_tgt.top_h + 1.2 - hook_dy + 0.2
 			hover = true

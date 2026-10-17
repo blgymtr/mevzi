@@ -525,6 +525,15 @@ func _command(sp: Vector2, force: bool, _queue: bool, alt := false) -> void:
 			markers.append([tu.position, G.time, Color(0.5, 1.0, 0.6)])
 			_voice(inf3, ["Tankın arkasına!", "Aracı takip!"])
 			return
+	# (76) seçili araç dost nakliye helikopterine sağ tık: helikopter aracı alır (Chinook'ta ZPT rampadan içeri,
+	# diğerleri askıya) — eskiden araç helikoptere "binemiyordu"
+	if tu != null and tu is Vehicle and tu.team == team and tu.is_air() and tu.is_cargo():
+		var riders := mobile.filter(func(u): return u is Vehicle and u != tu and tu.can_sling(u))
+		if not riders.is_empty():
+			tu.cmd_sling(riders[0])
+			markers.append([riders[0].position, G.time, Color(0.4, 0.8, 1.0)])
+			Sfx.play2d("ui_move", -8.0)
+			return
 	if tu != null and tu is Vehicle and tu.team == team:
 		var lifters := mobile.filter(func(u): return u is Vehicle and u.can_sling(tu))
 		if not lifters.is_empty():

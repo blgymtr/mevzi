@@ -258,7 +258,7 @@ func _update_visibility() -> void:
 					u.seen[t] = false
 				continue
 			var s: bool = u is Building and time < reveal[t]
-			if not s and u.alive:
+			if not s and u.alive and not (u is Vehicle and u.carried_in != null):
 				s = _spotted(u, t)
 			if s:
 				u.spot_mem[t] = time + 2.0

@@ -48,7 +48,7 @@ func _ready() -> void:
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest", "cratertest", "decktest", "jamtest", "aimtest", "smokepasstest", "dozertest", "towtest", "cratertypes", "backfiretest", "crowdtest", "trenchpose", "ramptest", "hulldowntest", "nadetest", "fobdark", "camtest", "towcrewtest", "rivertest", "hudshots", "menushots", "gfxbench", "ordertest", "posegallery", "groundshots", "wreckshots", "crewshots"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest", "cratertest", "decktest", "jamtest", "aimtest", "smokepasstest", "dozertest", "towtest", "cratertypes", "backfiretest", "crowdtest", "trenchpose", "ramptest", "hulldowntest", "nadetest", "fobdark", "camtest", "towcrewtest", "rivertest", "hudshots", "menushots", "gfxbench", "ordertest", "posegallery", "groundshots", "wreckshots", "crewshots", "chinooktest"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -1856,7 +1856,7 @@ func _run_cargo_test() -> void:
 	var c: Vector3 = G.hq_pos[0].lerp(G.hq_pos[1], 0.25)
 	var h := spawn_vehicle(0, "usa_heli_ch47", c, 0.0)
 	print("CARGO cap=%d cargo=%s crates=%d ramp=%s" % [h.capacity(), h.is_cargo(), h.crates, h.ramp != null])
-	if h.capacity() != 16 or h.ramp == null:
+	if h.capacity() != 7 or h.ramp == null:
 		fails += 1
 	await _wait(2.0)
 	G.cam.size = 30.0
@@ -1865,13 +1865,13 @@ func _run_cargo_test() -> void:
 	await _wait(0.5)
 	await _shot("cargo_01_air_shadow")
 	var sq: Array = []
-	for i in 8:
+	for i in 7:
 		var s := spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-18 + (i % 4) * 1.5, 0, 14 + (i / 4) * 1.5), Grid.M_INF), null)
 		sq.append(s)
 	for s in sq:
 		s.cmd_board(h)
 	var t0 := 0
-	while t0 < 45 and h.cargo.size() < 8:
+	while t0 < 45 and h.cargo.size() < 7:
 		await _wait(1.0)
 		t0 += 1
 	G.cam.size = 20.0
@@ -1880,7 +1880,7 @@ func _run_cargo_test() -> void:
 	await _wait(0.4)
 	await _shot("cargo_02_landed_ramp")
 	print("CARGO boarded=%d in %ds alt=%.1f ramp=%.2f" % [h.cargo.size(), t0, h.hull.position.y, h.ramp_k])
-	if h.cargo.size() < 8:
+	if h.cargo.size() < 7:
 		fails += 1
 	var p2 := G.grid.nearest_free(c + Vector3(40, 0, -30), Grid.M_INF)
 	h.cmd_move(p2)
@@ -1894,7 +1894,7 @@ func _run_cargo_test() -> void:
 		if is_instance_valid(s) and s.vehicle_in == null and s.position.distance_to(p2) < 20.0:
 			out += 1
 	print("CARGO flew=%s unloaded=%d left=%d" % [flew, out, h.cargo.size()])
-	if not flew or out < 8:
+	if not flew or out < 7:
 		fails += 1
 	# askı: teknik araç
 	var tech := spawn_vehicle(0, "technical", G.grid.nearest_free(c + Vector3(10, 0, 20), Grid.M_HEAVY), 0.0)

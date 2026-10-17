@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"chinooktest":
+			await chinook_test()
 		"crewshots":
 			await crew_shots()
 		"wreckshots":
@@ -793,6 +795,71 @@ func gfx_bench() -> void:
 	m.apply_video()
 	m.save_cfg()
 	print("GFXBENCH RESULT fails=%d" % fails)
+
+# 76: Chinook tipi nakliye — en çok 7 asker YA DA 1 ZPT; ZPT rampadan içeri girer (gizli, görülmez), taşınır,
+# inişte rampadan çıkar; ZPT taşırken asker almaz
+func chinook_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 60.0)
+	var h: Vehicle = m.spawn_vehicle(0, "usa_heli_ch47", c + Vector3(-25, 0, 0), 0.0)
+	h.fire_mode = 2
+	var apc: Vehicle = m.spawn_vehicle(0, "apc", G.grid.nearest_free(c + Vector3(15, 0, 0), Grid.M_HEAVY), 0.0)
+	await m._wait(2.0)
+	print("CHINOOK capacity=%d can_sling_apc=%s" % [h.capacity(), h.can_sling(apc)])
+	if h.capacity() != 7 or not h.can_sling(apc):
+		fails += 1
+	# oyuncu yolu: ZPT seçili, helikoptere sağ tık
+	G.player.clear_sel()
+	G.player.select(apc)
+	_cam(h.position, 60.0)
+	await m._wait(0.5)
+	G.player._command(G.cam.screen(h.aim_point()), false, false)
+	print("CHINOOK rightclick sling_tgt=%s" % [h.sling_tgt == apc])
+	if h.sling_tgt != apc:
+		fails += 1
+		h.cmd_sling(apc)
+	var t0 := G.time
+	var lastp := -1
+	while G.time - t0 < 60.0 and apc.carried_in != h:
+		await m._wait(0.2)
+		if int(G.time - t0) != lastp:
+			lastp = int(G.time - t0)
+			print("CHINOOK dbg t=%d heli=(%.0f,%.0f) alt=%.2f tgt=%s inner=%s land_hold=%s order=%s apc=(%.0f,%.0f) apc_order=%s mouth_d=%.1f" % [lastp, h.position.x, h.position.z, h.hull.position.y, h.sling_tgt != null, h.inner_load, h.land_hold, h.order, apc.position.x, apc.position.z, apc.order, apc.position.distance_to(h.ramp_mouth())])
+	var inside := apc.carried_in == h
+	print("CHINOOK loaded=%s (%.1f s) apc_visible=%s" % [inside, G.time - t0, apc.visible])
+	if not inside or apc.visible:
+		fails += 1
+	# ZPT taşırken asker alamaz
+	var s: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(h.position + Vector3(6, 0, 0), Grid.M_INF), null)
+	print("CHINOOK can_load_while_apc=%s" % h.can_load())
+	if h.can_load():
+		fails += 1
+	s.queue_free()
+	# taşı ve indir
+	await m._wait(3.0)
+	var drop := G.grid.nearest_free(c + Vector3(-25, 0, 70), Grid.M_HEAVY)
+	h.cmd_move(drop)
+	t0 = G.time
+	while G.time - t0 < 40.0 and h.position.distance_to(drop) > 3.0:
+		await m._wait(0.2)
+	h.unload()
+	t0 = G.time
+	while G.time - t0 < 30.0 and apc.carried_in != null:
+		await m._wait(0.2)
+	await m._wait(3.0)
+	var moved: float = apc.position.distance_to(c)
+	print("CHINOOK unloaded=%s apc_visible=%s apc_from_start=%.0f m on_ground=%s" % [apc.carried_in == null, apc.visible, moved, absf(apc.position.y - G.terrain.ground_h(apc.position)) < 0.5])
+	if apc.carried_in != null or not apc.visible or moved < 40.0:
+		fails += 1
+	print("CHINOOKTEST RESULT fails=%d" % fails)
 
 # 101 / 111: obüs mürettebatı yakın çekim — ateşleme ipi (gergin / çekiş), mermi taşıma (bel hizasında, ellerde)
 func crew_shots() -> void:
