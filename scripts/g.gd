@@ -22,7 +22,8 @@ var bal: Ballistics
 var hud: Hud
 var player: PlayerCtl
 var logi: Logistics
-var mode := "bases"        # bases | conquest | wargoals
+var mode := "bases"        # Modes.MODE_NAME anahtarları (bases | conquest | wargoals | defend | assault | ctf | annihilation | vp | historical)
+var op_id := "easting73"   # tarihsel operasyon (Modes.OPS)
 var modes: Modes = null
 var weather: Weather = null
 var weather_pref := "dynamic"

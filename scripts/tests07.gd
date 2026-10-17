@@ -121,6 +121,8 @@ func run(scene: String) -> void:
 			await engage_test()
 		"inffighttest":
 			await inf_fight_test()
+		"modes2test":
+			await modes2_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1257,6 +1259,116 @@ func engage_test() -> void:
 	if not react_ok:
 		fails += 1
 	print("ENGAGETEST RESULT fails=%d" % fails)
+
+# 156: yeni oyun modları — kurulum, kazanma / kaybetme koşulu, yapay zekâ birkaç saniye hatasız çalışır
+func modes2_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	# modlar büyük haritalarda (kullanıcı: Klasik dışı modlar ≥1 km); tarihsel operasyon yalnız mekanik denetimi
+	# (asıl testi için özel harita yapılacak)
+	var runs: Array = []
+	for mp in ["large_front", "front_2k"]:
+		for md in ["defend", "assault", "ctf", "annihilation", "vp"]:
+			runs.append([mp, md])
+	runs.append(["large_front", "historical"])
+	for rn in runs:
+		var md: String = rn[1]
+		G.mode = md
+		G.op_id = "easting73"
+		m.start_game(rn[0], {}, false, 51)
+		G.deploy_t = 0.0
+		await m._wait(1.0)
+		var M: Modes = G.modes
+		var ok: bool = M != null and M.mode == md
+		var info := ""
+		if ok:
+			# yapay zekâ ve mod biraz çalışsın (hata avı)
+			await m._wait(6.0)
+			match md:
+				"defend":
+					ok = M.owned(0) == M.zones.size() and M.time_left > 0.0
+					for z in M.zones:
+						z["owner"] = 1
+					await m._wait(0.6)
+					ok = ok and G.game_over and G.winner == 1
+				"assault":
+					ok = M.owned(1) == M.zones.size()
+					for z in M.zones:
+						z["owner"] = 0
+					await m._wait(0.6)
+					ok = ok and G.game_over and G.winner == 0
+				"ctf":
+					ok = M.flags.size() == 2
+					var s: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(M.flags[1]["home"] + Vector3(4, 0, 0), Grid.M_INF), null)
+					s.position = M.flags[1]["home"]
+					await m._wait(0.8)
+					var took: bool = M.flags[1]["state"] == "carried" and M.flags[1]["carrier"] == s
+					s.position = M.flags[0]["home"]
+					await m._wait(0.8)
+					var capped: bool = M.caps[0] == 1 and M.flags[1]["state"] == "home"
+					# taşıyıcı düşerse bayrak yerde kalır
+					s.position = M.flags[1]["home"]
+					await m._wait(0.8)
+					s.position = M.flags[1]["home"] + Vector3(30, 0, 0)
+					s.take_damage(1e6, null)
+					await m._wait(0.8)
+					var dropped: bool = M.flags[1]["state"] == "dropped"
+					M.caps[0] = 2
+					var s2: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(M.flags[1]["pos"] + Vector3(2, 0, 0), Grid.M_INF), null)
+					s2.position = M.flags[1]["pos"]
+					await m._wait(0.8)
+					s2.position = M.flags[0]["home"]
+					await m._wait(0.8)
+					info = "took=%s capped=%s dropped=%s caps=%s" % [took, capped, dropped, M.caps]
+					ok = ok and took and capped and dropped and G.game_over and G.winner == 0
+				"annihilation":
+					M.destroy_pts = [40.0, 10.0]
+					M.time_left = 0.4
+					await m._wait(0.8)
+					ok = G.game_over and G.winner == 0
+				"vp":
+					for i in M.zones.size():
+						M.zones[i]["owner"] = 0 if i < (M.zones.size() + 1) / 2 else 1
+					var t0: float = M.tickets[1]
+					await m._wait(2.0)
+					var drained: bool = M.tickets[1] < t0 - 0.5 and absf(M.tickets[0] - 500.0) < 0.01
+					M.tickets[1] = 0.3
+					await m._wait(1.5)
+					info = "drained=%s tickets=%s" % [drained, M.tickets]
+					ok = drained and G.game_over and G.winner == 0
+				"historical":
+					var n0 := 0
+					var n1 := 0
+					for u in G.units:
+						if is_instance_valid(u) and u.alive and not (u is Building):
+							if u.team == 0:
+								n0 += 1
+							else:
+								n1 += 1
+					await m._shot("modes2_brief")
+					if M.brief_ui and is_instance_valid(M.brief_ui):
+						M.brief_ui.queue_free()
+					# yalnız sıradaki hedef alınabilir
+					var b_locked: bool = M.locked(1) and not M.locked(0)
+					for zi in 3:
+						M.zones[zi]["prog"] = 1.0
+					M.zones[0]["owner"] = 0
+					await m._wait(0.6)
+					var adv: bool = M.obj_i == 1
+					M.zones[1]["owner"] = 0
+					await m._wait(0.6)
+					M.zones[2]["owner"] = 0
+					await m._wait(0.6)
+					info = "units=%d/%d locked=%s adv=%s obj=%d" % [n0, n1, b_locked, adv, M.obj_i]
+					ok = n0 >= 15 and n1 >= 20 and M.zones.size() == 3 and b_locked and adv and G.game_over and G.winner == 0
+			if not G.game_over or md == "defend":
+				await m._shot("modes2_%s_%s" % [rn[0], md])
+		print("MODES2 %s %s ok=%s zones=%d %s" % [rn[0], md, ok, M.zones.size() if M else -1, info])
+		if not ok:
+			fails += 1
+	G.mode = "bases"
+	print("MODES2TEST RESULT fails=%d" % fails)
 
 # piyade çatışmasında kendiliğinden ateş (kullanıcı, 17 Ekim: "piyadeler direkt otomatik sıkmıyor"): iki 6 kişilik
 # tim, ikisi de serbest ateş; düşman saldırı hareketiyle yaklaşır. Her 0,5 sn, her asker için: menzilinde ve görüş

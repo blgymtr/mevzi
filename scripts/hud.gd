@@ -1625,6 +1625,10 @@ func hide_menu() -> void:
 	if menu:
 		menu.queue_free()
 		menu = null
+	# yeni oyun: önceki maçın zafer / yenilgi kutusu kalmasın
+	if over_menu:
+		over_menu.queue_free()
+		over_menu = null
 	tooltip.visible = false
 
 func toggle_pause() -> void:

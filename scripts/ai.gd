@@ -37,12 +37,81 @@ func _process(dt: float) -> void:
 	var mult = [0.6, 1.0, 1.35][G.difficulty] if team != G.player_team else 1.0
 	# zorluk: ikmal desteği
 	G.supply[team] += (mult - 1.0) * 1.2
-	_economy()
-	_builders()
-	_production()
+	var md := _mode()
+	# Bölgeyi Savun: saldıran yapay zekâ dalga dalga gelir (ek ikmal)
+	if md == "defend":
+		G.supply[team] += 1.6
+	# Tarihsel operasyon: kurulu kuvvetle savaşılır, üretim yok
+	if md != "historical":
+		_economy()
+		_builders()
+		_production()
 	_defend()
-	_attack()
+	if md in ["assault", "historical"]:
+		_hold_zones()
+	else:
+		_attack()
 	_artillery()
+
+func _mode() -> String:
+	return G.modes.mode if G.modes != null and is_instance_valid(G.modes) else ""
+
+# savunan yapay zekâ (Saldırı, Tarihsel): her bölgede bir koruma timi; kalan kuvvet tehdit altındaki (düşmanın
+# yaklaştığı ya da kaybedilen) bölgeye, yoksa düşman karargâhına en yakın (cephe) bölgeye
+func _hold_zones() -> void:
+	if think_n % 4 != 0:
+		return
+	var zs: Array = G.modes.zones
+	if zs.is_empty():
+		return
+	var foe: int = 1 - team
+	var tz = null
+	var bd := 1e18
+	for i in zs.size():
+		var z: Dictionary = zs[i]
+		if G.modes.locked(i) and i < G.modes.obj_i:
+			continue
+		var threat: bool = z["owner"] != team or not G.enemies_near(z["p"], G.modes.zone_r * 3.0, team).is_empty()
+		var d: float = (z["p"] as Vector3).distance_to(G.hq_pos[foe]) - (1e6 if threat else 0.0)
+		if G.modes.mode == "historical" and i == G.modes.obj_i:
+			d -= 5e5
+		if d < bd:
+			bd = d
+			tz = z
+	var pool: Array = []
+	for u in _combat_units():
+		if not _guarding(u) and not _is_gun(u):
+			pool.append(u)
+	for i in zs.size():
+		if G.modes.locked(i) and i < G.modes.obj_i:
+			continue
+		_guard_zone(zs[i], pool)
+	if tz == null:
+		return
+	var go: Array = pool.filter(func(u): return u.position.distance_to(tz["p"]) > G.modes.zone_r * 0.8 and (u is Vehicle or u.state == "idle"))
+	if not go.is_empty():
+		G.player.move_group(go, tz["p"])
+
+func _guard_zone(z: Dictionary, pool: Array) -> void:
+	var key := String(z["name"])
+	var g: Array = (guards.get(key, []) as Array).filter(func(u): return is_instance_valid(u) and u.alive)
+	guards[key] = g
+	if g.size() >= 3:
+		return
+	var zp: Vector3 = z["p"]
+	pool.sort_custom(func(a, b): return a.position.distance_to(zp) < b.position.distance_to(zp))
+	var add: Array = []
+	for u in pool:
+		if add.size() >= 4 - g.size():
+			break
+		if u is Soldier:
+			add.append(u)
+	for u in add:
+		pool.erase(u)
+		g.append(u)
+	guards[key] = g
+	if not add.is_empty():
+		G.player.move_group(add, zp)
 
 # büyük harita ölçeği: yürüme, inşaat ve savunma yarıçapları haritayla büyür (8 km'de inşaatçı ~1,3 km öteye gider)
 func _reach(base: float, frac: float) -> float:
@@ -231,7 +300,7 @@ func _attack() -> void:
 		power += 4 if u is Vehicle else 1
 	var need = [16, 22, 26][G.difficulty] if team != G.player_team else 20
 	if G.modes != null and is_instance_valid(G.modes):
-		need = int(need * 0.5)
+		need = int(need * (0.35 if G.modes.mode == "defend" else 0.5))
 	need += int(G.time / 120.0)
 	if G.time > 600.0:
 		need = 16
@@ -266,7 +335,9 @@ func _attack() -> void:
 			idle_n += 1
 			if idle_n % 4 != 0:
 				attackers.append(u)
-	if attackers.size() >= 3:
+	if attackers.size() >= 3 and _mode() == "ctf":
+		_ctf()
+	elif attackers.size() >= 3:
 		if target_zone != null:
 			if target_zone["owner"] == team:
 				_leave_guard(target_zone)
@@ -298,9 +369,35 @@ func _attack() -> void:
 			p = _route_step(lead, step)
 			G.player.move_group(attackers, p)
 
+# bayrak kapma: bir tim kendi bayrağını korur; taşıyıcı kendi bayrağına koşar, grup ona eşlik eder; düşen kendi
+# bayrağı varsa önce o geri alınır; yoksa grup düşman bayrağına yürür
+func _ctf() -> void:
+	var own: Dictionary = G.modes.flags[team]
+	var ef: Dictionary = G.modes.flags[1 - team]
+	if attackers.size() >= 8:
+		_leave_guard({"name": "bayrak", "p": own["home"]})
+	var carrier = ef["carrier"] if ef["state"] == "carried" else null
+	if carrier != null and is_instance_valid(carrier) and carrier.team == team:
+		target_pos = own["home"]
+		if carrier.dest.distance_to(own["home"]) > 2.0:
+			carrier.cmd_move(own["home"], true)
+	elif own["state"] == "dropped":
+		target_pos = own["pos"]
+	else:
+		target_pos = ef["pos"]
+	target_zone = null
+	target_b = null
+	if reissue <= 0.0:
+		reissue = 8.0
+		var grp: Array = attackers.filter(func(u): return u != carrier)
+		if not grp.is_empty():
+			G.player.move_group(grp, target_pos)
+
 func _pick_target() -> void:
 	best_d = 1e9
 	stall_t = 0.0
+	if _mode() == "ctf":
+		return
 	if G.modes != null and is_instance_valid(G.modes):
 		var lead: Vector3 = _centroid(attackers) if not attackers.is_empty() else G.hq_pos[team]
 		var bz = null

@@ -642,8 +642,19 @@ func _fill_brief() -> void:
 		tg.text = map_size_tag(_sel_map) + "  ·  " + t(BIOME.get(String(m.get("biome", "green")), ""))
 		_lbl(_brief, String(m.get("desc", "")), 16, Sketch.INK, hud.font_m, true)
 
+# oyun modları (Klasik dışı) büyük harita ister (kullanıcı kararı, 17 Ekim); özel harita serbest (tarihsel operasyon)
+func _mode_ok() -> bool:
+	if G.mode == "bases" or _sel_map.begins_with("custom:") or not MapGen.MAPS.has(_sel_map):
+		return true
+	return float(MapGen.MAPS[_sel_map].get("size", 256)) >= Modes.MIN_MAP
+
 func _start_selected(sandbox: bool) -> void:
 	if G.main == null or not G.main.has_method("start_game"):
+		return
+	if not sandbox and not _mode_ok():
+		Sfx.play2d("ui_alert", -6.0)
+		if _brief and is_instance_valid(_brief):
+			_lbl(_brief, I18n.s("%s modu büyük harita ister (1 km ve üstü): Geniş Cephe, Kuzey Cephesi, Hava İndirme Bölgesi, Büyük Muharebe") % I18n.s(Modes.MODE_NAME[G.mode]), 15, Sketch.RED, hud.font_b, true)
 		return
 	if _sel_map.begins_with("custom:"):
 		G.main.start_game("", MapEditor.load_map(_sel_map.substr(7)))
@@ -667,18 +678,36 @@ func _page_classic() -> void:
 	# açıklama etiketleri seçicilerden sonra kurulur; lambdalar onlara sözlükten erişir
 	var refs := {}
 	var modes: Array = Modes.MODE_NAME.keys()
-	# mevcut ipucu metni "Klasik: ... · Fetih: ... · Savaş Hedefleri: ..." — kip başına parçası gösterilir
-	var mode_parts := I18n.s("Klasik: üsleri yok et · Fetih: bölge tut, puan topla · Savaş Hedefleri: 3 aşama, bölge + imha puanı").split(" · ")
+	# kip başına kısa açıklama (Modes.MODE_DESC); Tarihsel Operasyon seçiliyken operasyon seçici görünür
 	var mode_txt := func(i: int) -> String:
-		return mode_parts[i] if mode_parts.size() == modes.size() else ""
+		return I18n.s(Modes.MODE_DESC.get(modes[i], ""))
+	var ops: Array = Modes.OPS.keys()
 	var set_mode := func(i: int) -> void:
 		G.mode = modes[i]
 		if refs.has("mode"):
 			(refs["mode"] as Label).text = mode_txt.call(i)
+		if refs.has("op"):
+			(refs["op"] as Control).visible = G.mode == "historical"
 	_selector(right, "MOD", modes.size(), func(): return maxi(0, modes.find(G.mode)), set_mode,
 		func(i): return I18n.s(Modes.MODE_NAME[modes[i]]))
 	refs["mode"] = _lbl(right, "", 14, Sketch.INK2, hud.font_m, true)
 	(refs["mode"] as Label).text = mode_txt.call(maxi(0, modes.find(G.mode)))
+	var nb := right.get_child_count()
+	_selector(right, "OPERASYON", ops.size(), func(): return maxi(0, ops.find(G.op_id)), func(i): G.op_id = ops[i],
+		func(i): return "%s (%s)" % [I18n.s(Modes.OPS[ops[i]]["title"]), I18n.s(Modes.OPS[ops[i]]["year"])])
+	# seçici tek düğüm ya da birkaç düğüm ekleyebilir: eklenenlerin hepsi birlikte gizlenir
+	var op_box := VBoxContainer.new()
+	op_box.add_theme_constant_override("separation", 6)
+	var added: Array = []
+	for k in range(nb, right.get_child_count()):
+		added.append(right.get_child(k))
+	right.add_child(op_box)
+	right.move_child(op_box, nb)
+	for c in added:
+		right.remove_child(c)
+		op_box.add_child(c)
+	refs["op"] = op_box
+	op_box.visible = G.mode == "historical"
 	var set_weather := func(i: int) -> void:
 		G.weather_pref = WEATHERS[i]
 		if refs.has("weather"):
