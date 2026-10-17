@@ -203,6 +203,8 @@ var pistol_t := 0.0
 var bearer := false
 var carried := false
 var body_lift := 0.0
+var slope_drop := 0.0            # (60) eğimde kalçanın inişi (iki ayak yere bassın)
+var _aim_hold_t := -99.0         # (124) nişan pozunun seriler arasında tutulması
 var surrender_chk := 0.0
 var low_ammo_said := false
 var hosp_b: Building = null
@@ -1141,7 +1143,7 @@ func _process(dt: float) -> void:
 	if Vehicle.prof_on:
 		Vehicle._pf("s_anim", t0)
 	lean_cur = lean_cur.lerp(lean if (popped and cover_type == 2) else Vector3.ZERO, clampf(dt * 6.0, 0, 1))
-	body.position = Vector3(lean_cur.x, body_lift, lean_cur.z).rotated(Vector3.UP, -rotation.y)
+	body.position = Vector3(lean_cur.x, body_lift - slope_drop, lean_cur.z).rotated(Vector3.UP, -rotation.y)
 
 # ------------------------------------------------------------ takılma bekçisi
 # Geçici durumların azami süresi (sn). Aşılırsa durum güvenle çözülür (eylem tamamlanır / iptal edilir /
@@ -2157,6 +2159,9 @@ func _movement(dt: float) -> void:
 				# hedef arkada kalıyorsa (geri çekilirken ateş): geri geri yürür — koşmaz (83)
 				if path_i < path.size() and _back_to_target():
 					spd = BACK_WALK
+					# (126) ağır baskı altında ya da düşman çok yakınken geri geri koşar (namlu düşmanda kalır)
+					if suppression > 40.0 or dist2(target) < 30.0:
+						spd = BACK_RUN
 			if stance == CROUCH:
 				spd = 1.9
 			elif stance == PRONE:
@@ -2370,6 +2375,16 @@ func _movement(dt: float) -> void:
 	# alçak duvar / engelin üstünden atlama
 	var hh := G.grid.height_at(position)
 	body_lift = lerpf(body_lift, hh + 0.02 if (hh >= 0.3 and hh < 1.15) else 0.0, clampf(dt * 14.0, 0, 1))
+	# (60) eğimde ayaklar yere bassın: gövde kökü ortadaki zemin yüksekliğinde; şevde / krater kenarında alttaki ayak
+	# havada kalıyor, asker "uçuyor" gibi görünüyordu → kalça, öndeki ve arkadaki ayak noktası arasındaki yükseklik
+	# farkının yarısı kadar iner (üstteki ayak dizden bükülmüş gibi otla örtülür). Yalnız yakın görüşte hesaplanır.
+	var sd := 0.0
+	if stance != PRONE and body_lift < 0.05 and G.cam != null and G.cam.size < 120.0 and visible:
+		var fw := Vector3(-sin(rotation.y), 0, -cos(rotation.y))
+		var ha := _ground_y(position + fw * 0.35)
+		var hb := _ground_y(position - fw * 0.35)
+		sd = clampf(absf(ha - hb) * 0.5, 0.0, 0.2)
+	slope_drop = lerpf(slope_drop, sd, clampf(dt * 10.0, 0, 1))
 	# yön
 	var aiming := target != null and is_instance_valid(target) and can_fight() and state in ["idle", "move", "escort", "guard"] and (burst_left > 0 or fire_cd < 0.6 or popped) and not _fleeing()
 	if state == "melee" and melee_target != null and is_instance_valid(melee_target):
@@ -2397,6 +2412,7 @@ func _movement(dt: float) -> void:
 
 # geri çekilme / kaçış (83): emirle geri çekilen ya da paniğe kapılan asker dönüp koşar, arkasına ateş etmez
 const BACK_WALK := 1.3
+const BACK_RUN := 2.4            # (126) geri geri koşu
 
 func _fleeing() -> bool:
 	return state == "move" and (order == "retreat" or stress_lv == 2)
@@ -3607,6 +3623,12 @@ func _pose() -> String:
 	if G.time < repair_vis_t and state == "idle":
 		return "build"
 	var aiming := target != null and is_instance_valid(target) and (popped or burst_left > 0) and can_fight()
+	# (124) seriler arasında nişan pozu bırakılmaz: hedef duruyorken 1,2 sn tutulur (eskiden her seride
+	# ayakta ↔ nişan arasında gidip gelip, eller silahtan kayarak titriyordu)
+	if aiming:
+		_aim_hold_t = G.time
+	elif target != null and is_instance_valid(target) and target.alive and can_fight() and G.time - _aim_hold_t < 1.2:
+		aiming = true
 	match stance:
 		STAND:
 			return "aim" if aiming and vel.length() < 2.5 else "stand"

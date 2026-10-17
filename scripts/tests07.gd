@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"posegallery":
+			await pose_gallery()
 		"ordertest":
 			await order_test()
 		"gfxbench":
@@ -785,6 +787,152 @@ func gfx_bench() -> void:
 	m.apply_video()
 	m.save_cfg()
 	print("GFXBENCH RESULT fails=%d" % fails)
+
+# Modelleme aşaması (60/66/74/80/85/124/126): asker pozları yan / alçak açıdan yakın çekim. Düz, kuru, temizlenmiş
+# alan; askerler kameraya yandan (profil) bakar. pg_aim: nişan duruşları (ayakta / çömel / yüzüstü tüfek, MG, AT,
+# keskin nişancı), pg_idle: aynı duruşlar ateş kesik (bekleme), pg_walk_k / pg_run_k / pg_crouch_k: yürüyüş, koşu,
+# çömelerek yürüyüş döngüsünden kareler (ayak yere basıyor mu, kollar, silah).
+func pose_gallery() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 43)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	await m._wait(1.5)
+	if G.main.sandbox_ui and is_instance_valid(G.main.sandbox_ui):
+		G.main.sandbox_ui.visible = false
+	# kuru, düz yer: haritanın ortasından halka halka ara
+	var c := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5)
+	var far_from_houses := func(q: Vector3) -> bool:
+		for h in G.blocks.houses:
+			if (h["center"] as Vector3).distance_to(q) < 45.0:
+				return false
+		return true
+	for r in [0.0, 30.0, 60.0, 90.0, 120.0, 150.0]:
+		var found := false
+		for k in 16:
+			var q := Vector3(G.MAP * 0.5, 0, G.MAP * 0.5) + Vector3(cos(k * TAU / 16.0), 0, sin(k * TAU / 16.0)) * float(r)
+			q = Vector3(clampf(q.x, 40.0, G.MAP - 40.0), 0, clampf(q.z, 40.0, G.MAP - 40.0))
+			if not G.terrain.near_river(q, 40.0) and far_from_houses.call(q) and absf(G.terrain.ground_h(q + Vector3(6, 0, 0)) - G.terrain.ground_h(q - Vector3(6, 0, 0))) < 0.3:
+				c = q
+				found = true
+				break
+		if found:
+			break
+	G.props.clear_area(c, 26.0)
+	# boşta asker kendiliğinden bir yöne (düşman üssü) bakar: o yönü ölç, kamerayı ona dik çevir (profil)
+	var probe := m.spawn_soldier(0, "rifle", G.grid.nearest_free(c, Grid.M_INF, 2), null)
+	probe.cmd_hold()
+	probe.fire_mode = 2
+	await m._wait(2.0)
+	var ry: float = probe.rotation.y
+	probe.queue_free()
+	G.cam.yaw = ry + PI * 0.5
+	G.cam.target_yaw = G.cam.yaw
+	await m._wait(0.2)
+	# ekranın sağı ve derinliği doğrudan kameranın kendi ekseninden (askerler profilden görünsün)
+	var cb: Basis = G.cam.cam.global_transform.basis
+	var R: Vector3 = Vector3(cb.x.x, 0, cb.x.z).normalized()
+	var F: Vector3 = Vector3(-cb.z.x, 0, -cb.z.z).normalized()
+	var foe := m.spawn_soldier(1, "rifle", G.grid.nearest_free(c + R * 32.0, Grid.M_INF), null)
+	foe.cmd_hold()
+	foe.hp = 1e9
+	foe.fire_mode = 2
+	var kinds := [["rifle", Soldier.STAND], ["rifle", Soldier.CROUCH], ["rifle", Soldier.PRONE], ["mg", Soldier.STAND], ["at", Soldier.STAND], ["sniper", Soldier.CROUCH], ["medic", Soldier.STAND]]
+	var rows: Array = [[], []]
+	for row in 2:
+		for i in kinds.size():
+			var p: Vector3 = c - R * 6.0 + R * (i * 2.0) + F * (row * 5.0)
+			var s := m.spawn_soldier(0, kinds[i][0], G.grid.nearest_free(p, Grid.M_INF, 2), null)
+			s.stance_lock = kinds[i][1]
+			s.stance = kinds[i][1]
+			s.cmd_hold()
+			s.fire_mode = 0 if row == 0 else 2
+			s.rotation.y = Soldier._yaw_of(R)
+			rows[row].append(s)
+	await m._wait(4.0)
+	var close := func(p: Vector3, sz: float) -> void:
+		# açılış kamera uçuşu yakınlaştırmayı ezmesin: her çekimden önce yeniden
+		G.cam.pitch = 12.0
+		G.cam.target_pitch = 12.0
+		G.cam.size = sz
+		G.cam.target_size = sz
+		G.cam.jump_to(p, true)
+	close.call(c + R * 0.5, 9.0)
+	await m._wait(0.5)
+	close.call(c + R * 0.5, 9.0)
+	await m._shot("pg_aim")
+	close.call(c + R * 0.5 + F * 5.0, 9.0)
+	await m._wait(0.5)
+	close.call(c + R * 0.5 + F * 5.0, 9.0)
+	await m._shot("pg_idle")
+	# yakın: ikişer asker (el, tutuş, ayak)
+	for row in 2:
+		for i in range(0, kinds.size(), 2):
+			var s0: Soldier = rows[row][i]
+			close.call(s0.position + R * 1.0 + Vector3(0, 0, 0), 3.6)
+			await m._wait(0.25)
+			close.call(s0.position + R * 1.0, 3.6)
+			await m._shot("pg_%s_%d" % ["aimc" if row == 0 else "idlec", i / 2])
+	# çok yakın: eller ve tutuş (ayakta tüfek nişanda / beklemede, MG nişanda)
+	for pr in [[0, 0], [1, 0], [0, 3]]:
+		var sh: Soldier = rows[pr[0]][pr[1]]
+		var chest: Vector3 = sh.position + F * (1.0 / tan(deg_to_rad(12.0)))
+		close.call(chest, 2.0)
+		await m._wait(0.25)
+		close.call(chest, 2.0)
+		await m._shot("pg_hand_%d_%d" % [pr[0], pr[1]])
+		# tutuş ölçümü: avuç (ön kol pivotu + 0,33 m) ile silahın kabza / el kundağı noktası arası
+		var bd: SoldierBody = sh.body
+		var g: Array = bd._grip_points()
+		var gr: Vector3 = bd.weapon.global_transform * (g[0] as Vector3)
+		var gl: Vector3 = bd.weapon.global_transform * (g[1] as Vector3)
+		var hr: Vector3 = bd.fore_r.global_transform * Vector3(0, -SoldierBody.HAND_LEN, 0)
+		var hl: Vector3 = bd.fore_l.global_transform * Vector3(0, -SoldierBody.HAND_LEN, 0)
+		print("POSE grip %s/%s pose=%s r=%.2f m l=%.2f m (r_to_l=%.2f gr_to_gl=%.2f)" % [sh.role, pr, sh._pose(), hr.distance_to(gr), hl.distance_to(gl), hr.distance_to(hl), gr.distance_to(gl)])
+		# görünen deri iskeleti: el / ön kol kemiklerinin dünya konumu
+		var sk: Skeleton3D = bd.skel
+		if sk != null:
+			var names := PackedStringArray()
+			for bi in sk.get_bone_count():
+				var bn := sk.get_bone_name(bi)
+				if bn.to_lower().contains("hand") or bn.to_lower().contains("fore") or bn.to_lower().contains("lowerarm") or bn.to_lower().contains("wrist"):
+					var bp: Transform3D = sk.global_transform * sk.get_bone_global_pose(bi)
+					var wp: Vector3 = bp.origin
+					# kemik +Y boyunca 0,33 m (glTF kemik ekseni) — görünen avucun yaklaşık yeri
+					var tip: Vector3 = bp * Vector3(0, SoldierBody.HAND_LEN, 0)
+					var piv: Vector3 = (bd.fore_r if bn.ends_with("r") else bd.fore_l).global_transform * Vector3(0, -SoldierBody.HAND_LEN, 0)
+					names.append("%s d_r=%.2f d_l=%.2f tip_r=%.2f tip_l=%.2f tip_vs_pivot=%.2f" % [bn, wp.distance_to(gr), wp.distance_to(gl), tip.distance_to(gr), tip.distance_to(gl), tip.distance_to(piv)])
+			print("POSE skin %s" % [", ".join(names)])
+	for row in rows:
+		for s in row:
+			s.queue_free()
+	# yürüyüş / koşu / çömelerek: üç asker (tüfek, MG, AT) aynı hızla yan yana
+	for mode in ["walk", "run", "crouch"]:
+		var ws: Array = []
+		for i in 3:
+			var p: Vector3 = c - R * 14.0 + F * (i * 1.6 - 1.6)
+			var s := m.spawn_soldier(0, ["rifle", "mg", "at"][i], G.grid.nearest_free(p, Grid.M_INF, 2), null)
+			s.fire_mode = 2
+			if mode == "crouch":
+				s.stance_lock = Soldier.CROUCH
+			ws.append(s)
+		await m._wait(0.3)
+		for s in ws:
+			s.cmd_move(s.position + R * 40.0, mode == "run")
+		await m._wait(2.2)
+		for k in 6:
+			close.call(ws[1].position, 3.6)
+			await m._wait(0.09)
+			close.call(ws[1].position, 3.6)
+			await m._shot("pg_%s_%d" % [mode, k])
+		for s in ws:
+			s.queue_free()
+		await m._wait(0.3)
+	print("POSEGALLERY RESULT fails=0")
 
 # 65/57: HUD'a eklenen emirler oyunda gerçekten çalışıyor mu — Drone Kaldır → Drone İndir (çantaya döner),
 # Binaya Gir → Binadan Çık, Saldır (imleç altındaki düşman), Gövde Gizle (uygun yer ya da yerinde mevzi)

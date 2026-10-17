@@ -874,9 +874,11 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["klx"] = -0.55 - sl * 0.2
 			wpn = 4
 		"crouch", "crouch_aim":
+			# diz çökme: kalça ve gövde öne, ağırlık öndeki dizin üstünde. Poz uzayında prx / srx ARTI = GERİ (74:
+			# eskiden srx 0,28 idi — gövde geriye yatıyordu, sırt çantasıyla geriye düşüyormuş gibi)
 			T["py"] = 0.5
-			T["prx"] = 0.0
-			T["srx"] = 0.28
+			T["prx"] = -0.1
+			T["srx"] = -0.2
 			T["lrx"] = 1.5
 			T["krx"] = -1.52
 			T["llx"] = -0.05
@@ -896,7 +898,9 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["klx"] = -1.2
 				T["srx"] = 0.45
 			if pose == "crouch_aim":
-				T["srx"] = 0.12
+				# nişanda gövde silaha doğru öne (omuz namlunun arkasında)
+				T["prx"] = -0.08
+				T["srx"] = -0.12
 				T["arx"] = 1.35
 				T["arz"] = 0.25
 				T["frx"] = 0.25
@@ -1034,8 +1038,19 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		_pistol_mi.visible = k > 0.42
 	elif _pistol_mi:
 		_pistol_mi.visible = false
+	# tanksavarcı, roketatar sırtta (taşıma, wpn 2): eller sırttaki tüpe uzanmaz (80: kollar gövdenin arkasında
+	# kaybolup asker kolsuz görünüyordu) — sağ el göğüsteki kayışı tutar, sol kol yürüyüşle doğal sallanır
+	var at_slung: bool = role in ["at", "atgm"] and wpn == 2 and not pistol and pistol_k <= 0.0
+	if at_slung:
+		var swing := -s * 0.38 * clampf(speed / 3.0, 0.0, 1.0)
+		T["arx"] = 0.32
+		T["arz"] = 0.14
+		T["frx"] = 1.6
+		T["alx"] = 0.12 + swing
+		T["alz"] = -0.12
+		T["flx"] = 0.35 + maxf(0.0, swing) * 0.6
 	# nişan / taşıma / yüzüstü: eller silaha IK ile oturur
-	if wpn in [1, 2, 3] and not pistol and pistol_k <= 0.0 and arm_r and rest.has(arm_r) and not (pose in ["sling", "unsling"]):
+	if wpn in [1, 2, 3] and not at_slung and not pistol and pistol_k <= 0.0 and arm_r and rest.has(arm_r) and not (pose in ["sling", "unsling"]):
 		var ik := _ik_pose(wpn)
 		T["arx"] = ik[0].x
 		T["arz"] = ik[0].y
@@ -1171,8 +1186,12 @@ func _loco_apply(T: Dictionary, dt: float, pose: String, speed: float, moving: b
 		a = "crouch_walk"
 		b = a
 	elif back:
+		# (126) geri geri koşu: hız arttıkça geri yürüyüş, tersten oynatılan koşu döngüsüne karışır
 		a = "walk_back"
 		b = a
+		if speed > 1.8 and _loco.has("run"):
+			b = "run"
+			w = clampf((speed - 1.8) / 0.6, 0.0, 1.0)
 	elif pose == "aim":
 		# tetikte yürüyüş: dizler bükük, adımlar kısa, gövde nişanda sabit
 		a = "crouch_walk"
@@ -1192,7 +1211,8 @@ func _loco_apply(T: Dictionary, dt: float, pose: String, speed: float, moving: b
 	var stride := lerpf(float(ca["len"]) * float(ca["speed"]), float(cb["len"]) * float(cb["speed"]), w)
 	loco_ph = fposmod(loco_ph + dt * speed / maxf(stride, 0.25), 1.0)
 	var A := _loco_sample(a, loco_ph)
-	var Bv := A if b == a else _loco_sample(b, loco_ph)
+	# geri koşuda koşu döngüsü tersten (1 − evre)
+	var Bv := A if b == a else _loco_sample(b, (1.0 - loco_ph) if (back and b == "run") else loco_ph)
 	var v := PackedFloat32Array()
 	v.resize(A.size())
 	for k in A.size():
