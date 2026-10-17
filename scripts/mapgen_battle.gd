@@ -1,5 +1,5 @@
 class_name MapGenBattle extends RefCounted
-# Büyük Muharebe (8×8 km, roadmap 21/53): Broken Arrow büyüklüğünde, CoH3 yoğunluğunda cephe haritası.
+# Büyük Muharebe (4×4 km — kullanıcı kararı 17 Ekim: 8 km aşırı büyüktü; roadmap 21/53): Broken Arrow büyüklüğünde, CoH3 yoğunluğunda cephe haritası.
 # Kuzeyden güneye kıvrılan ana nehir cepheyi ikiye böler — batı yaka Mihver (RUS), doğu yaka Müttefik (ABD).
 # Altı geçit: otoyol ve kasaba köprüsü (merkez), kuzey ve güney köprübaşları, iki uç köprü; doğudan bir kol.
 # Merkez kasaba nehrin iki yakasında sokak ızgarası (meydan, simge yapılar, sanayi), iki yan kasaba,

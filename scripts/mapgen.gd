@@ -23,7 +23,7 @@ const MAPS := {
 	"big_city": {"title": "Büyük Şehir", "biome": "green", "size": 512, "desc": "512 m: nehirle bölünmüş şehir, sokak sokak girilebilir binalar, sanayi bölgesi ve dış mahalleler."},
 	"front_2k": {"title": "Kuzey Cephesi", "biome": "green", "size": 2048, "desc": "2 km: geniş nehir vadisi, köyler ve mezralar, ormanlar. Zırhlı manevra ve helikopter harekâtı."},
 	"airborne_4k": {"title": "Hava İndirme Bölgesi", "biome": "green", "size": 4096, "desc": "4×4 km: paraşütçü ve nakliye helikopteri harekâtı için büyük cephe; köyler, ormanlar, nehirler."},
-	"battle_8k": {"title": "Büyük Muharebe", "biome": "green", "size": 8192, "desc": "8×8 km: nehir hattında cephe. Merkez kasaba iki yakada, iki kasaba, on üç köy, ormanlar, tarlalar, demiryolu; altı geçit, sekiz hedef. Broken Arrow ölçeğinde tam muharebe."},
+	"battle_8k": {"title": "Büyük Muharebe", "biome": "green", "size": 4096, "desc": "4×4 km: nehir hattında cephe. Merkez kasaba iki yakada, iki kasaba, on üç köy, ormanlar, tarlalar, demiryolu; altı geçit, sekiz hedef. Broken Arrow ölçeğinde tam muharebe."},
 	"large_front": {"title": "Geniş Cephe", "biome": "green", "size": 1024, "desc": "1 km: büyük nehir ve kolu, otoyol, altı köy, ormanlar ve tarlalar. Helikopter, hava indirme ve uzun menzilli topçu için."},
 	"desert_town": {"title": "Çöl Kasabası", "biome": "desert", "desc": "Düz çatılı beyaz evler ve yıkıntılarla dolu kasabada sokak sokak savaş."},
 }

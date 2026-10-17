@@ -123,6 +123,8 @@ func run(scene: String) -> void:
 			await inf_fight_test()
 		"modes2test":
 			await modes2_test()
+		"sandbagshots":
+			await sandbag_shots()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1259,6 +1261,36 @@ func engage_test() -> void:
 	if not react_ok:
 		fails += 1
 	print("ENGAGETEST RESULT fails=%d" % fails)
+
+# 36: kum torbası yakın görüntü (düz hat, açılı hat, MG yuvası; yanında asker ölçek için)
+func sandbag_shots() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 61)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.4, 0, G.MAP * 0.6), Grid.M_HEAVY)
+	G.props.clear_area(c, 20.0)
+	var l1: Building = m.place_line(0, "sandbags", c + Vector3(-6, 0, 0), c + Vector3(2, 0, 0))
+	l1.complete()
+	var l2: Building = m.place_line(0, "sandbags", c + Vector3(2, 0, 0), c + Vector3(6, 0, 4))
+	l2.complete()
+	var nest: Building = m.place_building(0, "mgnest", c + Vector3(-2, 0, 7), 0.0)
+	nest.complete()
+	for i in 2:
+		var s: Soldier = m.spawn_soldier(0, "rifle", c + Vector3(-3 + i * 2.0, 0, -1.2), null)
+		s.fire_mode = 2
+	await m._wait(1.5)
+	_cam(c + Vector3(-1, 0, 1), 9.0)
+	await m._wait(0.6)
+	await m._shot("sandbag_close")
+	_cam(c + Vector3(-1, 0, 3), 18.0)
+	await m._wait(0.6)
+	await m._shot("sandbag_mid")
+	print("SANDBAGSHOTS RESULT fails=0")
 
 # 156: yeni oyun modları — kurulum, kazanma / kaybetme koşulu, yapay zekâ birkaç saniye hatasız çalışır
 func modes2_test() -> void:
@@ -3171,7 +3203,7 @@ func huge_test() -> void:
 	m.get_window().size = Vector2i(1280, 720)
 	Sfx.muted = true
 	var fails := 0
-	for id in ["front_2k", "airborne_4k"]:
+	for id in ["front_2k", "airborne_4k", "battle_8k"]:
 		var t0 := Time.get_ticks_msec()
 		m.start_game(id, {}, true)
 		var ms := Time.get_ticks_msec() - t0
