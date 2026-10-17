@@ -508,6 +508,10 @@ static func car_mesh(v: int) -> ArrayMesh:
 
 # ------------------------------------------------------------ direkler / tente / sandık
 func pole(p: Vector3, lamp := false) -> void:
+	if lamp and has_asset("street_lamp_01"):
+		var lm := asset("street_lamp_01", p, rng.randf() * TAU, 1.2, false)
+		items.append({"node": lm, "pos": p, "kind": "tree", "hp": 30.0, "alive": true, "r": 0.2})
+		return
 	var mesh := _cached("lamp" if lamp else "pole", func(): return _pole_mesh(lamp))
 	var mi := _place(mesh, p, rng.randf_range(-0.1, 0.1) + (PI * 0.25 if not lamp else rng.randf() * TAU))
 	items.append({"node": mi, "pos": p, "kind": "tree", "hp": 30.0, "alive": true, "r": 0.2})
@@ -539,7 +543,82 @@ func canopy(p: Vector3, rot: float) -> void:
 		return mb.commit(Mats.vc2()))
 	_place(mesh, p, rot)
 
+# ------------------------------------------------------------ hazır CC0 eşyalar (roadmap 121)
+# Poly Haven modelleri tools/blender/props.py ile azaltılıp assets/props/<id>.glb olarak gelir; boyutlar
+# assets/props/props.json'da. Bel hizası ve üstü eşya (sandık yığını, beton bariyer, jeneratör, araba) gerçek
+# siper / engel olarak ızgaraya işlenir (120: fiziksel siper).
+const CRATES := ["wooden_military_crate", "old_military_crate", "wooden_crate_01", "wooden_crate_02", "plastic_crate_01"]
+const BARRELS := ["Barrel_01", "Barrel_02", "barrel_03"]
+const SMALL_SUPPLY := ["ammo_box", "metal_jerrycan", "metal_jerrycan_green", "plastic_jerrycan", "medical_box", "propane_tank"]
+static var _ainfo := {}
+
+static func asset_info() -> Dictionary:
+	if _ainfo.is_empty():
+		_ainfo = {"_": {}}
+		var f := FileAccess.open("res://assets/props/props.json", FileAccess.READ)
+		if f:
+			var d = JSON.parse_string(f.get_as_text())
+			if d is Dictionary:
+				_ainfo = d
+	return _ainfo
+
+static func has_asset(id: String) -> bool:
+	return asset_info().has(id) and ResourceLoader.exists("res://assets/props/%s.glb" % id)
+
+# glb içindeki ilk örgü (betik birleştirip tek nesne verir)
+func asset_mesh(id: String) -> Mesh:
+	return _cached("asset:" + id, func():
+		var ps: PackedScene = load("res://assets/props/%s.glb" % id)
+		if ps == null:
+			return null
+		var root := ps.instantiate()
+		var out: Mesh = null
+		var st: Array = [root]
+		while not st.is_empty() and out == null:
+			var n: Node = st.pop_back()
+			if n is MeshInstance3D:
+				out = (n as MeshInstance3D).mesh
+			st.append_array(n.get_children())
+		root.free()
+		return out)
+
+# eşyayı yerleştir; cover: bel hizası (≥0,45 m) ve üstü ızgarada siper / engel
+func asset(id: String, p: Vector3, rot: float, s := 1.0, cover := true) -> MeshInstance3D:
+	if not has_asset(id):
+		return null
+	var mesh := asset_mesh(id)
+	if mesh == null:
+		return null
+	var mi := _place(mesh, p, rot, s)
+	var dm: Array = asset_info()[id]["dims"]
+	var dims := Vector3(dm[0], dm[1], dm[2]) * s
+	_loose(mi, p, "crate", maxf(dims.x, dims.z) * 0.5, dims.y)
+	if cover and dims.y >= 0.45 and maxf(dims.x, dims.z) >= 0.6:
+		G.grid.set_static_rect(p, Vector2(dims.x, dims.z), rot, dims.y, Grid.K_WRECK if dims.y > 1.2 else Grid.K_WALL)
+		# temizlemede yalnız bu iz silinir (çevredeki duvar / ev hücrelerine dokunulmaz)
+		loose[loose.size() - 1]["rect"] = [p, Vector2(dims.x, dims.z), rot]
+	return mi
+
+# ikmal yığını: birkaç sandık, bidon, mühimmat kutusu (ileri üs, mevzi, köy deposu)
+func supply_pile(c: Vector3, n := 6) -> void:
+	for k in n:
+		var a := rng.randf() * TAU
+		var q := c + Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.0, 1.6)
+		var pool: Array = CRATES if rng.randf() < 0.45 else SMALL_SUPPLY
+		asset(pool[rng.randi() % pool.size()], q, rng.randf() * TAU, 1.0, k < 3)
+	# üst üste iki sandık
+	var top := asset(CRATES[rng.randi() % 2], c + Vector3(0.2, 0, -0.3), rng.randf() * TAU)
+	if top:
+		var top2 := asset(CRATES[rng.randi() % 2], c + Vector3(0.2, 0, -0.3), rng.randf() * TAU, 1.0, false)
+		if top2:
+			top2.position.y += float(asset_info()[CRATES[0]]["dims"][1])
+
 func crate(p: Vector3, rot: float, s := 1.0) -> void:
+	if has_asset(CRATES[0]):
+		# sokak eşyası sandık (eski kutu gibi) ızgarada engel değil — yol kenarına serpiliyor, köprü ağzını kesiyordu
+		# (bridgerebuild); siper olan sandıklar ikmal yığınında
+		asset(CRATES[rng.randi() % CRATES.size()], p, rot, s, false)
+		return
 	var mesh := _cached("crate", func():
 		var mb := MB.new()
 		mb.box(Vector3(0, 0.35, 0), Vector3(1.1, 0.7, 0.7), Color(0.45, 0.4, 0.26))
@@ -548,6 +627,9 @@ func crate(p: Vector3, rot: float, s := 1.0) -> void:
 	_loose(_place(mesh, p, rot, s), p, "crate", 0.35 * s, 0.7 * s)
 
 func barrel(p: Vector3, col := Color(0.25, 0.32, 0.2)) -> void:
+	if has_asset(BARRELS[0]):
+		asset(BARRELS[rng.randi() % BARRELS.size()], p, rng.randf() * TAU, 1.0, false)
+		return
 	var key := "barrel" + col.to_html()
 	var mesh := _cached(key, func():
 		var mb := MB.new()
@@ -771,6 +853,24 @@ func clear_area(c: Vector3, r: float) -> void:
 			else:
 				(it["node"] as Node3D).visible = false
 			G.grid.set_static_circle(p, 0.5, 0.0, Grid.K_NONE, true)
+	# serbest eşyalar (sandık, varil, bariyer, CC0 eşyalar): görünmez + ızgaradaki siper / engel izi silinir
+	var keep: Array = []
+	for it in loose:
+		var mi = it["node"]
+		if mi == null or not is_instance_valid(mi):
+			continue
+		var q: Vector3 = (mi as Node3D).position
+		if Vector2(q.x - c.x, q.z - c.z).length() < r:
+			(mi as Node3D).visible = false
+			if it.has("rect"):
+				var rc: Array = it["rect"]
+				G.grid.set_static_rect(rc[0], rc[1], rc[2], 0.0, Grid.K_NONE, true)
+			var k := Vector2i(int(q.x / 16.0), int(q.z / 16.0))
+			if _lhash.has(k):
+				_lhash[k].erase(it)
+		else:
+			keep.append(it)
+	loose = keep
 
 # ------------------------------------------------------------ bitki örtüsü (çam, çalı, kaya, saman, ot, kamış)
 func pine(p: Vector3, sc := 1.0) -> void:

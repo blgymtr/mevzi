@@ -6,3 +6,4 @@ node_modules/
 tools/anim/.cache/
 __pycache__/
 shots/
+tools/assets_src/

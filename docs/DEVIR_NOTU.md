@@ -1,6 +1,13 @@
 # Devir notu — kaldığımız yer (17 Ekim 2026, öğleden önce)
 
 ## Son yapılanlar
+- 17 Ekim akşam: 150 (engagetest, inffighttest — tespit takibi 1,6×), 156 altı yeni mod (modes2test, ≥1 km harita),
+  Büyük Muharebe 4 km, 36 kum torbası (`shaders/sandbag.gdshader`, MG yuvası torba çemberi), 121 CC0 eşya hattı
+  (`tools/fetch_models.cjs` → `tools/assets_src/` git dışı → `tools/blender/props.py` → `assets/props/*.glb`;
+  `Props.asset()`, `MapGen._dress()` — süsleme rastgele üretici durumunu kaydedip geri yükler, yoksa harita düzeni
+  kayıyor ve testler (bridgerebuild) bozuluyordu), Chinook rampası / biniş, istihkâm köprü ekibi (`BridgeSite`),
+  araç "engelli hücrede sessiz bekleme" düzeltmesi. Kullanıcının sıradaki isteği: MODELLEME (en uzun bölüm) —
+  özel haritalar (tarihsel operasyonlar) tek tek, varlık siteleri: Poly Haven, ambientCG, Quaternius
 - 65 seçim paneli CoH tarzı (17 Ekim, akşam): `Hud._build_unit_panel` / `_info_*` / `_cmd_btn`; sabitler UPH 120,
   INFO_W 372, TILE 34; yeni iç sınıflar `Deco` (portre rütbe + XP), `StatRow` (simge + sayı); `Thumbs.get_thumb(id,
   team, dark=true)` koyu zeminli portre (eskiz gölgelendiricisi yok). Üretim kartları hâlâ açık zeminli eskiz

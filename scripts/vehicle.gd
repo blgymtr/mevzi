@@ -642,8 +642,11 @@ func _drop_crate() -> void:
 # askı halatı ve kayışlar + rampa + yerde palet yenileme
 func _cargo_visuals(dt: float) -> void:
 	if ramp:
-		var open := hull.position.y < 0.6 and (landing or land_hold or (not cargo.is_empty() and cur_speed < 0.3))
-		ramp_k = move_toward(ramp_k, 1.0 if open else 0.0, dt * 0.7)
+		# rampa: yerde, binmek için sıraya giren varken (gelmeden açık — rampada beklemesinler) ya da indirmede açık;
+		# kalkış emri gelince kapanır (kapanmadan kalkmaz, _heli)
+		var departing := order in ["move", "amove", "retreat"] and not landing and dist2_p(dest) > 8.0
+		var open := hull.position.y < 0.6 and not departing and (landing or land_hold or not _ramp_q.is_empty() or (not cargo.is_empty() and cur_speed < 0.3))
+		ramp_k = move_toward(ramp_k, 1.0 if open else 0.0, dt * 1.4)
 		ramp.rotation.x = ramp_k * float(M.get("meta", {}).get("ramp_open", 1.0))
 	if hull.position.y < 0.6 and crates < crates_max():
 		for b in G.near(position, 26.0):
@@ -1459,20 +1462,42 @@ func cmd_bridge(it: Dictionary) -> bool:
 	say("KÖPRÜ KURMAYA GİDİYORUM", 2.5)
 	return true
 
+# İstihkâm köprü kurma (kullanıcı: "sürücü dışında araçtan 3 asker inecek, gerçekte nasılsa öyle kuracaklar"):
+# araç köprü başının gerisinde durur, üç istihkâmcı arkadan iner — ikisi köprü başında paneli birleştirip pimler,
+# biri aracın arkasından panel taşır (BridgeSite). Köprü ancak işçilikle uzar; ekip vurulursa durur. Bitince
+# ekip araca döner, araç kendi kıyısında geriye ve yana çekilir (köprüye girmeden — eskiden ağızda kalıyordu).
+var _bsite: BridgeSite = null
+var _sappers: Array = []
+var _returning: Array = []
+var _pull_pt := Vector3.INF
+var _pull2 := Vector3.INF
+var _pull_t := 0.0
+
 func _bridge_tick(dt: float) -> void:
+	_sapper_return_tick(dt)
 	if bridge_job.is_empty():
 		return
 	if order != "bridge" or not alive or bool(bridge_job.get("repaired", false)):
 		bridge_job = {}
+		_end_bridge_work()
 		return
 	if path_i < path.size() or position.distance_to(_bj_end) > 4.0:
 		return
-	# yerinde: boşluğa dön, panelleri uzat (boşluk boyuna göre ~2,5 sn / m), toz ve vinç sesi
 	var g: Dictionary = bridge_job["gap"]
 	var e: Vector3 = G.props.gap_ends(bridge_job)[0 if _bj_lo else 1]
 	_face_h = Soldier._yaw_of(e - position)
 	var dur: float = maxf(12.0, float(g["len"]) * 2.5)
-	var k: float = float(g.get("built", 0.0)) + dt / dur
+	if _bsite == null or not is_instance_valid(_bsite):
+		_start_sappers(e)
+		return
+	if _bsite.crew_alive() == 0:
+		_bj_t -= dt
+		if _bj_t <= 0.0:
+			_bj_t = 8.0
+			say("İSTİHKÂM EKİBİ YOK", 2.5)
+		return
+	# işçilik hızı: iki birleştirici + taşıyıcı ≈ 2,2 iş / sn → tam ekiple ~dur sn
+	var k: float = maxf(float(g.get("built", 0.0)), clampf(_bsite.work / (dur * 2.2), 0.0, 1.0))
 	G.props.bridge_progress(bridge_job, k, _bj_lo)
 	_bj_t -= dt
 	if _bj_t <= 0.0:
@@ -1480,16 +1505,85 @@ func _bridge_tick(dt: float) -> void:
 		G.fx.vehicle_dust(e)
 	if k >= 1.0:
 		say("KÖPRÜ HAZIR", 2.5)
-		# köprü ağzını kapatmasın: yolun yanına çekilir (eskiden ağızda kalıp ilk geçecek aracı tıkıyordu)
 		var bdir: Vector3 = bridge_job["dir"]
-		var side := Vector3(-bdir.z, 0, bdir.x)
 		var back: Vector3 = -bdir if _bj_lo else bdir
+		var side := Vector3(-back.z, 0, back.x)
 		bridge_job = {}
 		order = ""
-		var off: Vector3 = G.grid.nearest_free(position + side * 9.0 + back * 4.0, nav_mode, 10)
-		if off.distance_to(position) < 4.0:
-			off = G.grid.nearest_free(position - side * 9.0 + back * 4.0, nav_mode, 10)
-		cmd_move(off)
+		_end_bridge_work()
+		# kendi kıyısında geriye ve yana (köprü hücresi olmayan yer); ekip binince yola çıkar
+		_pull_pt = Vector3.INF
+		for sg in [1.0, -1.0]:
+			var q: Vector3 = G.grid.nearest_free(position + back * 8.0 + side * sg * 7.0, nav_mode, 8)
+			if G.grid.bridge_at(q).is_empty() and q.distance_to(position) > 4.0:
+				_pull_pt = q
+				break
+		if _pull_pt == Vector3.INF:
+			_pull_pt = G.grid.nearest_free(position + back * 10.0, nav_mode, 10)
+		_pull_t = 25.0
+
+func _start_sappers(e: Vector3) -> void:
+	_bsite = BridgeSite.new()
+	G.main.add_child(_bsite)
+	_bsite.veh = self
+	_bsite.head = e
+	var dv := e - position
+	dv.y = 0.0
+	_bsite.dirv = dv.normalized() if dv.length() > 0.1 else forward()
+	_bsite.position = e
+	var sq := Squad.new(team, "İstihkâm")
+	G.squads.append(sq)
+	_sappers.clear()
+	for i in 3:
+		var p := G.grid.nearest_free(position - forward() * (ext.y + 0.8) + right() * (i - 1) * 0.9, Grid.M_INF, 6)
+		var s: Soldier = G.main.spawn_soldier(team, "engineer", p, sq)
+		s.cmd_build(_bsite)
+		_sappers.append(s)
+	say("İSTİHKÂM İNİYOR, KÖPRÜ KURULUYOR", 2.5)
+
+func _end_bridge_work() -> void:
+	if _bsite != null and is_instance_valid(_bsite):
+		_bsite.done = true
+		_bsite.queue_free()
+	_bsite = null
+	for s in _sappers:
+		if is_instance_valid(s) and s.alive and not s.incapacitated():
+			_returning.append(s)
+			s.cmd_move(entry_point(0))
+	_sappers.clear()
+
+# ekip arka kapıdan biner (araca varan asker alınır); hepsi binince ya da 25 sn sonra araç kenara çekilir
+func _sapper_return_tick(dt: float) -> void:
+	for s in _returning.duplicate():
+		if not is_instance_valid(s) or not s.alive or s.incapacitated():
+			_returning.erase(s)
+			continue
+		var ep := entry_point(0)
+		if Vector2(s.position.x - ep.x, s.position.z - ep.z).length() < 1.8:
+			_returning.erase(s)
+			s.queue_free()
+		elif s.state == "idle" and s.order == "" and (s.dest.distance_to(ep) > 1.5 or s.path_i >= s.path.size()):
+			s.cmd_move(ep)
+	if _pull_pt != Vector3.INF:
+		_pull_t -= dt
+		if _returning.is_empty() or _pull_t <= 0.0:
+			# araç köprünün sağlam açıklığının ucunda, boşluğa dönük: köprüde dönemez — önce eksen boyunca düz geri
+			# (köprü hücresi bitene dek + 6 m), sonra yana
+			var back := -forward()
+			var q := position
+			var n := 0
+			while n < 80 and (not G.grid.bridge_at(q).is_empty() or G.grid.on_bridge(q)):
+				q += back
+				n += 1
+			if n > 0:
+				cmd_reverse(G.grid.nearest_free(q + back * (ext.y + 6.0), nav_mode, 6))
+				_pull2 = _pull_pt
+			else:
+				cmd_move(_pull_pt)
+			_pull_pt = Vector3.INF
+	elif _pull2 != Vector3.INF and order == "" and path_i >= path.size():
+		cmd_move(_pull2)
+		_pull2 = Vector3.INF
 
 func cmd_clear(w: Vehicle) -> void:
 	if not can_clear() or w == null or not is_instance_valid(w) or w.alive:
@@ -2937,7 +3031,20 @@ func _drive(dt: float) -> void:
 				# köprü kenarında su hücresine taşmış: durup kalmasın, köprüye / kuru zemine doğru kay
 				position = position.move_toward(G.grid.nearest_dry(position, 6.0), maxf(absf(cur_speed), 1.5) * dt)
 				return
+			# sıradaki konum engelli hücre (siper kenarı, hurda, eşya): eskiden sessizce durup sonsuza dek bekliyordu
+			# (obstacletest: kamyon başlangıçta 50 sn hız 0, manevra yok) → öndeki engel gibi geri manevra / yeniden yol
+			var was_fwd2 := cur_speed >= 0.0
 			cur_speed = 0.0
+			# köprüde / köprü ağzında korkuluk hücresi olağan: manevra yok (köprüde geri manevra emri düşürüyordu)
+			if not G.grid.bridge_at(position).is_empty() or not G.grid.bridge_at(position + f * (ext.y + 2.0)).is_empty():
+				return
+			_stuck_t += dt
+			if _stuck_t > 1.2:
+				_stuck_t = 0.0
+				if was_fwd2:
+					_begin_unstick()
+				elif path_i < path.size():
+					_repath(path[path.size() - 1])
 			return
 	var moved := np.distance_to(position)
 	position = np
@@ -4402,7 +4509,11 @@ func _heli(dt: float) -> void:
 	var bank := 0.55 if evade_t > 0.0 else 0.3
 	hull.rotation = Vector3(lerpf(hull.rotation.x, clampf(local_v.z * 0.025, -0.3, 0.3), dt * 3.0), heading, lerpf(hull.rotation.z, clampf(-local_v.x * 0.035, -bank, bank), dt * 4.0))
 	_hb += dt
-	if landing or hover or absf(hull.position.y - tgt_alt) > 0.4:
+	# rampa açıkken kalkmaz (kullanıcı: "rampası açık kalkıyor"): yerde önce rampa kapanır, sonra yükselir
+	# (yükseklik hiç güncellenmez — havada salınım dalı tgt_alt'a her karede sin ekleyip gövdeyi yukarı taşıyordu)
+	if ramp and ramp_k > 0.03 and hull.position.y < 0.8 and tgt_alt > hull.position.y + 0.1:
+		hvel = hvel.move_toward(Vector3.ZERO, D["accel"] * dt * 2.0)
+	elif landing or hover or absf(hull.position.y - tgt_alt) > 0.4:
 		hull.position.y = move_toward(hull.position.y, tgt_alt, dt * (5.0 if evade_t > 0.0 else 3.0))
 	else:
 		hull.position.y = tgt_alt + sin(_hb * 1.3) * 0.25

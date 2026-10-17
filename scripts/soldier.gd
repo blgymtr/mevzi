@@ -1096,7 +1096,7 @@ func cmd_build(site: Node3D) -> void:
 	haul = false
 	build_slot = -1
 	var p: Vector3 = site.position + (position - site.position).normalized() * (site.radius + 0.8)
-	if site is Building and not site.is_line():
+	if (site is Building and not site.is_line()) or site is BridgeSite:
 		build_slot = site.claim_slot(self)
 		p = site.slot_pos(build_slot)
 	build_goal = p
@@ -1583,9 +1583,11 @@ func _think() -> void:
 					var back := ent - hv.position
 					back.y = 0.0
 					back = back.normalized() if back.length() > 0.1 else -hv.forward()
-					var slot := ent + back * (0.6 + qi * 1.1)
-					if qi == 0 and hv.can_load() and dist2_p(ent) < 1.4 and G.time >= hv._ramp_free_t:
-						hv._ramp_free_t = G.time + 0.95
+					var slot := ent + back * (0.6 + qi * 0.9)
+					# (kullanıcı: girişte 1 sn bekliyorlar) sıra aralığı 0,95 → 0,35 sn, rampa ağzı yarıçapı genişledi:
+					# askerler koşar adım arka arkaya girer
+					if qi == 0 and hv.can_load() and dist2_p(ent) < 2.0 and G.time >= hv._ramp_free_t:
+						hv._ramp_free_t = G.time + 0.35
 						hv._ramp_q.erase(self)
 						door_veh = hv
 						board_target = null
@@ -3719,7 +3721,7 @@ func _physics_process(dt: float) -> void:
 		_process_drag_heal(dt)
 	if alive and state == "build" and build_site != null and is_instance_valid(build_site):
 		var mult := 1.6 if role == "engineer" else (0.7 if role == "medic" else 1.0)
-		if build_site is Building and not build_site.is_line() and build_slot >= 0:
+		if ((build_site is Building and not build_site.is_line()) or build_site is BridgeSite) and build_slot >= 0:
 			# kalabalık ekipte verim azalır (√n): 6 kişi tek kişinin ~2.4 katı
 			mult /= sqrt(float(maxi(1, build_site.active_workers())))
 			var sp: Vector3 = build_site.slot_pos(build_slot)

@@ -48,7 +48,7 @@ func _ready() -> void:
 		# sahne testleri kendi birliklerini kurar; gerçek menzilde karargâhtaki başlangıç tankı haritanın
 		# ortasındaki deney birliklerini vuruyordu. Başlangıç kuvveti gereken testler istisna.
 		start_units = shot_scene in ["battletest", "supplytest", "hudtest", "test", "crash"]
-	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest", "cratertest", "decktest", "jamtest", "aimtest", "smokepasstest", "dozertest", "towtest", "cratertypes", "backfiretest", "crowdtest", "trenchpose", "ramptest", "hulldowntest", "nadetest", "fobdark", "camtest", "towcrewtest", "rivertest", "hudshots", "menushots", "gfxbench", "ordertest", "posegallery", "groundshots", "wreckshots", "crewshots", "chinooktest", "bridgerebuild", "swimtest", "grassfiretest", "fencetest", "obstacletest", "engagetest", "inffighttest", "modes2test", "sandbagshots"]:
+	if shot_dir != "" and shot_scene in ["treetest", "yieldtest", "dronetest", "woundtest", "ropetest", "evadetest", "crewtest", "fowtest", "paratest", "para2test", "ammotest", "stucktest", "fftest", "perftest", "tactest", "largetest", "hugetest", "rocktest", "mapprof", "lostest", "icontest", "spottest", "rangetest", "missiletest", "aimatch", "basegallery", "enginetest", "perf8k", "mounttest", "rotortest", "killtest", "tracktest", "crewvistest", "mortartest", "ruintest", "bridgetest", "shadowtest", "smoketest", "firetest", "soldiertest", "armeduav", "turrettest", "mbtgallery", "crewkilltest", "snipertest", "sandboxtest", "drivertest", "watertest", "vehaitest", "cratertest", "decktest", "jamtest", "aimtest", "smokepasstest", "dozertest", "towtest", "cratertypes", "backfiretest", "crowdtest", "trenchpose", "ramptest", "hulldowntest", "nadetest", "fobdark", "camtest", "towcrewtest", "rivertest", "hudshots", "menushots", "gfxbench", "ordertest", "posegallery", "groundshots", "wreckshots", "crewshots", "chinooktest", "bridgerebuild", "swimtest", "grassfiretest", "fencetest", "obstacletest", "engagetest", "inffighttest", "modes2test", "sandbagshots", "propgallery"]:
 		_t07 = Tests07.new(self)
 		_t07.run(shot_scene)
 	elif shot_dir != "" and shot_scene == "scentest":
@@ -1890,7 +1890,17 @@ func _run_cargo_test() -> void:
 		fails += 1
 	var p2 := G.grid.nearest_free(c + Vector3(40, 0, -30), Grid.M_INF)
 	h.cmd_move(p2)
-	await _wait(5.0)
+	# rampa kapanmadan kalkmamalı (kullanıcı: "rampası açık kalkıyor")
+	var lift_ramp := -1.0
+	var tl := 0.0
+	while tl < 5.0:
+		await _wait(0.1)
+		tl += 0.1
+		if h.hull.position.y > 1.0 and lift_ramp < 0.0:
+			lift_ramp = h.ramp_k
+	print("CARGO liftoff_ramp=%.2f" % lift_ramp)
+	if lift_ramp > 0.05:
+		fails += 1
 	var flew: bool = h.hull.position.y > 5.0
 	await _wait(8.0)
 	h.unload()

@@ -125,6 +125,8 @@ func run(scene: String) -> void:
 			await modes2_test()
 		"sandbagshots":
 			await sandbag_shots()
+		"propgallery":
+			await prop_gallery()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -926,8 +928,20 @@ func bridge_rebuild_test() -> void:
 		fails += 1
 	var t0 := G.time
 	var shot := false
+	var sap_max := 0
+	var sap_work := 0
 	while G.time - t0 < 120.0 and not bool(br.get("repaired", false)):
 		await m._wait(0.5)
+		# sürücü dışında 3 istihkâmcı iner ve köprü başında çalışır
+		var ns := 0
+		var nw := 0
+		for s in dz._sappers:
+			if is_instance_valid(s) and s.alive:
+				ns += 1
+				if s.state == "build":
+					nw += 1
+		sap_max = maxi(sap_max, ns)
+		sap_work = maxi(sap_work, nw)
 		if not shot and float(br["gap"].get("built", 0.0)) > 0.5:
 			shot = true
 			_cam(gc, 30.0)
@@ -935,6 +949,18 @@ func bridge_rebuild_test() -> void:
 			await m._shot("bridge_building")
 	print("BRIDGEREBUILD repaired=%s in %.0f s" % [br.get("repaired", false), G.time - t0])
 	if not bool(br.get("repaired", false)):
+		fails += 1
+	# ekip araca döner, araç kenara çekilir
+	var tw := 0.0
+	while tw < 30.0 and (not dz._returning.is_empty() or dz._pull_pt != Vector3.INF or dz._pull2 != Vector3.INF or dz.path_i < dz.path.size()):
+		await m._wait(0.5)
+		tw += 0.5
+	var left_out := 0
+	for u in G.units:
+		if is_instance_valid(u) and u is Soldier and u.alive and u.role == "engineer" and u.position.distance_to(gc) < 40.0:
+			left_out += 1
+	print("BRIDGEREBUILD sappers=%d working=%d left_out=%d boarded_in=%.1f s eng_on_bridge=%s" % [sap_max, sap_work, left_out, tw, G.grid.on_bridge(dz.position)])
+	if sap_max != 3 or sap_work < 2 or left_out > 0:
 		fails += 1
 	await m._wait(1.0)
 	_cam(gc, 30.0)
@@ -957,6 +983,7 @@ func bridge_rebuild_test() -> void:
 		var q: Vector3 = gc + dir * float(k)
 		cells.append("%d:w%d h%.2f k%d" % [k, int(G.grid.is_water(q)), G.grid.height_at(q), G.grid.kind_at(q)])
 	print("BRIDGEREBUILD cells %s" % [" ".join(cells)])
+	print("BRIDGEREBUILD istihkâm pos=(%.0f,%.0f) order=%s path=%d/%d dest=(%.0f,%.0f) v=%.1f unstick=%d jam=%.1f on_bridge=%s" % [dz.position.x, dz.position.z, dz.order, dz.path_i, dz.path.size(), dz.dest.x, dz.dest.z, dz.cur_speed, dz._unstick_total, dz._jam_wait - G.time, G.grid.on_bridge(dz.position)])
 	print("BRIDGEREBUILD dbg path_after=%d truck=(%.0f,%.0f) gc=(%.0f,%.0f) dz=(%.0f,%.0f) truck_path=%d/%d order=%s gap_cell_bridge=%s water=%s" % [pa.size(), tr.position.x, tr.position.z, gc.x, gc.z, dz.position.x, dz.position.z, tr.path_i, tr.path.size(), tr.order, G.grid.on_bridge(gc), G.grid.is_water(gc)])
 	print("BRIDGEREBUILD path_before=%d crossed=%s truck_to_b=%.0f" % [blocked.size(), crossed, tr.position.distance_to(side_b)])
 	if not crossed:
@@ -1153,6 +1180,20 @@ func obstacle_test() -> void:
 	for u in units:
 		if is_instance_valid(u) and u.alive and Vector2(u.position.x - goal.x, u.position.z - goal.z).length() >= 16.0:
 			stuck.append("%s@(%.0f,%.0f)" % [u.role if u is Soldier else u.vtype, u.position.x, u.position.z])
+			if u is Vehicle:
+				print("OBSTACLE takılan %s order=%s path=%d/%d dest=(%.0f,%.0f) speed=%.1f immobile=%s goal=(%.0f,%.0f)" % [u.vtype, u.order, u.path_i, u.path.size(), u.dest.x, u.dest.z, u.cur_speed, u.immobile(), goal.x, goal.z])
+				var ahead: Array = []
+				for dd in [1.0, 2.5, 4.0, 6.0]:
+					var ap: Vector3 = u.position + u.forward() * (u.ext.y + dd)
+					ahead.append("%.0fm:k%d/f%s" % [dd, G.grid.kind_at(ap), G.grid.free_at(ap, u.nav_mode)])
+				var near_v: Array = []
+				for o in G.near(u.position, 9.0):
+					if o != u and o is Vehicle:
+						near_v.append("%s%.0f" % [o.vtype, u.position.distance_to(o.position)])
+					elif o is Soldier:
+						near_v.append("S:%s/%s/t%d/%.1fm/alive=%s/vin=%s" % [o.role, o.state, o.team, u.position.distance_to(o.position), o.alive, o.vehicle_in != null])
+				print("OBSTACLE   sf=%.2f vmax=%.2f escorts=%d pace=%s heading=%.2f slung=%s carried=%s driver=%s crew=%d abandon=%.1f tipped=%s runaway=%.1f unstick_t=%.1f" % [u.speed_factor(), u._vmax(0.016), u.escorts.size(), u._escort_pace() if not u.escorts.is_empty() else -1.0, u.heading, u.slung_by, u.carried_in, u.driver_ok, u.crew_n, u.abandon_t, u.tipped, u._runaway, u._unstick_t])
+				print("OBSTACLE   jam=%.1f unstick=%d/%d path0=(%.0f,%.0f) path1=(%.0f,%.0f) ahead=%s near=%s" % [u._jam_wait - G.time, u._unstick_total, u._unstick_tries, u.path[0].x if u.path.size() > 0 else -1.0, u.path[0].z if u.path.size() > 0 else -1.0, u.path[1].x if u.path.size() > 1 else -1.0, u.path[1].z if u.path.size() > 1 else -1.0, ahead, near_v])
 	_cam(c, 50.0)
 	await m._wait(0.2)
 	await m._shot("obstacle_end")
@@ -1261,6 +1302,40 @@ func engage_test() -> void:
 	if not react_ok:
 		fails += 1
 	print("ENGAGETEST RESULT fails=%d" % fails)
+
+# 121: CC0 eşya galerisi — tüm assets/props modelleri ızgarada, ölçek için asker; eksik / bozuk model sayılır
+func prop_gallery() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 63)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.4, 0, G.MAP * 0.6), Grid.M_HEAVY)
+	G.props.clear_area(c, 30.0)
+	var ids: Array = Props.asset_info().keys().filter(func(k): return k != "_")
+	ids.sort()
+	var fails := 0
+	var cols := 6
+	for i in ids.size():
+		var p := c + Vector3((i % cols) * 3.2 - 8.0, 0, (i / cols) * 3.2 - 6.0)
+		var mi: MeshInstance3D = G.props.asset(ids[i], p, 0.5, 1.0, false)
+		if mi == null or mi.mesh == null:
+			fails += 1
+			print("PROPGALLERY eksik %s" % ids[i])
+	var s: Soldier = m.spawn_soldier(0, "rifle", c + Vector3(-9.6, 0, -6.0), null)
+	s.fire_mode = 2
+	await m._wait(1.0)
+	_cam(c + Vector3(-1, 0, -2), 14.0)
+	await m._wait(0.6)
+	await m._shot("props_a")
+	_cam(c + Vector3(-1, 0, 6), 14.0)
+	await m._wait(0.6)
+	await m._shot("props_b")
+	print("PROPGALLERY n=%d" % ids.size())
+	print("PROPGALLERY RESULT fails=%d" % fails)
 
 # 36: kum torbası yakın görüntü (düz hat, açılı hat, MG yuvası; yanında asker ölçek için)
 func sandbag_shots() -> void:

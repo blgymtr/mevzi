@@ -83,6 +83,8 @@ func build(id: String, seed_v: int) -> void:
 			_desert()
 	if id != "custom" and id != "big_city" and G.MAP <= 1024.0:
 		_footpaths()
+	if false:
+		_dress()
 	print("ARCH bina=%d ms=%d blok=%d" % [arch_n, arch_us / 1000, B.bpos.size()])
 	G.prof("layout")
 	T.make_water()
@@ -1411,6 +1413,10 @@ func _run(op: Dictionary):
 			P.shed(v3(op["p"]), float(op["r"]))
 		"pole":
 			P.pole(v3(op["p"]), bool(op.get("lamp", false)))
+		"asset":
+			P.asset(String(op["id"]), v3(op["p"]), float(op.get("r", 0.0)), float(op.get("sc", 1.0)), bool(op.get("cover", true)))
+		"supply":
+			P.supply_pile(v3(op["p"]), int(op.get("n", 6)))
 		"grass":
 			var rg: Array = op.get("rect", [2, 2, 252, 252])
 			P.grass_field(int(op["n"]), col(op["col"]), Rect2(rg[0], rg[1], rg[2], rg[3]), float(op.get("size", 0.5)))
@@ -1751,6 +1757,90 @@ func p_hay(p: Vector3) -> void:
 
 func p_car(p: Vector3, r: float, v := -1) -> void:
 	exec({"t": "car", "p": vv(p), "r": r, "v": v})
+
+func p_asset(id: String, p: Vector3, r: float, sc := 1.0) -> void:
+	exec({"t": "asset", "id": id, "p": vv(p), "r": r, "sc": sc})
+
+func p_supply(p: Vector3, n := 6) -> void:
+	exec({"t": "supply", "p": vv(p), "n": n})
+
+# hazır CC0 eşyalarla süsleme (roadmap 121): ileri üs noktalarında ikmal yığını, evlerin yanında gündelik eşya,
+# kasaba / köy yollarında beton bariyer, ağaçlıkta kütük ve devrik gövde (siper)
+const HOUSE_ITEMS := ["Barrel_01", "Barrel_02", "barrel_03", "metal_jerrycan", "plastic_jerrycan", "cardboard_box_01", "hand_truck",
+	"portable_generator", "utility_box_01", "propane_tank", "old_tyre", "wooden_crate_01", "plastic_crate_01", "old_military_compressor"]
+
+# eşya yolu / iniş yerini kesmesin: karargâh (45 m), köprü ağzı ve yaklaşımı (60 m: istihkâm aracının kenara çekilme yeri),
+# ileri üs noktası (12 m) çevresi boş
+func _dress_ok(q: Vector3, r: float, road_m: float) -> bool:
+	for h in G.hq_pos:
+		if q.distance_to(h) < 45.0:
+			return false
+	for s in G.fob_sites:
+		if q.distance_to(s) < 12.0:
+			return false
+	for b in _dress_br:
+		if Vector2(q.x - b.x, q.z - b.z).length() < b.y + 60.0:
+			return false
+	return free_at(q, r, road_m)
+
+var _dress_br: Array = []      # köprüler: Vector3(x, yarıçap, z)
+
+func _dress() -> void:
+	if not Props.has_asset("Barrel_01"):
+		return
+	_dress_br.clear()
+	for it in P.items:
+		if it["kind"] == "bridge":
+			_dress_br.append(Vector3(it["pos"].x, float(it["r"]), it["pos"].z))
+	for s in G.fob_sites:
+		var a0 := rng.randf() * TAU
+		var q := G.grid.nearest_free(s + Vector3(cos(a0), 0, sin(a0)) * rng.randf_range(14.0, 20.0), Grid.M_INF)
+		if _dress_ok(q, 1.2, 3.0):
+			p_supply(q, rng.randi_range(4, 7))
+	var hs: Array = B.houses
+	for i in hs.size():
+		if rng.randf() > 0.35:
+			continue
+		var h: Dictionary = hs[i]
+		var c: Vector3 = h["center"]
+		var sz = h["size"]
+		var half := 4.0
+		if sz is Vector2:
+			half = maxf(sz.x, sz.y) * 0.5
+		elif sz is Vector3:
+			half = maxf(sz.x, sz.z) * 0.5
+		for k in rng.randi_range(1, 3):
+			var a := rng.randf() * TAU
+			var q := c + Vector3(cos(a), 0, sin(a)) * (half + rng.randf_range(0.8, 1.8))
+			if q.x < 4 or q.z < 4 or q.x > G.MAP - 4 or q.z > G.MAP - 4 or not _dress_ok(q, 0.7, 3.0):
+				continue
+			# ev eşyası görsel; siper / engel olarak işlenmez (yol / avlu geçişini kesmesin)
+			exec({"t": "asset", "id": HOUSE_ITEMS[rng.randi() % HOUSE_ITEMS.size()], "p": vv(q), "r": rng.randf() * TAU, "cover": false})
+	# yol bariyerleri: yerleşim yakınında yol kenarı, ikişer üçer
+	var nb := int(clampf(hs.size() * 0.08, 4.0, 160.0))
+	for i in nb:
+		if hs.is_empty():
+			break
+		var c2: Vector3 = hs[rng.randi() % hs.size()]["center"]
+		for t in 12:
+			var q := c2 + Vector3(rng.randf_range(-25, 25), 0, rng.randf_range(-25, 25))
+			var rd := road_dist(q)
+			if rd < 4.5 or rd > 7.0 or not _dress_ok(q, 1.0, 4.0):
+				continue
+			var rr := rng.randf() * TAU
+			var id := "concrete_road_barrier" if rng.randf() < 0.6 else "concrete_road_barrier_02"
+			for j in rng.randi_range(1, 3):
+				p_asset(id, q + Vector3(cos(rr), 0, -sin(rr)) * j * 1.6, rr + rng.randf_range(-0.05, 0.05))
+			break
+	# ağaçlık: kütük / devrik gövde
+	var trees: Array = P.items.filter(func(it): return it["kind"] == "tree")
+	var nt := mini(trees.size() / 40, int(G.MAP / 8.0))
+	for i in nt:
+		var tp: Vector3 = trees[rng.randi() % trees.size()]["pos"]
+		var q := tp + Vector3(rng.randf_range(-4, 4), 0, rng.randf_range(-4, 4))
+		if not _dress_ok(q, 1.2, 3.0):
+			continue
+		p_asset("dead_tree_trunk_02" if rng.randf() < 0.4 else "tree_stump_01", q, rng.randf() * TAU, rng.randf_range(0.8, 1.15))
 
 func p_canopy(p: Vector3, r: float) -> void:
 	exec({"t": "canopy", "p": vv(p), "r": r})

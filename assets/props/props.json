@@ -1,0 +1,310 @@
+{
+    "ammo_box":  {
+                     "dims":  [
+                                  0.087,
+                                  0.177,
+                                  0.258
+                              ],
+                     "tris":  1600,
+                     "tris_src":  4382,
+                     "src":  "polyhaven",
+                     "license":  "CC0"
+                 },
+    "old_military_crate":  {
+                               "dims":  [
+                                            0.814,
+                                            0.3,
+                                            0.538
+                                        ],
+                               "tris":  1600,
+                               "tris_src":  10476,
+                               "src":  "polyhaven",
+                               "license":  "CC0"
+                           },
+    "rusted_wheel_rim_01":  {
+                                "dims":  [
+                                             0.402,
+                                             0.403,
+                                             0.156
+                                         ],
+                                "tris":  1000,
+                                "tris_src":  16440,
+                                "src":  "polyhaven",
+                                "license":  "CC0"
+                            },
+    "street_lamp_01":  {
+                           "dims":  [
+                                        0.707,
+                                        3.868,
+                                        0.384
+                                    ],
+                           "tris":  1200,
+                           "tris_src":  30610,
+                           "src":  "polyhaven",
+                           "license":  "CC0"
+                       },
+    "tree_stump_01":  {
+                          "dims":  [
+                                       1.425,
+                                       0.574,
+                                       1.59
+                                   ],
+                          "tris":  1500,
+                          "tris_src":  41046,
+                          "src":  "polyhaven",
+                          "license":  "CC0"
+                      },
+    "utility_box_01":  {
+                           "dims":  [
+                                        0.518,
+                                        1.119,
+                                        0.432
+                                    ],
+                           "tris":  1600,
+                           "tris_src":  4404,
+                           "src":  "polyhaven",
+                           "license":  "CC0"
+                       },
+    "wooden_crate_01":  {
+                            "dims":  [
+                                         0.821,
+                                         0.348,
+                                         0.408
+                                     ],
+                            "tris":  1600,
+                            "tris_src":  6576,
+                            "src":  "polyhaven",
+                            "license":  "CC0"
+                        },
+    "wooden_crate_02":  {
+                            "dims":  [
+                                         0.529,
+                                         0.464,
+                                         1.165
+                                     ],
+                            "tris":  1600,
+                            "tris_src":  5176,
+                            "src":  "polyhaven",
+                            "license":  "CC0"
+                        },
+    "wooden_military_crate":  {
+                                  "dims":  [
+                                               1.241,
+                                               0.464,
+                                               0.518
+                                           ],
+                                  "tris":  1600,
+                                  "tris_src":  22986,
+                                  "src":  "polyhaven",
+                                  "license":  "CC0"
+                              },
+    "Barrel_01":  {
+                      "dims":  [
+                                   0.563,
+                                   0.88,
+                                   0.563
+                               ],
+                      "tris":  1599,
+                      "tris_src":  2682,
+                      "src":  "polyhaven",
+                      "license":  "CC0"
+                  },
+    "Barrel_02":  {
+                      "dims":  [
+                                   0.488,
+                                   0.88,
+                                   0.485
+                               ],
+                      "tris":  1599,
+                      "tris_src":  2688,
+                      "src":  "polyhaven",
+                      "license":  "CC0"
+                  },
+    "barrel_03":  {
+                      "dims":  [
+                                   0.634,
+                                   0.93,
+                                   0.639
+                               ],
+                      "tris":  1473,
+                      "tris_src":  1473,
+                      "src":  "polyhaven",
+                      "license":  "CC0"
+                  },
+    "cardboard_box_01":  {
+                             "dims":  [
+                                          0.387,
+                                          0.341,
+                                          0.516
+                                      ],
+                             "tris":  1600,
+                             "tris_src":  16952,
+                             "src":  "polyhaven",
+                             "license":  "CC0"
+                         },
+    "concrete_road_barrier":  {
+                                  "dims":  [
+                                               1.544,
+                                               0.832,
+                                               0.634
+                                           ],
+                                  "tris":  1217,
+                                  "tris_src":  60928,
+                                  "src":  "polyhaven",
+                                  "license":  "CC0"
+                              },
+    "concrete_road_barrier_02":  {
+                                     "dims":  [
+                                                  1.562,
+                                                  1.105,
+                                                  0.441
+                                              ],
+                                     "tris":  799,
+                                     "tris_src":  23822,
+                                     "src":  "polyhaven",
+                                     "license":  "CC0"
+                                 },
+    "covered_car":  {
+                        "dims":  [
+                                     1.796,
+                                     1.412,
+                                     4.372
+                                 ],
+                        "tris":  5000,
+                        "tris_src":  12592,
+                        "src":  "polyhaven",
+                        "license":  "CC0"
+                    },
+    "dead_tree_trunk_02":  {
+                               "dims":  [
+                                            4.051,
+                                            1.056,
+                                            1.047
+                                        ],
+                               "tris":  2500,
+                               "tris_src":  83128,
+                               "src":  "polyhaven",
+                               "license":  "CC0"
+                           },
+    "fire_hydrant":  {
+                         "dims":  [
+                                      0.878,
+                                      0.801,
+                                      0.317
+                                  ],
+                         "tris":  1726,
+                         "tris_src":  86316,
+                         "src":  "polyhaven",
+                         "license":  "CC0"
+                     },
+    "hand_truck":  {
+                       "dims":  [
+                                    0.593,
+                                    1.407,
+                                    0.693
+                                ],
+                       "tris":  1500,
+                       "tris_src":  13220,
+                       "src":  "polyhaven",
+                       "license":  "CC0"
+                   },
+    "medical_box":  {
+                        "dims":  [
+                                     0.525,
+                                     0.098,
+                                     0.35
+                                 ],
+                        "tris":  1600,
+                        "tris_src":  3718,
+                        "src":  "polyhaven",
+                        "license":  "CC0"
+                    },
+    "metal_jerrycan":  {
+                           "dims":  [
+                                        0.349,
+                                        0.455,
+                                        0.172
+                                    ],
+                           "tris":  1600,
+                           "tris_src":  20022,
+                           "src":  "polyhaven",
+                           "license":  "CC0"
+                       },
+    "metal_jerrycan_green":  {
+                                 "dims":  [
+                                              0.361,
+                                              0.5,
+                                              0.172
+                                          ],
+                                 "tris":  1600,
+                                 "tris_src":  9636,
+                                 "src":  "polyhaven",
+                                 "license":  "CC0"
+                             },
+    "old_military_compressor":  {
+                                    "dims":  [
+                                                 0.592,
+                                                 1.182,
+                                                 1.667
+                                             ],
+                                    "tris":  2499,
+                                    "tris_src":  79042,
+                                    "src":  "polyhaven",
+                                    "license":  "CC0"
+                                },
+    "old_tyre":  {
+                     "dims":  [
+                                  0.605,
+                                  0.606,
+                                  0.166
+                              ],
+                     "tris":  998,
+                     "tris_src":  2880,
+                     "src":  "polyhaven",
+                     "license":  "CC0"
+                 },
+    "plastic_crate_01":  {
+                             "dims":  [
+                                          0.299,
+                                          0.264,
+                                          0.412
+                                      ],
+                             "tris":  1600,
+                             "tris_src":  18320,
+                             "src":  "polyhaven",
+                             "license":  "CC0"
+                         },
+    "plastic_jerrycan":  {
+                             "dims":  [
+                                          0.268,
+                                          0.319,
+                                          0.34
+                                      ],
+                             "tris":  1600,
+                             "tris_src":  7348,
+                             "src":  "polyhaven",
+                             "license":  "CC0"
+                         },
+    "portable_generator":  {
+                               "dims":  [
+                                            0.822,
+                                            0.577,
+                                            0.566
+                                        ],
+                               "tris":  2500,
+                               "tris_src":  26419,
+                               "src":  "polyhaven",
+                               "license":  "CC0"
+                           },
+    "propane_tank":  {
+                         "dims":  [
+                                      0.335,
+                                      0.554,
+                                      0.337
+                                  ],
+                         "tris":  1600,
+                         "tris_src":  5238,
+                         "src":  "polyhaven",
+                         "license":  "CC0"
+                     }
+}
