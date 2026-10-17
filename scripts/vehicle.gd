@@ -207,7 +207,7 @@ var _cmdr_t := 0.0
 var crew_deck := 0.0
 var mlrs_left := 0
 var mlrs_t := 0.0
-const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 4, "technical": 2}
+const CAPACITY := {"apc": 8, "ifv": 6, "transport": 8, "tank": 0, "technical": 2}     # tank piyade taşımaz (kullanıcı)
 
 # hava araçları: yere düşen yumuşak gölge — irtifa arttıkça büyür, dağılır, güneş yönünde kayar
 var _shadow: Decal = null
@@ -308,6 +308,22 @@ func is_drone() -> bool:
 # kapalı gövdeli hafif araçların gerçek yolcu yeri (sürücü / nişancı hariç) — taban tip "technical" (2) yerine
 # (roadmap 98: M1301 ISV 9 kişilik ama 2 asker binebiliyordu); katalogda "seats" birime özel değeri geçersiz kılar
 const SEATS_FAM := {"lv_isv": 8, "mrap6": 6, "mrap4": 4, "lv_hmmwv": 3, "lv_jltv": 3}
+# (kullanıcı, 17 Ekim: "her araca 4 asker binemez") gerçek taşıma kapasitesi — yalnız indirilen piyade (mürettebat
+# hariç), resmî verilerden. Tank, tanksavar / topçu / istihkâm araçları piyade taşımaz (0).
+const SEATS_ID := {
+	"usa_apc_113": 11, "usa_apc_ampv": 6, "usa_apc_icv": 9, "usa_apc_guard": 1, "usa_apc_aav": 21, "usa_apc_acvp": 13,
+	"usa_ifv_m2a3": 6, "usa_ifv_m2a4": 6, "usa_ifv_m3a3": 2, "usa_ifv_drag": 7, "usa_ifv_acv30": 6, "usa_ifv_lav25": 6,
+	"usa_mrap_matv": 4, "usa_mrap_maxx": 4, "usa_mrap_cou6": 8, "usa_mrap_buff": 4, "usa_mrap_rg33": 6, "usa_mrap_caiman": 8,
+	"usa_lv_m1151": 3, "usa_lv_m1165": 3, "usa_lv_jltv_gp": 3, "usa_lv_jltv_cca": 1, "usa_lv_isv": 8, "usa_lv_isv_hv": 8,
+	"usa_heli_uh60": 11, "usa_heli_ch53": 30, "usa_heli_uh1y": 8, "usa_heli_uh72": 6, "usa_heli_mv22": 24,
+	"rus_apc_btr80": 7, "rus_apc_btr82": 7, "rus_apc_mtlb": 11, "rus_apc_mdm": 13, "rus_apc_boom": 9, "rus_apc_btrd": 10,
+	"rus_ifv_bmp2": 7, "rus_ifv_bmp2m": 7, "rus_ifv_bmp3": 7, "rus_ifv_bmd4": 5, "rus_ifv_kurg": 8, "rus_ifv_bmpt": 0,
+	"rus_mrap_tyk": 16, "rus_mrap_tyu": 12, "rus_mrap_k53949": 8, "rus_mrap_vdv": 8, "rus_mrap_kamaz": 12, "rus_mrap_vpk": 16,
+	"rus_lv_tigr": 6, "rus_lv_tigrm": 6, "rus_lv_strela": 4, "rus_lv_patriot": 4, "rus_lv_hunter": 4, "rus_lv_ural": 20,
+	"rus_heli_mi8amtsh": 24, "rus_heli_mi8": 24, "rus_heli_mi17": 24, "rus_heli_ka226": 6, "rus_heli_ansat": 7,
+}
+# katalogda taşıma yapmayan sınıflar
+const NO_SEAT_CAT := ["tank", "td", "eng", "spg", "mlrs", "aa", "towed", "mortar", "uav", "heli_atk", "lm"]
 
 func capacity() -> int:
 	if is_cargo():
@@ -315,6 +331,10 @@ func capacity() -> int:
 		return 20 if heavy_lift() else 7
 	if cat.has("seats"):
 		return int(cat["seats"])
+	if SEATS_ID.has(vid):
+		return int(SEATS_ID[vid])
+	if vid != "" and String(cat.get("cat", "")) in NO_SEAT_CAT:
+		return 0
 	var fam := String(cat.get("fam", ""))
 	if SEATS_FAM.has(fam):
 		return SEATS_FAM[fam]
