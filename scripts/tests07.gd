@@ -127,6 +127,8 @@ func run(scene: String) -> void:
 			await sandbag_shots()
 		"propgallery":
 			await prop_gallery()
+		"workposes":
+			await work_poses()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1336,6 +1338,51 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 86: inşaat / malzeme taşıma pozları yakın görüntü (yığından alma, taşıma, iskeleye bırakma, çakma)
+func work_poses() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 67)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.42, 0, G.MAP * 0.58), Grid.M_HEAVY)
+	G.props.clear_area(c, 20.0)
+	var site: Building = m.place_building(0, "barracks", c, 0.0)
+	var ws: Array = []
+	for i in 4:
+		var s: Soldier = m.spawn_soldier(0, ["rifle", "engineer", "rifle", "mg"][i], G.grid.nearest_free(c + Vector3(-7 + i * 1.5, 0, 7), Grid.M_INF), null)
+		s.fire_mode = 2
+		s.cmd_build(site)
+		ws.append(s)
+	await m._wait(3.0)
+	var poses := {}
+	for k in 8:
+		var focus: Soldier = ws[k % ws.size()]
+		# taşıyıcının yığından alma / taşıma anını bekle (en çok 4 sn)
+		var tw := 0.0
+		while tw < 4.0:
+			await m._wait(0.2)
+			tw += 0.2
+			var hit := false
+			for s in ws:
+				if s._pose() in (["lift", "carry"] if k % 2 == 0 else ["build", "build_hi"]):
+					focus = s
+					hit = true
+					break
+			if hit:
+				break
+		for s in ws:
+			var pz: String = s._pose()
+			poses[pz] = int(poses.get(pz, 0)) + 1
+		_cam(focus.position, 5.0)
+		await m._wait(0.1)
+		await m._shot("work_%d" % k)
+	print("WORKPOSES poses=%s" % poses)
+	print("WORKPOSES RESULT fails=0")
 
 # 36: kum torbası yakın görüntü (düz hat, açılı hat, MG yuvası; yanında asker ölçek için)
 func sandbag_shots() -> void:

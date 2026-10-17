@@ -1201,8 +1201,26 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 
 # (111) top mermisi iki avucun arasında: ekseni elden ele, merkezi ellerin ortası (her karede; poz ne olursa
 # olsun eller mermiyi gerçekten tutar)
+# iki elle tutulan eşyalar (top mermisi, malzeme sandığı, drone kumandası, FPV drone) her kare iki elin arasına
+# konur (86: sandık omurgaya sabit −Z'de durup askerin sırtında / omzunun yanında asılı kalıyordu — "saçma eğilme")
 func _place_shell() -> void:
-	if _tool != "shell" or _tool_mi == null or not _tool_mi.is_inside_tree() or fore_r == null or fore_l == null:
+	if _tool_mi == null or not _tool_mi.is_inside_tree() or fore_r == null or fore_l == null:
+		return
+	if _tool in ["crate", "rc", "drone"] or (_tool != "shell" and _tool_mesh.has(_tool) and not (_tool in ["hammer", "shovel", "flag", "bandage"])):
+		var hr2: Vector3 = fore_r.global_transform * Vector3(0, -HAND_LEN, 0)
+		var hl2: Vector3 = fore_l.global_transform * Vector3(0, -HAND_LEN, 0)
+		var mid := (hr2 + hl2) * 0.5
+		# yön: gövdenin baktığı yer (omurga ekseni yatayda), yukarı dünya yukarısı
+		var fw: Vector3 = -spine.global_transform.basis.z
+		fw.y = 0.0
+		if fw.length() < 0.01:
+			return
+		fw = fw.normalized()
+		var rt := Vector3.UP.cross(fw).normalized()
+		var lift := {"crate": 0.02, "rc": 0.03, "drone": 0.05}.get(_tool, 0.02)
+		_tool_mi.global_transform = Transform3D(Basis(rt, Vector3.UP, -fw), mid + Vector3(0, lift, 0))
+		return
+	if _tool != "shell":
 		return
 	var hr: Vector3 = fore_r.global_transform * Vector3(0, -HAND_LEN, 0)
 	var hl: Vector3 = fore_l.global_transform * Vector3(0, -HAND_LEN, 0)
