@@ -1,6 +1,10 @@
 # Devir notu — kaldığımız yer (17 Ekim 2026, öğleden önce)
 
 ## Son yapılanlar
+- 65 seçim paneli CoH tarzı (17 Ekim, akşam): `Hud._build_unit_panel` / `_info_*` / `_cmd_btn`; sabitler UPH 120,
+  INFO_W 372, TILE 34; yeni iç sınıflar `Deco` (portre rütbe + XP), `StatRow` (simge + sayı); `Thumbs.get_thumb(id,
+  team, dark=true)` koyu zeminli portre (eskiz gölgelendiricisi yok). Üretim kartları hâlâ açık zeminli eskiz
+- 149 obstacletest (4/5 koşu tam; pikap bazen başlangıçta takılıyor — izleniyor)
 - 136 kamera, 139 nehir kraterine su, 140 suda takılan asker, 141 çekili top mürettebatı (commit `33e1dad`)
 - 65/57 HUD eskiz teması, ilk geçiş: `scripts/sketch.gd` (class_name Sketch: kâğıt dokusu, mürekkep çerçeve, düğme
   durumları, `Sketch.sc()` Türkçe cümle düzeni), `shaders/sketch_thumb.gdshader` (küçük resim → mürekkep çizim),

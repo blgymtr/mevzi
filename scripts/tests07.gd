@@ -710,6 +710,19 @@ func hud_shots() -> void:
 	G.player.select(ss[3])
 	await m._wait(0.6)
 	await m._shot("hud_soldier")
+	# karargâh: yapı paneli + üretim kuyruğu
+	for u in G.units:
+		if u is Building and u.btype == "hq" and u.team == 0:
+			u.queue.append({"id": "rifle_squad", "t": 3.0})
+			u.queue.append({"id": "mg_team", "t": 0.0})
+			G.player.clear_sel()
+			G.player.select(u)
+			break
+	await m._wait(0.6)
+	await m._shot("hud_building")
+	for u in G.units:
+		if u is Building and u.btype == "hq" and u.team == 0:
+			u.queue.clear()
 	G.player.clear_sel()
 	G.player.select(tk)
 	await m._wait(0.6)

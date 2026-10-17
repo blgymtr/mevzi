@@ -4,12 +4,13 @@ class_name Thumbs extends Node
 var _cache := {}
 var _vps: Array = []
 
-func get_thumb(id: String, team: int) -> Texture2D:
-	var key := "%s|%d|%s" % [id, team, G.map_kind]
+# dark: seçim paneli portresi — koyu grafit zemin, eskiz gölgelendiricisi olmadan (CoH tarzı model portresi)
+func get_thumb(id: String, team: int, dark := false) -> Texture2D:
+	var key := "%s|%d|%s|%s" % [id, team, G.map_kind, dark]
 	if _cache.has(key):
 		return _cache[key]
 	var vp := SubViewport.new()
-	vp.size = Vector2i(220, 150)
+	vp.size = Vector2i(180, 180) if dark else Vector2i(220, 150)
 	vp.own_world_3d = true
 	vp.transparent_bg = false
 	vp.msaa_3d = Viewport.MSAA_4X
@@ -20,21 +21,24 @@ func get_thumb(id: String, team: int) -> Texture2D:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	# eskiz arayüzü: zemin kâğıt tonunda (gölgeler HUD gölgelendiricisinde taramaya döner)
-	env.background_color = Color(0.78, 0.75, 0.68)
+	env.background_color = Color(0.13, 0.135, 0.125) if dark else Color(0.78, 0.75, 0.68)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.8, 0.75, 0.68)
-	env.ambient_light_energy = 0.6
+	env.ambient_light_energy = 0.9 if dark else 0.6
 	env.tonemap_exposure = 1.0
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	we.environment = env
 	vp.add_child(we)
 	var sun := DirectionalLight3D.new()
-	sun.light_energy = 1.6
+	sun.light_energy = 2.0 if dark else 1.6
 	sun.light_color = Color(1.0, 0.9, 0.78)
 	sun.shadow_enabled = true
 	sun.rotation = Vector3(deg_to_rad(-50), deg_to_rad(-30), 0)
 	vp.add_child(sun)
 	var holder := Node3D.new()
+	# portre: model kameraya önden-yandan baksın
+	if dark:
+		holder.rotation.y = PI
 	vp.add_child(holder)
 	var model := _model(id, team)
 	holder.add_child(model)
@@ -53,8 +57,11 @@ func get_thumb(id: String, team: int) -> Texture2D:
 	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 	var ext := maxf(aabb.size.x, aabb.size.z)
 	cam.size = maxf(ext * 0.95, aabb.size.y * 1.6) + 0.6
+	if dark:
+		# portre: daha sıkı kadraj, daha alçak bakış (asker boy boyu, araç yandan-önden)
+		cam.size = maxf(ext * 0.8, aabb.size.y * 1.12) + 0.15
 	var c := aabb.get_center()
-	var dir := Vector3(1, 0.95, 1).normalized()
+	var dir := (Vector3(1, 0.5, 0.75) if dark else Vector3(1, 0.95, 1)).normalized()
 	cam.transform = Transform3D(Basis.looking_at(-dir, Vector3.UP), c + dir * 60.0)
 	cam.far = 200.0
 	vp.add_child(cam)
