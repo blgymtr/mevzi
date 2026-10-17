@@ -109,6 +109,8 @@ func run(scene: String) -> void:
 			await towcrew_test()
 		"rivertest":
 			await river_test()
+		"crewshots":
+			await crew_shots()
 		"wreckshots":
 			await wreck_shots()
 		"groundshots":
@@ -791,6 +793,66 @@ func gfx_bench() -> void:
 	m.apply_video()
 	m.save_cfg()
 	print("GFXBENCH RESULT fails=%d" % fails)
+
+# 101 / 111: obüs mürettebatı yakın çekim — ateşleme ipi (gergin / çekiş), mermi taşıma (bel hizasında, ellerde)
+func crew_shots() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	m.start_game("green_valley", {}, true, 31)
+	G.fog_off = true
+	G.reveal = [999.0, 999.0]
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	await m._wait(1.0)
+	G.hud.root.visible = false
+	if G.main.sandbox_ui and is_instance_valid(G.main.sandbox_ui):
+		G.main.sandbox_ui.visible = false
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5 - 30.0, 0, G.MAP * 0.5 + 20.0), Grid.M_HEAVY)
+	G.props.clear_area(c, 25.0)
+	var gun: Vehicle = m.spawn_vehicle(0, "howitzer", c, 0.0)
+	var tgt: Vehicle = m.spawn_vehicle(1, "truck", G.grid.nearest_open(c + gun.forward() * 300.0, Grid.M_HEAVY), 0.0)
+	tgt.hp = 1e9
+	tgt.max_hp = 1e9
+	await m._wait(1.0)
+	gun.cmd_attack(tgt)
+	var shots := {}
+	var t0 := G.time
+	var fails := 0
+	while G.time - t0 < 60.0 and shots.size() < 3:
+		await m._wait(0.05)
+		if gun.crew_cycle <= 0.0 or gun.main_cd <= 0.0:
+			continue
+		var p: float = 1.0 - clampf(gun.main_cd / gun.crew_cycle, 0.0, 1.0)
+		var key := ""
+		if p > 0.95 and not shots.has("lanyard"):
+			key = "lanyard"
+		elif p < 0.05 and not shots.has("pull"):
+			key = "pull"
+		elif p > 0.64 and p < 0.7 and not shots.has("carry"):
+			key = "carry"
+		if key != "":
+			shots[key] = true
+			G.cam.size = 7.0
+			G.cam.target_size = 7.0
+			G.cam.jump_to(gun.position, true)
+			await m._shot("crew_" + key)
+			if key == "carry":
+				var cb: SoldierBody = gun.crew[1]
+				var hr: Vector3 = cb.fore_r.global_transform * Vector3(0, -SoldierBody.HAND_LEN, 0)
+				var hl: Vector3 = cb.fore_l.global_transform * Vector3(0, -SoldierBody.HAND_LEN, 0)
+				var sp: Vector3 = cb._tool_mi.global_position if cb._tool_mi != null else Vector3.INF
+				print("CREW carry hands_dist=%.2f shell_to_mid=%.2f hand_h=%.2f" % [hr.distance_to(hl), sp.distance_to((hr + hl) * 0.5) if sp != Vector3.INF else -1.0, (hr.y + hl.y) * 0.5 - cb.global_position.y])
+				if sp == Vector3.INF or sp.distance_to((hr + hl) * 0.5) > 0.2:
+					fails += 1
+			if key == "lanyard":
+				print("CREW cord visible=%s" % [gun._cord != null and gun._cord.visible])
+				if gun._cord == null or not gun._cord.visible:
+					fails += 1
+	print("CREW shots=%s" % [shots.keys()])
+	if shots.size() < 3:
+		fails += 1
+	print("CREWSHOTS RESULT fails=%d" % fails)
 
 # 142: hurda görünümü yakın çekim — tank, ZPT, kamyon "knocked" (uzun alev yok) imha, yangın sönünce
 func wreck_shots() -> void:

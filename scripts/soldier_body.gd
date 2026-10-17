@@ -600,7 +600,17 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 				T["alz"] = -0.12
 				T["frx"] = 0.45
 				T["flx"] = 0.45
-				if extra > 0.5:
+				if extra > 1.5:
+					# (111) top mermisi: bel hizasında, gövdenin önünde enine; iki el mermi uçlarının altından
+					# kavrar, kollar aşağıda hafif bükük (eskiden kutu gibi göğse bastırılıyordu — "kucaklıyor")
+					T["srx"] = 0.14
+					T["arx"] = 0.5
+					T["alx"] = 0.5
+					T["arz"] = -0.12
+					T["alz"] = 0.12
+					T["frx"] = 0.75
+					T["flx"] = 0.75
+				elif extra > 0.5:
 					# kutu: göğüs hizasında iki elle, dirsekler bükük, hafif geriye yaslanma
 					T["srx"] = -0.05
 					T["arx"] = 0.75
@@ -817,6 +827,23 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 					T["llx"] = lerpf(0.0, -0.05, q)
 					T["krx"] = lerpf(-0.1, -1.52, q)
 					T["klx"] = lerpf(-0.1, -1.62, q)
+		"lanyard":
+			# (101) obüs ateşleme ipi: topun yanında ayakta, gövde toptan yana dönük; sağ el ipi gergin tutar,
+			# extra 0 → 1: ipi sertçe geri çeker (kol geri, gövde geri yaslanır, ağırlık arka ayağa)
+			var k := clampf(extra, 0.0, 1.0)
+			T["py"] = HIP - 0.04 - k * 0.04
+			T["srx"] = 0.1 - k * 0.3
+			T["lrx"] = 0.25
+			T["llx"] = -0.2 - k * 0.15
+			T["krx"] = -0.25
+			T["klx"] = -0.1
+			T["arx"] = lerpf(0.55, -0.45, k)
+			T["arz"] = 0.18
+			T["frx"] = lerpf(0.5, 0.25, k)
+			T["alx"] = 0.25 + k * 0.3
+			T["alz"] = -0.2
+			T["flx"] = 0.6
+			wpn = 4
 		"sling", "unsling":
 			# tüfeği sağ omuz üstünden sırta atma / sırttan alma (extra: 0..1 ilerleme)
 			var k := clampf(extra, 0.0, 1.0)
@@ -874,11 +901,11 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["klx"] = -0.55 - sl * 0.2
 			wpn = 4
 		"crouch", "crouch_aim":
-			# diz çökme: kalça ve gövde öne, ağırlık öndeki dizin üstünde. Poz uzayında prx / srx ARTI = GERİ (74:
-			# eskiden srx 0,28 idi — gövde geriye yatıyordu, sırt çantasıyla geriye düşüyormuş gibi)
+			# diz çökme: kalça ve gövde öne, ağırlık öndeki dizin üstünde (srx tablo uzlaşımında: artı = öne, aşağıda
+			# ters çevrilir; prx doğrudan: eksi = öne)
 			T["py"] = 0.5
 			T["prx"] = -0.1
-			T["srx"] = -0.2
+			T["srx"] = 0.2
 			T["lrx"] = 1.5
 			T["krx"] = -1.52
 			T["llx"] = -0.05
@@ -900,7 +927,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			if pose == "crouch_aim":
 				# nişanda gövde silaha doğru öne (omuz namlunun arkasında)
 				T["prx"] = -0.08
-				T["srx"] = -0.12
+				T["srx"] = 0.12
 				T["arx"] = 1.35
 				T["arz"] = 0.25
 				T["frx"] = 0.25
@@ -993,6 +1020,12 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 			T["krx"] = -0.6
 			T["klx"] = -0.9
 			wpn = 6
+	# (74) yukarıdaki elle yazılmış poz tablosu "srx artı = gövde öne" varsayımıyla yazıldı; gerçekte X ekseni
+	# çevresinde artı dönüş gövdeyi GERİ (+Z) yatırır — kulak kapatma, mermi sürme, ilk yardım, kazı, kaldırma,
+	# irkilme, çömelme pozlarında asker geriye yatıyordu. Tek yerde ters çevrilir (mocap verisi doğru işaretli,
+	# aşağıda eklenir).
+	if T.has("srx"):
+		T["srx"] = -float(T["srx"])
 	# mocap yürüyüş: bacak, kalça ve gövde salınımı gerçek hareket verisinden (CMU, build_loco.py); kollar IK'da kalır
 	var loco_pry := 0.0
 	var loco := false
@@ -1082,7 +1115,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 	# geri tepme: omuz geri itilir (namlu kalkışı silah dönüşünde)
 	recoil = maxf(0.0, recoil - dt * 8.0)
 	if recoil > 0.0 and wpn == 1:
-		T["srx"] = float(T.get("srx", 0.0)) - 0.045 * recoil
+		T["srx"] = float(T.get("srx", 0.0)) + 0.045 * recoil
 	# kol alçıda: destek kolu askıda göğse katlı, silah yalnız sağ elde
 	if injury == "arm" and pose in ["stand", "aim", "walk", "run", "crouch", "crouch_aim", "build", "build_hi", "carry", "throw"]:
 		T["alx"] = 0.45
@@ -1095,7 +1128,7 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		var st := maxf(0.0, -s)
 		T["py"] = float(T.get("py", HIP)) - st * 0.06
 		T["prz"] = float(T.get("prz", 0.0)) + st * 0.1
-		T["srx"] = float(T.get("srx", 0.0)) + 0.08
+		T["srx"] = float(T.get("srx", 0.0)) - 0.08
 	var rate := clampf(dt * (14.0 if pose != "fly" else 30.0), 0.0, 1.0)
 	for k in T:
 		j[k] = lerpf(j[k], T[k], rate)
@@ -1123,7 +1156,25 @@ func animate(dt: float, pose: String, speed: float, extra := 0.0) -> void:
 		wt = wt * Transform3D(Basis(), g0) * Transform3D(rb, Vector3(0, 0, 0.02 * recoil)) * Transform3D(Basis(), -g0)
 	wp_cur = wp_cur.interpolate_with(wt, rate)
 	weapon.transform = _mxf(wp_cur)
+	_place_shell()
 	sync_skin()
+
+# (111) top mermisi iki avucun arasında: ekseni elden ele, merkezi ellerin ortası (her karede; poz ne olursa
+# olsun eller mermiyi gerçekten tutar)
+func _place_shell() -> void:
+	if _tool != "shell" or _tool_mi == null or not _tool_mi.is_inside_tree() or fore_r == null or fore_l == null:
+		return
+	var hr: Vector3 = fore_r.global_transform * Vector3(0, -HAND_LEN, 0)
+	var hl: Vector3 = fore_l.global_transform * Vector3(0, -HAND_LEN, 0)
+	var ax := hl - hr
+	if ax.length() < 0.05:
+		return
+	var x := ax.normalized()
+	var up := Vector3.UP if absf(x.dot(Vector3.UP)) < 0.95 else Vector3.FORWARD
+	var z := x.cross(up).normalized()
+	var y := z.cross(x).normalized()
+	# mermi biraz ellerin üstünde (eller alttan kavrar); kovanın tabanı sağ elde
+	_tool_mi.global_transform = Transform3D(Basis(x, y, z), (hr + hl) * 0.5 + Vector3(0, 0.06, 0) - x * 0.08)
 
 # ---------------- mocap yürüyüş verisi (assets/anim/loco.json)
 static var _loco := {}

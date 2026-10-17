@@ -3431,6 +3431,8 @@ func _crew_anim(dt: float) -> void:
 	if busy and p > 0.14 and not _casing_done:
 		_casing_done = true
 		_eject_casing()
+	var lanyard := vtype in ["howitzer", "fieldgun", "mtngun"]
+	var cord_on := false
 	for i in crew.size():
 		var cb: SoldierBody = crew[i]
 		var home: Vector3 = _crew_spots[i]
@@ -3441,7 +3443,13 @@ func _crew_anim(dt: float) -> void:
 		var extra := 0.0
 		var tool := ""
 		if busy:
-			if p < 0.12:
+			if i == 0 and lanyard and (p < 0.08 or p > 0.93):
+				# (101) ateşleyici: kamanın yanında ayakta, ip gergin; atış anında çeker
+				goal = Vector3(br.x - 1.8, 0, br.z + 0.9)
+				face = br
+				pose = "lanyard"
+				extra = clampf(1.0 - p / 0.08, 0.0, 1.0) if p < 0.08 else 0.0
+			elif p < 0.12:
 				pose = "cover"          # atış: kulak kapat, başı eğ
 			elif i == 0:
 				# nişancı: yükseliş/yön volanı
@@ -3457,7 +3465,7 @@ func _crew_anim(dt: float) -> void:
 					pose = "crouch"
 				elif p < 0.72:
 					pose = "carry"
-					extra = 1.0
+					extra = 2.0
 					tool = "shell"
 				elif p < 0.9:
 					pose = "ram" if not mortar else "drop"
@@ -3474,7 +3482,7 @@ func _crew_anim(dt: float) -> void:
 				elif p < 0.62:
 					goal = load_pt + Vector3(0.6, 0, 0.6)
 					pose = "carry"
-					extra = 1.0
+					extra = 2.0
 					tool = "shell"
 					face = load_pt
 				else:
@@ -3496,6 +3504,43 @@ func _crew_anim(dt: float) -> void:
 		cb.set_tool(tool)
 		cb.weapon.visible = false
 		cb.animate(dt, pose, spd, extra)
+		if pose == "lanyard":
+			cord_on = true
+			_cord_place(br + Vector3(0, 0.25, 0), cb)
+	if _cord != null and not cord_on:
+		_cord.visible = false
+
+# (101) ateşleme ipi: kama (topun yerel uzayı) → ateşleyicinin sağ avucu; ince silindir her karede gerilir
+var _cord: MeshInstance3D = null
+
+func _cord_place(breech_local: Vector3, cb: SoldierBody) -> void:
+	var par := cb.get_parent() as Node3D
+	if par == null or cb.fore_r == null:
+		return
+	if _cord == null:
+		_cord = MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.008
+		cm.bottom_radius = 0.008
+		cm.height = 1.0
+		cm.radial_segments = 4
+		cm.rings = 1
+		_cord.mesh = cm
+		_cord.material_override = Mats.flat(Color(0.32, 0.27, 0.18), 1.0)
+		_cord.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		par.add_child(_cord)
+	var hand: Vector3 = par.to_local(cb.fore_r.global_transform * Vector3(0, -SoldierBody.HAND_LEN, 0))
+	var a := breech_local
+	var d := hand - a
+	var L := d.length()
+	if L < 0.05:
+		_cord.visible = false
+		return
+	var y := d / L
+	var x := y.cross(Vector3.UP if absf(y.y) < 0.95 else Vector3.RIGHT).normalized()
+	var z := x.cross(y)
+	_cord.transform = Transform3D(Basis(x, y * L, z), a + d * 0.5)
+	_cord.visible = true
 
 # toplanırken: cephaneci yığındaki mermileri sandığa kaldırıp taşır, diğerleri topun başında çalışır (ayak,
 # kuyruk); yürürken: ikisi kuyruğu (çatal ayak) kaldırıp iter, biri tekerleğin yanında yürür — topla aynı hızda
@@ -3530,7 +3575,7 @@ func _crew_march(dt: float) -> void:
 				goal = pile if ph < 0.5 else Vector3(0.6, 0, rear + 0.2)
 				pose = "build" if ph < 0.5 else "carry"
 				tool = "" if ph < 0.5 else "shell"
-				extra = 0.0 if ph < 0.5 else 1.0
+				extra = 0.0 if ph < 0.5 else 2.0
 				face = pile if ph < 0.5 else Vector3(0, 0, rear)
 			else:
 				pose = "build"
