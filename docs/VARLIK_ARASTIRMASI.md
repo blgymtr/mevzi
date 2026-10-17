@@ -1,5 +1,17 @@
 # Varlık araştırması — gerçekçi asker / araç / animasyon (ROADMAP 165, 17 Ekim 2026)
 
+> **Kullanıcı kararı (17 Ekim gece): satın alma YOK, yalnız tamamen ücretsiz.** 3. bölüm (ücretli) iptal.
+> Ücretsiz en iyi adaylar:
+> - **Animasyon — Quaternius Universal Animation Library, Standard (CC0, 45 animasyon, ölüm / sürünme / yüzme /
+>   silahlı savaş, Godot GLB):** https://quaternius.itch.io/universal-animation-library — itch.io "Download"
+>   düğmesi tarayıcı tıklaması ister; indirilen zip `tools/assets_src/quaternius/` içine konursa hat devralır.
+> - **Animasyon — Mixamo** (ticari ücretsiz, Adobe hesabı ister).
+> - **Animasyon — Kevin Iglesias "Human Soldier Animations FREE"** (tüfek, 2 vurulma, 3 ölüm; lisans sayfada
+>   yazmıyor → doğrulanmadan kullanılmaz): https://kevdev.itch.io/human-soldier-animations-free
+> - **Araç — Sketchfab CC-BY "Challenger Tank" (erenzek, ~169k üçgen, PBR kir / aşınma):** azaltılarak (decimate)
+>   kullanılabilir; CC-BY atıf gerekir. Çoğu ücretsiz model düşük poligonlu ya da editorial → kendi Blender
+>   hattımız (gerçek ölçülü, 23–37k üçgen) araçlarda ana yol olarak kalır; iyileştirme orada yapılır.
+
 Kullanıcı: "Fizikleri, asker araçlarını, askerleri modelleme — oyunun satışında en önemli şey. En iyi assetleri
 internetten bul." Aşağıdaki karar noktaları **kullanıcının onayını** bekliyor (ücretli alım, hesap girişi).
 
