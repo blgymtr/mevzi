@@ -375,6 +375,49 @@ func carve_crater(p: Vector3, r: float, depth: float, rim := 0.25, stretch := 1.
 				himg.set_pixel(x, z, Color(minf(hh, cur) if hh < 0.0 else hh, 0, 0, 1))
 	_hmark(int((p.x - ext) * k), int((p.z - ext) * k), int((p.x + ext) * k), int((p.z + ext) * k))
 
+# (139) nehre yakın krater suyla dolar: taban su seviyesinin altındaysa yeraltı suyu sızar, birkaç saniyede
+# nehir seviyesine yükselen bulanık su gölü. Disk krateri örter; su seviyesinin üstündeki yerleri arazi
+# zaten örttüğü için gölün kıyısı kraterin gerçek biçimini alır.
+var _pool_mat: StandardMaterial3D = null
+
+func near_river(p: Vector3, reach: float) -> bool:
+	if not has_water:
+		return false
+	for k in 12:
+		var a := k * TAU / 12.0
+		for s in [reach * 0.4, reach * 0.7, reach]:
+			if G.grid.is_water(p + Vector3(cos(a), 0, sin(a)) * float(s)):
+				return true
+	return false
+
+func flood_crater(p: Vector3, r: float, depth: float) -> void:
+	if depth <= -WATER_Y + 0.05:
+		return
+	if _pool_mat == null:
+		_pool_mat = StandardMaterial3D.new()
+		_pool_mat.albedo_color = Color(0.16, 0.25, 0.23, 0.84)
+		_pool_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_pool_mat.roughness = 0.06
+		_pool_mat.metallic_specular = 0.7
+		_pool_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = r * 1.15
+	cm.bottom_radius = r * 1.15
+	cm.height = 0.02
+	cm.radial_segments = 28
+	mi.mesh = cm
+	mi.material_override = _pool_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	mi.position = Vector3(p.x, -depth + 0.05, p.z)
+	var tw := mi.create_tween()
+	tw.tween_interval(0.8)
+	tw.tween_property(mi, "position:y", WATER_Y + 0.03, 5.0).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SINE)
+	pools.append(mi)
+
+var pools: Array = []
+
 func raise_flat(p: Vector3, size: Vector2, rot: float) -> void:
 	# köprü/yol rampası için yatağı doldur (yükseklik 0)
 	var k := float(HRES) / G.MAP

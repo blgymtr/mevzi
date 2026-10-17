@@ -1432,6 +1432,19 @@ func _think() -> void:
 			if state_t > 2.4:
 				state = "idle"
 			return
+	# (140) suya düşmüş / itilmiş asker: ızgarada su geçilmez olduğundan yol bulunamıyor, asker nehrin üstünde
+	# yürüme pozunda kalıyordu → en yakın kuru yere (ya da köprüye) doğrudan yürüyerek çıkar
+	if state in ["idle", "move"] and G.grid.is_water(position) and not G.grid.on_bridge(position):
+		var cur_goal: Vector3 = path[path.size() - 1] if path.size() > 0 else Vector3.INF
+		if cur_goal == Vector3.INF or G.grid.is_water(cur_goal) or path_i >= path.size() or state == "idle":
+			var dry: Vector3 = G.grid.nearest_dry(position, 30.0)
+			if dry.distance_to(position) > 0.3:
+				path = PackedVector3Array([dry])
+				path_i = 0
+				state = "move"
+				if order == "":
+					order = "move"
+				return
 	if stress_lv == 2 and not panic_fled and can_fight() and order != "retreat" and state in ["idle", "move"]:
 		_panic_flee()
 		return
@@ -2151,6 +2164,8 @@ func _movement(dt: float) -> void:
 				spd = minf(spd, 2.0)
 			if cold > 50.0:
 				spd *= 0.78
+			if G.grid.is_water(position) and not G.grid.on_bridge(position):
+				spd = minf(spd, 1.1)          # suda yürüyüş (bel hizası)
 			want = _follow(spd)
 		"escort":
 			want = _escort_move()
@@ -2330,7 +2345,10 @@ func _movement(dt: float) -> void:
 		np.z = clampf(np.z, 1.0, G.MAP - 1.0)
 		var hn := G.grid.height_at(np)
 		var vault_ok := want.length() > 0.5 and state in ["move", "rescue", "escort", "prisoner", "stretcher"] and hn < 1.15
-		if ((hn < 0.45 or vault_ok) and not G.grid.is_water(np)) or G.grid.height_at(position) >= 0.45:
+		# (140) zaten sudaysa adım serbest (sudan çıkabilsin; eskiden her adım su sayılıp reddediliyor, asker nehrin
+		# üstünde yürüme pozunda takılı kalıyordu)
+		var in_water := G.grid.is_water(position) and not G.grid.on_bridge(position)
+		if ((hn < 0.45 or vault_ok) and (not G.grid.is_water(np) or in_water)) or G.grid.height_at(position) >= 0.45:
 			position = np
 		else:
 			var nx := Vector3(np.x, 0, position.z)

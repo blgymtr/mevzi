@@ -478,6 +478,9 @@ func explode(p: Vector3, radius: float, dmg: float, kind: String, team: int, src
 				var st: float = 1.0 + (float(ck[3]) - 1.0) * randf()
 				terrain.carve_crater(p, cr, cd, float(ck[2]), st, randf() * TAU, float(ck[4]), randi())
 				grid.set_crater(p, cr * 0.8)
+				# (139) nehre yakın derin krater yeraltı suyuyla dolar
+				if terrain.near_river(p, cr + 10.0):
+					terrain.flood_crater(p, cr, cd)
 				# çevredeki dekor yeni zemine oturur / çukura devrilir (yanan arabanın sıçrama tween'i bittikten sonra)
 				get_tree().create_timer(0.45).timeout.connect(props.settle.bind(p, cr))
 			else:

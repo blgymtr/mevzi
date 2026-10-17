@@ -717,12 +717,75 @@ func _flee_goal(s) -> Vector3:
 	if c["type"] > 0 and Vector2((c["pos"] as Vector3).x - position.x, (c["pos"] as Vector3).z - position.z).length() > radius + 5.0:
 		goal = c["pos"]
 	return G.grid.nearest_free(goal, Grid.M_INF)
+const TOWED_SPOTS := [Vector3(-0.9, 0, 1.3), Vector3(0.9, 0, 1.1), Vector3(0.3, 0, 2.2)]
+
+# çekili topun başındaki süs gövdeleri yerine gerçek askerler iner / terk eder
+func _clear_towed_bodies() -> void:
+	if vtype not in TOWED:
+		return
+	for cb in crew:
+		if is_instance_valid(cb):
+			cb.queue_free()
+	crew.clear()
+	_crew_spots.clear()
+
+func _add_towed_body(i: int, t := -99) -> void:
+	var cb := SoldierBody.new()
+	cb.position = TOWED_SPOTS[i % TOWED_SPOTS.size()]
+	cb.rotation.y = randf_range(-0.4, 0.4)
+	hull.add_child(cb)
+	cb.build(team if t == -99 else t, "rifle", G.map_kind == "winter")
+	cb.weapon.visible = false
+	crew.append(cb)
+	if not _crew_spots.is_empty():
+		_crew_spots.append(cb.position)
+
+# (141) çekili topa gelen isabet başındaki askerlere de işler: mermi tek askeri, patlama birkaçını vurabilir;
+# vurulan süs gövdesi gerçek askere dönüşür (ölü ya da yaralı yerde), top mürettebatı azalır
+func _towed_crew_hit(dmg: float, src, k: String) -> void:
+	if crew.is_empty() or G.main == null:
+		return
+	var blast := k in ["grenade", "mortar", "shell", "big", "rpg", "auto", "he", "fpv", "topatk", "mine", "atgm"]
+	var p := clampf(dmg / 70.0, 0.06, 0.9)
+	var victims: Array = []
+	if blast:
+		for cb in crew:
+			if randf() < p * 0.8:
+				victims.append(cb)
+	elif randf() < p:
+		victims.append(crew[randi() % crew.size()])
+	for cb in victims:
+		_crew_casualty(cb, src)
+
+func _crew_casualty(cb, src) -> void:
+	var i := crew.find(cb)
+	if i < 0 or not is_instance_valid(cb):
+		return
+	var gp: Vector3 = (cb as Node3D).global_position
+	gp.y = 0.0
+	crew.remove_at(i)
+	if i < _crew_spots.size():
+		_crew_spots.remove_at(i)
+	cb.queue_free()
+	var s: Soldier = G.main.spawn_soldier(team, "crew", gp, null)
+	if s != null:
+		if randf() < 0.65:
+			s.die(src)
+		else:
+			s.take_damage(110.0, src)
+	crew_n = maxi(0, crew_n - 1)
+	if crew_n == 0:
+		target = null
+		say("MÜRETTEBAT ÖLDÜ!", 3.0)
+
 # çekili top / açık bölmeli obüs mürettebatı (süs gövdeleri) imhada yerinde çömelip kalıyordu (roadmap 99):
 # her biri gerçek askere dönüşür ve patlamadan payını alır — savrulur, çoğu ölür, kalanı yaralı / sersem
 func _crew_lost(mode: String) -> void:
 	if crew.is_empty() or G.main == null:
 		return
 	var heavy_hit := kill_k in ["shell", "big", "mortar", "topatk", "fpv"] or mode in ["catastrophic", "cookoff"]
+	# çekili top: mürettebat topun dibinde açıkta — top yok olacak kadar ateş yiyen mürettebat da büyük ölçüde düşer
+	var towed := vtype in TOWED
 	for cb in crew:
 		if not is_instance_valid(cb):
 			continue
@@ -736,6 +799,8 @@ func _crew_lost(mode: String) -> void:
 		away = away.normalized() if away.length() > 0.05 else Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 		var k := 1.1 if heavy_hit else 0.6
 		var pd := 0.85 if heavy_hit else (0.45 if mode != "knocked" else 0.15)
+		if towed:
+			pd = 0.95 if heavy_hit else 0.75
 		s.throw_off(away * randf_range(2.0, 4.5) * k + Vector3(0, randf_range(1.6, 3.2) * k, 0), pd, 0.5 if heavy_hit else 0.0)
 		_flee_wreck(s)
 	crew.clear()
@@ -963,16 +1028,12 @@ func setup(t: int, vt: String) -> void:
 			cb2.weapon.visible = false
 			crew.append(cb2)
 	if vt in TOWED:
-		# çekili top: yanında çömelmiş mürettebat
-		var spots := [Vector3(-0.9, 0, 1.3), Vector3(0.9, 0, 1.1), Vector3(0.3, 0, 2.2)]
+		# çekili top: yanında çömelmiş mürettebat; mürettebat sayısı bu gövdeler (141: ateş topun çeliğine değil
+		# başındaki askerlere işler, son asker düşünce top susar, gelen asker yerine geçer)
 		for i in (2 if vt in ["hmortar", "mtngun", "aagun"] else 3):
-			var cb := SoldierBody.new()
-			cb.position = spots[i]
-			cb.rotation.y = randf_range(-0.4, 0.4)
-			hull.add_child(cb)
-			cb.build(t, "rifle", G.map_kind == "winter")
-			cb.weapon.visible = false
-			crew.append(cb)
+			_add_towed_body(i, t)
+		crew_max = crew.size()
+		crew_n = crew_max
 	if vt == "fpv":
 		hull.position.y = 2.2
 		Sfx.loop3d("drone", self, -6.0)
@@ -2317,6 +2378,8 @@ func add_crew(s) -> void:
 		if gunner:
 			gunner.visible = true
 	crew_n = mini(crew_max, crew_n + 1)
+	if vtype in TOWED and crew.size() < crew_n:
+		_add_towed_body(crew.size())
 	say("MÜRETTEBAT TAMAM" if crew_n >= crew_max and driver_ok and gunner_ok else "YERİME GEÇTİ")
 	if s != null and is_instance_valid(s):
 		crew_out.erase(s)
@@ -2392,6 +2455,7 @@ func cmd_dismount_crew() -> void:
 	G.squads.append(sq)
 	var back := -forward()
 	var sd := Vector3(-back.z, 0, back.x)
+	_clear_towed_bodies()
 	for i in crew_n:
 		var p: Vector3 = position + back * (D["len"] * 0.5 + 1.0) + sd * (i - (crew_n - 1) * 0.5) * 1.3
 		var s: Soldier = G.main.spawn_soldier(team, "crew", G.grid.nearest_free(p, Grid.M_INF), sq)
@@ -2426,6 +2490,7 @@ func cmd_abandon() -> void:
 	G.squads.append(sq)
 	var back := -forward()
 	var sd := Vector3(-back.z, 0, back.x)
+	_clear_towed_bodies()
 	for i in crew_n:
 		var p: Vector3 = position + back * (D["len"] * 0.5 + 1.0) + sd * (i - 1) * 1.3
 		var s: Soldier = G.main.spawn_soldier(team, "crew", G.grid.nearest_free(p, Grid.M_INF), sq)
@@ -2988,6 +3053,9 @@ func _aim_fire(dt: float) -> void:
 	if needs_setup() and deployed < 1.0:
 		_crew_anim(dt)
 		return
+	if vtype in TOWED and crew_n <= 0:
+		# mürettebatı düşen top susar
+		return
 	if G.time < ground_until and fire_mode != 2:
 		var wl := wrapf(Soldier._yaw_of(ground_pt - position) - heading, -PI, PI)
 		turret_yaw = rotate_toward(turret_yaw, wl, D["tturn"] * tturn_mult() * dt)
@@ -3013,6 +3081,8 @@ func _aim_fire(dt: float) -> void:
 		barrel.position = (M["barrel_pos"] as Vector3) + Vector3(0, 0, recoil * 0.6)
 	if t == null or not is_instance_valid(t) or not t.alive:
 		_coax(dt)
+		# hedef yokken de mürettebat canlanır (kurulunca cephane yığını yere konur, boşta pozlar)
+		_crew_anim(dt)
 		return
 	var aligned := absf(angle_difference(turret_yaw, want_local)) < (0.05 if vtype == "tank" else 0.12)
 	var dist := dist2(t)
@@ -3903,6 +3973,8 @@ func take_damage(amount: float, src, k := "bullet") -> void:
 	last_hit = G.time
 	if src != null and is_instance_valid(src):
 		attacker = src
+	if vtype in TOWED:
+		_towed_crew_hit(dmg, src, k)
 	_subsystem_hit(dmg, src, k)
 	_crit_roll(dmg, m, k)
 	add_vstress(dmg / max_hp * 120.0)
@@ -4887,6 +4959,9 @@ func destroy(src) -> void:
 				mode = "catastrophic" if r < 0.25 else ("brew" if r < 0.75 else "knocked")
 	if kill_over > 1.2 and heavy and mode in ["brew", "knocked"]:
 		mode = "catastrophic"
+	# çekili top yakıtlı araç değil: hafif silahla yıpratılınca patlamaz, devre dışı kalır (yatar, duman)
+	if vtype in TOWED and kill_k not in ["topatk", "fpv", "big", "shell", "mortar", "mine", "atgm", "rpg", "ap"]:
+		mode = "knocked"
 	var late := false
 	if force_mode == "late":
 		mode = "brew"

@@ -105,6 +105,10 @@ func run(scene: String) -> void:
 			await fobdark_test()
 		"camtest":
 			await cam_test()
+		"towcrewtest":
+			await towcrew_test()
+		"rivertest":
+			await river_test()
 		"basegallery":
 			await base_gallery()
 		"enginetest":
@@ -506,6 +510,151 @@ func wound_test() -> void:
 	await m._wait(1.0)
 	await m._shot("wound_09_sever")
 	print("WOUNDTEST RESULT fails=%d" % fails)
+
+# 140: nehre düşen asker yürüme pozunda takılı kalmaz, en yakın kıyıya çıkar; 139: kıyıdaki krater suyla dolar
+func river_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	# nehir hücresi: haritada su olan bir nokta ara (köprüden uzak)
+	var wp := Vector3.INF
+	var z := 10.0
+	while z < G.MAP - 10.0 and wp == Vector3.INF:
+		var x := 10.0
+		while x < G.MAP - 10.0:
+			var q := Vector3(x, 0, z)
+			if G.grid.is_water(q) and G.grid.bridge_at(q).is_empty() and G.grid.is_water(q + Vector3(3, 0, 0)) and G.grid.is_water(q - Vector3(3, 0, 0)) \
+					and Vector2(q.x - G.MAP * 0.5, q.z - G.MAP * 0.5).length() > 40.0:
+				wp = q
+				break
+			x += 4.0
+		z += 4.0
+	if wp == Vector3.INF:
+		print("RIVER no water")
+		print("RIVERTEST RESULT fails=1")
+		return
+	var ss: Array = []
+	for i in 6:
+		var s: Soldier = m.spawn_soldier(0, "rifle", wp, null)
+		s.position = wp + Vector3(randf_range(-2, 2), 0, randf_range(-2, 2))
+		ss.append(s)
+	await m._wait(25.0)
+	var wet := 0
+	var stuck := 0
+	for s in ss:
+		if G.grid.is_water(s.position) and not G.grid.on_bridge(s.position):
+			wet += 1
+			if s.state == "move":
+				stuck += 1
+			print("RIVER wet soldier state=%s order=%s pos=%s path=%d/%d dry=%s alive=%s" % [s.state, s.order, s.position, s.path_i, s.path.size(), G.grid.nearest_dry(s.position, 30.0), s.alive])
+	print("RIVER soldiers=6 still_in_water=%d walking_in_water=%d" % [wet, stuck])
+	if wet > 0:
+		fails += 1
+	# 139: kıyıdaki top mermisi kraterinde su
+	var bank: Vector3 = G.grid.nearest_dry(wp, 30.0)
+	var away: Vector3 = (bank - wp)
+	away.y = 0.0
+	var cp: Vector3 = G.grid.nearest_free(bank + away.normalized() * 4.0, Grid.M_INF)
+	cp.y = 0.0
+	var p0: int = G.terrain.pools.size()
+	G.explode(cp, 4.5, 10.0, "shell", 1, null)
+	await m._wait(7.0)
+	var pool_y := -99.0
+	if G.terrain.pools.size() > p0:
+		pool_y = (G.terrain.pools[G.terrain.pools.size() - 1] as Node3D).position.y
+	print("RIVER crater near=%s depth=%.2f pools=+%d pool_y=%.2f" % [G.terrain.near_river(cp, 12.0), -G.terrain.ground_hs(cp), G.terrain.pools.size() - p0, pool_y])
+	if G.terrain.pools.size() == p0 or absf(pool_y - (Terrain.WATER_Y + 0.03)) > 0.05:
+		fails += 1
+	_cam(cp, 18.0)
+	await m._wait(0.2)
+	await m._shot("river_crater")
+	print("RIVERTEST RESULT fails=%d" % fails)
+
+# 141: çekili topa / uçaksavar topuna gelen ateş başındaki askerlere işler; hafif silahla yıpratılan top patlamaz,
+# devre dışı kalır; ağır isabette mürettebat ölür; mürettebatı düşen top susar, gelen asker yerine geçer
+func towcrew_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 50.0)
+	var dead0 := 0
+	for u in G.units:
+		if u is Soldier and not u.alive:
+			dead0 += 1
+	# 1) uçaksavar topu hafif silahla: mermi başına mürettebat düşer
+	var ag: Vehicle = m.spawn_vehicle(1, "aagun", c, 0.0)
+	ag.fire_mode = 2
+	await m._wait(0.5)
+	var crew0 := ag.crew_n
+	var first_cas := -1
+	for i in 60:
+		if not ag.alive:
+			break
+		ag.take_damage(18.0, null, "bullet")
+		if first_cas < 0 and ag.crew_n < crew0:
+			first_cas = i
+	await m._wait(0.5)
+	var bodies := 0
+	for u in G.units:
+		if u is Soldier and u.team == 1 and u.role == "crew" and (not u.alive or u.state == "wounded"):
+			bodies += 1
+	print("TOWCREW aagun crew %d -> %d first_casualty_hit=%d alive=%s mode=%s down_or_dead=%d" % [crew0, ag.crew_n, first_cas, ag.alive, ag.kill_mode, bodies])
+	if first_cas < 0 or (not ag.alive and ag.kill_mode != "knocked") or bodies < crew0 - 1:
+		fails += 1
+	# 2) obüse top mermisi: mürettebat büyük ölçüde ölür
+	var hw: Vehicle = m.spawn_vehicle(1, "howitzer", G.grid.nearest_free(c + Vector3(0, 0, 60), Grid.M_HEAVY), 0.0)
+	hw.fire_mode = 2
+	await m._wait(0.5)
+	var known := {}
+	for u in G.units:
+		if u is Soldier:
+			known[u] = true
+	G.explode(hw.position + Vector3(0.5, 0, 0.5), 4.5, 400.0, "shell", 0, null)
+	await m._wait(3.0)
+	var n_after := 0
+	var n_before := 0
+	var survivors := 0
+	for u in G.units:
+		if u is Soldier and u.team == 1 and not known.has(u):
+			# yalnız bu obüsün mürettebatından doğan askerler: ölü ya da yaralı / hırpalanmış sayılır
+			if not u.alive or u.state == "wounded" or u.hp < 90.0:
+				n_after += 1
+			else:
+				survivors += 1
+	print("TOWCREW howitzer shell alive=%s crew_left=%d dead_or_hurt=%d unhurt_survivors=%d" % [hw.alive, hw.crew_n, n_after - n_before, survivors])
+	if survivors > 1 or n_after - n_before < 2:
+		fails += 1
+	# 3) mürettebatı düşen top susar, gelen asker yerine geçer
+	var fg: Vehicle = m.spawn_vehicle(0, "fieldgun", c + Vector3(-20, 0, 0), 0.0)
+	await m._wait(0.5)
+	while not fg.crew.is_empty():
+		fg._crew_casualty(fg.crew[0], null)
+	var silent := fg.crew_n == 0
+	var rep: Soldier = m.spawn_soldier(0, "rifle", G.grid.nearest_free(fg.position + Vector3(4, 0, 0), Grid.M_INF), null)
+	rep.cmd_board(fg)
+	for k in 30:
+		await m._wait(0.5)
+		if fg.crew_n > 0:
+			break
+	await m._wait(0.5)
+	print("TOWCREW fieldgun silent=%s recrewed=%d bodies=%d needs_crew=%s rep=%s/%s d_entry=%.1f board_t=%s" % [silent, fg.crew_n, fg.crew.size(), fg.needs_crew(), rep.state if is_instance_valid(rep) else "-", rep.order if is_instance_valid(rep) else "-", rep.dist2_p(fg.entry_point(0)) if is_instance_valid(rep) else -1.0, rep.board_target != null if is_instance_valid(rep) else false])
+	if not silent or fg.crew_n < 1 or fg.crew.size() != fg.crew_n:
+		fails += 1
+	_cam(c + Vector3(5, 0, 0), 30.0)
+	await m._wait(0.3)
+	await m._shot("towcrew")
+	print("TOWCREWTEST RESULT fails=%d" % fails)
 
 # 136: kamera 360° döner (45° adım), serbest bakışta eğilir, seçili birime kilitlenir ve bırakılır
 func cam_test() -> void:
@@ -2090,8 +2239,12 @@ func crater_test() -> void:
 	G.explode(pc, 6.67, 10.0, "shell", 1, null)
 	await m._wait(3.0)
 	var b_up := barrel_mi.transform.basis.y.normalized().dot(Vector3.UP)
-	print("CRATER props crate y=%.2f up=%.2f | barrel y=%.2f up=%.2f moved=%.2f" % [crate_mi.position.y, crate_mi.transform.basis.y.normalized().dot(Vector3.UP), barrel_mi.position.y, b_up, Vector2(barrel_mi.position.x - pc.x - 2.4, barrel_mi.position.z - pc.z).length()])
-	if crate_mi.position.y > -0.5 or barrel_mi.position.y > -0.2 or b_up > 0.4:
+	# krater boyu mühimmatla rastgele değişir (138): varilin altındaki eğim devrilme eşiğini aşıyorsa devrilmiş,
+	# aşmıyorsa dik ve zemine oturmuş olmalı
+	var bslope: float = G.props._slope(pc + Vector3(2.4, 0, 0), 0.4)[1]
+	var tip_need := bslope > atan(0.3 / 0.45) * 0.8
+	print("CRATER props crate y=%.2f up=%.2f | barrel y=%.2f up=%.2f moved=%.2f slope=%.2f tip_expected=%s" % [crate_mi.position.y, crate_mi.transform.basis.y.normalized().dot(Vector3.UP), barrel_mi.position.y, b_up, Vector2(barrel_mi.position.x - pc.x - 2.4, barrel_mi.position.z - pc.z).length(), bslope, tip_need])
+	if crate_mi.position.y > -0.5 or barrel_mi.position.y > -0.2 or (tip_need and b_up > 0.4) or (not tip_need and b_up < 0.6):
 		fails += 1
 	print("CRATER center y=%.2f roll=%.2f tipped=%s | edge roll=%.2f tipped=%s imm=%s | wreck y=%.2f mode=%s" % [t1.hull.position.y, t1.hull.rotation.z, t1.tipped, t2.hull.rotation.z, t2.tipped, t2.immobile(), w.hull.position.y, w.kill_mode])
 	if t1.hull.position.y > -0.2 or t1.tipped:
