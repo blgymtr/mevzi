@@ -5098,6 +5098,9 @@ func destroy(src) -> void:
 	G.fx.scorch(position, D["len"] * 1.2)
 	for mi in _meshes(self):
 		Art.burn(mi)
+	# (142) paletli araçta ağır imhada palet kopar: yanda yere serilmiş palet şeridi, gövde o yana hafifçe çöker
+	if heavy and tracked() and mode in ["catastrophic", "cookoff", "brew"] and (mode != "brew" or randf() < 0.35):
+		_thrown_track()
 	if gunner:
 		gunner.visible = false
 	if cmdr:
@@ -5366,6 +5369,49 @@ func _bustle_vent() -> void:
 			G.fx.explosion(q, 0.5, "rpg")
 			Sfx.play3d("expl_small", q, -2.0))
 	print("TURRET %s vent side=%d k=%s" % [vid if vid != "" else vtype, last_side, kill_k])
+
+# (142) kopmuş palet: hurdanın bir yanında yere serilmiş, hafif kıvrık palet şeridi (pabuç pabuç), gövde o yana
+# çöker. Şerit gövdeden biraz uzağa kayar; ucu gövdenin altında kalır.
+func _thrown_track() -> void:
+	var sd := 1.0 if randf() < 0.5 else -1.0
+	var rt := right()
+	var fw := forward()
+	var L := ext.y * 2.0 * randf_range(0.8, 1.15)
+	var shoes := int(L / 0.17)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.55, 0.07, 0.15)
+	mm.mesh = bm
+	mm.instance_count = shoes
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.material_override = Mats.burnt()
+	G.world.add_child(mi)
+	var start := position + rt * sd * (ext.x + 0.35) - fw * L * 0.45
+	var bend := randf_range(-0.9, 0.9)
+	var p := start
+	var dir := fw.rotated(Vector3.UP, randf_range(-0.25, 0.25))
+	var pts: Array = []
+	for i in shoes:
+		var t := float(i) / maxf(shoes - 1.0, 1.0)
+		# şerit gövdeden dışa doğru yavaşça açılır, ortasında hafif kıvrım
+		var d := dir.rotated(Vector3.UP, bend * t * t * sd)
+		p += d * 0.17
+		var q := p + rt * sd * t * 0.9
+		q.y = (G.terrain.ground_h(q) if G.terrain else 0.0) + 0.04
+		pts.append(q)
+	# her pabuç komşuları arasındaki eğime yatar (krater kenarında merdiven gibi basamaklanmasın)
+	for i in shoes:
+		var a0: Vector3 = pts[maxi(i - 1, 0)]
+		var a1: Vector3 = pts[mini(i + 1, shoes - 1)]
+		var dd: Vector3 = a1 - a0
+		if dd.length() < 0.01:
+			dd = dir
+		mm.set_instance_transform(i, Transform3D(Basis.looking_at(dd.normalized(), Vector3.UP), pts[i]))
+	# gövde paletsiz yana çöker
+	hull.rotation.z += sd * randf_range(0.04, 0.08)
+	hull.position.y -= 0.08
 
 # parçalar (zırh plakası / yan etek / kapak, saklama kutusu, yürüyen aksam tekeri) katı cisim olarak
 # saçılır: takla atar, seker, yuvarlanır ve sahnede kalır (çevrenin parçası). Yükseklik ölçülü (~1–2 m).

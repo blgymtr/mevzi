@@ -809,12 +809,12 @@ func wreck_shots() -> void:
 	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5 + 30.0, 0, G.MAP * 0.5 + 30.0), Grid.M_HEAVY)
 	G.props.clear_area(c, 30.0)
 	var vs: Array = []
-	var kinds := ["rus_mbt_72b3", "apc", "truck"]
+	var kinds := ["rus_mbt_72b3", "apc", "truck", "rus_mbt_90m"]
 	for i in kinds.size():
 		var v: Vehicle = m.spawn_vehicle(1, kinds[i], G.grid.nearest_open(c + Vector3(-9.0 + i * 9.0, 0, 0), Grid.M_HEAVY), 0.5)
 		v.cmd_hold()
 		v.fire_mode = 2
-		v.force_mode = "knocked"
+		v.force_mode = "knocked" if i < 3 else "catastrophic"
 		vs.append(v)
 	await m._wait(1.0)
 	for v in vs:
