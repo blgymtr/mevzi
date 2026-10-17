@@ -385,14 +385,34 @@ func _build_model() -> void:
 		gun_pivot = Node3D.new()
 		gun_pivot.position = Vector3(0, 0, 0.3)
 		add_child(gun_pivot)
+		# ağır makineli tüfek (M2 / NSV tipi) üç ayaklı sehpada: sehpa ayakları, kafa, gövde (mekanizma), delikli namlu
+		# ceketi, namlu, alev gizleyici, gez, çift tutamak, sol yanda mühimmat kutusu ve şerit
 		var gm := MB.new()
-		gm.cyl(Vector3(0, 0, -0.2), 0.03, 0.03, 0.75, 4, Color(0.2, 0.2, 0.2))
-		gm.box(Vector3(0, 0.78, -0.6), Vector3(0.1, 0.12, 0.9), Color(0.12, 0.12, 0.12))
+		var steel := Color(0.13, 0.13, 0.13)
+		var park := Color(0.2, 0.21, 0.19)
+		var od := Color(0.27, 0.3, 0.2)
+		# kafa torba siperinin (4 sıra, 0,64 m) üstünden ateş edecek yükseklikte; ayakta nişan alan nişancının elleri hizası
+		var head := Vector3(0, 1.0, -0.25)
+		for lp in [Vector3(0, 0, -1.05), Vector3(-0.55, 0, 0.35), Vector3(0.55, 0, 0.35)]:
+			gm.cyl_between(head, lp, 0.022, 0.018, 5, park)
+		gm.cyl(head + Vector3(0, -0.04, 0), 0.05, 0.05, 0.1, 8, park)
+		gm.box(head + Vector3(0, 0.12, 0.02), Vector3(0.12, 0.13, 0.46), steel)                       # mekanizma
+		gm.box(head + Vector3(0, 0.2, 0.0), Vector3(0.11, 0.03, 0.3), steel.lightened(0.08))          # kapak
+		gm.cyl_between(head + Vector3(0, 0.12, -0.22), head + Vector3(0, 0.12, -0.7), 0.034, 0.034, 8, steel)   # namlu ceketi
+		for k in 4:
+			gm.box(head + Vector3(0, 0.155, -0.3 - k * 0.1), Vector3(0.05, 0.012, 0.03), Color(0.05, 0.05, 0.05))
+		gm.cyl_between(head + Vector3(0, 0.12, -0.7), head + Vector3(0, 0.12, -1.25), 0.016, 0.016, 6, steel)  # namlu
+		gm.cyl_between(head + Vector3(0, 0.12, -1.25), head + Vector3(0, 0.12, -1.33), 0.026, 0.022, 6, steel) # alev gizleyici
+		gm.box(head + Vector3(0, 0.24, -0.05), Vector3(0.02, 0.06, 0.02), steel)                      # gez
+		for sx in [-0.06, 0.06]:
+			gm.cyl_between(head + Vector3(sx, 0.12, 0.25), head + Vector3(sx, 0.05, 0.36), 0.014, 0.014, 5, Color(0.08, 0.08, 0.08))
+		gm.box(head + Vector3(-0.16, 0.06, 0.02), Vector3(0.1, 0.17, 0.28), od)                     # mühimmat kutusu
+		gm.box(head + Vector3(-0.08, 0.16, 0.0), Vector3(0.07, 0.015, 0.09), Color(0.55, 0.45, 0.2))  # şerit
 		var gmi := MeshInstance3D.new()
-		gmi.mesh = gm.commit(Mats.vc())
+		gmi.mesh = gm.commit(Mats.vcs())
 		gun_pivot.add_child(gmi)
 		gunner = SoldierBody.new()
-		gunner.position = Vector3(0, 0, 0.2)
+		gunner.position = Vector3(0, 0, 0.55)
 		gun_pivot.add_child(gunner)
 		gunner.build(team, "mg", winter)
 		gunner.weapon.visible = false
@@ -1301,7 +1321,7 @@ func _mg(dt: float) -> void:
 		gun_burst = randi_range(6, 12)
 	gun_burst -= 1
 	gun_cd = 0.09 if gun_burst > 0 else randf_range(0.6, 1.3)
-	var mp := gun_pivot.global_transform * Vector3(0, 0.8, -1.05)
+	var mp := gun_pivot.global_transform * Vector3(0, 1.12, -1.58)      # alev gizleyici ucu
 	var tp := gun_target.aim_point()
 	var dir := (tp - mp).normalized()
 	G.fx.muzzle(mp, dir, true)

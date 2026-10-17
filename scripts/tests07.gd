@@ -1365,6 +1365,9 @@ func sandbag_shots() -> void:
 	_cam(c + Vector3(-1, 0, 3), 18.0)
 	await m._wait(0.6)
 	await m._shot("sandbag_mid")
+	_cam(c + Vector3(-2, 0, 7), 5.0)
+	await m._wait(0.6)
+	await m._shot("mgnest_close")
 	print("SANDBAGSHOTS RESULT fails=0")
 
 # 156: yeni oyun modları — kurulum, kazanma / kaybetme koşulu, yapay zekâ birkaç saniye hatasız çalışır
