@@ -663,7 +663,9 @@ func _cargo_visuals(dt: float) -> void:
 		# rampa: yerde, binmek için sıraya giren varken (gelmeden açık — rampada beklemesinler) ya da indirmede açık;
 		# kalkış emri gelince kapanır (kapanmadan kalkmaz, _heli)
 		var departing := order in ["move", "amove", "retreat"] and not landing and dist2_p(dest) > 8.0
-		var open := hull.position.y < 0.6 and not departing and (landing or land_hold or not _ramp_q.is_empty() or (not cargo.is_empty() and cur_speed < 0.3))
+		# rampada asker varken (giriş / çıkış sürüyor) kalkış emrinde bile açık kalır — üstündeki asker düşmez,
+		# kalkış rampa kapanınca (158)
+		var open := hull.position.y < 0.6 and (G.time < _door_need_t or (not departing and (landing or land_hold or not _ramp_q.is_empty() or (not cargo.is_empty() and cur_speed < 0.3))))
 		ramp_k = move_toward(ramp_k, 1.0 if open else 0.0, dt * 1.4)
 		ramp.rotation.x = ramp_k * float(M.get("meta", {}).get("ramp_open", 1.0))
 	if hull.position.y < 0.6 and crates < crates_max():
@@ -1291,7 +1293,7 @@ func _sep_vehicles(dt: float) -> void:
 	var blocked_now := false
 	var push := Vector3.ZERO
 	for o in G.near(position, radius + 8.0):
-		if o == self or o == clear_tgt or not (o is Vehicle) or o.is_air() or (not o.alive and not o.wreck):
+		if o == self or o == clear_tgt or not (o is Vehicle) or (o.is_air() and not o.landed()) or (not o.alive and not o.wreck):
 			continue
 		var d: Vector3 = o.position - position
 		d.y = 0.0
@@ -2011,9 +2013,32 @@ func cmd_move(p: Vector3, force := false) -> void:
 	if is_air():
 		path = PackedVector3Array([dest])
 		path_i = 0
+		# (158) kalkış emri: henüz rampaya girmemiş, binmeye gelen askerlerin emri iptal (helikopteri geri indiremez);
+		# rampada olanlar girişi tamamlar, rampa ardından kapanır, sonra kalkar
+		if dest.distance_to(position) > 8.0:
+			cancel_boarders("HELİKOPTER KALKIYOR")
 	else:
 		dest = _free_dest(dest)
 		_repath(dest)
+
+# binmeye gelen (henüz girmemiş) askerlerin emrini bırak
+func cancel_boarders(msg := "") -> void:
+	var n := 0
+	for o in G.units:
+		if is_instance_valid(o) and o is Soldier and o.alive and o.board_target == self and o.state != "entering":
+			o.board_target = null
+			o.order = ""
+			if o.state == "move":
+				o.path = PackedVector3Array()
+				o.state = "idle"
+			n += 1
+	_ramp_q.clear()
+	if n > 0 and msg != "":
+		say(msg, 2.0)
+
+# helikopter yerde mi (kara araçları / askerler için engel)
+func landed() -> bool:
+	return is_air() and hull != null and hull.position.y < 1.0
 
 # hedef yeri ayırma (roadmap 104): istenen noktada başka araç duruyorsa / oraya gidiyorsa yakındaki boş yer —
 # araçlar aynı noktaya yığılıp birbirini itmez, yan yana park eder
@@ -2493,9 +2518,10 @@ func _process(dt: float) -> void:
 	_clear_tick(dt)
 	_bridge_tick(dt)
 	_door_tick(dt)
-	# rampa açıkken yürümez: kapanana dek bekler (kullanıcı: biniş / iniş atlanmasın)
-	if door != null and door_k > 0.05 and G.time >= _door_need_t:
-		cur_speed = move_toward(cur_speed, 0.0, 6.0 * dt)
+	# (159) biniş / iniş sürerken (biri kapıda / rampada) ya da rampa açıkken araç yürümez — asker hareket eden kapıyı
+	# kovalamaz, ışınlanmaz; rampa kapanınca yoluna devam eder
+	if G.time < _door_need_t or (door != null and door_k > 0.05):
+		cur_speed = move_toward(cur_speed, 0.0, 8.0 * dt)
 		return
 	_drive(dt)
 	if prof_on:
@@ -3033,7 +3059,7 @@ func _drive(dt: float) -> void:
 		return
 	# diğer araçlarla ayrışma: hızla sınırlı (en çok 2 m/sn) — kare başına itme sıkışmada araçları saçıyordu
 	for o in G.near(np, 7.0):
-		if o == self or o == clear_tgt or not (o is Vehicle) or o.is_air():
+		if o == self or o == clear_tgt or not (o is Vehicle) or (o.is_air() and not o.landed()):
 			continue
 		var dv = np - o.position
 		dv.y = 0

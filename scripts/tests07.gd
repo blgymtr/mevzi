@@ -137,6 +137,8 @@ func run(scene: String) -> void:
 			await break_shots()
 		"footik":
 			await foot_ik_test()
+		"departtest":
+			await depart_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1365,6 +1367,56 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 158: Chinook'a biniş sürerken kalkış emri — bekleyenlerin emri iptal, rampadakiler girer, rampa kapanmadan kalkmaz,
+# askerler helikopteri geri indiremez (oyuncu emri geçerli)
+func depart_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.72, 0, G.MAP * 0.75), Grid.M_HEAVY)
+	G.props.clear_area(c, 40.0)
+	var h: Vehicle = m.spawn_vehicle(0, "usa_heli_ch47", c, 0.0)
+	h.fire_mode = 2
+	h.request_land()
+	await m._wait(6.0)
+	var ss: Array = []
+	for i in 7:
+		ss.append(m.spawn_soldier(0, "rifle", G.grid.nearest_free(c + Vector3(-14 + i * 1.4, 0, 16), Grid.M_INF), null))
+	await m._wait(0.3)
+	for s in ss:
+		s.cmd_board(h)
+	# ilk asker rampaya girince kalkış emri
+	var t := 0.0
+	while t < 20.0 and not ss.any(func(s): return s.state == "entering"):
+		await m._wait(0.1)
+		t += 0.1
+	h.cmd_move(c + Vector3(60, 0, -40))
+	var lift_ramp := -1.0
+	var relanded := false
+	var was_up := false
+	t = 0.0
+	while t < 14.0:
+		await m._wait(0.1)
+		t += 0.1
+		if h.hull.position.y > 1.0 and lift_ramp < 0.0:
+			lift_ramp = h.ramp_k
+		if h.hull.position.y > 3.0:
+			was_up = true
+		if was_up and h.hull.position.y < 1.0:
+			relanded = true
+	var still_board := ss.filter(func(s): return is_instance_valid(s) and s.board_target == h).size()
+	var aboard := h.cargo.size()
+	var stray := ss.filter(func(s): return is_instance_valid(s) and s.vehicle_in == null and s.state in ["entering", "aboard"]).size()
+	print("DEPART lift_ramp=%.2f relanded=%s aboard=%d still_boarding=%d stray=%d alt=%.1f" % [lift_ramp, relanded, aboard, still_board, stray, h.hull.position.y])
+	if lift_ramp > 0.05 or relanded or still_board > 0 or stray > 0 or not was_up:
+		fails += 1
+	print("DEPARTTEST RESULT fails=%d" % fails)
 
 # 60: tam ayak IK — krater şevinde duran askerlerin iki ayağı da zemine basmalı (ayak-zemin boşluğu ölçülür)
 func foot_ik_test() -> void:
@@ -2808,6 +2860,7 @@ func ramp_test() -> void:
 		for s in ss:
 			s.cmd_board(h)
 		var max_enter := 0
+		var min_sp := 99.0
 		var enter_t: Array = []
 		var was := {}
 		var t := 0.0
@@ -2816,13 +2869,19 @@ func ramp_test() -> void:
 			await m._wait(0.1)
 			t += 0.1
 			var ent := 0
+			var on_r: Array = []
 			for s in ss:
 				if s.state == "entering":
 					ent += 1
+					on_r.append(s)
 					if not was.has(s):
 						was[s] = true
 						enter_t.append(t)
 			max_enter = maxi(max_enter, ent)
+			# rampada sırayla, iç içe girmeden (159: kesintisiz yürüyüş — birden çok asker aynı anda rampada olabilir)
+			for a2 in on_r.size():
+				for b2 in range(a2 + 1, on_r.size()):
+					min_sp = minf(min_sp, on_r[a2].position.distance_to(on_r[b2].position))
 			if not shot and h._ramp_q.size() >= 3:
 				shot = true
 				_cam(h.position - h.forward() * 6.0, 14.0)
@@ -2831,10 +2890,10 @@ func ramp_test() -> void:
 		var min_gap := 99.0
 		for i in range(1, enter_t.size()):
 			min_gap = minf(min_gap, enter_t[i] - enter_t[i - 1])
-		print("RAMP %s boarded=%d/%d t=%.1f max_on_ramp=%d min_gap=%.2f" % [hid, h.cargo.size(), n, t, max_enter, min_gap])
+		print("RAMP %s boarded=%d/%d t=%.1f on_ramp_max=%d min_spacing=%.2f min_gap=%.2f" % [hid, h.cargo.size(), n, t, max_enter, min_sp, min_gap])
 		# (kullanıcı, 17 Ekim: "girişte 1 sn bekliyorlar") arka arkaya sıkı sıra: rampada en çok iki asker (biri
 		# rampanın üstünde, biri girişte), girişler arası ≥0,3 sn — iç içe geçmezler; 7 kişi 10 sn'nin altında
-		if h.cargo.size() < n or max_enter > 2 or min_gap < 0.3 or t > 10.0:
+		if h.cargo.size() < n or min_sp < 0.4 or min_gap < 0.25 or t > 12.0:
 			fails += 1
 		for s in ss:
 			if is_instance_valid(s):

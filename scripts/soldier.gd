@@ -1033,13 +1033,15 @@ func dismount(p: Vector3, from_v: Vehicle = null, delay := 0.0) -> void:
 	visible = true
 
 func _door_process(dt: float) -> void:
-	# exiting: bekle → kapıdan çık (0.55 sn eğik) → hedefe yürü; entering: tersi
+	# (159) biniş / iniş kesintisiz fiziksel hareket: konum hiçbir anda sıçramaz.
+	# exiting: (rampa açılır) → içeriden kapıya yürür (eğik) → kapının dışında hedefe yürür
+	# entering: bulunduğu yerden kapıya, kapıdan içeri yürüyerek (rampada tırmanarak) girer
+	# Her iki durumda araç "kapı kullanımda" sinyali alır: kara aracı yürümez, helikopter rampasını kapatıp kalkmaz.
 	if state == "exiting":
-		# (79) arka rampa açılmadan inilmez: rampa iner, sonra askerler sırayla çıkar
 		var dv0 := door_veh
-		if dv0 != null and is_instance_valid(dv0) and dv0.door != null:
+		if dv0 != null and is_instance_valid(dv0):
 			dv0.door_wanted()
-			if dv0.door_k < 0.85:
+			if dv0.door != null and dv0.door_k < 0.85:
 				state_t = 0.0
 				body.animate(dt, "crouch", 0.0)
 				return
@@ -1048,15 +1050,19 @@ func _door_process(dt: float) -> void:
 			state_t = 0.0
 			body.animate(dt, "crouch", 0.0)
 			return
-		visible = true
-		if state_t < 0.55:
-			var k := state_t / 0.55
-			var np := door_a.lerp(door_b, k)
-			_face_to(door_b + (door_b - door_a))
-			rotation.y = face_yaw
-			position = Vector3(np.x, 0.0, np.z)
-			body.animate(dt, "crouch", 2.0)
-		else:
+		# kapı uçları araca göre her kare yeniden (araç kıpırdasa da asker kapıyla birlikte)
+		if dv0 != null and is_instance_valid(dv0):
+			door_a = dv0.inside_point()
+		var L0 := maxf(door_a.distance_to(door_b), 0.3)
+		var k := clampf(state_t * 1.7 / L0, 0.0, 1.0)
+		visible = k > 0.15 or (dv0 != null and is_instance_valid(dv0) and dv0.riders_visible())
+		var np := door_a.lerp(door_b, k)
+		_face_to(door_b + (door_b - door_a))
+		rotation.y = face_yaw
+		var ry0 := ((1.0 - k) * clampf(dv0.hull.position.y + 0.55, 0.3, 1.2)) if (dv0 != null and is_instance_valid(dv0) and dv0.is_air()) else 0.0
+		position = Vector3(np.x, _ground_y(np) + ry0, np.z)
+		body.animate(dt, "crouch", 2.0)
+		if k >= 1.0:
 			state = "idle"
 			cmd_move(door_c)
 			stance = CROUCH
@@ -1067,22 +1073,35 @@ func _door_process(dt: float) -> void:
 		state = "idle"
 		visible = true
 		return
-	# (79) rampa açılana dek kapıda bekler, sonra rampadan yukarı içeri
-	if v.door != null:
-		v.door_wanted()
-		if v.door_k < 0.85:
-			state_t = 0.0
-			body.animate(dt, "crouch", 0.0)
-			return
-	var k2 := clampf(state_t / (0.9 if v.is_air() else 0.6), 0.0, 1.0)
+	v.door_wanted()
+	# rampa açılana dek kapıda bekler (yerinde, eğik)
+	if v.door != null and v.door_k < 0.85:
+		state_t = 0.0
+		door_a = position
+		body.animate(dt, "crouch", 0.0)
+		return
+	if state_t <= dt * 1.5:
+		door_a = position                 # giriş başladığı yer (ışınlanma yok)
 	var a := v.entry_point(0)
-	var np2 := a.lerp(v.inside_point(), k2)
+	var ins := v.inside_point()
+	var l1 := Vector2(a.x - door_a.x, a.z - door_a.z).length()
+	var l2 := maxf(a.distance_to(ins), 0.3)
+	var spd := 1.6 if v.is_air() else 1.8
+	var dist := state_t * spd
+	var np2: Vector3
+	var k2 := 0.0
+	if dist < l1:
+		np2 = door_a.lerp(a, dist / maxf(l1, 0.01))
+		_face_to(a + (a - door_a))
+	else:
+		k2 = clampf((dist - l1) / l2, 0.0, 1.0)
+		np2 = a.lerp(ins, k2)
+		_face_to(ins + (ins - a))
 	# helikopter rampası: yerden kabin tabanına tırmanır
 	var ry := (k2 * clampf(v.hull.position.y + 0.55, 0.3, 1.2)) if v.is_air() else 0.0
 	position = Vector3(np2.x, _ground_y(np2) + ry, np2.z)
-	_face_to(v.inside_point() + (v.inside_point() - a))
 	rotation.y = face_yaw
-	body.animate(dt, "crouch", 2.0)
+	body.animate(dt, "crouch", 2.0 if k2 > 0.0 else 1.2)
 	if k2 >= 1.0:
 		if v.needs_crew():
 			v.add_crew(self)
@@ -1090,6 +1109,7 @@ func _door_process(dt: float) -> void:
 			board(v)
 		else:
 			state = "idle"
+			visible = true
 			say("ARAÇ DOLU!")
 
 func _build_over() -> bool:
@@ -2542,6 +2562,20 @@ func _back_to_target() -> bool:
 	return mv.normalized().dot(tv.normalized()) < -0.17
 
 func _follow(spd: float) -> Vector3:
+	# kalabalık hedef: çok sayıda asker aynı noktaya gönderildi ve orası dolmuşsa (durmuş dost asker yığını), 6,5 m'ye
+	# gelen asker yığının kenarında durur — aradaki köşe ara noktasına girmeye çalışıp sonsuza dek kalabalığın etrafında
+	# dolanmaz (crowdtest: 12 asker tankın aynı yanına → 6'sı 5 m dışarıda takılı)
+	if path.size() > 0 and path_i < path.size() and house_id < 0 and order != "garrison" and _exit_goal == Vector3.INF:
+		var lp2 := path[path.size() - 1]
+		var le2 := Vector2(lp2.x - position.x, lp2.z - position.z).length()
+		if le2 < 6.5 and (G.blocks == null or G.blocks.house_at(lp2) < 0):
+			var parked := 0
+			for o in G.near(lp2, 4.0):
+				if o != self and o is Soldier and o.team == team and o.alive and o.state == "idle" and o.vel.length() < 0.3:
+					parked += 1
+			if parked >= 5 and le2 < 0.6 * sqrt(float(parked + 1)) + 4.5:
+				path_i = path.size()
+				return Vector3.ZERO
 	# (84) son nokta yakında ve önündeki ara noktadan daha yakınsa, düz hat açıksa doğrudan son noktaya:
 	# kalabalıkta itilip yolundan çıkan asker hedefinin dibindeyken uzaktaki köşe ara noktasına geri dönmesin
 	# (ev içi / kapı çevresinde değil: köşe ara noktası duvarın ardındaki kapıdır)
