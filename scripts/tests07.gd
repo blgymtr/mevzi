@@ -133,6 +133,8 @@ func run(scene: String) -> void:
 			await door_test()
 		"forestshots":
 			await forest_shots()
+		"breakshots":
+			await break_shots()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1361,6 +1363,47 @@ func prop_gallery() -> void:
 	await m._shot("props_b")
 	print("PROPGALLERY n=%d" % ids.size())
 	print("PROPGALLERY RESULT fails=%d" % fails)
+
+# 67: malzemeye göre yıkım — tuğla, sıvalı, beton, ahşap, kerpiç, taş evler yan yana; her birinin yanında top mermisi
+func break_shots() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var ids := ["tugla_ev", "koy_konutu_tek", "kerpic_koy_evi", "ahsap_ev", "tas_ev", "garaj_beton"]
+	ids = ids.filter(func(x): return Arch.ARCH.has(x))
+	if ids.size() < 6 and Arch.ARCH.has("lojman"):
+		ids.append("lojman")
+	var S := 256.0
+	var ops: Array = []
+	var pos: Array = []
+	for i in ids.size():
+		var p := Vector3(40 + (i % 3) * 36.0, 0, 70 + (i / 3) * 40.0)
+		pos.append(p)
+		ops.append({"t": "bld", "p": MapGen.vv(p), "a": ids[i], "r": 0, "s": 500 + i})
+	G.spectate = true
+	m.build_world("custom", 4243, {"biome": "green", "size": S, "ops": ops, "hq": [[S - 16, S - 16], [16, 16]], "fobs": []})
+	await m._wait(1.0)
+	var counts := {}
+	for id in G.blocks.bpos.size():
+		var mt: String = Blocks.mat_of(G.blocks.bcol[id])
+		counts[mt] = int(counts.get(mt, 0)) + 1
+	print("BREAK block materials=%s" % counts)
+	# kamera −X yönünden baksın; patlama o yandaki duvara bitişik (delik ve moloz görünsün)
+	G.cam.yaw = PI * 0.5 + PI
+	G.cam.target_yaw = G.cam.yaw
+	for i in pos.size():
+		var hh: Dictionary = G.blocks.houses[G.blocks.house_at(pos[i])] if G.blocks.house_at(pos[i]) >= 0 else {}
+		var hw: float = (hh["size"].x * 0.5) if hh.has("size") and hh["size"] is Vector2 else 4.0
+		G.explode(pos[i] + Vector3(-hw - 0.8, 1.2, 0), 5.5, 600.0, "big", 1)
+	await m._wait(0.8)
+	_cam(Vector3(76, 0, 90), 60.0)
+	await m._wait(0.1)
+	await m._shot("break_fly")
+	await m._wait(4.0)
+	for i in pos.size():
+		_cam(pos[i] + Vector3(-5, 0, 0), 13.0)
+		await m._wait(0.2)
+		await m._shot("break_%s" % ids[i])
+	print("BREAKSHOTS RESULT fails=0")
 
 # 145: orman kenarı alt bitkisi (Geniş Cephe + Büyük Muharebe): en sık ağaçlığın kenarına bak
 func forest_shots() -> void:
