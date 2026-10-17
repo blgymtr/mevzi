@@ -402,6 +402,7 @@ var door: Node3D = null
 var door_open := 1.35
 var door_k := 0.0
 var _door_need_t := 0.0
+var _wake_t := 0.0
 
 func door_wanted() -> void:
 	_door_need_t = G.time + 0.6
@@ -3079,6 +3080,12 @@ func _drive(dt: float) -> void:
 			return
 	var moved := np.distance_to(position)
 	position = np
+	# (144) suda (sığ geçit, amfibi) ilerleyen araç: burunda kabarma, yanlara sıçrama, arkada dalga
+	if absf(cur_speed) > 0.5 and visible and G.grid.is_water(position) and G.grid.bridge_at(position).is_empty():
+		_wake_t -= dt
+		if _wake_t <= 0.0:
+			_wake_t = 0.25
+			G.fx.wake(position + f * signf(cur_speed) * ext.y * 0.8, f * signf(cur_speed), clampf(ext.y / 2.2, 0.8, 2.4), absf(cur_speed) > 2.5)
 	# ezme
 	if nav_mode == Grid.M_HEAVY:
 		_crush_t -= dt

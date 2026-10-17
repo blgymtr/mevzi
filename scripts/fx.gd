@@ -724,6 +724,29 @@ func water_splash(p: Vector3, s: float, deep := false) -> void:
 		var a2 := TAU * i / 18.0
 		emit(P_SMOKE, base + Vector3(0, 0.05, 0), Vector3(cos(a2), 0.02, sin(a2)) * rng.randf_range(1.5, 3.0) * h, rng.randf_range(1.0, 1.8), 0.4 * s, 1.4 * s, 0.0, 2.2, Color(0.94, 0.97, 0.99, 0.32), dl)
 
+# (144) suda ilerleyen birim izi: önde kabaran köpük, yanlara açılan küçük sıçrama, arkada yayılan dalga halkası.
+# s: birim boyu (asker 0,4, cip 1, tank 2); dir: gidiş yönü (yatay)
+var _wake_rip := 0.0
+
+func wake(p: Vector3, dir: Vector3, s: float, fast: bool) -> void:
+	var base := Vector3(p.x, Terrain.WATER_Y + 0.03, p.z)
+	var d := Vector3(dir.x, 0, dir.z)
+	d = d.normalized() if d.length() > 0.01 else Vector3.FORWARD
+	var side := Vector3(-d.z, 0, d.x)
+	# önde kabarma köpüğü (yassı, su yüzünde)
+	for i in int(3 * s) + 2:
+		emit(P_SMOKE, base + d * s * 0.6 + side * rng.randf_range(-0.5, 0.5) * s, d * 0.6 + side * rng.randf_range(-0.8, 0.8), rng.randf_range(0.8, 1.4), 0.25 * s + 0.1, 0.9 * s + 0.3, 0.0, 2.0, Color(0.92, 0.95, 0.96, 0.4))
+	# yanlara sıçrama (hızlıyken)
+	if fast:
+		for sg in [-1.0, 1.0]:
+			for i in int(4 * s) + 1:
+				var v: Vector3 = (side * sg * rng.randf_range(1.2, 2.4) + Vector3(0, rng.randf_range(1.5, 3.0), 0) + d * rng.randf_range(0.0, 1.0)) * sqrt(s)
+				emit(P_STREAK, base + d * s * 0.4 + side * sg * s * 0.4, v, rng.randf_range(0.4, 0.7), 0.04 * s + 0.02, 0.03, 9.8, 0.4, Color(0.88, 0.93, 0.96, 0.75))
+	# dalga halkası (gölgelendiricideki halkalar paylaşımlı: sık birimde seyreltilir)
+	if G.terrain != null and G.time - _wake_rip > 0.25:
+		_wake_rip = G.time
+		G.terrain.add_ripple(p - d * s * 0.3, 0.25 * s + 0.1)
+
 # zırhı delen isabet: içe doğru metal parçacık + kıvılcım duşu + kapaklardan sızan duman
 func penetration(p: Vector3, dir: Vector3, heat: bool) -> void:
 	flash(p, 4.0 if heat else 3.0, 6.0, 0.1, Color(1.0, 0.7, 0.35) if heat else Color(1.0, 0.85, 0.6))

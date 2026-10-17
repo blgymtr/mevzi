@@ -765,6 +765,7 @@ var door_b := Vector3.ZERO
 var door_c := Vector3.ZERO
 var door_wait := 0.0
 var door_veh: Vehicle = null
+var _wake_t := 0.0
 
 # ------------------------------------------------------------ paraşüt (hava indirme)
 # statik hat 0.9 sn serbest düşüş → kubbe açılır (0.7 sn) → 5 m/sn süzülme, hedefe doğru
@@ -2466,6 +2467,12 @@ func _movement(dt: float) -> void:
 	# (155) derin suda yüzer: gövde su yüzeyinde (yürürken yatay kulaç, dururken dik — baş ve omuz su üstünde)
 	if swimming():
 		position.y = Terrain.WATER_Y - (0.42 if vel.length() > 0.2 else 1.38)
+	# (144) suda yürüyen / yüzen asker iz bırakır (ekranda görünüyorsa)
+	if visible and vel.length() > 0.3 and G.grid.is_water(position) and not G.grid.on_bridge(position):
+		_wake_t -= dt
+		if _wake_t <= 0.0:
+			_wake_t = randf_range(0.5, 0.7)
+			G.fx.wake(position, vel, 0.4, vel.length() > 1.5)
 	# alçak duvar / engelin üstünden atlama
 	var hh := G.grid.height_at(position)
 	body_lift = lerpf(body_lift, hh + 0.02 if (hh >= 0.3 and hh < 1.15) else 0.0, clampf(dt * 14.0, 0, 1))
