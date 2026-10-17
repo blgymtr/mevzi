@@ -1589,6 +1589,31 @@ func _drop_span(it: Dictionary, k: int) -> void:
 			be2.rotation.y = 0.0 if e < 0.0 else PI
 			root.add_child(be2)
 
+# (127) yanmış ot: p'nin r m içindeki ot öbekleri kararmış kısa anıza döner (boyu %30, rengi kömür)
+func burn_grass(p: Vector3, r: float) -> void:
+	var r2 := r * r
+	for n in get_tree().get_nodes_in_group("zoom_grass"):
+		var mmi := n as MultiMeshInstance3D
+		if mmi == null or mmi.multimesh == null:
+			continue
+		var mm := mmi.multimesh
+		# hızlı ön eleme: örgünün kapsamı yangına değmiyorsa atla
+		var ab: AABB = mmi.get_aabb()
+		if ab.size != Vector3.ZERO:
+			var lo := ab.position
+			var hi := ab.end
+			if p.x + r < lo.x or p.x - r > hi.x or p.z + r < lo.z or p.z - r > hi.z:
+				continue
+		for i in mm.instance_count:
+			var xf := mm.get_instance_transform(i)
+			var dx := xf.origin.x - p.x
+			var dz := xf.origin.z - p.z
+			if dx * dx + dz * dz > r2:
+				continue
+			mm.set_instance_transform(i, Transform3D(xf.basis.scaled(Vector3(1.0, 0.3, 1.0)), xf.origin))
+			if mm.use_colors:
+				mm.set_instance_color(i, Color(0.09, 0.08, 0.06))
+
 # ------------------------------------------------------------ akışlı ot (büyük harita)
 # 8 km'de haritanın tamamına ot dökmek ~2 M örnek ve ~10 sn üretim demekti: ot yalnız yakın görüşte,
 # kameranın çevresindeki 128 m'lik karolarda üretilir (kare başına bir karo), uzaklaşan karolar silinir.

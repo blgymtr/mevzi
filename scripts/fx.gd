@@ -535,6 +535,41 @@ func _run_emitter(e: Array, dt: float) -> void:
 						emit(P_SPARK, p, Vector3(rng.randf_range(-4, 4), rng.randf_range(6, 14), rng.randf_range(-4, 4)), rng.randf_range(0.6, 1.2), 0.06, 0.04, 9.8, 0.2, Color(1, 0.8, 0.4, 1))
 				var c := rng.randf_range(0.62, 0.8)
 				emit(P_SMOKE, p + Vector3(0, 4.5 * pw * pulse, 0) + _rv(0.6 * pw, 0.4), Vector3(rng.randf_range(0.1, 0.8), rng.randf_range(3.0, 5.0), rng.randf_range(-0.4, 0.3)), rng.randf_range(4.0, 6.5), 1.2 * pw, 5.0 * pw, -0.15, 0.3, Color(c, c, c * 0.97, 0.5))
+		"grassfire":
+			var t0: float = e[5]
+			var mr: float = e[6]
+			var r := minf(mr, 1.5 + (G.time - t0) * 0.3)
+			var dying := G.time > float(e[1]) - 6.0
+			while e[4] > 0.028:
+				e[4] -= 0.028
+				if dying and rng.randf() < 0.7:
+					continue
+				# cephe: halkada rastgele noktada alçak alev dili (ot yangını yere yakın, 0,4–0,9 m)
+				var a := rng.randf() * TAU
+				var rr := r + rng.randf_range(-0.6, 0.3)
+				var q := p + Vector3(cos(a) * rr, 0.0, sin(a) * rr)
+				if G.grid.is_water(q):
+					continue
+				q.y = G.terrain.ground_h(q) if G.terrain else 0.0
+				emit(P_FLAME, q, Vector3(rng.randf_range(-0.1, 0.1), rng.randf_range(0.2, 0.5), rng.randf_range(-0.1, 0.1)), rng.randf_range(0.6, 1.1), 0.7, 1.35, -0.3, 0.8, Color(1, 1, 1, 0.95))
+				if rng.randf() < 0.3:
+					var g := rng.randf_range(0.3, 0.42)
+					emit(P_SMOKE, q + Vector3(0, 0.4, 0), Vector3(rng.randf_range(0.1, 0.5), rng.randf_range(0.8, 1.5), 0), rng.randf_range(3.0, 5.0), 0.6, 2.4, -0.15, 0.3, Color(g, g, g * 0.95, 0.4))
+			# cephedeki askerler (yarım saniyede bir)
+			e[7] = float(e[7]) + dt
+			if e[7] > 0.5 and not dying:
+				e[7] = 0.0
+				for u in G.near(p, r + 1.0):
+					if u is Soldier and u.alive and u.state != "aboard":
+						var du := Vector2(u.position.x - p.x, u.position.z - p.z).length()
+						if absf(du - r) < 1.2:
+							u.take_damage(4.0, null, "fire")
+							u.add_stress(6.0)
+			if left <= 1.0 and e.size() == 8:
+				e.append(true)          # bir kez
+				scorch(p, mr * 2.2)
+				if G.props:
+					G.props.burn_grass(p, mr)
 		"smolder":
 			while e[4] > 0.25:
 				e[4] -= 0.25
@@ -837,6 +872,11 @@ func blood_pool(p: Vector3, big := false) -> void:
 func burn(p: Vector3, dur: float, pw := 1.0) -> void:
 	emitters.append([p, G.time + dur, "burn", pw, 0.0])
 	emitters.append([p, G.time + dur + 40.0, "smolder", pw, 0.0])
+
+# (127) araç patlayınca çevredeki ot tutuşur: alçak alev halkası dışa yayılır (~0,3 m/sn, en çok max_r m), arkada
+# kül dumanı; bitince kararmış iz ve yanmış ot. Alev cephesindeki askerler yanar (hafif hasar + stres)
+func grass_fire(p: Vector3, max_r: float) -> void:
+	emitters.append([p, G.time + max_r / 0.3 + 6.0, "grassfire", 1.0, 0.0, G.time, max_r, 0.0])
 
 func smoke_screen(p: Vector3, dur := 16.0) -> void:
 	emitters.append([p, G.time + dur, "smoke", 1.0, 0.0])

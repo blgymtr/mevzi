@@ -115,6 +115,8 @@ func run(scene: String) -> void:
 			await chinook_test()
 		"crewshots":
 			await crew_shots()
+		"grassfiretest":
+			await grassfire_test()
 		"swimtest":
 			await swim_test()
 		"wreckshots":
@@ -1060,6 +1062,58 @@ func crew_shots() -> void:
 	if shots.size() < 3:
 		fails += 1
 	print("CREWSHOTS RESULT fails=%d" % fails)
+
+# 127: patlayan araç çevresindeki ot tutuşur, alev halkası yayılır, bitince yanmış iz + kararmış ot
+func grassfire_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 31)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	await m._wait(1.0)
+	var c := G.grid.nearest_open(Vector3(G.MAP * 0.5 + 40.0, 0, G.MAP * 0.5 - 30.0), Grid.M_HEAVY)
+	var tries := 0
+	while G.terrain.on_road(c) and tries < 20:
+		c = G.grid.nearest_open(c + Vector3(8, 0, 6), Grid.M_HEAVY)
+		tries += 1
+	_cam(c, 30.0)
+	await m._wait(2.0)
+	var v: Vehicle = m.spawn_vehicle(1, "truck", c, 0.3)
+	v.force_mode = "brew"
+	await m._wait(0.5)
+	var n_em0: int = G.fx.emitters.filter(func(e): return e[2] == "grassfire").size()
+	v.take_damage(1e6, null, "rpg")
+	await m._wait(0.3)
+	var gf: Array = G.fx.emitters.filter(func(e): return e[2] == "grassfire")
+	print("GRASSFIRE started=%d" % (gf.size() - n_em0))
+	if gf.size() <= n_em0:
+		fails += 1
+	await m._wait(8.0)
+	_cam(c, 22.0)
+	await m._wait(0.2)
+	await m._shot("grassfire_spread")
+	var mr: float = gf[0][6] if not gf.is_empty() else 6.0
+	await m._wait(mr / 0.3 + 2.0)
+	# kararmış ot sayısı
+	var burnt := 0
+	for n in m.get_tree().get_nodes_in_group("zoom_grass"):
+		var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
+		if mm == null or not mm.use_colors:
+			continue
+		for i in mm.instance_count:
+			var o := mm.get_instance_transform(i).origin
+			if Vector2(o.x - c.x, o.z - c.z).length() < mr and mm.get_instance_color(i).r < 0.12:
+				burnt += 1
+	_cam(c, 22.0)
+	await m._wait(0.3)
+	await m._shot("grassfire_after")
+	print("GRASSFIRE max_r=%.1f burnt_grass=%d" % [mr, burnt])
+	if burnt < 10:
+		fails += 1
+	print("GRASSFIRETEST RESULT fails=%d" % fails)
 
 # 155: derin suda yüzme — asker nehrin karşısına gönderilir: derin kısımda "swim" pozu, gövde su yüzeyinde
 # (dipte yürümez), karşı kıyıya çıkar

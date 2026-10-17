@@ -5305,6 +5305,9 @@ func destroy(src) -> void:
 			Sfx.play3d("expl_med", cp, 0.0)
 			G.fx.burn(position + Vector3(0, 1.5, 0), randf_range(15.0, 25.0), 0.5)
 	G.fx.scorch(position, D["len"] * 1.2)
+	# (127) yanan / patlayan araç çevresindeki otu tutuşturur (kışın, suda ve yolda değil)
+	if mode in ["catastrophic", "cookoff", "brew", "flip"] and G.map_kind != "winter" and G.terrain != null and not G.terrain.on_road(position):
+		G.fx.grass_fire(position, randf_range(5.0, 9.0) * (1.25 if heavy else 1.0))
 	for mi in _meshes(self):
 		Art.burn(mi)
 	# (142) paletli araçta ağır imhada palet kopar: yanda yere serilmiş palet şeridi, gövde o yana hafifçe çöker
