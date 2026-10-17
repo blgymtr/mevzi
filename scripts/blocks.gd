@@ -323,7 +323,9 @@ func set_col(id: int, c: Color) -> void:
 
 func _xform(id: int) -> Transform3D:
 	var k := 0.997 if bkind[id] == Grid.K_HOUSE else 0.965
-	return Transform3D(Basis(Vector3.UP, brot[id]).scaled(bsize[id] * k), bpos[id])
+	# ölçek blok yerel eksenlerinde (Basis.scaled() dünya eksenlerinde ölçekler: 90° dönük duvarda boy ile kalınlık yer
+	# değiştiriyor, yan duvarlar 0,42 m'lik aralıklı bloklardan "kafes / lego" gibi görünüyordu)
+	return Transform3D(Basis(Vector3.UP, brot[id]) * Basis.from_scale(bsize[id] * k), bpos[id])
 
 # a→b arası blok duvar. gaps: [[s0, s1, r0, r1, frame], ...] (duvar boyunca metre, sıra aralığı)
 func wall_line(a: Vector3, b: Vector3, rows: int, col: Color, k: int, opt := {}) -> int:
@@ -680,7 +682,7 @@ func _scar(id: int, from: Vector3) -> void:
 	out = out.normalized() * rng.randf_range(0.01, 0.03) if out.length() > 0.01 else Vector3.ZERO
 	var b := Basis(Vector3.UP, brot[id] + rng.randf_range(-0.05, 0.05)) * Basis(Vector3(rng.randf_range(-1, 1), 0.001, rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.03, 0.07))
 	var k := 0.997 if bkind[id] == Grid.K_HOUSE else 0.965
-	mm.set_instance_transform(bidx[id], Transform3D(b.scaled(bsize[id] * k * rng.randf_range(0.9, 0.98)), bpos[id] + out))
+	mm.set_instance_transform(bidx[id], Transform3D(b * Basis.from_scale(bsize[id] * k * rng.randf_range(0.9, 0.98)), bpos[id] + out))
 	var c := bcol[id]
 	var d := c.darkened(rng.randf_range(0.12, 0.3))
 	d.a = c.a
@@ -828,7 +830,7 @@ func _add_rubble(p: Vector3, s: Vector3, col: Color, xf := Transform3D()) -> voi
 	if xf == Transform3D():
 		var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.5, 0.5)) * Basis(Vector3.FORWARD, rng.randf_range(-0.4, 0.4))
 		var gy: float = G.terrain.ground_h(p) if G.terrain else 0.0
-		xf = Transform3D(b.scaled(s), Vector3(p.x, maxf(p.y, gy) + s.y * 0.22, p.z))
+		xf = Transform3D(b * Basis.from_scale(s), Vector3(p.x, maxf(p.y, gy) + s.y * 0.22, p.z))
 	mm.set_instance_transform(i, xf)
 	var c := col.darkened(rng.randf_range(0.04, 0.2))
 	c.a = col.a
@@ -851,7 +853,7 @@ func _process(_dt: float) -> void:
 			var xf := rb.global_transform
 			var s: Vector3 = d[3]
 			if d[4] != T_FENCE and xf.origin.y > -1.0:
-				_add_rubble(xf.origin, s, d[2], Transform3D(xf.basis.orthonormalized().scaled(s * 0.97), Vector3(xf.origin.x, maxf(xf.origin.y, s.y * 0.2), xf.origin.z)))
+				_add_rubble(xf.origin, s, d[2], Transform3D(xf.basis.orthonormalized() * Basis.from_scale(s * 0.97), Vector3(xf.origin.x, maxf(xf.origin.y, s.y * 0.2), xf.origin.z)))
 			rb.queue_free()
 			debris.remove_at(i)
 		i -= 1
