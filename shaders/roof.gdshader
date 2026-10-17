@@ -6,7 +6,7 @@ render_mode blend_mix, depth_draw_opaque, cull_disabled, diffuse_burley;
 uniform sampler2D tile_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D tile_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D noise_tex : source_color, filter_linear_mipmap, repeat_enable;
-uniform float scale = 0.85;
+uniform float scale = 0.4;
 uniform float snow = 0.0;
 uniform float mono = 0.0;   // 1: doku yalnız parlaklık, renk tepe renginden (beton, sac, kurşun)
 uniform float gain = 1.0;   // dokuya göre parlaklık dengesi

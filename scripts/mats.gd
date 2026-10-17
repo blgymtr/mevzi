@@ -133,7 +133,8 @@ static func roof(snow: bool) -> Material:
 	return _c[key]
 
 # çatı (doku seçmeli): kil / arduvaz / kiremit / sac / paslı sac / beton / kurşun / bakır / kerpiç / ahşap
-const ROOF_TEX := {"clay": ["clay_roof_tiles_02", 0.0, 0.85, 1.0], "slate": ["grey_roof_tiles", 0.0, 0.8, 1.1], "tile": ["roof_tiles_14", 0.0, 0.8, 1.15],
+# ölçek: dokunun bir tekrarı ~1/scale m. Kiremit dokuları ~2,5 m (eskiden 0,85: kiremit 5 cm, RTS uzaklığında kumlu kırmızı gürültü)
+const ROOF_TEX := {"clay": ["clay_roof_tiles_02", 0.0, 0.4, 1.0], "slate": ["grey_roof_tiles", 0.0, 0.42, 1.1], "tile": ["roof_tiles_14", 0.0, 0.42, 1.15],
 	"metal": ["corrugated_iron_02", 1.0, 0.45, 1.5], "rust": ["worn_corrugated_iron", 0.0, 0.45, 1.0], "conc": ["concrete_wall_005", 1.0, 0.35, 0.75],
 	"lead": ["metal_plate_02", 1.0, 0.6, 1.6], "copper": ["green_metal_rust", 0.0, 0.5, 1.0], "mud": ["white_plaster_rough_02", 1.0, 0.5, 1.0], "wood": ["brown_planks_05", 0.7, 0.6, 1.0]}
 
