@@ -1,6 +1,12 @@
 # Devir notu — kaldığımız yer (17 Ekim 2026, öğleden önce)
 
 ## Son yapılanlar
+- 17 Ekim gece, kullanıcı raporları 157–165: 157 helikopter engel üstü (heliroof), 158/159 Chinook rampası + sürekli
+  biniş / iniş (departtest, doortest, ramptest), 162 vurulan asker yığılması (hitfall), 163 krater fiziği
+  (craterdrive: `Grid.crat` krater yol hücresi maliyeti, `Vehicle._slope_k` eğim / gevşek toprak hızı + tekerlekli
+  patinaj `_slip_t/_slip_n`), 164 gerçek taşıma kapasitesi (`Vehicle.SEATS_ID`). Kalan: 160 halat sert gövdeye,
+  161 askıdaki aracı her yerde bırakma + düşüş fiziği, 165 ücretsiz varlıklar (Quaternius animasyon zip'i
+  kullanıcının tarayıcıdan indirmesini bekliyor → `tools/assets_src/quaternius/`; bkz. docs/VARLIK_ARASTIRMASI.md)
 - 17 Ekim gece, MODELLEME turu (hepsi push'lu, C:\mevzi + exe güncel ca3f04d):
   35/67 duvar bloğu ölçeği yerel eksende (`Blocks._xform`: `Basis * Basis.from_scale` — `Basis.scaled` dünya
   ekseninde ölçekleyip dönük duvarları kafes gibi gösteriyordu; tüm binaları etkiliyordu), çatı kiremit ölçeği,

@@ -46,6 +46,7 @@ var door := PackedByteArray()       # kapı boşluğu ince hücreleri: piyade yo
 var base_l := PackedByteArray()
 var vault := PackedByteArray()      # piyadenin üstünden atlayabildiği alçak engel hücreleri
 var base_h := PackedByteArray()
+var crat := PackedByteArray()       # (163) krater yol bulma hücreleri: araç yolu pahalı (gevşek toprak, dik duvar)
 var nav: Array = []
 var bridges: Array = []       # {c, d, L, w}: araçlar köprüde eksene hizalanır
 var _dirty := {}
@@ -65,6 +66,7 @@ func _init() -> void:
 	base_l.resize(NN * NN)
 	vault.resize(NN * NN)
 	base_h.resize(NN * NN)
+	crat.resize(NN * NN)
 	for i in 3:
 		var a := AStarGrid2D.new()
 		a.region = Rect2i(0, 0, NN, NN)
@@ -168,6 +170,12 @@ func set_crater(p: Vector3, r: float) -> void:
 		for x in range(ci(p.x - r), ci(p.x + r) + 1):
 			if Vector2((x + 0.5) * CS - p.x, (z + 0.5) * CS - p.z).length() < r:
 				trench[z * N + x] = 1
+	# (163) araç yol bulması kraterin çevresinden dolaşır; geçilebilir ama pahalı (tekerlekli 3×, paletli 1,6×)
+	for z in range(clampi(int((p.z - r) / NAV), 0, NN - 1), clampi(int((p.z + r) / NAV), 0, NN - 1) + 1):
+		for x in range(clampi(int((p.x - r) / NAV), 0, NN - 1), clampi(int((p.x + r) / NAV), 0, NN - 1) + 1):
+			if Vector2((x + 0.5) * NAV - p.x, (z + 0.5) * NAV - p.z).length() < r + NAV * 0.5:
+				crat[z * NN + x] = 1
+				_dirty[Vector2i(x, z)] = true
 
 func set_trench(a: Vector3, b: Vector3, w: float, on := true) -> void:
 	var L := a.distance_to(b)
@@ -339,14 +347,18 @@ func _update_inflated(c: Vector2i) -> void:
 				sh = true
 			elif bh == 2:
 				wh = true
+	var cr := crat[c.y * NN + c.x] == 1
+	var wl := 3.0 if cr else 1.0
+	var wv := (4.0 if wh else 1.0) * (1.6 if cr else 1.0)
 	var l: AStarGrid2D = nav[M_LIGHT]
 	l.set_point_solid(c, sl)
+	l.set_point_weight_scale(c, wl)
 	var hv: AStarGrid2D = nav[M_HEAVY]
 	hv.set_point_solid(c, sh)
-	hv.set_point_weight_scale(c, 4.0 if wh else 1.0)
+	hv.set_point_weight_scale(c, wv)
 	if not navw.is_empty():
-		_mset(M_LIGHT, c, sl, 1.0)
-		_mset(M_HEAVY, c, sh, 4.0 if wh else 1.0)
+		_mset(M_LIGHT, c, sl, wl)
+		_mset(M_HEAVY, c, sh, wv)
 
 # ------------------------------------------------------------ yol bulma
 static func cell_of(p: Vector3) -> Vector2i:

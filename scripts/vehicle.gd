@@ -3104,6 +3104,10 @@ func _drive(dt: float) -> void:
 			if deployed >= 1.0:
 				say("TOP KURULDU, ATEŞE HAZIR")
 		_pod_pose()
+	if absf(target_speed) > 0.05:
+		target_speed *= _slope_k(dt, signf(target_speed))
+	else:
+		_slip_t = 0.0
 	cur_speed = move_toward(cur_speed, target_speed, D["accel"] * dt * (2.0 if target_speed < cur_speed else 1.0))
 	if absf(cur_speed) < 0.01:
 		return
@@ -4313,6 +4317,49 @@ func _ground_conform(dt: float, k: float) -> void:
 	_gpitch = lerpf(_gpitch, atan2(hf - hb, 2.0 * lz), a)
 	_groll = lerpf(_groll, atan2(hr - hl, 2.0 * lx), a)
 
+# (163) krater / şev fiziği: yokuşta tırmanma gücüne göre, inişte sürücü freniyle, yan eğimde devrilme
+# korkusuyla ve krater içindeki gevşek toprakta yavaşlar. Tekerlekli araç tırmanma sınırını aşan krater
+# duvarında patinaj yapar (tekerlek boşa döner, toprak savrulur), geri çıkıp kraterden dolaşan yol arar;
+# üç denemeden sonra sallayarak ağır ağır çıkar (sonsuza dek takılı kalmaz). Paletli dik duvarı ağır tırmanır.
+var _slip_t := 0.0
+var _slip_n := 0
+var _slip_fx_t := 0.0
+var _pp := 0.0
+
+func _slope_k(dt: float, dir: float) -> float:
+	if is_air() or G.terrain == null or slung_by != null or not G.grid.bridge_at(position).is_empty():
+		return 1.0
+	var up := _gpitch * dir
+	var climb := 0.42 if wheeled() else 0.6
+	var k := 1.0
+	if up > 0.0:
+		k = clampf(1.0 - up / climb * 0.85, 0.12, 1.0)
+	else:
+		k = clampf(1.0 + up * 1.2, 0.4, 1.0)
+	k *= clampf(1.0 - absf(_groll) * 1.3, 0.35, 1.0)
+	var in_cr := G.grid.in_trench(position)
+	if in_cr and _gy < -0.25:
+		k *= 0.55 if wheeled() else 0.75
+	if wheeled() and up > climb and _slip_n < 3:
+		_slip_t += dt
+		_slip_fx_t -= dt
+		if _slip_fx_t <= 0.0:
+			_slip_fx_t = 0.12
+			var b := position - forward() * dir * ext.y * 0.8
+			var c := Color(0.36, 0.29, 0.21, 0.7)
+			G.fx.emit(Fx.P_SMOKE, b + Vector3(randf_range(-0.6, 0.6), 0.3, randf_range(-0.6, 0.6)), -forward() * dir * randf_range(1.5, 3.0) + Vector3(0, randf_range(0.8, 1.6), 0), randf_range(0.8, 1.4), 0.6, 1.2, 0.4, 0.3, c)
+		if _slip_t > 2.2:
+			_slip_t = 0.0
+			_slip_n += 1
+			say("PATİNAJ — GERİ ÇEKİLİYOR", 2.0)
+			_begin_unstick()
+		return 0.05
+	_slip_t = 0.0
+	# çukurdan gerçekten çıktı (gövde düz zeminde) — geri manevrada krater hücresinden çıkmak sayılmaz
+	if _slip_n > 0 and _gy > -0.2 and absf(_gpitch) < 0.12:
+		_slip_n = 0
+	return k
+
 func _visuals(dt: float) -> void:
 	hull.rotation.y = heading
 	# yaylanma
@@ -4320,7 +4367,11 @@ func _visuals(dt: float) -> void:
 	rock += rock_v * dt
 	hull.rotation.x = rock * 0.02
 	if not is_air() and slung_by == null:
+		_pp = _gpitch
 		_ground_conform(dt, 6.0)
+		# (163) krater kenarı / dibi: gövde yaylarda yalpalar (yunuslama hızının ataleti)
+		if dt > 0.0:
+			rock_v += clampf((_gpitch - _pp) / dt, -2.0, 2.0) * 100.0 * dt
 		hull.position.y = _gy
 		hull.rotation.x += _gpitch
 		if not tipped and absf(_groll) > TIP_ROLL:
@@ -4331,7 +4382,7 @@ func _visuals(dt: float) -> void:
 			add_vstress(60.0)
 			say("DEVRİLDİ!", 3.0)
 		hull.rotation.z = move_toward(hull.rotation.z, signf(_groll) * 1.45, dt * 1.6) if tipped else _groll
-	var spin := cur_speed * dt
+	var spin := (cur_speed + (7.0 if _slip_t > 0.0 else 0.0)) * dt
 	for w in wheels:
 		var wn: MeshInstance3D = w[0]
 		wn.rotation.x -= spin / w[1]

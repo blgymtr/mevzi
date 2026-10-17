@@ -143,6 +143,8 @@ func run(scene: String) -> void:
 			await hitfall_test()
 		"heliroof":
 			await heliroof_test()
+		"craterdrive":
+			await craterdrive_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1432,6 +1434,94 @@ func heliroof_test() -> void:
 	await m._wait(0.3)
 	await m._shot("heliroof_land")
 	print("HELIROOFTEST RESULT fails=%d" % fails)
+
+# 163: krater fiziği — (1) araç yolu kraterden dolaşır; (2) tank krateri geçerken yavaşlar, gövde yaylanır,
+# karşıya çıkar; (3) derin kraterin dibindeki tekerlekli araç dik duvarda patinaj yapar ama sonunda çıkar
+func craterdrive_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, true, 11)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.fog_off = true
+	for u in G.units.duplicate():
+		if is_instance_valid(u) and u.team == 1 and not (u is Building):
+			u.queue_free()
+	var c := G.grid.nearest_free(Vector3(G.MAP * 0.5, 0, G.MAP * 0.5), Grid.M_HEAVY)
+	G.props.clear_area(c, 60.0)
+	await m._wait(0.5)
+	# 1) yol bulma
+	G.terrain.carve_crater(c, 4.0, 1.5)
+	G.grid.set_crater(c, 3.2)
+	G.grid.flush_nav()
+	var pth := G.grid.find_path(c + Vector3(-30, 0, 0), c + Vector3(30, 0, 0), Grid.M_LIGHT)
+	var md := 99.0
+	for i in range(1, pth.size()):
+		var L := pth[i - 1].distance_to(pth[i])
+		for s in int(L / 0.5) + 1:
+			var q := pth[i - 1].lerp(pth[i], s * 0.5 / maxf(L, 0.01))
+			md = minf(md, Vector2(q.x - c.x, q.z - c.z).length())
+	print("CRATERDRIVE path pts=%d min_dist_to_crater=%.1f" % [pth.size(), md])
+	if pth.size() < 2 or md < 3.0:
+		fails += 1
+	# 2) tank krateri (yalnız arazi: yol düz geçer)
+	var c2 := c + Vector3(0, 0, 32)
+	G.terrain.carve_crater(c2, 4.0, 1.4)
+	var tk: Vehicle = m.spawn_vehicle(0, "tank", c2 + Vector3(-26, 0, 0), -PI * 0.5)
+	tk.fire_mode = 2
+	await m._wait(1.0)
+	tk.cmd_move(c2 + Vector3(26, 0, 0))
+	var flat_v := 0.0
+	var cr_v := 99.0
+	var rk := 0.0
+	var t := 0.0
+	var shot_done := false
+	while t < 45.0 and tk.position.distance_to(c2 + Vector3(26, 0, 0)) > 4.0:
+		await m._wait(0.1)
+		t += 0.1
+		var dx := tk.position.x - c2.x
+		if dx < -10.0 and dx > -18.0:
+			flat_v = maxf(flat_v, absf(tk.cur_speed))
+		elif absf(dx) < 3.0:
+			cr_v = minf(cr_v, absf(tk.cur_speed))
+			rk = maxf(rk, absf(tk.rock))
+			if not shot_done and dx > 0.0:
+				shot_done = true
+				_cam(tk.position + Vector3(0, 0, 4), 18.0)
+				await m._shot("craterdrive_tank")
+	var arrived := tk.position.distance_to(c2 + Vector3(26, 0, 0)) <= 4.0
+	print("CRATERDRIVE tank flat_v=%.1f crater_min_v=%.1f rock=%.2f arrived=%s t=%.1f" % [flat_v, cr_v, rk, arrived, t])
+	if not arrived or cr_v > flat_v * 0.7 or rk < 0.3:
+		fails += 1
+	# 3) derin krater dibinde tekerlekli araç
+	var c3 := c + Vector3(0, 0, -32)
+	var hv: Vehicle = m.spawn_vehicle(0, "usa_lv_m1151", c3, -PI * 0.5)
+	hv.fire_mode = 2
+	await m._wait(0.5)
+	G.terrain.carve_crater(c3, 3.5, 2.2)
+	G.grid.set_crater(c3, 2.8)
+	G.grid.flush_nav()
+	await m._wait(1.5)
+	hv.cmd_move(c3 + Vector3(25, 0, 0))
+	var slipped := false
+	t = 0.0
+	shot_done = false
+	while t < 70.0 and hv.position.distance_to(c3) < 7.0:
+		await m._wait(0.1)
+		t += 0.1
+		if hv._slip_t > 0.0:
+			slipped = true
+			if not shot_done and hv._slip_t > 1.0:
+				shot_done = true
+				_cam(hv.position + Vector3(0, 0, 3), 14.0)
+				await m._shot("craterdrive_slip")
+	var out := hv.position.distance_to(c3) >= 7.0
+	print("CRATERDRIVE wheeled slipped=%s slips=%d out=%s t=%.1f" % [slipped, hv._slip_n, out, t])
+	if not slipped or not out:
+		fails += 1
+	print("CRATERDRIVETEST RESULT fails=%d" % fails)
 
 # 162: vurulma — kurşunla düşen asker yığılır (collapse, ~1,1 sn) sonra yaralı; ölen beden savrulmaz (ölüm yeri ile
 # beden arasındaki mesafe küçük). Ardışık görüntüler.
