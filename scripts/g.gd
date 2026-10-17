@@ -315,6 +315,8 @@ func _build_obs(t: int, list: Array, wm: float, night: bool) -> void:
 			cells[k] = [j]
 	_ob[t] = {"list": list, "ox": ox, "oz": oz, "r1": r1, "rad": rad, "air": oair, "cells": cells, "cs": cs, "maxr": maxr, "maxrad": maxrad, "idx": idx}
 
+const TRACK_K := 1.6
+
 func _spotted(u, t: int) -> bool:
 	var sig: float = u.spot_sig()
 	if sig <= 0.0:
@@ -331,12 +333,14 @@ func _spotted(u, t: int) -> bool:
 	var r1: PackedFloat32Array = ob["r1"]
 	var rad: PackedFloat32Array = ob["rad"]
 	var oair: PackedByteArray = ob["air"]
-	# son gözcü önce (çoğunlukla hâlâ görür)
+	# son gözcü önce (çoğunlukla hâlâ görür). Takip, ilk tespitten kolaydır: yerini bilen gözcü hedefi
+	# görüş hattı açık kaldıkça 1,6 kat uzağa dek izler (yoksa ateşi kesip çömelen düşman aradaki saniyelerde
+	# kaybolur, piyade "kendiliğinden ateş etmiyor" görünür — kullanıcı, 17 Ekim)
 	var last = u.spot_by[t]
 	var jl := -1
-	if last != null and is_instance_valid(last) and last.alive:
+	if last != null and is_instance_valid(last) and last.alive and u.spot_mem[t] > time - 1.0:
 		jl = int(ob["idx"].get(last.get_instance_id(), -1))
-		if jl >= 0 and _ob_sees(list[jl], ox[jl], oz[jl], r1[jl], rad[jl], oair[jl], tp, sig, air, house):
+		if jl >= 0 and _ob_sees(list[jl], ox[jl], oz[jl], r1[jl], rad[jl], oair[jl], tp, sig * TRACK_K, air, house):
 			return true
 	var R: float = float(ob["maxr"]) * sig
 	if air:

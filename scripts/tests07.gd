@@ -119,6 +119,8 @@ func run(scene: String) -> void:
 			await obstacle_test()
 		"engagetest":
 			await engage_test()
+		"inffighttest":
+			await inf_fight_test()
 		"fencetest":
 			await fence_test()
 		"grassfiretest":
@@ -1255,6 +1257,105 @@ func engage_test() -> void:
 	if not react_ok:
 		fails += 1
 	print("ENGAGETEST RESULT fails=%d" % fails)
+
+# piyade çatışmasında kendiliğinden ateş (kullanıcı, 17 Ekim: "piyadeler direkt otomatik sıkmıyor"): iki 6 kişilik
+# tim, ikisi de serbest ateş; düşman saldırı hareketiyle yaklaşır. Her 0,5 sn, her asker için: menzilinde ve görüş
+# hattında görülen düşman varken hedefsizse "susuyor"; menzil + görüş hattında olup henüz görülmeyen düşman varsa
+# "tespit edilemiyor"; baskı altında (bastırılmış) olanlar ayrı sayılır.
+func inf_fight_test() -> void:
+	m.get_window().size = Vector2i(1600, 900)
+	Sfx.muted = true
+	var fails := 0
+	m.start_game("green_valley", {}, false, 41)
+	for a in G.ais:
+		a.queue_free()
+	G.ais.clear()
+	G.deploy_t = 0.0
+	await m._wait(1.0)
+	var rounds := [["açık", 0], ["siperli", 1]]
+	for rd in rounds:
+		var c := G.grid.nearest_open(Vector3(G.MAP * (0.35 + rd[1] * 0.3), 0, G.MAP * 0.62), Grid.M_INF)
+		G.props.clear_area(c, 50.0)
+		var sq := Squad.new(0, "Biz")
+		G.squads.append(sq)
+		var sq1 := Squad.new(1, "Onlar")
+		G.squads.append(sq1)
+		var ours: Array = []
+		var theirs: Array = []
+		for i in 6:
+			ours.append(m.spawn_soldier(0, ["leader", "rifle", "rifle", "mg", "rifle", "at"][i], G.grid.nearest_free(c + Vector3((i % 3) * 2.0 - 2.0, 0, (i / 3) * 2.0), Grid.M_INF), sq))
+		var rng: float = ours[1].weapon()["range"]
+		var far := c + Vector3(0, 0, -rng * 2.0)
+		for i in 6:
+			theirs.append(m.spawn_soldier(1, ["leader", "rifle", "rifle", "mg", "rifle", "rifle"][i], G.grid.nearest_free(far + Vector3((i % 3) * 2.0 - 2.0, 0, -(i / 3) * 2.0), Grid.M_INF), sq1))
+		if rd[1] == 1:
+			# düşman yolun ortasındaki kum torbası hattına gelip orada mevzi alır
+			var ln: Building = m.place_line(1, "sandbags", c + Vector3(-8, 0, -rng * 0.8), c + Vector3(8, 0, -rng * 0.8))
+			ln.complete()
+		_cam(c + Vector3(0, 0, -rng * 0.7), 60.0)
+		await m._wait(0.5)
+		var goal := c + Vector3(0, 0, -rng * (0.75 if rd[1] == 1 else 0.3))
+		G.player.move_group(theirs, goal, false, "amove")
+		var t0 := G.time
+		var ticks := 0
+		var silent := 0
+		var undetected := 0
+		var supp := 0
+		var first_fire := [-1.0, -1.0]
+		var first_d := [-1.0, -1.0]
+		while G.time - t0 < 40.0:
+			await m._wait(0.5)
+			for side in 2:
+				var grp: Array = ours if side == 0 else theirs
+				var sh := 0
+				for s in grp:
+					sh += s.shots
+				if sh > 0 and first_fire[side] < 0.0:
+					first_fire[side] = G.time - t0
+					var dm := 1e9
+					for a in ours:
+						for b in theirs:
+							if a.alive and b.alive:
+								dm = minf(dm, a.position.distance_to(b.position))
+					first_d[side] = dm
+			for s in ours:
+				if not s.alive or not s.can_fight():
+					continue
+				var w: float = s.weapon()["range"]
+				var eye: Vector3 = s.position + Vector3(0, s.eye_h(), 0)
+				var vis_in := false
+				var hid_in := false
+				for e in theirs:
+					if not e.alive or e.incapacitated() or s.position.distance_to(e.position) > w:
+						continue
+					if not G.grid.los(eye, e.aim_point()):
+						continue
+					if G.is_seen(e, 0):
+						vis_in = true
+					else:
+						hid_in = true
+				if vis_in:
+					ticks += 1
+					if s.target == null:
+						if s.suppression >= 70.0:
+							supp += 1
+						else:
+							silent += 1
+				elif hid_in:
+					ticks += 1
+					undetected += 1
+			if theirs.all(func(e): return not e.alive or e.incapacitated()) or ours.all(func(e): return not e.alive or e.incapacitated()):
+				break
+		await m._shot("inffight_%s" % rd[0])
+		var tk := maxf(ticks, 1)
+		print("INFFIGHT %s: menzil=%.0f ilk ateş biz=%.1f sn (%.0f m) onlar=%.1f sn (%.0f m) | menzilde-görüşte asker-anı=%d susan=%%%d tespit-edilemeyen=%%%d bastırılmış=%%%d" % [rd[0], rng, first_fire[0], first_d[0], first_fire[1], first_d[1], ticks, int(silent * 100 / tk), int(undetected * 100 / tk), int(supp * 100 / tk)])
+		if float(silent) / tk > 0.15 or float(undetected) / tk > 0.2:
+			fails += 1
+		for u in ours + theirs:
+			if is_instance_valid(u) and u.alive:
+				u.queue_free()
+		await m._wait(0.3)
+	print("INFFIGHTTEST RESULT fails=%d" % fails)
 
 func _engage_group(team: int, kind: String, p: Vector3, sq: Squad) -> Array:
 	var out: Array = []
